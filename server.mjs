@@ -1,6 +1,7 @@
 import http from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 
 function loadEnv() {
@@ -362,8 +363,24 @@ export function publishedAppDocument(creation) {
   const slug = String(creation.slug)
   const title = escapeHtml(creation.title || slug)
   const code = normalizePublishedCode(creation.code)
-  const innerDocument = `<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><base target="_blank"><script src="https://cdn.tailwindcss.com"></script><script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script><script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script><script src="https://unpkg.com/@babel/standalone/babel.min.js"></script><style>html,body,#root{min-height:100%;margin:0}*{box-sizing:border-box}.alpha-runtime-error{margin:24px;padding:16px;border:1px solid #fecaca;border-radius:12px;background:#fef2f2;color:#991b1b;font:14px system-ui}</style></head><body><div id="root"></div><script>const __alphaState=(()=>{try{return JSON.parse(__ALPHA_STORAGE_JSON__||'{}')}catch{return {}}})();const __alphaStorage={getItem:key=>Object.prototype.hasOwnProperty.call(__alphaState,key)?String(__alphaState[key]):null,setItem:(key,value)=>{__alphaState[key]=String(value);parent.postMessage({type:'alphatekx-app-storage',slug:${scriptJson(slug)},state:__alphaState},'*')},removeItem:key=>{delete __alphaState[key];parent.postMessage({type:'alphatekx-app-storage',slug:${scriptJson(slug)},state:__alphaState},'*')},clear:()=>{Object.keys(__alphaState).forEach(key=>delete __alphaState[key]);parent.postMessage({type:'alphatekx-app-storage',slug:${scriptJson(slug)},state:__alphaState},'*')},key:index=>Object.keys(__alphaState)[index]??null,get length(){return Object.keys(__alphaState).length}};window.__alphaStorage=__alphaStorage;try{Object.defineProperty(window,'localStorage',{value:__alphaStorage,configurable:true})}catch{}window.addEventListener('error',event=>{const root=document.getElementById('root');if(root&&!root.childElementCount)root.innerHTML='<div class="alpha-runtime-error"><strong>This app could not start.</strong><br>'+String(event.message||'Runtime error').replace(/[&<>]/g,value=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[value]))+'</div>'});</script><script type="text/babel">const localStorage=window.__alphaStorage;${code}</script></body></html>`
+  const storageBridge = `<script>const __alphaState=(()=>{try{return JSON.parse(__ALPHA_STORAGE_JSON__||'{}')}catch{return {}}})();const __alphaStorage={getItem:key=>Object.prototype.hasOwnProperty.call(__alphaState,key)?String(__alphaState[key]):null,setItem:(key,value)=>{__alphaState[key]=String(value);parent.postMessage({type:'alphatekx-app-storage',slug:${scriptJson(slug)},state:__alphaState},'*')},removeItem:key=>{delete __alphaState[key];parent.postMessage({type:'alphatekx-app-storage',slug:${scriptJson(slug)},state:__alphaState},'*')},clear:()=>{Object.keys(__alphaState).forEach(key=>delete __alphaState[key]);parent.postMessage({type:'alphatekx-app-storage',slug:${scriptJson(slug)},state:__alphaState},'*')},key:index=>Object.keys(__alphaState)[index]??null,get length(){return Object.keys(__alphaState).length}};window.__alphaStorage=__alphaStorage;try{Object.defineProperty(window,'localStorage',{value:__alphaStorage,configurable:true})}catch{}</script>`
+  const isHtml = /<(?:!doctype\s+html|html|body)[\s>]/i.test(String(creation.code || ''))
+  const pastedHtml = String(creation.code || '')
+  const pastedDocument = /<head[^>]*>/i.test(pastedHtml)
+    ? pastedHtml.replace(/<head([^>]*)>/i, `<head$1>${storageBridge}`)
+    : pastedHtml.replace(/<body([^>]*)>/i, `${storageBridge}<body$1>`)
+  const innerDocument = isHtml
+    ? pastedDocument
+    : `<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><base target="_blank"><script src="https://cdn.tailwindcss.com"></script><script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script><script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script><script src="https://unpkg.com/@babel/standalone/babel.min.js"></script><style>html,body,#root{min-height:100%;margin:0}*{box-sizing:border-box}.alpha-runtime-error{margin:24px;padding:16px;border:1px solid #fecaca;border-radius:12px;background:#fef2f2;color:#991b1b;font:14px system-ui}</style>${storageBridge}</head><body><div id="root"></div><script>window.addEventListener('error',event=>{const root=document.getElementById('root');if(root&&!root.childElementCount)root.innerHTML='<div class="alpha-runtime-error"><strong>This app could not start.</strong><br>'+String(event.message||'Runtime error').replace(/[&<>]/g,value=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[value]))+'</div>'});</script><script type="text/babel">const localStorage=window.__alphaStorage;${code}</script></body></html>`
   return `<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="index,follow"><title>${title} — Built with AlphaTekX</title><style>html,body{width:100%;height:100%;margin:0;background:#fff}iframe{display:block;width:100%;height:100%;border:0}</style></head><body><iframe id="alpha-app" title="${title}" sandbox="allow-scripts allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-downloads"></iframe><script>const frame=document.getElementById('alpha-app');const storageKey='alphatekx:published:${slug}';let stored='{}';try{stored=localStorage.getItem(storageKey)||'{}'}catch{}const template=${scriptJson(innerDocument)};frame.srcdoc=template.replace('__ALPHA_STORAGE_JSON__',JSON.stringify(stored).replace(/</g,'\\u003c'));addEventListener('message',event=>{if(event.source!==frame.contentWindow||event.data?.type!=='alphatekx-app-storage'||event.data?.slug!==${scriptJson(slug)})return;const state=event.data.state;if(!state||typeof state!=='object'||Array.isArray(state))return;const encoded=JSON.stringify(state);if(encoded.length>500000)return;try{localStorage.setItem(storageKey,encoded)}catch{}});</script></body></html>`
+}
+
+const requestSubdomain = (req) => {
+  const host = String(req.headers.host || '').toLowerCase().split(':')[0]
+  const suffix = '.alphatekx.name.ng'
+  if (!host.endsWith(suffix)) return null
+  const candidate = host.slice(0, -suffix.length)
+  return candidate && candidate !== 'www' && !candidate.includes('.') && validSlug(candidate) ? candidate : null
 }
 
 async function fetchPublishedCreation(slug) {
@@ -431,6 +448,61 @@ async function publishCreationPath(req, res) {
   }
 }
 
+async function publishPastedHtml(req, res) {
+  const config = supabaseConfig()
+  if (!config.url || !config.anon || !config.service) return json(res, 503, { error: 'Code deployment needs Supabase URL, anon key, and service role key.' })
+  try {
+    const user = await authenticatedUser(req, config.url, config.anon)
+    if (!user) return json(res, 401, { error: 'Authentication required.' })
+    const body = await readBody(req)
+    const title = String(body.title || '').trim().slice(0, 120)
+    const slug = String(body.slug || '').toLowerCase().trim()
+    const html = String(body.html || '').trim()
+    if (!title) return json(res, 400, { error: 'Enter an app name.' })
+    if (!validSlug(slug)) return json(res, 400, { error: 'Use 1-64 lowercase letters, numbers, or hyphens for the slug.' })
+    if (!/<(?:!doctype\s+html|html|body)[\s>]/i.test(html)) return json(res, 400, { error: 'Paste a complete HTML document.' })
+    if (Buffer.byteLength(html, 'utf8') > 900_000) return json(res, 413, { error: 'HTML must be smaller than 900 KB.' })
+    const headers = serviceHeaders(config.service)
+    const existingResponse = await fetch(`${config.url}/rest/v1/creations?slug=eq.${encodeURIComponent(slug)}&select=id,user_id,mission_id&limit=1`, { headers })
+    const existingPayload = await existingResponse.json()
+    if (!existingResponse.ok) return json(res, 500, { error: existingPayload.message || 'Could not validate the slug. Run supabase/path-deploy.sql first.' })
+    const existing = existingPayload?.[0]
+    if (existing && existing.user_id !== user.id) return json(res, 409, { error: 'That subdomain is already in use.' })
+    const baseUrl = String(process.env.PUBLIC_APP_URL || 'https://alphatekx.name.ng').replace(/\/$/, '')
+    const pathUrl = `${baseUrl}/app/${slug}`
+    const subdomainUrl = `https://${slug}.alphatekx.name.ng`
+    let creationId = existing?.id || randomUUID()
+    if (existing) {
+      const updatedResponse = await fetch(`${config.url}/rest/v1/creations?id=eq.${encodeURIComponent(creationId)}&user_id=eq.${encodeURIComponent(user.id)}`, {
+        method: 'PATCH',
+        headers: { ...headers, Prefer: 'return=representation' },
+        body: JSON.stringify({ title, code: html, type: 'html', files: [{ path: 'index.html', code: html }], owner_id: user.id, published: true, status: 'live', deployment_url: subdomainUrl }),
+      })
+      const updated = await updatedResponse.json()
+      if (!updatedResponse.ok || !updated?.length) return json(res, 500, { error: updated.message || 'Could not update this deployment.' })
+    } else {
+      const missionId = randomUUID()
+      const missionResponse = await fetch(`${config.url}/rest/v1/missions`, {
+        method: 'POST', headers: { ...headers, Prefer: 'return=minimal' },
+        body: JSON.stringify({ id: missionId, user_id: user.id, title: `Deploy ${title}`, goal: `Deploy pasted HTML for ${title}`, status: 'completed', progress: 100 }),
+      })
+      if (!missionResponse.ok) return json(res, 500, { error: 'Could not create the deployment record.' })
+      const creationResponse = await fetch(`${config.url}/rest/v1/creations`, {
+        method: 'POST', headers: { ...headers, Prefer: 'return=representation' },
+        body: JSON.stringify({ id: creationId, mission_id: missionId, user_id: user.id, owner_id: user.id, slug, title, code: html, type: 'html', status: 'live', files: [{ path: 'index.html', code: html }], published: true, deployment_url: subdomainUrl }),
+      })
+      const created = await creationResponse.json()
+      if (!creationResponse.ok || !created?.length) {
+        await fetch(`${config.url}/rest/v1/missions?id=eq.${encodeURIComponent(missionId)}`, { method: 'DELETE', headers })
+        return json(res, 500, { error: created.message || 'Could not save this deployment. Run supabase/path-deploy.sql first.' })
+      }
+    }
+    return json(res, 200, { creationId, slug, pathUrl, subdomainUrl })
+  } catch (error) {
+    return json(res, 500, { error: error instanceof Error ? error.message : 'Code deployment failed.' })
+  }
+}
+
 function serveStatic(req, res) {
   let pathname = '/'
   try { pathname = decodeURIComponent(new URL(req.url || '/', 'http://localhost').pathname) } catch {}
@@ -450,6 +522,9 @@ function serveStatic(req, res) {
 const server = http.createServer(async (req, res) => {
   applyCors(req, res)
   if (req.method === 'OPTIONS') return json(res, 204, {})
+  const subdomain = requestSubdomain(req)
+  if (subdomain && ['GET', 'HEAD'].includes(req.method || '')) return servePublishedCreation(req, res, subdomain)
+  if (subdomain) return json(res, 404, { error: 'App route not found' })
   if (req.method === 'GET' && req.url === '/api/paystack/status') {
     const required = { PAYSTACK_SECRET_KEY: process.env.PAYSTACK_SECRET_KEY, SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY, VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL, VITE_SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY }
     const missing = Object.entries(required).filter(([, value]) => !value).map(([name]) => name)
@@ -458,6 +533,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && req.url === '/api/paystack/verify') return verifyPaystack(req, res)
   if (req.method === 'POST' && req.url === '/api/marketplace/purchase') return purchaseMarketplace(req, res)
   if (req.method === 'POST' && req.url === '/api/creations/publish') return publishCreationPath(req, res)
+  if (req.method === 'POST' && req.url === '/api/creations/publish-code') return publishPastedHtml(req, res)
   if (req.method === 'POST' && req.url === '/api/credits/spend') return creditSpend(req, res)
   if (req.method === 'POST' && req.url === '/api/activity/ping') return activityPing(req, res)
   if (req.method === 'GET' && req.url === '/api/admin/stats') return adminStats(req, res)
