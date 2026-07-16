@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowUp, Code2, Copy, LoaderCircle, X } from 'lucide-react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { buildFromMission } from '../lib/alphaBuilder'
 import { spendCredits } from '../lib/creditStore'
 import { addMessage, buildMemoryContext, getActivities, getCreationForMission, getMissionById, subscribeStore } from '../lib/missionStore'
@@ -16,6 +16,8 @@ function previewDocument(code: string) {
 
 export default function Builder() {
   const { id = '' } = useParams()
+  const [searchParams] = useSearchParams()
+  const autoBuildStarted = useRef(false)
   const [mission, setMission] = useState<Mission | null>(() => getMissionById(id))
   const [activities, setActivities] = useState<Activity[]>(() => getActivities(id))
   const [creation, setCreation] = useState<Creation | null>(() => getCreationForMission(id))
@@ -33,9 +35,18 @@ export default function Builder() {
     if (!current || building) return
     setBuilding(true); setNotice('')
     try { setCreation(await buildFromMission(current)) }
-    catch (error) { setNotice(error instanceof Error && error.message === 'LOW_CREDITS' ? 'You need 10 credits to build this mission.' : 'The build stopped. Please try again.') }
+    catch (error) { setNotice(error instanceof Error && error.message === 'LOW_CREDITS' ? 'You need 10 credits to build this mission.' : `Build stopped: ${error instanceof Error ? error.message : 'Unknown generation error'}`) }
     finally { setBuilding(false) }
   }
+
+  useEffect(() => {
+    if (searchParams.get('build') === '1' && mission && !creation && !autoBuildStarted.current) {
+      autoBuildStarted.current = true
+      void runBuild()
+    }
+  // The query flag intentionally triggers one build per page load.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mission?.id, creation?.id])
 
   const send = async () => {
     const content = input.trim()

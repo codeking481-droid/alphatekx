@@ -43,8 +43,8 @@ export async function buildFromMission(mission: Mission): Promise<Creation> {
         prompt: `You are the AlphaTekX God Craft engineering team. AlphaTekX builds websites, applications, dashboards, online courses, lessons, business systems, AI workers, templates, and tools. User wants: ${mission.goal}. User memory: ${memory} Adapt accordingly.${mentorMode}${businessMode} Generate a single self-contained React component using Tailwind only. Return ONLY code. Build the requested product type, not a generic dashboard. It must have real state, working buttons, validation, empty, loading and error states, responsive mobile layout, and localStorage persistence where useful. Do not import packages.`,
       }),
     })
-    if (!response.ok) throw new Error(`Alpha API ${response.status}`)
     const payload = await response.json()
+    if (!response.ok) throw new Error(String(payload.error || `Alpha API ${response.status}`))
     code = extractCode(String(payload.code || payload.response || ''))
     if (!code.includes('createRoot')) throw new Error('Generated code has no render entry')
   } catch (error) {

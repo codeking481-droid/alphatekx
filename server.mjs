@@ -45,7 +45,48 @@ const fetchJson = async (url, options, timeout = 60000) => {
   } finally { clearTimeout(timer) }
 }
 
+const firstKey = (name) => process.env[`${name}_1`] || process.env[name] || ''
+const currencyPair = async (from, to, amount) => {
+  const apiKey = firstKey('EXCHANGE_RATE_API_KEY')
+  if (!apiKey) throw new Error('Currency conversion is not configured')
+  const data = await fetchJson(`https://v6.exchangerate-api.com/v6/${apiKey}/pair/${encodeURIComponent(from)}/${encodeURIComponent(to)}/${amount}`, {})
+  if (data.result !== 'success') throw new Error(data['error-type'] || 'Currency conversion failed')
+  return { from, to, amount, rate: data.conversion_rate, result: data.conversion_result, updatedAt: data.time_last_update_utc }
+}
+
+async function runGeneralTool(prompt) {
+  if (/\b(clock|current time|what time|time now)\b/i.test(prompt)) return { tool: 'clock', text: 'Here is your live local time.' }
+  if (/\b(currency|exchange rate|convert money|currency converter)\b/i.test(prompt) || /[\d,.]+\s*[A-Z]{3}\s+(?:to|in)\s+[A-Z]{3}/i.test(prompt)) {
+    const match = prompt.toUpperCase().match(/([\d,.]+)\s*([A-Z]{3})\s+(?:TO|IN)\s+([A-Z]{3})/)
+    if (!match) return { tool: 'currency', text: 'Use the live converter below.' }
+    const amount = Number(match[1].replace(/,/g, ''))
+    if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter a valid currency amount')
+    return { tool: 'currency', text: 'Live conversion result.', currency: await currencyPair(match[2], match[3], amount) }
+  }
+  if (/\b(youtube|videos?|watch|tutorial)\b/i.test(prompt)) {
+    const apiKey = firstKey('YOUTUBE_API_KEY')
+    if (!apiKey) throw new Error('YouTube search is not configured')
+    const requested = Number(prompt.match(/\b(\d+)\s+(?:youtube\s+)?videos?\b/i)?.[1] || 1)
+    const count = Math.min(5, Math.max(1, requested))
+    const query = prompt.replace(/\b(show|find|load|play|youtube|videos?|watch|tutorial|me|please)\b/gi, ' ').replace(/\s+/g, ' ').trim() || prompt
+    const data = await fetchJson(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=${count}&q=${encodeURIComponent(query)}&key=${apiKey}`, {})
+    const videos = (data.items || []).map(item => ({ id: item.id.videoId, title: item.snippet.title, channel: item.snippet.channelTitle, thumbnail: item.snippet.thumbnails?.medium?.url, url: `https://www.youtube.com/watch?v=${item.id.videoId}` }))
+    return { tool: 'youtube', text: videos.length ? `I found ${videos.length} video${videos.length === 1 ? '' : 's'}.` : 'No matching YouTube video was found.', videos }
+  }
+  if (/\b(search (?:the )?(?:web|internet)|look up|latest|news|research online|browse)\b/i.test(prompt)) {
+    const apiKey = firstKey('TAVILY_API_KEY')
+    if (!apiKey) throw new Error('Web search is not configured')
+    const data = await fetchJson('https://api.tavily.com/search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ api_key: apiKey, query: prompt, search_depth: 'advanced', max_results: 5, include_answer: true }) })
+    return { tool: 'search', text: data.answer || 'Here is what I found.', sources: (data.results || []).map(item => ({ title: item.title, url: item.url, content: item.content })) }
+  }
+  return null
+}
+
 export async function handleAlpha(prompt, mode = 'chat') {
+  if (mode === 'chat') {
+    const toolResult = await runGeneralTool(prompt)
+    if (toolResult) return toolResult
+  }
   const apiKey = process.env.OPENAI_API_KEY_1 || process.env.OPENAI_API_KEY || ''
   const primaryGroqKey = process.env.GROQ_API_KEY_1 || process.env.GROQ_API_KEY || ''
   if (!apiKey && !primaryGroqKey) throw new Error('No AI provider is configured. Add OPENAI_API_KEY or GROQ_API_KEY.')
@@ -195,6 +236,10 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 204, {})
   if (req.method === 'POST' && req.url === '/api/paystack/verify') return verifyPaystack(req, res)
   if (req.method === 'POST' && req.url === '/api/marketplace/purchase') return purchaseMarketplace(req, res)
+  if (req.method === 'POST' && req.url === '/api/tools/currency') {
+    try { const body = await readBody(req); return json(res, 200, await currencyPair(String(body.from || 'USD').toUpperCase(), String(body.to || 'NGN').toUpperCase(), Number(body.amount || 1))) }
+    catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : 'Currency conversion failed' }) }
+  }
   if (req.method === 'POST' && req.url === '/api/alpha') {
     try {
       const body = await readBody(req)
