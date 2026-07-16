@@ -55,7 +55,7 @@ const currencyPair = async (from, to, amount) => {
 }
 
 async function runGeneralTool(prompt) {
-  if (/\b(clock|current time|what time|time now)\b/i.test(prompt)) return { tool: 'clock', text: 'Here is your live local time.' }
+  if (/\b(clock|wall clock|live clock|current time|what time|time now)\b/i.test(prompt)) return { tool: 'clock', text: 'Here is your live local time.' }
   if (/\b(currency|exchange rate|convert money|currency converter)\b/i.test(prompt) || /[\d,.]+\s*[A-Z]{3}\s+(?:to|in)\s+[A-Z]{3}/i.test(prompt)) {
     const match = prompt.toUpperCase().match(/([\d,.]+)\s*([A-Z]{3})\s+(?:TO|IN)\s+([A-Z]{3})/)
     if (!match) return { tool: 'currency', text: 'Use the live converter below.' }
@@ -159,6 +159,28 @@ async function authenticatedUser(req, supabaseUrl, anonKey) {
   return response.ok ? response.json() : null
 }
 
+async function runUserWorker(body) {
+  const provider = String(body.provider || '').toLowerCase()
+  const apiKey = String(body.apiKey || '').trim()
+  const prompt = String(body.prompt || '').trim()
+  const model = String(body.model || '').trim().slice(0, 100)
+  if (!['openai', 'groq', 'anthropic', 'gemini'].includes(provider)) throw new Error('Unsupported AI provider')
+  if (!apiKey || apiKey.length < 12) throw new Error('A valid provider API key is required')
+  if (!prompt) throw new Error('Worker prompt is required')
+  const system = `You are ${String(body.name || 'Alpha Worker').slice(0, 80)}, a ${String(body.role || 'specialist').slice(0, 50)} AI worker. Purpose: ${String(body.purpose || '').slice(0, 1000)}. Instructions: ${String(body.instructions || '').slice(0, 3000)}. Follow the user's task accurately. State uncertainty and never pretend an external action completed.`
+  if (provider === 'anthropic') {
+    const data = await fetchJson('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' }, body: JSON.stringify({ model: model || 'claude-3-5-sonnet-latest', max_tokens: 1800, system, messages: [{ role: 'user', content: prompt }] }) })
+    return { text: (data.content || []).map(item => item.text || '').join('\n').trim(), provider }
+  }
+  if (provider === 'gemini') {
+    const data = await fetchJson(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model || 'gemini-2.5-flash')}:generateContent?key=${encodeURIComponent(apiKey)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents: [{ role: 'user', parts: [{ text: prompt }] }] }) })
+    return { text: (data.candidates?.[0]?.content?.parts || []).map(item => item.text || '').join('\n').trim(), provider }
+  }
+  const endpoint = provider === 'groq' ? 'https://api.groq.com/openai/v1/chat/completions' : 'https://api.openai.com/v1/chat/completions'
+  const data = await fetchJson(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }, body: JSON.stringify({ model: model || (provider === 'groq' ? 'llama-3.3-70b-versatile' : 'gpt-4o-mini'), messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }], max_tokens: 1800, temperature: 0.4 }) })
+  return { text: String(data.choices?.[0]?.message?.content || '').trim(), provider }
+}
+
 const adminEmail = 'iamdan4live@gmail.com'
 const supabaseConfig = () => ({
   url: process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '',
@@ -231,12 +253,11 @@ export async function verifyPaystack(req, res) {
     if (!plan || !purchased) return json(res, 400, { error: 'Unknown AlphaTekX payment amount.' })
     const user = await authenticatedUser(req, supabaseUrl, anonKey)
     if (!user) return json(res, 401, { error: 'Authentication required.' })
+    if (verified.data?.customer?.email && String(verified.data.customer.email).toLowerCase() !== String(user.email || '').toLowerCase()) return json(res, 400, { error: 'Payment email does not match the signed-in account.' })
     const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }
-    const profileResponse = await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${user.id}&select=credits`, { headers })
-    const profiles = await profileResponse.json()
-    const credits = Number(profiles?.[0]?.credits ?? 100) + purchased
-    const update = await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${user.id}`, { method: 'PATCH', headers: { ...headers, 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ credits, plan }) })
-    if (!update.ok) return json(res, 500, { error: 'Could not add credits.' })
+    const complete = await fetch(`${supabaseUrl}/rest/v1/rpc/complete_credit_purchase`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ p_user_id: user.id, p_reference: reference, p_amount: verified.data.amount, p_credits: purchased, p_plan: plan }) })
+    const credits = await complete.json()
+    if (!complete.ok) return json(res, 400, { error: credits.message || 'Could not add credits.' })
     return json(res, 200, { verified: true, credits, plan })
   } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Verification failed.' }) }
 }
@@ -288,6 +309,11 @@ function serveStatic(req, res) {
 const server = http.createServer(async (req, res) => {
   applyCors(req, res)
   if (req.method === 'OPTIONS') return json(res, 204, {})
+  if (req.method === 'GET' && req.url === '/api/paystack/status') {
+    const required = { PAYSTACK_SECRET_KEY: process.env.PAYSTACK_SECRET_KEY, SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY, VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL, VITE_SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY }
+    const missing = Object.entries(required).filter(([, value]) => !value).map(([name]) => name)
+    return json(res, missing.length ? 503 : 200, { ready: missing.length === 0, missing, error: missing.length ? `Paystack needs these Render variables: ${missing.join(', ')}` : undefined })
+  }
   if (req.method === 'POST' && req.url === '/api/paystack/verify') return verifyPaystack(req, res)
   if (req.method === 'POST' && req.url === '/api/marketplace/purchase') return purchaseMarketplace(req, res)
   if (req.method === 'POST' && req.url === '/api/credits/spend') return creditSpend(req, res)
@@ -296,6 +322,10 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && req.url === '/api/tools/currency') {
     try { const body = await readBody(req); return json(res, 200, await currencyPair(String(body.from || 'USD').toUpperCase(), String(body.to || 'NGN').toUpperCase(), Number(body.amount || 1))) }
     catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : 'Currency conversion failed' }) }
+  }
+  if (req.method === 'POST' && req.url === '/api/workers/run') {
+    try { const config = supabaseConfig(); const user = config.url && config.anon ? await authenticatedUser(req, config.url, config.anon) : null; if (!user) return json(res, 401, { error: 'Authentication required' }); return json(res, 200, await runUserWorker(await readBody(req))) }
+    catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : 'Worker failed' }) }
   }
   if (req.method === 'POST' && req.url === '/api/alpha') {
     try {

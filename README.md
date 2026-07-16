@@ -17,6 +17,7 @@ The API runs on port 3001 and Vite proxies `/api/*` to it.
 1. Create a Supabase project.
 2. Open the SQL editor and run [`supabase/schema.sql`](supabase/schema.sql).
    Existing Phase 3 projects should run [`supabase/phase4.sql`](supabase/phase4.sql) instead to add marketplace revenue safely.
+   Existing live AlphaTekX projects should also run [`supabase/upgrade-workspace-history-workers-payments.sql`](supabase/upgrade-workspace-history-workers-payments.sql) for chat history, BYOK workers, and atomic Paystack credit purchases.
 3. Enable Google in Authentication → Providers.
 4. Add `https://alphatekx.name.ng/auth` and your local `/auth` URL to the allowed redirect URLs.
 5. Copy `.env.example` to `.env.local` and fill the browser-safe Supabase values.

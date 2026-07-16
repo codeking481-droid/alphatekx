@@ -58,6 +58,8 @@ export type Worker = {
   role: WorkerRole
   purpose: string
   instructions: string
+  provider?: 'openai' | 'groq' | 'anthropic' | 'gemini'
+  model?: string
   memory: string[]
   createdAt: string
 }

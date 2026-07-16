@@ -1,16 +1,17 @@
 import { useEffect, useState, type PropsWithChildren } from 'react'
-import { Bot, Boxes, CreditCard, KeyRound, LogOut, Menu, MessageCircle, Rocket, ShieldCheck, Shapes, Sparkles, UserRound, WalletCards, X } from 'lucide-react'
+import { Bot, Boxes, CreditCard, History, KeyRound, LogOut, Menu, MessageCircle, Rocket, ShieldCheck, Shapes, Sparkles, UserRound, WalletCards, X } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 import { getCredits, hydrateCredits, subscribeCredits } from '../../lib/creditStore'
 import { useAuth } from '../../lib/auth'
 
 const links = [
   ['General chat', '/workspace', MessageCircle],
+  ['History', '/history', History],
   ['Builder', '/builder', Sparkles],
   ['App Vault', '/vault', Boxes],
   ['Marketplace', '/marketplace', Shapes],
   ['Deploy', '/launch', Rocket],
-  ['AI Workers', '/workspace?workers=1', Bot],
+  ['AI Workers', '/workers', Bot],
   ['API Keys', '/settings/api-keys', KeyRound],
   ['Account', '/account', UserRound],
 ] as const

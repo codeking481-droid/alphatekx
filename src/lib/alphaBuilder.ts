@@ -17,6 +17,17 @@ function extractCode(value: string) {
   return code
 }
 
+function validateGeneratedApp(code: string) {
+  const errors: string[] = []
+  if (!/function\s+[A-Z]|const\s+[A-Z][A-Za-z0-9_]*\s*=/.test(code)) errors.push('missing a React component')
+  if (!/createRoot\(/.test(code)) errors.push('missing a render entry')
+  if (!/useState|useReducer/.test(code)) errors.push('missing application state')
+  if (!/onClick|onSubmit|onChange/.test(code)) errors.push('missing working interactions')
+  if (/\bTODO\b|coming soon|onClick=\{\(\)\s*=>\s*\{?\s*\}?\}/i.test(code)) errors.push('contains unfinished or dead functionality')
+  if (/^\s*import\s|^\s*export\s/m.test(code)) errors.push('contains unsupported module syntax')
+  return errors
+}
+
 async function stage(missionId: string, text: string, progress: number) {
   addActivity(missionId, text)
   updateMissionProgress(missionId, progress)
@@ -34,19 +45,18 @@ export async function buildFromMission(mission: Mission): Promise<Creation> {
     const memory = buildMemoryContext(mission.id)
     const mentorMode = /\blearn|teach|course|study\b/i.test(mission.goal) ? ' Mentor mode is active: create five lessons with objectives, explanations, code examples where relevant, progress tracking, and an interactive quiz.' : ''
     const businessMode = /\b(start|launch|build)\s+(a\s+)?business\b|business plan|startup/i.test(mission.goal) ? ' Business mode is active: include idea validation, business model, customer flow, operations, public landing experience, data model, and payment architecture.' : ''
-    const response = await fetch(import.meta.env?.VITE_ALPHA_API_URL || '/api/alpha', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        mode: 'builder',
-        missionId: mission.id,
-        prompt: `You are the AlphaTekX God Craft engineering team. AlphaTekX builds websites, applications, dashboards, online courses, lessons, business systems, AI workers, templates, and tools. User wants: ${mission.goal}. User memory: ${memory} Adapt accordingly.${mentorMode}${businessMode} Generate a single self-contained React component using Tailwind only. Return ONLY code. Build the requested product type, not a generic dashboard. It must have real state, working buttons, validation, empty, loading and error states, responsive mobile layout, and localStorage persistence where useful. Do not import packages.`,
-      }),
-    })
-    const payload = await response.json()
-    if (!response.ok) throw new Error(String(payload.error || `Alpha API ${response.status}`))
-    code = extractCode(String(payload.code || payload.response || ''))
-    if (!code.includes('createRoot')) throw new Error('Generated code has no render entry')
+    const contract = `You are the AlphaTekX senior product engineering team. First infer the exact product type and its core user journey. User wants: ${mission.goal}. User memory: ${memory} Adapt accordingly.${mentorMode}${businessMode} Generate one self-contained React component using Tailwind only. Return ONLY code. Build the requested product, never a generic dashboard. Use realistic domain content. Every button and form must work. Include validation, loading, error and empty states, responsive mobile layout, accessible labels, and localStorage persistence where data should survive refresh. Do not import packages, use undefined icons, include TODOs, or claim external actions succeeded.`
+    let validationErrors: string[] = []
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const response = await fetch(import.meta.env?.VITE_ALPHA_API_URL || '/api/alpha', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'builder', missionId: mission.id, prompt: attempt === 0 ? contract : `${contract}\nThe previous build was rejected because it was ${validationErrors.join(', ')}. Rebuild from scratch and fix every issue.` }) })
+      const payload = await response.json()
+      if (!response.ok) throw new Error(String(payload.error || `Alpha API ${response.status}`))
+      code = extractCode(String(payload.code || payload.response || ''))
+      validationErrors = validateGeneratedApp(code)
+      if (validationErrors.length === 0) break
+      addActivity(mission.id, `[QA Tester] Repairing: ${validationErrors.join(', ')}...`)
+    }
+    if (validationErrors.length) throw new Error(`Generated app failed verification: ${validationErrors.join(', ')}`)
   } catch (error) {
     addActivity(mission.id, `[QA Tester] Build stopped: ${error instanceof Error ? error.message : 'AI generation failed'}`)
     throw error

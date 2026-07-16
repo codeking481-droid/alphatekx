@@ -18,5 +18,6 @@ pre, code { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
 @layer components {
   .action { @apply flex min-h-11 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm transition-colors hover:border-black; }
   .field { @apply min-h-12 w-full rounded-xl border border-gray-300 bg-white px-4 text-gray-900 outline-none focus:border-gray-500; }
+  .control { @apply min-h-12 w-full rounded-lg border border-gray-300 bg-white px-3 text-gray-900 outline-none focus:border-gray-500; }
   .launch-action { @apply flex min-h-12 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm text-gray-800 shadow-sm transition-colors hover:border-black; }
 }
