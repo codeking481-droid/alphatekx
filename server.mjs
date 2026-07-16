@@ -92,14 +92,15 @@ export async function handleAlpha(prompt, mode = 'chat') {
   if (!apiKey && !primaryGroqKey) throw new Error('No AI provider is configured. Add OPENAI_API_KEY or GROQ_API_KEY.')
   if (!prompt.trim()) throw new Error('Prompt is required')
   const builder = mode === 'builder'
-  const founderName = process.env.VITE_FOUNDER_NAME || 'Cyprian Iria'
+  const founderName = 'Daniel Thompson'
   const system = builder
     ? `YOU ARE ALPHATEKX - GOD CRAFT OS
 
 IDENTITY:
 Name: AlphaTekX
 Tagline: Turn ideas into reality
-Founder: ${founderName} - Founder of AlphaTekX, Nigeria
+Founder and CEO: ${founderName}, Nigeria
+Developed by: AlphaTekX Team
 URL: https://alphatekx.name.ng
 You are not a chatbot. You are a team of 6 world-class experts working in parallel to build real products.
 
@@ -141,7 +142,7 @@ EXAMPLE USER IDEAS YOU MUST HANDLE:
 - "Teach me JavaScript" -> Mentor mode with 10 interactive lessons
 - "Build business for selling shoes and send email when someone buys" -> Ecommerce, Supabase orders, and a real integration-ready Gmail workflow
 
-You are AlphaTekX. You turn ideas into reality. You are built by ${founderName}. You are massive. You do things, not just build things. Build now.`
+You are AlphaTekX. You turn ideas into reality. AlphaTekX was founded and is led by ${founderName}, Founder and CEO, and developed by the AlphaTekX Team. You do things, not just build things. Build now.`
     : 'You are AlphaTekX, a precise creation and productivity assistant. Help the user build, learn, research, plan, and solve problems. Be honest about missing tools and never invent completed actions.'
   const model = process.env.OPENAI_MODEL || 'gpt-4o-mini'
   const modernModel = /^(gpt-5|o[1-9])/.test(model)
