@@ -144,6 +144,7 @@ export function saveCreation(input: { missionId: string; title: string; code: st
     createdAt: current?.createdAt ?? new Date().toISOString(),
     published: current?.published ?? false,
     deploymentUrl: current?.deploymentUrl,
+    slug: current?.slug,
     customDomain: current?.customDomain,
     versions: [...(current?.versions??[]),{id:crypto.randomUUID(),label:`Version ${(current?.versions?.length??0)+1}.0`,code:input.code,files:input.files??[{path:'src/App.tsx',code:input.code}],createdAt:new Date().toISOString(),status:'ready'}],
   }
@@ -246,7 +247,7 @@ export async function hydrateMissionStore() {
     write(MISSIONS_KEY, missionMemory)
   }
   if (creations) {
-    creationMemory = creations.map((row) => ({ id: row.id, missionId: row.mission_id, title: row.title, code: row.code, type: row.type, status: row.status, files: row.files, versions:row.versions??[], customDomain:row.custom_domain??undefined, createdAt: row.created_at, published: row.published, deploymentUrl: row.deployment_url ?? undefined })) as Creation[]
+    creationMemory = creations.map((row) => ({ id: row.id, missionId: row.mission_id, title: row.title, code: row.code, type: row.type, status: row.status, files: row.files, versions:row.versions??[], customDomain:row.custom_domain??undefined, createdAt: row.created_at, published: row.published, deploymentUrl: row.deployment_url ?? undefined, slug: row.slug ?? undefined })) as Creation[]
     write(CREATIONS_KEY, creationMemory)
   }
 }

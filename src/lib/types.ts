@@ -45,6 +45,7 @@ export type Creation = {
   createdAt: string
   published: boolean
   deploymentUrl?: string
+  slug?: string
   versions?: CreationVersion[]
   customDomain?: string
 }

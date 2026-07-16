@@ -9,6 +9,8 @@ try{
   const deep=await fetch(`http://127.0.0.1:${port}/mission/render-smoke`)
   const api=await fetch(`http://127.0.0.1:${port}/api/alpha`,{method:'POST',headers:{'content-type':'application/json',origin:'https://alphatekx.name.ng'},body:JSON.stringify({prompt:'runtime smoke test',mode:'chat'})})
   const missing=await fetch(`http://127.0.0.1:${port}/api/not-real`)
+  const invalidApp=await fetch(`http://127.0.0.1:${port}/app/INVALID-SLUG`)
+  const publishRoute=await fetch(`http://127.0.0.1:${port}/api/creations/publish`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({creationId:'00000000-0000-0000-0000-000000000000',slug:'smoke-app'})})
   if(!deep.ok||!(await deep.text()).includes('id="root"'))throw new Error('SPA fallback failed')
   const apiBody=await api.json()
   if(api.headers.get('access-control-allow-origin')!=='https://alphatekx.name.ng')throw new Error('API CORS failed')
@@ -16,5 +18,7 @@ try{
   const honestProviderFailure=api.status===500&&typeof apiBody.error==='string'&&apiBody.error.length>0
   if(!realSuccess&&!honestProviderFailure)throw new Error(`Alpha API returned neither real OpenAI output nor an honest provider error: ${api.status}`)
   if(missing.status!==404||!missing.headers.get('content-type')?.includes('application/json'))throw new Error('Unknown API fallback failed')
-  process.stdout.write(`RENDER_SMOKE_OK port=${port} deep=${deep.status} alpha=${api.status} unknownApi=${missing.status}\n`)
+  if(invalidApp.status!==404||!invalidApp.headers.get('content-type')?.includes('application/json'))throw new Error('Invalid published app route was not rejected')
+  if(![401,503].includes(publishRoute.status))throw new Error(`Publish route did not enforce configuration/authentication: ${publishRoute.status}`)
+  process.stdout.write(`RENDER_SMOKE_OK port=${port} deep=${deep.status} alpha=${api.status} unknownApi=${missing.status} app=${invalidApp.status} publish=${publishRoute.status}\n`)
 } finally { child.kill('SIGTERM') }

@@ -339,6 +339,98 @@ export async function purchaseMarketplace(req, res) {
   } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Marketplace purchase failed.' }) }
 }
 
+const validSlug = (value) => /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/.test(value)
+const escapeHtml = (value) => String(value).replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character])
+const scriptJson = (value) => JSON.stringify(value).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029')
+
+export function normalizePublishedCode(rawCode) {
+  const value = String(rawCode || '')
+  const fenced = value.match(/```(?:tsx|jsx|javascript|js)?\s*([\s\S]*?)```/i)?.[1] || value
+  let code = fenced
+    .replace(/^\s*import[^;]+;?\s*$/gm, '')
+    .replace(/export\s+default\s+/g, '')
+    .trim()
+  if (!/ReactDOM\.createRoot/.test(code)) {
+    const component = code.match(/function\s+([A-Z][A-Za-z0-9_]*)\s*\(/)?.[1]
+      || code.match(/const\s+([A-Z][A-Za-z0-9_]*)\s*=\s*(?:\([^)]*\)|[^=])\s*=>/)?.[1]
+    if (component) code += `\nReactDOM.createRoot(document.getElementById('root')).render(<${component} />);`
+  }
+  return code.replace(/<\/script/gi, '<\\/script')
+}
+
+export function publishedAppDocument(creation) {
+  const slug = String(creation.slug)
+  const title = escapeHtml(creation.title || slug)
+  const code = normalizePublishedCode(creation.code)
+  const innerDocument = `<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><base target="_blank"><script src="https://cdn.tailwindcss.com"></script><script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script><script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script><script src="https://unpkg.com/@babel/standalone/babel.min.js"></script><style>html,body,#root{min-height:100%;margin:0}*{box-sizing:border-box}.alpha-runtime-error{margin:24px;padding:16px;border:1px solid #fecaca;border-radius:12px;background:#fef2f2;color:#991b1b;font:14px system-ui}</style></head><body><div id="root"></div><script>const __alphaState=(()=>{try{return JSON.parse(__ALPHA_STORAGE_JSON__||'{}')}catch{return {}}})();const __alphaStorage={getItem:key=>Object.prototype.hasOwnProperty.call(__alphaState,key)?String(__alphaState[key]):null,setItem:(key,value)=>{__alphaState[key]=String(value);parent.postMessage({type:'alphatekx-app-storage',slug:${scriptJson(slug)},state:__alphaState},'*')},removeItem:key=>{delete __alphaState[key];parent.postMessage({type:'alphatekx-app-storage',slug:${scriptJson(slug)},state:__alphaState},'*')},clear:()=>{Object.keys(__alphaState).forEach(key=>delete __alphaState[key]);parent.postMessage({type:'alphatekx-app-storage',slug:${scriptJson(slug)},state:__alphaState},'*')},key:index=>Object.keys(__alphaState)[index]??null,get length(){return Object.keys(__alphaState).length}};window.__alphaStorage=__alphaStorage;try{Object.defineProperty(window,'localStorage',{value:__alphaStorage,configurable:true})}catch{}window.addEventListener('error',event=>{const root=document.getElementById('root');if(root&&!root.childElementCount)root.innerHTML='<div class="alpha-runtime-error"><strong>This app could not start.</strong><br>'+String(event.message||'Runtime error').replace(/[&<>]/g,value=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[value]))+'</div>'});</script><script type="text/babel">const localStorage=window.__alphaStorage;${code}</script></body></html>`
+  return `<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="index,follow"><title>${title} — Built with AlphaTekX</title><style>html,body{width:100%;height:100%;margin:0;background:#fff}iframe{display:block;width:100%;height:100%;border:0}</style></head><body><iframe id="alpha-app" title="${title}" sandbox="allow-scripts allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-downloads"></iframe><script>const frame=document.getElementById('alpha-app');const storageKey='alphatekx:published:${slug}';let stored='{}';try{stored=localStorage.getItem(storageKey)||'{}'}catch{}const template=${scriptJson(innerDocument)};frame.srcdoc=template.replace('__ALPHA_STORAGE_JSON__',JSON.stringify(stored).replace(/</g,'\\u003c'));addEventListener('message',event=>{if(event.source!==frame.contentWindow||event.data?.type!=='alphatekx-app-storage'||event.data?.slug!==${scriptJson(slug)})return;const state=event.data.state;if(!state||typeof state!=='object'||Array.isArray(state))return;const encoded=JSON.stringify(state);if(encoded.length>500000)return;try{localStorage.setItem(storageKey,encoded)}catch{}});</script></body></html>`
+}
+
+async function fetchPublishedCreation(slug) {
+  const config = supabaseConfig()
+  if (!config.url || !config.service) throw new Error('Path deployment is not configured.')
+  const response = await fetch(`${config.url}/rest/v1/creations?slug=eq.${encodeURIComponent(slug)}&published=eq.true&select=id,title,slug,code&limit=1`, { headers: serviceHeaders(config.service) })
+  const payload = await response.json()
+  if (!response.ok) throw new Error(payload.message || 'Could not load the published app.')
+  return payload?.[0] || null
+}
+
+async function servePublishedCreation(req, res, slug) {
+  if (!validSlug(slug)) return json(res, 404, { error: 'App not found' })
+  try {
+    const creation = await fetchPublishedCreation(slug)
+    if (!creation) return json(res, 404, { error: 'App not found' })
+    const html = publishedAppDocument(creation)
+    res.writeHead(200, {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'public, max-age=60, stale-while-revalidate=300',
+      'Content-Security-Policy': "default-src 'self'; frame-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://unpkg.com; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; font-src 'self' data: https:; connect-src https:; object-src 'none'; base-uri 'none'; frame-ancestors *",
+      'X-Content-Type-Options': 'nosniff',
+      'Referrer-Policy': 'strict-origin-when-cross-origin',
+    })
+    return req.method === 'HEAD' ? res.end() : res.end(html)
+  } catch (error) {
+    return json(res, 503, { error: error instanceof Error ? error.message : 'Published app unavailable' })
+  }
+}
+
+async function publishCreationPath(req, res) {
+  const config = supabaseConfig()
+  if (!config.url || !config.anon || !config.service) return json(res, 503, { error: 'Path deployment needs Supabase URL, anon key, and service role key.' })
+  try {
+    const user = await authenticatedUser(req, config.url, config.anon)
+    if (!user) return json(res, 401, { error: 'Authentication required.' })
+    const body = await readBody(req)
+    const creationId = String(body.creationId || '')
+    const slug = String(body.slug || '').toLowerCase().trim()
+    if (!/^[0-9a-f-]{36}$/i.test(creationId)) return json(res, 400, { error: 'Invalid creation.' })
+    if (!validSlug(slug)) return json(res, 400, { error: 'Use 1-64 lowercase letters, numbers, or hyphens for the slug.' })
+    const headers = serviceHeaders(config.service)
+    const creationResponse = await fetch(`${config.url}/rest/v1/creations?id=eq.${encodeURIComponent(creationId)}&user_id=eq.${encodeURIComponent(user.id)}&select=id,title,code`, { headers })
+    const creationPayload = await creationResponse.json()
+    if (!creationResponse.ok) return json(res, 500, { error: creationPayload.message || 'Could not read this creation. Run supabase/path-deploy.sql first.' })
+    const creation = creationPayload?.[0]
+    if (!creation) return json(res, 404, { error: 'Creation not found or not owned by this account.' })
+    if (!String(creation.code || '').trim()) return json(res, 400, { error: 'This creation has no application code to publish.' })
+    const conflictResponse = await fetch(`${config.url}/rest/v1/creations?slug=eq.${encodeURIComponent(slug)}&id=neq.${encodeURIComponent(creationId)}&select=id&limit=1`, { headers })
+    const conflicts = await conflictResponse.json()
+    if (!conflictResponse.ok) return json(res, 500, { error: conflicts.message || 'Could not validate the slug. Run supabase/path-deploy.sql first.' })
+    if (conflicts.length) return json(res, 409, { error: 'That app address is already in use. Choose another slug.' })
+    const baseUrl = String(process.env.PUBLIC_APP_URL || 'https://alphatekx.name.ng').replace(/\/$/, '')
+    const deploymentUrl = `${baseUrl}/app/${slug}`
+    const updateResponse = await fetch(`${config.url}/rest/v1/creations?id=eq.${encodeURIComponent(creationId)}&user_id=eq.${encodeURIComponent(user.id)}`, {
+      method: 'PATCH',
+      headers: { ...headers, Prefer: 'return=representation' },
+      body: JSON.stringify({ slug, owner_id: user.id, published: true, status: 'live', deployment_url: deploymentUrl }),
+    })
+    const updated = await updateResponse.json()
+    if (!updateResponse.ok || !updated?.length) return json(res, 500, { error: updated.message || 'Could not publish this creation. Run supabase/path-deploy.sql first.' })
+    return json(res, 200, { slug, path: `/app/${slug}`, url: deploymentUrl })
+  } catch (error) {
+    return json(res, 500, { error: error instanceof Error ? error.message : 'Publication failed.' })
+  }
+}
+
 function serveStatic(req, res) {
   let pathname = '/'
   try { pathname = decodeURIComponent(new URL(req.url || '/', 'http://localhost').pathname) } catch {}
@@ -365,6 +457,7 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'POST' && req.url === '/api/paystack/verify') return verifyPaystack(req, res)
   if (req.method === 'POST' && req.url === '/api/marketplace/purchase') return purchaseMarketplace(req, res)
+  if (req.method === 'POST' && req.url === '/api/creations/publish') return publishCreationPath(req, res)
   if (req.method === 'POST' && req.url === '/api/credits/spend') return creditSpend(req, res)
   if (req.method === 'POST' && req.url === '/api/activity/ping') return activityPing(req, res)
   if (req.method === 'GET' && req.url === '/api/admin/stats') return adminStats(req, res)
@@ -384,6 +477,8 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.url?.startsWith('/api/')) return json(res, 404, { error: 'API route not found' })
   if (!['GET', 'HEAD'].includes(req.method || '')) return json(res, 404, { error: 'Not found' })
+  const appMatch = new URL(req.url || '/', 'http://localhost').pathname.match(/^\/app\/([^/]+)\/?$/)
+  if (appMatch) return servePublishedCreation(req, res, decodeURIComponent(appMatch[1]))
   return serveStatic(req, res)
 })
 

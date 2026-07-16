@@ -12,7 +12,7 @@
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc -p ./jsconfig.json",
     "preview": "vite preview",
-    "test:e2e": "node scripts/full-test.mjs && node scripts/render-smoke.mjs",
+    "test:e2e": "node scripts/full-test.mjs && node scripts/path-deploy-test.mjs && node scripts/render-smoke.mjs",
     "test:thorough": "node scripts/thorough-test.mjs"
   },
   "dependencies": {
