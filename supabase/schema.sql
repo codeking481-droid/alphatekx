@@ -16,8 +16,10 @@ alter table public.marketplace_items add column if not exists creator_id uuid re
 create table if not exists public.mentor_progress (mission_id uuid primary key references public.missions(id) on delete cascade,user_id uuid not null references auth.users(id) on delete cascade,subject text not null,lessons jsonb not null default '[]',lessons_completed jsonb not null default '[]',quiz_scores jsonb not null default '{}',updated_at timestamptz not null default now());
 create table if not exists public.marketplace_reviews(id uuid primary key default gen_random_uuid(),item_id uuid not null references public.marketplace_items(id) on delete cascade,user_id uuid not null references auth.users(id) on delete cascade,rating integer not null check(rating between 1 and 5),comment text not null check(char_length(comment) between 2 and 1000),created_at timestamptz not null default now(),unique(item_id,user_id));
 create table if not exists public.marketplace_sales (id uuid primary key default gen_random_uuid(), item_id uuid not null references public.marketplace_items(id) on delete restrict, creator_id uuid not null references auth.users(id) on delete restrict, buyer_id uuid not null references auth.users(id) on delete restrict, title text not null, amount numeric not null default 0, creator_share numeric not null default 0, platform_share numeric not null default 0, payment_reference text unique, created_at timestamptz not null default now());
+create table if not exists public.user_settings (user_id uuid primary key references auth.users(id) on delete cascade, api_keys jsonb not null default '{}', updated_at timestamptz not null default now());
 
 alter table public.profiles enable row level security; alter table public.missions enable row level security; alter table public.messages enable row level security; alter table public.activities enable row level security; alter table public.creations enable row level security; alter table public.workers enable row level security; alter table public.marketplace_items enable row level security; alter table public.marketplace_sales enable row level security; alter table public.mentor_progress enable row level security; alter table public.marketplace_reviews enable row level security;
+alter table public.user_settings enable row level security;
 
 create policy "profile owner read" on public.profiles for select using (auth.uid()=id);
 create policy "mission owner access" on public.missions for all using (auth.uid()=user_id) with check (auth.uid()=user_id);
@@ -33,6 +35,7 @@ create policy "sale participants read" on public.marketplace_sales for select us
 create policy "mentor owner access" on public.mentor_progress for all using(auth.uid()=user_id) with check(auth.uid()=user_id);
 create policy "review public read" on public.marketplace_reviews for select using(true);
 create policy "review owner write" on public.marketplace_reviews for all using(auth.uid()=user_id) with check(auth.uid()=user_id);
+create policy "settings owner access" on public.user_settings for all using(auth.uid()=user_id) with check(auth.uid()=user_id);
 
 create or replace function public.handle_new_user() returns trigger language plpgsql security definer set search_path=public as $$ begin insert into public.profiles(id,email,credits,plan) values(new.id,coalesce(new.email,''),100,'free') on conflict(id) do nothing; return new; end; $$;
 drop trigger if exists on_auth_user_created on auth.users;

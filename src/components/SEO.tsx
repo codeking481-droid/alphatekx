@@ -1,0 +1,5 @@
+const founder = import.meta.env.VITE_FOUNDER_NAME?.trim() || 'Cyprian Iria'
+const organization = { '@context':'https://schema.org','@type':'Organization',name:'AlphaTekX',url:'https://alphatekx.name.ng',founder:{'@type':'Person',name:founder,email:'iriacyprian@gmail.com'},foundingDate:'2025',description:'AlphaTekX - Turn ideas into reality. God Craft OS for building apps, websites, businesses, lessons and AI workers.',slogan:'Turn ideas into reality' }
+const application = { '@context':'https://schema.org','@type':'SoftwareApplication',name:'AlphaTekX',url:'https://alphatekx.name.ng',applicationCategory:'DeveloperApplication',operatingSystem:'Web',creator:{'@type':'Person',name:founder},description:'An AI creation operating system for building software, lessons, businesses, tools, and AI workers.' }
+export default function SEO(){return <>{[organization,application].map((value,index)=><script key={index} type="application/ld+json" dangerouslySetInnerHTML={{__html:JSON.stringify(value)}}/>)}</>}
+export { founder }

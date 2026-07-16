@@ -4,22 +4,6 @@ import type { Creation, Mission } from './types'
 
 const wait = (milliseconds: number) => new Promise((resolve) => window.setTimeout(resolve, milliseconds))
 
-function safeFallback(prompt: string) {
-  const idea = JSON.stringify(prompt)
-  return `const { useMemo, useState } = React;
-function AlphaCreation() {
-  const [query, setQuery] = useState('');
-  const [items, setItems] = useState([
-    { id: 1, title: 'Research customer needs', done: false },
-    { id: 2, title: 'Design the core experience', done: true },
-    { id: 3, title: 'Ship the first version', done: false }
-  ]);
-  const visible = useMemo(() => items.filter(item => item.title.toLowerCase().includes(query.toLowerCase())), [items, query]);
-  return <main className="min-h-screen bg-zinc-950 p-6 text-white"><div className="mx-auto max-w-3xl"><p className="text-xs uppercase tracking-[.25em] text-amber-300">AlphaTekX Creation</p><h1 className="mt-3 text-4xl font-semibold">{${idea}}</h1><p className="mt-3 text-zinc-400">A functional local-first foundation generated for this mission.</p><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search tasks..." className="mt-8 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 outline-none"/><div className="mt-4 space-y-3">{visible.map(item => <button key={item.id} onClick={() => setItems(current => current.map(entry => entry.id === item.id ? {...entry, done: !entry.done} : entry))} className="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-white/5 p-4"><span>{item.title}</span><span className={item.done ? 'text-emerald-400' : 'text-zinc-500'}>{item.done ? 'Done' : 'Open'}</span></button>)}</div></div></main>;
-}
-ReactDOM.createRoot(document.getElementById('root')).render(<AlphaCreation />);`
-}
-
 function extractCode(value: string) {
   const fenced = value.match(/```(?:tsx|jsx|javascript|js)?\s*([\s\S]*?)```/i)?.[1] ?? value
   let code = fenced.replace(/^\s*import[^;]+;?\s*$/gm, '').replace(/export\s+default\s+/g, '').trim()
@@ -48,22 +32,24 @@ export async function buildFromMission(mission: Mission): Promise<Creation> {
   let code = ''
   try {
     const memory = buildMemoryContext(mission.id)
-    const mentorMode = /\blearn|teach|course|study\b/i.test(mission.goal) ? ' Mentor mode is active: teach step-by-step inside the generated experience and include a short interactive quiz.' : ''
-    const response = await fetch(import.meta.env.VITE_ALPHA_API_URL || '/api/alpha', {
+    const mentorMode = /\blearn|teach|course|study\b/i.test(mission.goal) ? ' Mentor mode is active: create five lessons with objectives, explanations, code examples where relevant, progress tracking, and an interactive quiz.' : ''
+    const businessMode = /\b(start|launch|build)\s+(a\s+)?business\b|business plan|startup/i.test(mission.goal) ? ' Business mode is active: include idea validation, business model, customer flow, operations, public landing experience, data model, and payment architecture.' : ''
+    const response = await fetch(import.meta.env?.VITE_ALPHA_API_URL || '/api/alpha', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         mode: 'builder',
         missionId: mission.id,
-        prompt: `You are AlphaTekX Builder Team. User wants: ${mission.goal}. User memory: ${memory} Adapt accordingly.${mentorMode} Generate a single self-contained React component using Tailwind only. Return ONLY code. It must have real state, working buttons, validation, empty states, loading states, responsive mobile layout, and localStorage persistence where useful. Do not import packages.`,
+        prompt: `You are the AlphaTekX God Craft engineering team. AlphaTekX builds websites, applications, dashboards, online courses, lessons, business systems, AI workers, templates, and tools. User wants: ${mission.goal}. User memory: ${memory} Adapt accordingly.${mentorMode}${businessMode} Generate a single self-contained React component using Tailwind only. Return ONLY code. Build the requested product type, not a generic dashboard. It must have real state, working buttons, validation, empty, loading and error states, responsive mobile layout, and localStorage persistence where useful. Do not import packages.`,
       }),
     })
     if (!response.ok) throw new Error(`Alpha API ${response.status}`)
     const payload = await response.json()
     code = extractCode(String(payload.code || payload.response || ''))
     if (!code.includes('createRoot')) throw new Error('Generated code has no render entry')
-  } catch {
-    code = safeFallback(mission.goal)
+  } catch (error) {
+    addActivity(mission.id, `[QA Tester] Build stopped: ${error instanceof Error ? error.message : 'AI generation failed'}`)
+    throw error
   }
 
   await stage(mission.id, '[Backend Engineer] Creating authentication and service architecture...', 46)

@@ -17,16 +17,16 @@ function loadPaystack() {
 
 export async function startPaystackCheckout(plan: Plan, email: string) {
   const publicKey = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY?.trim()
-  if (!publicKey) return { simulated:true, credits: plan === 'pro' ? 2500 : 500, plan: plan === 'pro' ? 'pro' : 'free' }
+  if (!publicKey) throw new Error('Paystack is not configured. Add VITE_PAYSTACK_PUBLIC_KEY.')
   await loadPaystack()
-  return new Promise<{simulated:boolean;credits:number;plan:string}>((resolve, reject) => {
+  return new Promise<{verified:boolean;credits:number;plan:string}>((resolve, reject) => {
     const amount = plan === 'pro' ? 800000 : 200000
     const handler = window.PaystackPop!.setup({ key:publicKey, email, amount, currency:'NGN', metadata:{plan}, callback: async (response: unknown) => {
       const reference = (response as {reference:string}).reference
       const session = (await supabase?.auth.getSession()).data.session
       const verified = await fetch('/api/paystack/verify', { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${session?.access_token ?? ''}`}, body:JSON.stringify({reference,plan}) })
       const data = await verified.json()
-      if(!verified.ok) reject(new Error(data.error || 'Paystack verification failed')); else resolve({simulated:false,credits:data.credits,plan:data.plan})
+      if(!verified.ok) reject(new Error(data.error || 'Paystack verification failed')); else resolve({verified:true,credits:data.credits,plan:data.plan})
     }, onClose: () => reject(new Error('Payment cancelled')) })
     handler.openIframe()
   })

@@ -10,7 +10,11 @@ try{
   const api=await fetch(`http://127.0.0.1:${port}/api/alpha`,{method:'POST',headers:{'content-type':'application/json',origin:'https://alphatekx.name.ng'},body:JSON.stringify({prompt:'runtime smoke test',mode:'chat'})})
   const missing=await fetch(`http://127.0.0.1:${port}/api/not-real`)
   if(!deep.ok||!(await deep.text()).includes('id="root"'))throw new Error('SPA fallback failed')
-  if(!api.ok||api.headers.get('access-control-allow-origin')!=='https://alphatekx.name.ng')throw new Error('API or CORS failed')
+  const apiBody=await api.json()
+  if(api.headers.get('access-control-allow-origin')!=='https://alphatekx.name.ng')throw new Error('API CORS failed')
+  const realSuccess=api.ok&&apiBody.provider==='openai'&&typeof apiBody.text==='string'
+  const honestProviderFailure=api.status===500&&typeof apiBody.error==='string'&&apiBody.error.length>0
+  if(!realSuccess&&!honestProviderFailure)throw new Error(`Alpha API returned neither real OpenAI output nor an honest provider error: ${api.status}`)
   if(missing.status!==404||!missing.headers.get('content-type')?.includes('application/json'))throw new Error('Unknown API fallback failed')
   process.stdout.write(`RENDER_SMOKE_OK port=${port} deep=${deep.status} alpha=${api.status} unknownApi=${missing.status}\n`)
 } finally { child.kill('SIGTERM') }

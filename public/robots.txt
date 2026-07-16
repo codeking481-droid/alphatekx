@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /workspace
+Disallow: /mission/
+Disallow: /settings/
+Sitemap: https://alphatekx.name.ng/sitemap.xml
