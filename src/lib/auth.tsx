@@ -15,7 +15,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
     if (!supabase) return
     const { data: auth } = await supabase.auth.getUser()
     if (!auth.user) { setProfile(null); return }
-    const { data } = await supabase.from('profiles').select('id,email,credits,plan,revenue,display_name').eq('id', auth.user.id).maybeSingle()
+    let { data } = await supabase.from('profiles').select('id,email,credits,plan,revenue,display_name').eq('id', auth.user.id).maybeSingle()
+    if (!data) {
+      await supabase.rpc('ensure_user_profile')
+      data = (await supabase.from('profiles').select('id,email,credits,plan,revenue,display_name').eq('id', auth.user.id).maybeSingle()).data
+    }
     if (data) setProfile(data as Profile)
   }
 

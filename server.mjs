@@ -159,6 +159,60 @@ async function authenticatedUser(req, supabaseUrl, anonKey) {
   return response.ok ? response.json() : null
 }
 
+const adminEmail = 'iamdan4live@gmail.com'
+const supabaseConfig = () => ({
+  url: process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '',
+  anon: process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '',
+  service: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+})
+const serviceHeaders = (service) => ({ apikey: service, Authorization: `Bearer ${service}`, 'Content-Type': 'application/json' })
+
+async function ensureProfile(user, config) {
+  const headers = serviceHeaders(config.service)
+  const response = await fetch(`${config.url}/rest/v1/profiles?id=eq.${user.id}&select=id,email,credits,plan`, { headers })
+  const existing = (await response.json())?.[0]
+  if (existing) return existing
+  const created = await fetch(`${config.url}/rest/v1/profiles`, { method: 'POST', headers: { ...headers, Prefer: 'return=representation' }, body: JSON.stringify({ id: user.id, email: user.email || '', credits: 100, plan: 'free' }) })
+  if (!created.ok) throw new Error('Could not create the user credit profile')
+  return (await created.json())[0]
+}
+
+async function creditSpend(req, res) {
+  const config = supabaseConfig()
+  if (!config.url || !config.anon) return json(res, 503, { error: 'Credit service is not configured' })
+  try {
+    const user = await authenticatedUser(req, config.url, config.anon)
+    if (!user) return json(res, 401, { error: 'Authentication required' })
+    const body = await readBody(req); const amount = Number(body.amount)
+    if (!Number.isInteger(amount) || amount <= 0) return json(res, 400, { error: 'Invalid credit amount' })
+    if (String(user.email || '').toLowerCase() === adminEmail) return json(res, 200, { ok: true, admin: true, credits: null })
+    if (config.service) await ensureProfile(user, config)
+    const rpc = await fetch(`${config.url}/rest/v1/rpc/spend_credits`, { method: 'POST', headers: { apikey: config.anon, Authorization: String(req.headers.authorization || ''), 'Content-Type': 'application/json' }, body: JSON.stringify({ amount }) })
+    const value = await rpc.json()
+    if (!rpc.ok) return json(res, 402, { error: typeof value === 'object' ? value.message || 'Insufficient credits' : 'Insufficient credits' })
+    return json(res, 200, { ok: true, credits: Number(value) })
+  } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Credit operation failed' }) }
+}
+
+async function activityPing(req, res) {
+  const config = supabaseConfig(); if (!config.url || !config.anon || !config.service) return json(res, 503, { error: 'Activity service is not configured' })
+  const user = await authenticatedUser(req, config.url, config.anon); if (!user) return json(res, 401, { error: 'Authentication required' })
+  await ensureProfile(user, config)
+  const response = await fetch(`${config.url}/rest/v1/profiles?id=eq.${user.id}`, { method: 'PATCH', headers: serviceHeaders(config.service), body: JSON.stringify({ last_active_at: new Date().toISOString() }) })
+  return response.ok ? json(res, 200, { ok: true }) : json(res, 500, { error: 'Could not update activity' })
+}
+
+async function adminStats(req, res) {
+  const config = supabaseConfig(); if (!config.url || !config.anon || !config.service) return json(res, 503, { error: 'Admin service is not configured' })
+  const user = await authenticatedUser(req, config.url, config.anon)
+  if (!user || String(user.email || '').toLowerCase() !== adminEmail) return json(res, 403, { error: 'Admin access required' })
+  let response = await fetch(`${config.url}/rest/v1/profiles?select=id,email,credits,plan,created_at,last_active_at&order=created_at.desc&limit=200`, { headers: serviceHeaders(config.service) })
+  if (!response.ok) response = await fetch(`${config.url}/rest/v1/profiles?select=id,email,credits,plan,created_at&order=created_at.desc&limit=200`, { headers: serviceHeaders(config.service) })
+  if (!response.ok) return json(res, 500, { error: 'Could not load live users' })
+  const users = await response.json(); const now = Date.now(); const today = new Date(); today.setHours(0,0,0,0)
+  return json(res, 200, { total: users.length, active: users.filter(item => item.last_active_at && now - new Date(item.last_active_at).getTime() < 15 * 60_000).length, today: users.filter(item => new Date(item.created_at).getTime() >= today.getTime()).length, users })
+}
+
 export async function verifyPaystack(req, res) {
   applyCors(req, res)
   const secret = process.env.PAYSTACK_SECRET_KEY || ''
@@ -236,6 +290,9 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 204, {})
   if (req.method === 'POST' && req.url === '/api/paystack/verify') return verifyPaystack(req, res)
   if (req.method === 'POST' && req.url === '/api/marketplace/purchase') return purchaseMarketplace(req, res)
+  if (req.method === 'POST' && req.url === '/api/credits/spend') return creditSpend(req, res)
+  if (req.method === 'POST' && req.url === '/api/activity/ping') return activityPing(req, res)
+  if (req.method === 'GET' && req.url === '/api/admin/stats') return adminStats(req, res)
   if (req.method === 'POST' && req.url === '/api/tools/currency') {
     try { const body = await readBody(req); return json(res, 200, await currencyPair(String(body.from || 'USD').toUpperCase(), String(body.to || 'NGN').toUpperCase(), Number(body.amount || 1))) }
     catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : 'Currency conversion failed' }) }

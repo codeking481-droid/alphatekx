@@ -15,6 +15,7 @@ const Revenue = lazy(() => import('./pages/Revenue'))
 const Creator = lazy(() => import('./pages/Creator'))
 const ApiKeys = lazy(() => import('./pages/ApiKeys'))
 const BuildStart = lazy(() => import('./pages/BuildStart'))
+const Admin = lazy(() => import('./pages/Admin'))
 
 const loader = <div className="grid min-h-screen place-items-center bg-[#FAFAFA] text-sm text-gray-500">Loading AlphaTekx...</div>
 const suspended = (page: ReactNode) => <Suspense fallback={loader}>{page}</Suspense>
@@ -37,6 +38,7 @@ export default function App() {
       <Route path="/account/revenue" element={protectedPage(<Revenue />)} />
       <Route path="/creator/:id" element={protectedPage(<Creator />)} />
       <Route path="/settings/api-keys" element={protectedPage(<ApiKeys />)} />
+      <Route path="/admin" element={protectedPage(<Admin />)} />
       <Route path="*" element={<Navigate to="/workspace" replace />} />
     </Routes>
   )

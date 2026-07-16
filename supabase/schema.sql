@@ -3,6 +3,7 @@ create extension if not exists pgcrypto;
 create table if not exists public.profiles (id uuid primary key references auth.users(id) on delete cascade, email text not null default '', credits integer not null default 100 check (credits >= 0), plan text not null default 'free', revenue numeric not null default 0 check (revenue >= 0), display_name text not null default '', created_at timestamptz not null default now());
 alter table public.profiles add column if not exists revenue numeric not null default 0 check (revenue >= 0);
 alter table public.profiles add column if not exists display_name text not null default '';
+alter table public.profiles add column if not exists last_active_at timestamptz not null default now();
 create table if not exists public.missions (id uuid primary key, user_id uuid not null references auth.users(id) on delete cascade, title text not null, goal text not null, status text not null default 'active', progress integer not null default 0 check(progress between 0 and 100), created_at timestamptz not null default now());
 create table if not exists public.messages (id uuid primary key, mission_id uuid not null references public.missions(id) on delete cascade, user_id uuid not null references auth.users(id) on delete cascade, role text not null, content text not null, type text not null default 'chat', worker_id uuid, created_at timestamptz not null default now());
 create table if not exists public.activities (id uuid primary key, mission_id uuid not null references public.missions(id) on delete cascade, user_id uuid not null references auth.users(id) on delete cascade, text text not null, created_at timestamptz not null default now());
@@ -46,12 +47,28 @@ create or replace function public.spend_credits(amount integer) returns integer 
 declare balance integer;
 begin
   if amount <= 0 then raise exception 'Invalid credit amount'; end if;
+  insert into public.profiles(id,email,credits,plan)
+  values(auth.uid(),coalesce(auth.jwt()->>'email',''),100,'free')
+  on conflict(id) do nothing;
   update public.profiles set credits=credits-amount where id=auth.uid() and credits>=amount returning credits into balance;
   if balance is null then raise exception 'Insufficient credits'; end if;
   return balance;
 end;
 $$;
 grant execute on function public.spend_credits(integer) to authenticated;
+
+create or replace function public.ensure_user_profile() returns integer language plpgsql security definer set search_path=public as $$
+declare balance integer;
+begin
+  if auth.uid() is null then raise exception 'Authentication required'; end if;
+  insert into public.profiles(id,email,credits,plan)
+  values(auth.uid(),coalesce(auth.jwt()->>'email',''),100,'free')
+  on conflict(id) do nothing;
+  select credits into balance from public.profiles where id=auth.uid();
+  return balance;
+end;
+$$;
+grant execute on function public.ensure_user_profile() to authenticated;
 
 create or replace function public.complete_marketplace_purchase(p_item_id uuid, p_buyer_id uuid, p_reference text)
 returns jsonb language plpgsql security definer set search_path=public as $$
