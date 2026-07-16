@@ -12,7 +12,7 @@ try{
   if(!deep.ok||!(await deep.text()).includes('id="root"'))throw new Error('SPA fallback failed')
   const apiBody=await api.json()
   if(api.headers.get('access-control-allow-origin')!=='https://alphatekx.name.ng')throw new Error('API CORS failed')
-  const realSuccess=api.ok&&apiBody.provider==='openai'&&typeof apiBody.text==='string'
+  const realSuccess=api.ok&&['openai','groq'].includes(apiBody.provider)&&typeof apiBody.text==='string'
   const honestProviderFailure=api.status===500&&typeof apiBody.error==='string'&&apiBody.error.length>0
   if(!realSuccess&&!honestProviderFailure)throw new Error(`Alpha API returned neither real OpenAI output nor an honest provider error: ${api.status}`)
   if(missing.status!==404||!missing.headers.get('content-type')?.includes('application/json'))throw new Error('Unknown API fallback failed')

@@ -47,25 +47,70 @@ const fetchJson = async (url, options, timeout = 60000) => {
 
 export async function handleAlpha(prompt, mode = 'chat') {
   const apiKey = process.env.OPENAI_API_KEY_1 || process.env.OPENAI_API_KEY || ''
-  if (!apiKey) throw new Error('OPENAI_API_KEY is not configured')
+  const primaryGroqKey = process.env.GROQ_API_KEY_1 || process.env.GROQ_API_KEY || ''
+  if (!apiKey && !primaryGroqKey) throw new Error('No AI provider is configured. Add OPENAI_API_KEY or GROQ_API_KEY.')
   if (!prompt.trim()) throw new Error('Prompt is required')
   const builder = mode === 'builder'
   const system = builder
-    ? `You are the AlphaTekX God Craft engineering team: Product Manager, UI Designer, Frontend Engineer, Backend Engineer, QA Tester, and Deployment Engineer. AlphaTekX creates websites, apps, dashboards, courses, lessons, business systems, AI workers, templates, and tools. Return ONLY one fenced TSX code block with a self-contained React component and no imports. Match the requested product type. Implement real state, useful content, working interactions, validation, loading, error and empty states, accessibility, responsive mobile UI, and persistence when appropriate. Never return TODOs, dead buttons, static mockups, or generic dashboards.`
+    ? `You are the AlphaTekX God Craft engineering team: Product Manager, UI Designer, Frontend Engineer, Backend Engineer, QA Tester, and Deployment Engineer. AlphaTekX creates websites, apps, dashboards, courses, lessons, business systems, AI workers, templates, and tools. Return ONLY one fenced JSX code block with a self-contained React component and no imports, exports, TypeScript types, external components, or undefined icons. React, ReactDOM, and Tailwind are available globally. Match the requested product type. Implement real state, useful content, working interactions, validation, loading, error and empty states, accessibility, responsive mobile UI, and localStorage persistence when appropriate. Every visible button must have a working handler. Never return TODOs, dead buttons, static mockups, or generic dashboards.`
     : 'You are AlphaTekX, a precise creation and productivity assistant. Help the user build, learn, research, plan, and solve problems. Be honest about missing tools and never invent completed actions.'
-  const data = await fetchJson('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-      messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }],
-      temperature: builder ? 0.2 : 0.5,
-      max_tokens: builder ? 8000 : 2500,
-    }),
-  })
-  const content = String(data.choices?.[0]?.message?.content || '').trim()
+  const model = process.env.OPENAI_MODEL || 'gpt-4o-mini'
+  const modernModel = /^(gpt-5|o[1-9])/.test(model)
+  const requestBody = {
+    model,
+    messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }],
+    ...(modernModel
+      ? { max_completion_tokens: builder ? 8000 : 2500 }
+      : { temperature: builder ? 0.2 : 0.5, max_tokens: builder ? 8000 : 2500 }),
+  }
+  let provider = apiKey ? 'openai' : 'groq'
+  let data
+  if (!apiKey) {
+    data = await fetchJson('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${primaryGroqKey}` },
+      body: JSON.stringify({ model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile', messages: requestBody.messages, temperature: builder ? 0.2 : 0.5, max_tokens: builder ? 5000 : 2500 }),
+    })
+  } else try {
+    data = await fetchJson('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify(requestBody),
+    })
+  } catch (error) {
+    const groqKey = primaryGroqKey
+    if (!groqKey || !/rate limit|429|tokens per min/i.test(error instanceof Error ? error.message : String(error))) throw error
+    provider = 'groq'
+    data = await fetchJson('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${groqKey}` },
+      body: JSON.stringify({ model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile', messages: requestBody.messages, temperature: builder ? 0.2 : 0.5, max_tokens: builder ? 5000 : 2500 }),
+    })
+  }
+  let content = String(data.choices?.[0]?.message?.content || '').trim()
   if (!content) throw new Error('OpenAI returned an empty response')
-  return builder ? { code: content, provider: 'openai' } : { text: content, provider: 'openai' }
+  const validApp = (value) => /useState|useReducer/.test(value) && /onClick|onSubmit|onChange/.test(value) && /function\s+[A-Z]|const\s+[A-Z][A-Za-z0-9_]*\s*=/.test(value)
+  if (builder && !validApp(content)) {
+    const repairKey = process.env.GROQ_API_KEY_2 || process.env.GROQ_API_KEY_1 || process.env.GROQ_API_KEY || ''
+    if (!repairKey) throw new Error(`${provider} returned invalid application code. Please retry the build.`)
+    const repaired = await fetchJson('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${repairKey}` },
+      body: JSON.stringify({
+        model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+        messages: [
+          { role: 'system', content: `${system}\nMANDATORY CONTRACT: Define function AlphaApp() or const AlphaApp = (). Include React.useState or useState, at least three working event handlers, and return complete JSX. Do not return HTML, explanations, imports, or exports.` },
+          { role: 'user', content: `${prompt}\nYour previous answer was rejected as non-renderable. Rebuild it from scratch and obey every contract.` },
+        ],
+        temperature: 0.1,
+        max_tokens: 5000,
+      }),
+    })
+    provider = 'groq'
+    content = String(repaired.choices?.[0]?.message?.content || '').trim()
+    if (!validApp(content)) throw new Error('Groq returned invalid application code after one repair attempt.')
+  }
+  return builder ? { code: content, provider } : { text: content, provider }
 }
 
 async function authenticatedUser(req, supabaseUrl, anonKey) {
