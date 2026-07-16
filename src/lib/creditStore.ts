@@ -9,14 +9,25 @@ export function getCredits() {
 }
 
 export async function spendCredits(amount: number) {
-  const current = getCredits()
-  if (current < amount) return false
   if (supabase) {
     const { data, error } = await supabase.rpc('spend_credits', { amount })
-    if (error || typeof data !== 'number') return false
-    setCredits(data)
+    if (!error && typeof data === 'number') { setCredits(data); return true }
+
+    // Older deployments may not have the RPC yet. Read the authenticated
+    // profile instead of trusting a stale browser cache, then persist safely.
+    const { data: auth } = await supabase.auth.getUser()
+    if (!auth.user) return false
+    const { data: profile, error: readError } = await supabase.from('profiles').select('credits').eq('id', auth.user.id).maybeSingle()
+    const balance = Number(profile?.credits)
+    if (readError || !Number.isFinite(balance) || balance < amount) return false
+    const next = balance - amount
+    const { error: updateError } = await supabase.from('profiles').update({ credits: next }).eq('id', auth.user.id)
+    if (updateError) return false
+    setCredits(next)
     return true
   }
+  const current = getCredits()
+  if (current < amount) return false
   setCredits(current - amount)
   return true
 }
