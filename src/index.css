@@ -58,7 +58,7 @@ pre, code { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
     color: white;
     transition: box-shadow .2s ease, transform .2s ease, filter .2s ease;
   }
-  .btn-alpha:hover { box-shadow: 0 0 30px rgba(229, 107, 45, 0.6); filter: brightness(1.04); }
+  .btn-alpha:hover { box-shadow: 0 0 30px rgba(229, 107, 45, 0.6); filter: brightness(1.04); transform: translateY(-1px); }
   .btn-alpha:disabled { opacity: .5; box-shadow: none; }
   .action,
   .launch-action,

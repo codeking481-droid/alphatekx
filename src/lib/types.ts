@@ -1,4 +1,4 @@
-export type MissionStatus = 'active' | 'completed'
+export type MissionStatus = 'queued' | 'building' | 'review' | 'deployed' | 'active' | 'completed'
 export type MessageRole = 'user' | 'assistant' | 'system'
 export type MessageType = 'chat' | 'activity'
 

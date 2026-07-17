@@ -80,6 +80,10 @@ export function updateMissionProgress(id: string, progress: number) {
   return updateMission(id, { progress: Math.max(0, Math.min(100, progress)) })
 }
 
+export function updateMissionStatus(id: string, status: Mission['status'], progress?: number) {
+  return updateMission(id, { status, ...(typeof progress === 'number' ? { progress: Math.max(0, Math.min(100, progress)) } : {}) })
+}
+
 export function completeMission(id: string) {
   return updateMission(id, { progress: 100, status: 'completed' })
 }

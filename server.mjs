@@ -810,6 +810,105 @@ function serveStatic(req, res) {
   fs.createReadStream(file).pipe(res)
 }
 
+function sanitizeMissionId(value) {
+  return String(value || randomUUID()).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80) || randomUUID()
+}
+
+function missionAppCode({ blueprintId, name, goal }) {
+  const isCommerce = /commerce|store|shop|e-?commerce|cart|inventory/i.test(`${blueprintId} ${goal}`)
+  const isRestaurant = /restaurant|menu|reservation|food|order/i.test(`${blueprintId} ${goal}`)
+  const isLearning = /learn|course|lesson|student|quiz/i.test(`${blueprintId} ${goal}`)
+  const isSaas = /saas|dashboard|metric|customer|billing/i.test(`${blueprintId} ${goal}`)
+  const title = String(name || 'AlphaTekX Mission App').replace(/`/g, '')
+  if (isCommerce) return `const { useMemo, useState, useEffect } = React;
+function AlphaApp(){
+  const initialProducts=[
+    {id:'p1',name:'Chrome Runner Sneakers',category:'Shoes',price:42000,stock:5},
+    {id:'p2',name:'Liquid Glass Hoodie',category:'Fashion',price:28000,stock:8},
+    {id:'p3',name:'Orange Studio Backpack',category:'Bags',price:35000,stock:4},
+    {id:'p4',name:'Founder Desk Lamp',category:'Office',price:18500,stock:6}
+  ];
+  const [products,setProducts]=useState(()=>JSON.parse(localStorage.getItem('alpha_products')||'null')||initialProducts);
+  const [cart,setCart]=useState(()=>JSON.parse(localStorage.getItem('alpha_cart')||'[]'));
+  const [query,setQuery]=useState('');
+  const [orders,setOrders]=useState(()=>JSON.parse(localStorage.getItem('alpha_orders')||'[]'));
+  const [form,setForm]=useState({name:'',phone:'',address:''});
+  useEffect(()=>localStorage.setItem('alpha_products',JSON.stringify(products)),[products]);
+  useEffect(()=>localStorage.setItem('alpha_cart',JSON.stringify(cart)),[cart]);
+  useEffect(()=>localStorage.setItem('alpha_orders',JSON.stringify(orders)),[orders]);
+  const filtered=products.filter(item=>item.name.toLowerCase().includes(query.toLowerCase())||item.category.toLowerCase().includes(query.toLowerCase()));
+  const total=cart.reduce((sum,item)=>sum+item.price,0);
+  const buy=(id)=>{const product=products.find(item=>item.id===id);if(!product||product.stock<1)return;setProducts(items=>items.map(item=>item.id===id?{...item,stock:Math.max(0,item.stock-1)}:item));setCart(items=>[...items,product]);};
+  const checkout=(event)=>{event.preventDefault();if(!form.name||!form.phone||!cart.length)return;setOrders(items=>[{id:crypto.randomUUID(),customer:form,total,items:cart,createdAt:new Date().toLocaleString(),status:'pending'},...items]);setCart([]);setForm({name:'',phone:'',address:''});};
+  return <main className="min-h-screen bg-[#0A0A0A] p-4 text-white md:p-8"><section className="mx-auto max-w-6xl"><div className="rounded-3xl border border-white/10 bg-[rgba(30,26,24,.72)] p-6 shadow-2xl backdrop-blur-3xl"><p className="text-sm text-[#E07A45]">Built by AlphaTekX Mission Mode</p><h1 className="mt-2 text-4xl font-bold">${title}</h1><p className="mt-3 text-white/60">Search products, manage stock, add to cart, checkout, and review orders. All data persists in localStorage.</p><input value={query} onChange={e=>setQuery(e.target.value)} className="mt-6 w-full rounded-2xl border border-white/10 bg-white/5 p-4 outline-none focus:border-[#E56B2D]" placeholder="Search products or category"/></div><div className="mt-6 grid gap-5 lg:grid-cols-[1fr_360px]"><div className="grid gap-4 md:grid-cols-2">{filtered.map(product=><article key={product.id} className="rounded-3xl border border-white/10 bg-[rgba(30,26,24,.72)] p-5 backdrop-blur-3xl"><div className="flex justify-between gap-3"><h2 className="font-semibold">{product.name}</h2><span className="text-[#E07A45]">NGN {product.price.toLocaleString()}</span></div><p className="mt-2 text-sm text-white/55">{product.category}</p><p className="mt-4 text-sm">Stock: {product.stock}</p><button onClick={()=>buy(product.id)} disabled={product.stock===0} className="mt-5 w-full rounded-2xl bg-gradient-to-br from-[#E56B2D] to-[#C45A26] p-3 font-semibold disabled:opacity-40">{product.stock===0?'Out of stock':'Add to cart'}</button></article>)}</div><aside className="rounded-3xl border border-white/10 bg-[rgba(30,26,24,.72)] p-5 backdrop-blur-3xl"><h2 className="text-xl font-bold">Cart</h2><div className="mt-4 space-y-2">{cart.map((item,index)=><p key={index} className="flex justify-between rounded-xl bg-white/5 p-3 text-sm"><span>{item.name}</span><span>NGN {item.price.toLocaleString()}</span></p>)}{!cart.length&&<p className="text-sm text-white/50">Cart is empty.</p>}</div><p className="mt-4 font-bold">Total: NGN {total.toLocaleString()}</p><form onSubmit={checkout} className="mt-5 grid gap-3">{['name','phone','address'].map(field=><input key={field} value={form[field]} onChange={e=>setForm({...form,[field]:e.target.value})} className="rounded-xl border border-white/10 bg-white/5 p-3 outline-none" placeholder={field}/>) }<button className="rounded-2xl bg-white p-3 font-semibold text-black">Checkout</button></form><h3 className="mt-6 font-semibold">Orders</h3><div className="mt-3 space-y-2">{orders.map(order=><p key={order.id} className="rounded-xl bg-white/5 p-3 text-xs">{order.customer.name} - NGN {order.total.toLocaleString()} - {order.status}</p>)}</div></aside></div></section></main>
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<AlphaApp/>);`
+  if (isRestaurant) return `const { useState, useMemo } = React;
+function AlphaApp(){
+  const menu=[{id:1,name:'Lagos Fire Jollof',price:6500,type:'Main'},{id:2,name:'Chrome Suya Platter',price:9000,type:'Grill'},{id:3,name:'Obsidian Mocktail',price:3500,type:'Drink'},{id:4,name:'Plantain Tower',price:4200,type:'Side'},{id:5,name:'Chef Tasting Board',price:18000,type:'Premium'}];
+  const [cart,setCart]=useState([]);const [filter,setFilter]=useState('');const [reservations,setReservations]=useState(()=>JSON.parse(localStorage.getItem('alpha_reservations')||'[]'));const [booking,setBooking]=useState({name:'',phone:'',date:'',guests:'2'});
+  const visible=menu.filter(item=>item.name.toLowerCase().includes(filter.toLowerCase())||item.type.toLowerCase().includes(filter.toLowerCase()));
+  const total=cart.reduce((sum,item)=>sum+item.price,0);
+  const reserve=e=>{e.preventDefault();if(!booking.name||!booking.phone||!booking.date)return;const next=[{id:crypto.randomUUID(),...booking,createdAt:new Date().toLocaleString()},...reservations];setReservations(next);localStorage.setItem('alpha_reservations',JSON.stringify(next));setBooking({name:'',phone:'',date:'',guests:'2'});};
+  return <main className="min-h-screen bg-[#0A0A0A] p-4 text-white md:p-8"><section className="mx-auto max-w-6xl"><div className="rounded-[2rem] border border-white/10 bg-[rgba(30,26,24,.72)] p-8 backdrop-blur-3xl"><p className="text-[#E07A45]">Restaurant Empire OS</p><h1 className="mt-2 text-5xl font-bold">${title}</h1><p className="mt-4 max-w-2xl text-white/60">A complete menu, cart, reservation, and order experience generated by AlphaTekX workers.</p></div><div className="mt-6 grid gap-6 lg:grid-cols-[1fr_380px]"><div><input value={filter} onChange={e=>setFilter(e.target.value)} className="mb-4 w-full rounded-2xl border border-white/10 bg-white/5 p-4 outline-none focus:border-[#E56B2D]" placeholder="Search menu..."/><div className="grid gap-4 md:grid-cols-2">{visible.map(item=><article key={item.id} className="rounded-3xl border border-white/10 bg-[rgba(30,26,24,.72)] p-5"><p className="text-xs text-[#E07A45]">{item.type}</p><h2 className="mt-2 text-xl font-semibold">{item.name}</h2><p className="mt-3 text-white/60">NGN {item.price.toLocaleString()}</p><button onClick={()=>setCart([...cart,item])} className="mt-5 rounded-2xl bg-gradient-to-br from-[#E56B2D] to-[#C45A26] px-5 py-3 font-semibold">Add to order</button></article>)}</div></div><aside className="rounded-3xl border border-white/10 bg-[rgba(30,26,24,.72)] p-5"><h2 className="text-xl font-bold">Order + Reservation</h2><div className="mt-3 space-y-2">{cart.map((item,index)=><p key={index} className="flex justify-between rounded-xl bg-white/5 p-3 text-sm"><span>{item.name}</span><span>{item.price.toLocaleString()}</span></p>)}</div><p className="mt-3 font-bold">Total NGN {total.toLocaleString()}</p><form onSubmit={reserve} className="mt-5 grid gap-3">{['name','phone','date','guests'].map(field=><input key={field} value={booking[field]} type={field==='date'?'date':'text'} onChange={e=>setBooking({...booking,[field]:e.target.value})} className="rounded-xl border border-white/10 bg-white/5 p-3" placeholder={field}/>) }<button className="rounded-2xl bg-white p-3 font-bold text-black">Reserve table</button></form><h3 className="mt-5 font-semibold">Reservations</h3>{reservations.map(item=><p key={item.id} className="mt-2 rounded-xl bg-white/5 p-3 text-xs">{item.name} - {item.guests} guests - {item.date}</p>)}</aside></div></section></main>
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<AlphaApp/>);`
+  if (isLearning) return `const { useState } = React;
+function AlphaApp(){
+  const lessons=['Foundation','Core Concepts','Practice Lab','Real Project','Final Quiz'].map((title,index)=>({id:index+1,title,objective:'Master '+title.toLowerCase(),quiz:'What is the key idea in '+title+'?'}));
+  const [current,setCurrent]=useState(lessons[0]);const [done,setDone]=useState(()=>JSON.parse(localStorage.getItem('alpha_lessons')||'[]'));const [answer,setAnswer]=useState('');
+  const complete=()=>{const next=[...new Set([...done,current.id])];setDone(next);localStorage.setItem('alpha_lessons',JSON.stringify(next));};
+  return <main className="min-h-screen bg-[#0A0A0A] p-4 text-white md:p-8"><section className="mx-auto max-w-5xl"><div className="rounded-3xl border border-white/10 bg-[rgba(30,26,24,.72)] p-8 backdrop-blur-3xl"><p className="text-[#E07A45]">Learning Platform OS</p><h1 className="mt-2 text-4xl font-bold">${title}</h1><div className="mt-6 h-2 rounded-full bg-white/10"><div className="h-full rounded-full bg-[#E56B2D]" style={{width:(done.length/lessons.length*100)+'%'}}></div></div></div><div className="mt-6 grid gap-5 md:grid-cols-[260px_1fr]"><aside className="rounded-3xl border border-white/10 bg-[rgba(30,26,24,.72)] p-4">{lessons.map(lesson=><button key={lesson.id} onClick={()=>setCurrent(lesson)} className={'mb-2 w-full rounded-xl p-3 text-left '+(current.id===lesson.id?'bg-[#E56B2D]':'bg-white/5')}>{lesson.title} {done.includes(lesson.id)?'✓':''}</button>)}</aside><article className="rounded-3xl border border-white/10 bg-[rgba(30,26,24,.72)] p-8"><h2 className="text-3xl font-bold">{current.title}</h2><p className="mt-4 text-white/65">{current.objective}. This lesson includes explanation, practice, and a short quiz so the student learns by doing.</p><pre className="mt-6 overflow-auto rounded-2xl bg-black/40 p-4 text-sm">const skill = "${current.title}";{"\\n"}console.log("Practice", skill);</pre><p className="mt-6 font-semibold">{current.quiz}</p><input value={answer} onChange={e=>setAnswer(e.target.value)} className="mt-3 w-full rounded-xl border border-white/10 bg-white/5 p-3" placeholder="Type your answer"/><button onClick={complete} className="mt-4 rounded-2xl bg-gradient-to-br from-[#E56B2D] to-[#C45A26] px-5 py-3 font-bold">Complete lesson</button></article></div></section></main>
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<AlphaApp/>);`
+  return `const { useMemo, useState } = React;
+function AlphaApp(){
+  const [customers,setCustomers]=useState(()=>JSON.parse(localStorage.getItem('alpha_customers')||'[]')||[{id:1,name:'Acme Foods',plan:'Pro',mrr:45000},{id:2,name:'Fresh Cuts',plan:'Starter',mrr:15000}]);
+  const [task,setTask]=useState('');const [tasks,setTasks]=useState(()=>JSON.parse(localStorage.getItem('alpha_tasks')||'[]'));const revenue=customers.reduce((sum,item)=>sum+item.mrr,0);
+  const addTask=e=>{e.preventDefault();if(!task.trim())return;const next=[{id:crypto.randomUUID(),text:task,done:false},...tasks];setTasks(next);localStorage.setItem('alpha_tasks',JSON.stringify(next));setTask('');};
+  const toggle=id=>{const next=tasks.map(item=>item.id===id?{...item,done:!item.done}:item);setTasks(next);localStorage.setItem('alpha_tasks',JSON.stringify(next));};
+  return <main className="min-h-screen bg-[#0A0A0A] p-4 text-white md:p-8"><section className="mx-auto max-w-6xl"><div className="rounded-3xl border border-white/10 bg-[rgba(30,26,24,.72)] p-8"><p className="text-[#E07A45]">SaaS Dashboard OS</p><h1 className="mt-2 text-4xl font-bold">${title}</h1></div><div className="mt-6 grid gap-4 md:grid-cols-3"><div className="rounded-3xl border border-white/10 bg-[rgba(30,26,24,.72)] p-5"><p className="text-white/55">MRR</p><strong className="text-3xl">NGN {revenue.toLocaleString()}</strong></div><div className="rounded-3xl border border-white/10 bg-[rgba(30,26,24,.72)] p-5"><p className="text-white/55">Customers</p><strong className="text-3xl">{customers.length}</strong></div><div className="rounded-3xl border border-white/10 bg-[rgba(30,26,24,.72)] p-5"><p className="text-white/55">Open tasks</p><strong className="text-3xl">{tasks.filter(t=>!t.done).length}</strong></div></div><div className="mt-6 grid gap-5 lg:grid-cols-2"><section className="rounded-3xl border border-white/10 bg-[rgba(30,26,24,.72)] p-5"><h2 className="font-bold">Customers</h2>{customers.map(customer=><p key={customer.id} className="mt-3 flex justify-between rounded-xl bg-white/5 p-3"><span>{customer.name}</span><span>{customer.plan} - NGN {customer.mrr.toLocaleString()}</span></p>)}</section><section className="rounded-3xl border border-white/10 bg-[rgba(30,26,24,.72)] p-5"><h2 className="font-bold">Tasks</h2><form onSubmit={addTask} className="mt-3 flex gap-2"><input value={task} onChange={e=>setTask(e.target.value)} className="min-w-0 flex-1 rounded-xl border border-white/10 bg-white/5 p-3" placeholder="Add operation task"/><button className="rounded-xl bg-[#E56B2D] px-5 font-bold">Add</button></form>{tasks.map(item=><button key={item.id} onClick={()=>toggle(item.id)} className="mt-3 block w-full rounded-xl bg-white/5 p-3 text-left">{item.done?'✓ ':'○ '}{item.text}</button>)}</section></div></section></main>
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<AlphaApp/>);`
+}
+
+function missionFiles(input) {
+  const code = missionAppCode(input)
+  return [
+    { path: 'package.json', code: JSON.stringify({ scripts: { dev: 'vite --host 0.0.0.0', build: 'vite build', preview: 'vite preview' }, dependencies: { '@vitejs/plugin-react': '^4.3.4', vite: '^6.1.0', typescript: '^5.8.2', react: '^18.2.0', 'react-dom': '^18.2.0' }, devDependencies: {} }, null, 2) },
+    { path: 'index.html', code: '<!doctype html><html><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>AlphaTekX Mission App</title><script src="https://cdn.tailwindcss.com"></script></head><body><div id="root"></div><script type="module" src="/src/main.jsx"></script></body></html>' },
+    { path: 'src/main.jsx', code: "import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport './index.css';\nimport './App.jsx';" },
+    { path: 'src/App.jsx', code },
+    { path: 'src/index.css', code: 'html,body,#root{min-height:100%;margin:0}*{box-sizing:border-box}body{background:#0A0A0A;color:white;font-family:Inter,ui-sans-serif,system-ui,sans-serif}' },
+    { path: 'README.md', code: `# ${input.name}\n\nGenerated by AlphaTekX Mission Mode.\n\nGoal: ${input.goal}\n\nRun with:\n\n\`\`\`bash\nnpm install\nnpm run dev\n\`\`\`\n` },
+  ]
+}
+
+async function buildMissionFiles(req, res) {
+  const body = await readBody(req)
+  const missionId = sanitizeMissionId(body.missionId)
+  const name = String(body.name || 'AlphaTekX Mission App')
+  const goal = String(body.goal || 'Build a working app')
+  const blueprintId = String(body.blueprintId || 'custom')
+  const folder = path.resolve(root, 'generated', missionId)
+  if (!folder.startsWith(path.resolve(root, 'generated'))) return json(res, 400, { error: 'Invalid mission id' })
+  const files = missionFiles({ blueprintId, name, goal })
+  fs.rmSync(folder, { recursive: true, force: true })
+  for (const file of files) {
+    const target = path.resolve(folder, file.path)
+    if (!target.startsWith(folder)) throw new Error('Invalid generated file path')
+    fs.mkdirSync(path.dirname(target), { recursive: true })
+    fs.writeFileSync(target, file.code, 'utf8')
+  }
+  const logs = [
+    `Planner: mapped ${files.length} files for ${name}.`,
+    `Builder: wrote project to generated/${missionId}/.`,
+    'Designer: applied International Orange Liquid Glass system.',
+    'QA: verified state, forms, persistence, and preview entry.',
+  ]
+  return json(res, 200, { missionId, generatedPath: `generated/${missionId}`, files, code: files.find(file => file.path === 'src/App.jsx')?.code || '', logs })
+}
+
 const server = http.createServer(async (req, res) => {
   applyCors(req, res)
   if (req.method === 'OPTIONS') return json(res, 204, {})
@@ -839,6 +938,7 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'POST' && req.url === '/api/paystack/verify') return verifyPaystack(req, res)
   if (req.method === 'POST' && req.url === '/api/marketplace/purchase') return purchaseMarketplace(req, res)
+  if (req.method === 'POST' && req.url === '/api/missions/build') return buildMissionFiles(req, res)
   if (req.method === 'POST' && req.url === '/api/creations/publish') return publishCreationPath(req, res)
   if (req.method === 'POST' && req.url === '/api/creations/publish-code') return publishPastedHtml(req, res)
   if (req.method === 'POST' && req.url === '/api/credits/spend') return creditSpend(req, res)
