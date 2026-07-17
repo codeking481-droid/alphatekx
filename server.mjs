@@ -1,8 +1,9 @@
 import http from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
-import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'node:crypto'
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
+import { google } from 'googleapis'
 
 function loadEnv() {
   for (const filename of ['.env.local', '.env']) {
@@ -26,7 +27,7 @@ const applyCors = (req, res) => {
   if (allowedOrigins.has(origin)) res.setHeader('Access-Control-Allow-Origin', origin)
   res.setHeader('Vary', 'Origin')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS')
 }
 const json = (res, status, body) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)) }
 const readBody = (req) => new Promise((resolve, reject) => {
@@ -130,6 +131,7 @@ BUILD RULES - NON NEGOTIABLE:
 3. REAL IMAGES - Use https://images.unsplash.com/photo-... with real relevant photos, or https://api.dicebear.com for avatars. NEVER via.placeholder.com/150.
 4. FULL FUNCTIONALITY - If you build courses, include lessons array, quiz with keyword check, progress bar with localStorage per lesson, enroll modal not alert(). If contact form, show success animation.
 5. SINGLE FILE OUTPUT - Define a React component named AlphaApp containing the full app. Use React.useState and other React globals. No imports or exports. Keep the file under 450 lines so it cannot be truncated.
+6. GMAIL TOOL - AlphaTekX has POST /api/gmail/send with {to, subject, html, text}. When the signed-in user asks for an email workflow, use this endpoint from a real submit handler and show loading, success, disconnected, and error states. Never embed Google tokens or API keys in generated code. Gmail must be connected in Vault before sending.
 
 OUTPUT FORMAT - STRICT:
 Return one fenced jsx code block and nothing else. It must start with function AlphaApp() and end with ReactDOM.createRoot(document.getElementById('root')).render(<AlphaApp />).
@@ -362,6 +364,152 @@ async function runWorkerRequest(req, res) {
   const memory = [...(Array.isArray(worker.memory) ? worker.memory : []), `User: ${prompt.slice(0, 4000)}`, `Worker: ${String(result.text || '').slice(0, 4000)}`].slice(-20)
   await fetch(`${config.url}/rest/v1/workers?id=eq.${encodeURIComponent(worker.id)}&user_id=eq.${encodeURIComponent(user.id)}`, { method: 'PATCH', headers: serviceHeaders(config.service), body: JSON.stringify({ memory }) })
   return json(res, 200, { ...result, memory })
+}
+
+const gmailScopes = ['https://www.googleapis.com/auth/gmail.send', 'https://www.googleapis.com/auth/userinfo.email', 'openid', 'email']
+const publicAppUrl = () => String(process.env.PUBLIC_APP_URL || 'https://alphatekx.name.ng').replace(/\/$/, '')
+const googleClientId = () => process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || ''
+const googleClientSecret = () => process.env.GOOGLE_CLIENT_SECRET || ''
+const googleRedirectUri = () => process.env.GOOGLE_REDIRECT_URI || process.env.VITE_GOOGLE_REDIRECT_URI || `${publicAppUrl()}/auth/google/callback`
+const googleConfigured = () => Boolean(googleClientId() && googleClientSecret() && googleRedirectUri())
+const googleClient = () => new google.auth.OAuth2(googleClientId(), googleClientSecret(), googleRedirectUri())
+const oauthStateKey = (config) => createHash('sha256').update(process.env.OAUTH_STATE_SECRET || process.env.API_KEY_ENCRYPTION_KEY || config.service).digest()
+
+function createOAuthState(userId, config) {
+  const payload = Buffer.from(JSON.stringify({ userId, expires: Date.now() + 10 * 60_000, nonce: randomBytes(16).toString('hex') })).toString('base64url')
+  const signature = createHmac('sha256', oauthStateKey(config)).update(payload).digest('base64url')
+  return `${payload}.${signature}`
+}
+
+function verifyOAuthState(value, config) {
+  const [payload, signature] = String(value || '').split('.')
+  if (!payload || !signature) throw new Error('Invalid Google connection state')
+  const expected = createHmac('sha256', oauthStateKey(config)).update(payload).digest()
+  const received = Buffer.from(signature, 'base64url')
+  if (received.length !== expected.length || !timingSafeEqual(received, expected)) throw new Error('Invalid Google connection state')
+  const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'))
+  if (!parsed.userId || Number(parsed.expires) < Date.now()) throw new Error('Google connection expired. Start again from Vault.')
+  return parsed
+}
+
+async function getGmailIntegration(userId, config) {
+  const response = await fetch(`${config.url}/rest/v1/user_integrations?user_id=eq.${encodeURIComponent(userId)}&provider=eq.google_gmail&select=*`, { headers: serviceHeaders(config.service) })
+  if (!response.ok) throw new Error('Gmail integration storage is unavailable. Run supabase/gmail-integration.sql.')
+  return (await response.json())?.[0] || null
+}
+
+async function startGoogleConnection(req, res) {
+  const config = supabaseConfig()
+  if (!config.url || !config.anon || !config.service || !googleConfigured()) return json(res, 503, { error: 'Google OAuth is not configured on Render.' })
+  const user = await authenticatedUser(req, config.url, config.anon)
+  if (!user) return json(res, 401, { error: 'Authentication required' })
+  const url = googleClient().generateAuthUrl({ access_type: 'offline', prompt: 'consent', include_granted_scopes: true, scope: gmailScopes, state: createOAuthState(user.id, config), login_hint: user.email || undefined })
+  return json(res, 200, { url })
+}
+
+async function googleCallback(req, res) {
+  const destination = new URL('/vault', publicAppUrl())
+  try {
+    const config = supabaseConfig()
+    if (!config.url || !config.service || !googleConfigured()) throw new Error('Google OAuth is not configured')
+    const requestUrl = new URL(req.url || '/', publicAppUrl())
+    if (requestUrl.searchParams.get('error')) throw new Error(requestUrl.searchParams.get('error_description') || 'Google permission was not granted')
+    const code = requestUrl.searchParams.get('code')
+    const state = verifyOAuthState(requestUrl.searchParams.get('state'), config)
+    if (!code) throw new Error('Google did not return an authorization code')
+    const oauth = googleClient()
+    const { tokens } = await oauth.getToken(code)
+    oauth.setCredentials(tokens)
+    const profile = await google.oauth2({ version: 'v2', auth: oauth }).userinfo.get()
+    const email = String(profile.data.email || '')
+    if (!email || !tokens.access_token) throw new Error('Google did not return the Gmail account details')
+    const existing = await getGmailIntegration(state.userId, config)
+    const key = encryptionKey(config)
+    const refreshToken = tokens.refresh_token || (existing?.refresh_token ? decryptSecret(existing.refresh_token, key) : '')
+    const record = {
+      user_id: state.userId,
+      provider: 'google_gmail',
+      access_token: encryptSecret(tokens.access_token, key),
+      refresh_token: refreshToken ? encryptSecret(refreshToken, key) : null,
+      expiry_date: tokens.expiry_date || null,
+      email,
+      scopes: gmailScopes,
+      updated_at: new Date().toISOString(),
+    }
+    const saved = await fetch(`${config.url}/rest/v1/user_integrations?on_conflict=user_id,provider`, { method: 'POST', headers: { ...serviceHeaders(config.service), Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(record) })
+    if (!saved.ok) throw new Error('Could not save the Gmail connection')
+    destination.searchParams.set('gmail', 'connected')
+  } catch (error) {
+    destination.searchParams.set('gmail', 'error')
+    destination.searchParams.set('reason', error instanceof Error ? error.message.slice(0, 180) : 'Google connection failed')
+  }
+  res.writeHead(302, { Location: destination.toString(), 'Cache-Control': 'no-store' })
+  return res.end()
+}
+
+async function integrationsStatus(req, res) {
+  const config = supabaseConfig()
+  if (!config.url || !config.anon || !config.service) return json(res, 503, { error: 'Integrations are not configured.' })
+  const user = await authenticatedUser(req, config.url, config.anon)
+  if (!user) return json(res, 401, { error: 'Authentication required' })
+  const integration = await getGmailIntegration(user.id, config)
+  return json(res, 200, { gmail: { connected: Boolean(integration), email: integration?.email || null } })
+}
+
+async function disconnectGmail(req, res) {
+  const config = supabaseConfig()
+  if (!config.url || !config.anon || !config.service) return json(res, 503, { error: 'Integrations are not configured.' })
+  const user = await authenticatedUser(req, config.url, config.anon)
+  if (!user) return json(res, 401, { error: 'Authentication required' })
+  const integration = await getGmailIntegration(user.id, config)
+  if (integration?.access_token) {
+    try { await googleClient().revokeToken(decryptSecret(integration.access_token, encryptionKey(config))) } catch {}
+  }
+  const response = await fetch(`${config.url}/rest/v1/user_integrations?user_id=eq.${encodeURIComponent(user.id)}&provider=eq.google_gmail`, { method: 'DELETE', headers: serviceHeaders(config.service) })
+  if (!response.ok) throw new Error('Could not disconnect Gmail')
+  return json(res, 200, { disconnected: true })
+}
+
+const cleanHeader = (value) => String(value || '').replace(/[\r\n]+/g, ' ').trim()
+function gmailRawMessage({ from, to, subject, text, html }) {
+  const boundary = `alphatekx_${randomBytes(12).toString('hex')}`
+  const plain = String(text || '').trim() || String(html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+  const lines = [
+    `From: ${cleanHeader(from)}`,
+    `To: ${cleanHeader(to)}`,
+    `Subject: ${cleanHeader(subject)}`,
+    'MIME-Version: 1.0',
+    `Content-Type: multipart/alternative; boundary="${boundary}"`, '',
+    `--${boundary}`, 'Content-Type: text/plain; charset="UTF-8"', 'Content-Transfer-Encoding: 8bit', '', plain, '',
+    `--${boundary}`, 'Content-Type: text/html; charset="UTF-8"', 'Content-Transfer-Encoding: 8bit', '', String(html || plain), '',
+    `--${boundary}--`, '',
+  ]
+  return Buffer.from(lines.join('\r\n'), 'utf8').toString('base64url')
+}
+
+async function sendGmail(req, res) {
+  const config = supabaseConfig()
+  if (!config.url || !config.anon || !config.service || !googleConfigured()) return json(res, 503, { error: 'Gmail is not configured.' })
+  const user = await authenticatedUser(req, config.url, config.anon)
+  if (!user) return json(res, 401, { error: 'Authentication required' })
+  const body = await readBody(req)
+  const to = cleanHeader(body.to)
+  const subject = cleanHeader(body.subject).slice(0, 240)
+  const html = String(body.html || '').slice(0, 200_000)
+  const text = String(body.text || '').slice(0, 100_000)
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to) || !subject || (!html && !text)) return json(res, 400, { error: 'A valid recipient, subject, and message are required.' })
+  const integration = await getGmailIntegration(user.id, config)
+  if (!integration) return json(res, 409, { error: 'Connect Gmail in Vault before sending email.' })
+  const key = encryptionKey(config)
+  const oauth = googleClient()
+  oauth.setCredentials({ access_token: decryptSecret(integration.access_token, key), refresh_token: integration.refresh_token ? decryptSecret(integration.refresh_token, key) : undefined, expiry_date: integration.expiry_date || undefined })
+  await oauth.getAccessToken()
+  const refreshed = oauth.credentials
+  if (refreshed.access_token && (refreshed.access_token !== decryptSecret(integration.access_token, key) || refreshed.expiry_date !== integration.expiry_date)) {
+    await fetch(`${config.url}/rest/v1/user_integrations?id=eq.${encodeURIComponent(integration.id)}`, { method: 'PATCH', headers: serviceHeaders(config.service), body: JSON.stringify({ access_token: encryptSecret(refreshed.access_token, key), refresh_token: refreshed.refresh_token ? encryptSecret(refreshed.refresh_token, key) : integration.refresh_token, expiry_date: refreshed.expiry_date || integration.expiry_date, updated_at: new Date().toISOString() }) })
+  }
+  const sent = await google.gmail({ version: 'v1', auth: oauth }).users.messages.send({ userId: 'me', requestBody: { raw: gmailRawMessage({ from: integration.email, to, subject, text, html }) } })
+  return json(res, 200, { success: true, messageId: sent.data.id, threadId: sent.data.threadId })
 }
 
 async function ensureProfile(user, config) {
@@ -650,6 +798,19 @@ const server = http.createServer(async (req, res) => {
   const subdomain = requestSubdomain(req)
   if (subdomain && ['GET', 'HEAD'].includes(req.method || '')) return servePublishedCreation(req, res, subdomain)
   if (subdomain) return json(res, 404, { error: 'App route not found' })
+  if (req.method === 'GET' && req.url?.startsWith('/auth/google/callback')) return googleCallback(req, res)
+  if (req.method === 'POST' && req.url === '/api/integrations/google/start') {
+    try { return await startGoogleConnection(req, res) } catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : 'Google connection failed' }) }
+  }
+  if (req.method === 'GET' && req.url === '/api/integrations/status') {
+    try { return await integrationsStatus(req, res) } catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : 'Could not load integrations' }) }
+  }
+  if (req.method === 'DELETE' && req.url === '/api/integrations/gmail') {
+    try { return await disconnectGmail(req, res) } catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : 'Could not disconnect Gmail' }) }
+  }
+  if (req.method === 'POST' && req.url === '/api/gmail/send') {
+    try { return await sendGmail(req, res) } catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : 'Email could not be sent' }) }
+  }
   if (req.method === 'GET' && req.url === '/api/paystack/status') {
     const required = { PAYSTACK_SECRET_KEY: process.env.PAYSTACK_SECRET_KEY, SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY, VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL, VITE_SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY }
     const missing = Object.entries(required).filter(([, value]) => !value).map(([name]) => name)

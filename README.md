@@ -42,6 +42,17 @@ Marketplace purchases are verified by `/api/marketplace/purchase`. Paid item amo
 
 User-supplied provider keys are encrypted server-side with AES-256-GCM. The browser only receives a masked status. AI Worker requests send a worker ID to the server; the server verifies ownership, decrypts the selected provider key, calls that provider, and stores only the worker's bounded conversation memory.
 
+## Gmail connector
+
+1. In Google Cloud, enable the Gmail API and configure the OAuth consent screen.
+2. Create an OAuth 2.0 Web application client. Add `https://alphatekx.name.ng/auth/google/callback` as an authorized redirect URI. The value must match exactly.
+3. Run [`supabase/gmail-integration.sql`](supabase/gmail-integration.sql) in the Supabase SQL Editor.
+4. Add `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI` to Render. Keep the client secret server-only.
+5. While the Google consent app is in Testing mode, add each Gmail account that will test the connector under OAuth test users.
+6. Deploy, open **App Vault**, select **Connect Gmail**, approve the `gmail.send` scope, and use **Send test email**.
+
+OAuth access and refresh tokens are encrypted with the same server-side AES-256-GCM vault as user API keys. OAuth state is signed and expires after ten minutes. The callback never sends tokens to the browser, and disconnecting removes the stored integration after attempting Google token revocation.
+
 ## Optional Vercel deployment
 
 1. Import the GitHub repository in Vercel.

@@ -24,11 +24,13 @@ create table if not exists public.mentor_progress (mission_id uuid primary key r
 create table if not exists public.marketplace_reviews(id uuid primary key default gen_random_uuid(),item_id uuid not null references public.marketplace_items(id) on delete cascade,user_id uuid not null references auth.users(id) on delete cascade,rating integer not null check(rating between 1 and 5),comment text not null check(char_length(comment) between 2 and 1000),created_at timestamptz not null default now(),unique(item_id,user_id));
 create table if not exists public.marketplace_sales (id uuid primary key default gen_random_uuid(), item_id uuid not null references public.marketplace_items(id) on delete restrict, creator_id uuid not null references auth.users(id) on delete restrict, buyer_id uuid not null references auth.users(id) on delete restrict, title text not null, amount numeric not null default 0, creator_share numeric not null default 0, platform_share numeric not null default 0, payment_reference text unique, created_at timestamptz not null default now());
 create table if not exists public.user_settings (user_id uuid primary key references auth.users(id) on delete cascade, api_keys jsonb not null default '{}', updated_at timestamptz not null default now());
+create table if not exists public.user_integrations (id uuid primary key default gen_random_uuid(), user_id uuid not null references auth.users(id) on delete cascade, provider text not null, access_token text not null, refresh_token text, expiry_date bigint, email text, scopes text[] not null default '{}', created_at timestamptz not null default now(), updated_at timestamptz not null default now(), unique(user_id,provider));
 create table if not exists public.general_chat_threads (id uuid primary key, user_id uuid not null references auth.users(id) on delete cascade, title text not null, messages jsonb not null default '[]', created_at timestamptz not null default now(), updated_at timestamptz not null default now());
 create table if not exists public.credit_purchases (reference text primary key, user_id uuid not null references auth.users(id) on delete cascade, amount integer not null check(amount > 0), credits integer not null check(credits > 0), plan text not null, created_at timestamptz not null default now());
 
 alter table public.profiles enable row level security; alter table public.missions enable row level security; alter table public.messages enable row level security; alter table public.activities enable row level security; alter table public.creations enable row level security; alter table public.workers enable row level security; alter table public.marketplace_items enable row level security; alter table public.marketplace_sales enable row level security; alter table public.mentor_progress enable row level security; alter table public.marketplace_reviews enable row level security;
 alter table public.user_settings enable row level security;
+alter table public.user_integrations enable row level security;
 alter table public.general_chat_threads enable row level security;
 alter table public.credit_purchases enable row level security;
 
@@ -48,6 +50,7 @@ create policy "mentor owner access" on public.mentor_progress for all using(auth
 create policy "review public read" on public.marketplace_reviews for select using(true);
 create policy "review owner write" on public.marketplace_reviews for all using(auth.uid()=user_id) with check(auth.uid()=user_id);
 create policy "settings owner access" on public.user_settings for all using(auth.uid()=user_id) with check(auth.uid()=user_id);
+create policy "integration owner access" on public.user_integrations for all using(auth.uid()=user_id) with check(auth.uid()=user_id);
 create policy "general chat owner access" on public.general_chat_threads for all using(auth.uid()=user_id) with check(auth.uid()=user_id);
 create policy "credit purchase owner read" on public.credit_purchases for select using(auth.uid()=user_id);
 
