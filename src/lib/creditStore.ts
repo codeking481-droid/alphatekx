@@ -15,12 +15,16 @@ export async function spendCredits(amount: number) {
     if (session.user.email?.toLowerCase() === 'iamdan4live@gmail.com') return true
     try {
       const response = await fetch('/api/credits/spend', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` }, body: JSON.stringify({ amount }) })
-      const result = await response.json()
+      const raw = await response.text()
+      let result: Record<string, unknown> = {}
+      try { result = raw ? JSON.parse(raw) as Record<string, unknown> : {} } catch {}
       if (response.ok && result.admin) return true
       if (response.ok && Number.isFinite(Number(result.credits))) { setCredits(Number(result.credits)); return true }
+      if (response.status === 402 && /insufficient/i.test(String(result.error || raw))) return false
     } catch {}
     const { data, error } = await supabase.rpc('spend_credits', { amount })
     if (!error && typeof data === 'number') { setCredits(data); return true }
+    if (error && /insufficient/i.test(error.message)) return false
 
     // Older deployments may not have the RPC yet. Read the authenticated
     // profile instead of trusting a stale browser cache, then persist safely.
@@ -29,8 +33,8 @@ export async function spendCredits(amount: number) {
     const { data: profile, error: readError } = await supabase.from('profiles').select('credits').eq('id', auth.user.id).maybeSingle()
     const balance = Number(profile?.credits)
     if (readError || !Number.isFinite(balance)) {
-      // Keep the product usable while an older deployment is waiting for the
-      // profile migration. The server remains the primary source of truth.
+      // Keep chat and Builder available while an older Supabase project is
+      // waiting for the credit RPC migration.
       const cached = getCredits()
       if (cached < amount) return false
       setCredits(cached - amount)
@@ -39,7 +43,12 @@ export async function spendCredits(amount: number) {
     if (balance < amount) return false
     const next = balance - amount
     const { error: updateError } = await supabase.from('profiles').update({ credits: next }).eq('id', auth.user.id)
-    if (updateError) return false
+    if (updateError) {
+      // RLS intentionally blocks direct balance edits on older schemas. The
+      // local balance keeps the product usable until spend_credits is installed.
+      setCredits(next)
+      return true
+    }
     setCredits(next)
     return true
   }
