@@ -375,8 +375,8 @@ const googleConfigured = () => Boolean(googleClientId() && googleClientSecret() 
 const googleClient = () => new google.auth.OAuth2(googleClientId(), googleClientSecret(), googleRedirectUri())
 const oauthStateKey = (config) => createHash('sha256').update(process.env.OAUTH_STATE_SECRET || process.env.API_KEY_ENCRYPTION_KEY || config.service).digest()
 
-function createOAuthState(userId, config) {
-  const payload = Buffer.from(JSON.stringify({ userId, expires: Date.now() + 10 * 60_000, nonce: randomBytes(16).toString('hex') })).toString('base64url')
+function createOAuthState(userId, config, email = '') {
+  const payload = Buffer.from(JSON.stringify({ userId, email: cleanHeader(email), expires: Date.now() + 10 * 60_000, nonce: randomBytes(16).toString('hex') })).toString('base64url')
   const signature = createHmac('sha256', oauthStateKey(config)).update(payload).digest('base64url')
   return `${payload}.${signature}`
 }
@@ -403,8 +403,26 @@ async function startGoogleConnection(req, res) {
   if (!config.url || !config.anon || !config.service || !googleConfigured()) return json(res, 503, { error: 'Google OAuth is not configured on Render.' })
   const user = await authenticatedUser(req, config.url, config.anon)
   if (!user) return json(res, 401, { error: 'Authentication required' })
-  const url = googleClient().generateAuthUrl({ access_type: 'offline', prompt: 'consent', include_granted_scopes: true, scope: gmailScopes, state: createOAuthState(user.id, config), login_hint: user.email || undefined })
-  return json(res, 200, { url })
+  const state = createOAuthState(user.id, config, user.email)
+  return json(res, 200, { url: `/auth/google?state=${encodeURIComponent(state)}` })
+}
+
+async function beginGoogleOAuth(req, res) {
+  const config = supabaseConfig()
+  if (!config.url || !config.service || !googleConfigured()) return json(res, 503, { error: 'Google OAuth is not configured on Render.' })
+  const requestUrl = new URL(req.url || '/', publicAppUrl())
+  const stateValue = requestUrl.searchParams.get('state')
+  const state = verifyOAuthState(stateValue, config)
+  const url = googleClient().generateAuthUrl({
+    access_type: 'offline',
+    prompt: 'consent',
+    include_granted_scopes: true,
+    scope: gmailScopes,
+    state: stateValue,
+    login_hint: state.email || undefined,
+  })
+  res.writeHead(302, { Location: url, 'Cache-Control': 'no-store' })
+  return res.end()
 }
 
 async function googleCallback(req, res) {
@@ -799,6 +817,9 @@ const server = http.createServer(async (req, res) => {
   if (subdomain && ['GET', 'HEAD'].includes(req.method || '')) return servePublishedCreation(req, res, subdomain)
   if (subdomain) return json(res, 404, { error: 'App route not found' })
   if (req.method === 'GET' && req.url?.startsWith('/auth/google/callback')) return googleCallback(req, res)
+  if (req.method === 'GET' && req.url?.startsWith('/auth/google?')) {
+    try { return await beginGoogleOAuth(req, res) } catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : 'Google connection failed' }) }
+  }
   if (req.method === 'POST' && req.url === '/api/integrations/google/start') {
     try { return await startGoogleConnection(req, res) } catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : 'Google connection failed' }) }
   }

@@ -15,8 +15,9 @@ export const getIntegrationStatus = (token: string) => request<IntegrationStatus
 
 export async function startGmailConnection(token: string) {
   const result = await request<{ url: string }>('/api/integrations/google/start', token, { method: 'POST', body: '{}' })
-  if (!result.url.startsWith('https://accounts.google.com/')) throw new Error('Google returned an invalid authorization URL.')
-  window.location.assign(result.url)
+  const target = new URL(result.url, window.location.origin)
+  if (target.origin !== window.location.origin || target.pathname !== '/auth/google') throw new Error('Google returned an invalid authorization URL.')
+  window.location.assign(target.toString())
 }
 
 export const disconnectGmail = (token: string) => request<{ disconnected: boolean }>('/api/integrations/gmail', token, { method: 'DELETE' })
