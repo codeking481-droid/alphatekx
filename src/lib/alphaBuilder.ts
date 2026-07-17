@@ -52,7 +52,7 @@ export async function buildFromMission(mission: Mission): Promise<Creation> {
     const contract = `You are the AlphaTekX senior product engineering team. First infer the exact product type and its core user journey. User wants: ${mission.goal}. User memory: ${memory} Adapt accordingly.${mentorMode}${businessMode} Generate one self-contained React component using Tailwind only. Return ONLY code. Build the requested product, never a generic dashboard. Use realistic domain content. Every button and form must work. Include validation, loading, error and empty states, responsive mobile layout, accessible labels, and localStorage persistence where data should survive refresh. Do not import packages, use undefined icons, include TODOs, or claim external actions succeeded.`
     let validationErrors: string[] = []
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const payload = await postJson<{ code?: string; response?: string }>(import.meta.env?.VITE_ALPHA_API_URL || '/api/alpha', { mode: 'builder', missionId: mission.id, prompt: attempt === 0 ? contract : `${contract}\nThe previous build was rejected because it was ${validationErrors.join(', ')}. Rebuild from scratch and fix every issue.` }, { timeoutMs: 120_000 })
+      const payload = await postJson<{ code?: string; response?: string }>('/api/alpha', { mode: 'builder', missionId: mission.id, prompt: attempt === 0 ? contract : `${contract}\nThe previous build was rejected because it was ${validationErrors.join(', ')}. Rebuild from scratch and fix every issue.` }, { timeoutMs: 120_000 })
       code = extractCode(String(payload.code || payload.response || ''))
       validationErrors = validateGeneratedApp(code)
       if (validationErrors.length === 0) break

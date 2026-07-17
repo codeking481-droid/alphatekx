@@ -60,7 +60,7 @@ export default function Builder() {
     const mentor = /\blearn|teach|course|study\b/i.test(mission.goal) ? 'Teacher mode: explain step-by-step and end with a short quiz.' : ''
     addMessage(id, { role: 'user', content, type: 'chat', workerId: worker?.id })
     try {
-      const data = await postJson<{ text?: string; response?: string }>(import.meta.env.VITE_ALPHA_API_URL || '/api/alpha', { mode: 'chat', missionId: id, prompt: worker ? `Act as ${worker.name}, a ${worker.role} specialist. Purpose: ${worker.purpose}. Instructions: ${worker.instructions}. Mission: ${mission.goal}. User memory: ${memory} Adapt accordingly. ${mentor} User: ${content}` : `Mission goal: ${mission.goal}. User memory: ${memory} Adapt accordingly. ${mentor} User message: ${content}` })
+      const data = await postJson<{ text?: string; response?: string }>('/api/alpha', { mode: 'chat', missionId: id, prompt: worker ? `Act as ${worker.name}, a ${worker.role} specialist. Purpose: ${worker.purpose}. Instructions: ${worker.instructions}. Mission: ${mission.goal}. User memory: ${memory} Adapt accordingly. ${mentor} User: ${content}` : `Mission goal: ${mission.goal}. User memory: ${memory} Adapt accordingly. ${mentor} User message: ${content}` })
       addMessage(id, { role: 'assistant', content: String(data.text || data.response || 'Alpha completed the request.'), type: 'chat', workerId: worker?.id })
       if (/\b(build|create|generate|make the app|start building)\b/i.test(content)) await runBuild()
     } catch (error) { addMessage(id, { role: 'assistant', content: error instanceof Error ? error.message : 'Alpha could not connect right now. Your message is saved, so you can try again.', type: 'chat' }) }

@@ -33,7 +33,7 @@ export default function Home() {
     if (!activeId) { const thread = createChatThread(prompt); activeId = thread.id; setThreadId(activeId); navigate(`/workspace?chat=${activeId}`, { replace: true }) }
     setMessages(current => [...current, { id: crypto.randomUUID(), role: 'user', content: prompt, createdAt: new Date().toISOString() }]); setInput(''); setPending(true); setError('')
     try {
-      const payload = await postJson<{ text?: string; tool?: ChatMessage['tool']; videos?: Video[]; sources?: Source[]; currency?: CurrencyResult }>(import.meta.env.VITE_ALPHA_API_URL || '/api/alpha', { mode: 'chat', prompt })
+      const payload = await postJson<{ text?: string; tool?: ChatMessage['tool']; videos?: Video[]; sources?: Source[]; currency?: CurrencyResult }>('/api/alpha', { mode: 'chat', prompt })
       setMessages(current => [...current, { id: crypto.randomUUID(), role: 'assistant', createdAt: new Date().toISOString(), content: String(payload.text || ''), tool: payload.tool, videos: payload.videos, sources: payload.sources, currency: payload.currency }])
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Alpha could not respond.') }
     finally { setPending(false) }
