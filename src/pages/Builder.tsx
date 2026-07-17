@@ -9,9 +9,10 @@ import { findMentionedWorker } from '../lib/workerStore'
 import ActivityFeedPanel from '../components/mission/ActivityFeedPanel'
 import MentorPanel from '../components/mission/MentorPanel'
 import { isMentorMission } from '../lib/mentorStore'
+import { postJson } from '../lib/apiClient'
 
 function previewDocument(code: string) {
-  return `<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><script src="https://cdn.tailwindcss.com"></script><script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script><script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script><script src="https://unpkg.com/@babel/standalone/babel.min.js"></script><style>html,body,#root{min-height:100%;margin:0}*{box-sizing:border-box}</style></head><body><div id="root"></div><script type="text/babel">${code.replace(/<\/script/gi, '<\\/script')}</script></body></html>`
+  return `<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><script src="https://cdn.tailwindcss.com"></script><script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script><script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script><script src="https://unpkg.com/@babel/standalone/babel.min.js"></script><style>html,body,#root{min-height:100%;margin:0}*{box-sizing:border-box}.alpha-error{margin:24px;padding:16px;border:1px solid #fecaca;border-radius:12px;background:#fef2f2;color:#991b1b;font:14px/1.5 system-ui;white-space:pre-wrap}</style></head><body><div id="root"></div><script>function showAlphaError(value){const root=document.getElementById('root');root.innerHTML='<div class="alpha-error"><strong>Preview could not start.</strong><br>'+String(value||'Runtime error').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))+'</div>'}addEventListener('error',event=>showAlphaError(event.message));addEventListener('unhandledrejection',event=>showAlphaError(event.reason?.message||event.reason));</script><script type="text/babel">${code.replace(/<\/script/gi, '<\\/script')}</script></body></html>`
 }
 
 export default function Builder() {
@@ -59,12 +60,10 @@ export default function Builder() {
     const mentor = /\blearn|teach|course|study\b/i.test(mission.goal) ? 'Teacher mode: explain step-by-step and end with a short quiz.' : ''
     addMessage(id, { role: 'user', content, type: 'chat', workerId: worker?.id })
     try {
-      const response = await fetch(import.meta.env.VITE_ALPHA_API_URL || '/api/alpha', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'chat', missionId: id, prompt: worker ? `Act as ${worker.name}, a ${worker.role} specialist. Purpose: ${worker.purpose}. Instructions: ${worker.instructions}. Mission: ${mission.goal}. User memory: ${memory} Adapt accordingly. ${mentor} User: ${content}` : `Mission goal: ${mission.goal}. User memory: ${memory} Adapt accordingly. ${mentor} User message: ${content}` }) })
-      if (!response.ok) throw new Error(`API ${response.status}`)
-      const data = await response.json()
+      const data = await postJson<{ text?: string; response?: string }>(import.meta.env.VITE_ALPHA_API_URL || '/api/alpha', { mode: 'chat', missionId: id, prompt: worker ? `Act as ${worker.name}, a ${worker.role} specialist. Purpose: ${worker.purpose}. Instructions: ${worker.instructions}. Mission: ${mission.goal}. User memory: ${memory} Adapt accordingly. ${mentor} User: ${content}` : `Mission goal: ${mission.goal}. User memory: ${memory} Adapt accordingly. ${mentor} User message: ${content}` })
       addMessage(id, { role: 'assistant', content: String(data.text || data.response || 'Alpha completed the request.'), type: 'chat', workerId: worker?.id })
       if (/\b(build|create|generate|make the app|start building)\b/i.test(content)) await runBuild()
-    } catch { addMessage(id, { role: 'assistant', content: 'Alpha could not connect right now. Your message is saved, so you can try again.', type: 'chat' }) }
+    } catch (error) { addMessage(id, { role: 'assistant', content: error instanceof Error ? error.message : 'Alpha could not connect right now. Your message is saved, so you can try again.', type: 'chat' }) }
     finally { setPending(false) }
   }
 

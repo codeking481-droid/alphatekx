@@ -129,13 +129,10 @@ BUILD RULES - NON NEGOTIABLE:
 2. PREMIUM DESIGN - Use Tailwind. rounded-2xl, shadow-sm, hover:scale-105 transition-all, backdrop-blur, Inter font. Look like Linear, Stripe, Vercel. Never ugly.
 3. REAL IMAGES - Use https://images.unsplash.com/photo-... with real relevant photos, or https://api.dicebear.com for avatars. NEVER via.placeholder.com/150.
 4. FULL FUNCTIONALITY - If you build courses, include lessons array, quiz with keyword check, progress bar with localStorage per lesson, enroll modal not alert(). If contact form, show success animation.
-5. SINGLE FILE OUTPUT FOR NOW - Export a React component named AlphaApp that contains the full app. Use const { useState, useEffect } = React. No imports. Self-contained.
-6. SAVE MEMORY - At end, summarize what you built and what the user should do next, such as publishing to Marketplace or connecting an integration.
+5. SINGLE FILE OUTPUT - Define a React component named AlphaApp containing the full app. Use React.useState and other React globals. No imports or exports. Keep the file under 450 lines so it cannot be truncated.
 
 OUTPUT FORMAT - STRICT:
-You must output in 2 parts:
-PART 1: THINKING (for chat) - Short 2-3 sentences explaining what the team is doing.
-PART 2: CODE (for preview) - One fenced jsx code block containing the full working React component. It must start with function AlphaApp() and end with ReactDOM.createRoot(document.getElementById('root')).render(<AlphaApp />).
+Return one fenced jsx code block and nothing else. It must start with function AlphaApp() and end with ReactDOM.createRoot(document.getElementById('root')).render(<AlphaApp />).
 
 EXAMPLE USER IDEAS YOU MUST HANDLE:
 - "Build website for learning coding" -> Full premium learning platform
@@ -170,7 +167,7 @@ You are AlphaTekX. You turn ideas into reality. AlphaTekX was founded and is led
     })
   } catch (error) {
     const groqKey = primaryGroqKey
-    if (!groqKey || !/rate limit|429|tokens per min/i.test(error instanceof Error ? error.message : String(error))) throw error
+    if (!groqKey) throw error
     provider = 'groq'
     data = await fetchJson('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',

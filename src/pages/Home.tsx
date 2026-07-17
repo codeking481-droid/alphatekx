@@ -3,6 +3,7 @@ import { ArrowUp, Clock3, ExternalLink, Globe2, History, LoaderCircle, Plus, Ref
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { spendCredits } from '../lib/creditStore'
 import { createChatThread, getChatThread, hydrateChatHistory, saveChatThread, type GeneralChatMessage } from '../lib/chatHistoryStore'
+import { postJson } from '../lib/apiClient'
 
 type Video = { id: string; title: string; channel: string; url: string; thumbnail?: string }
 type Source = { title: string; url: string; content?: string }
@@ -32,9 +33,7 @@ export default function Home() {
     if (!activeId) { const thread = createChatThread(prompt); activeId = thread.id; setThreadId(activeId); navigate(`/workspace?chat=${activeId}`, { replace: true }) }
     setMessages(current => [...current, { id: crypto.randomUUID(), role: 'user', content: prompt, createdAt: new Date().toISOString() }]); setInput(''); setPending(true); setError('')
     try {
-      const response = await fetch(import.meta.env.VITE_ALPHA_API_URL || '/api/alpha', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'chat', prompt }) })
-      const payload = await response.json()
-      if (!response.ok) throw new Error(payload.error || `Alpha API ${response.status}`)
+      const payload = await postJson<{ text?: string; tool?: ChatMessage['tool']; videos?: Video[]; sources?: Source[]; currency?: CurrencyResult }>(import.meta.env.VITE_ALPHA_API_URL || '/api/alpha', { mode: 'chat', prompt })
       setMessages(current => [...current, { id: crypto.randomUUID(), role: 'assistant', createdAt: new Date().toISOString(), content: String(payload.text || ''), tool: payload.tool, videos: payload.videos, sources: payload.sources, currency: payload.currency }])
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Alpha could not respond.') }
     finally { setPending(false) }
