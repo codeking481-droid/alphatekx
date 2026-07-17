@@ -1,7 +1,45 @@
 import { supabase } from './supabase'
-export type UserKeys={openai:string;groq:string;anthropic:string;gemini:string;supabase:string;paystack:string}
-const empty:UserKeys={openai:'',groq:'',anthropic:'',gemini:'',supabase:'',paystack:''}
-const encode=(value:string)=>value?btoa(unescape(encodeURIComponent(value))):''
-const decode=(value:string)=>{try{return decodeURIComponent(escape(atob(value)))}catch{return''}}
-export async function getUserKeys():Promise<UserKeys>{if(!supabase)return empty;const{data:{user}}=await supabase.auth.getUser();if(!user)return empty;const{data,error}=await supabase.from('user_settings').select('api_keys').eq('user_id',user.id).maybeSingle();if(error||!data)return empty;const keys=data.api_keys??{};return{openai:decode(keys.openai??''),groq:decode(keys.groq??''),anthropic:decode(keys.anthropic??''),gemini:decode(keys.gemini??''),supabase:decode(keys.supabase??''),paystack:decode(keys.paystack??'')}}
-export async function saveUserKeys(keys:UserKeys){if(!supabase)throw new Error('Supabase is required');const{data:{user}}=await supabase.auth.getUser();if(!user)throw new Error('Sign in required');const api_keys={openai:encode(keys.openai.trim()),groq:encode(keys.groq.trim()),anthropic:encode(keys.anthropic.trim()),gemini:encode(keys.gemini.trim()),supabase:encode(keys.supabase.trim()),paystack:encode(keys.paystack.trim())};const{error}=await supabase.from('user_settings').upsert({user_id:user.id,api_keys,updated_at:new Date().toISOString()});if(error)throw error}
+
+export type ProviderName = 'openai' | 'groq' | 'anthropic' | 'gemini' | 'supabase' | 'paystack'
+export type UserKeys = Record<ProviderName, string>
+export type ProviderStatus = Record<ProviderName, { configured: boolean; masked: string }>
+
+const providers: ProviderName[] = ['openai', 'groq', 'anthropic', 'gemini', 'supabase', 'paystack']
+export const emptyUserKeys = Object.fromEntries(providers.map(provider => [provider, ''])) as UserKeys
+export const emptyProviderStatus = Object.fromEntries(providers.map(provider => [provider, { configured: false, masked: '' }])) as ProviderStatus
+
+async function accessToken() {
+  if (!supabase) throw new Error('Supabase is required to store private keys.')
+  const { data } = await supabase.auth.getSession()
+  if (!data.session) throw new Error('Sign in before managing API keys.')
+  return data.session.access_token
+}
+
+async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
+  const token = await accessToken()
+  const response = await fetch(url, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...options.headers },
+  })
+  const payload = await response.json().catch(() => ({})) as T & { error?: string }
+  if (!response.ok) throw new Error(payload.error || 'API key operation failed.')
+  return payload
+}
+
+export async function getUserKeyStatus(): Promise<ProviderStatus> {
+  const payload = await request<{ providers: ProviderStatus }>('/api/settings/api-keys')
+  return payload.providers || emptyProviderStatus
+}
+
+export async function saveUserKeys(keys: Partial<UserKeys>): Promise<ProviderStatus> {
+  const payload = await request<{ providers: ProviderStatus }>('/api/settings/api-keys', { method: 'POST', body: JSON.stringify({ keys }) })
+  return payload.providers
+}
+
+export async function removeUserKey(provider: ProviderName): Promise<ProviderStatus> {
+  return saveUserKeys({ [provider]: '' })
+}
+
+export async function testUserKey(provider: ProviderName) {
+  return request<{ valid: boolean; provider: ProviderName }>('/api/settings/api-keys/test', { method: 'POST', body: JSON.stringify({ provider }) })
+}

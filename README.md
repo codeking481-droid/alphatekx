@@ -33,11 +33,14 @@ Marketplace purchases are verified by `/api/marketplace/purchase`. Paid item amo
 2. In Render, create a Blueprint from the repository. Render reads [`render.yaml`](render.yaml).
 3. Alternatively create a Web Service manually with build command `npm install && npm run build` and start command `npm start`.
 4. Add every required value from `.env.example` in Render Dashboard > Environment. Do not expose `SUPABASE_SERVICE_ROLE_KEY`, `PAYSTACK_SECRET_KEY`, or AI provider keys with a `VITE_` prefix.
+   Add a stable `API_KEY_ENCRYPTION_KEY` with at least 32 random characters. If omitted, AlphaTekX derives encryption from the Supabase service-role key.
 5. Deploy and confirm the health log reports the injected Render port.
 6. In Render Settings > Custom Domains, add `alphatekx.name.ng`, then copy Render's exact DNS record into your DNS provider.
 7. Add `https://alphatekx.name.ng/auth` to Supabase Authentication redirect URLs and configure the live origin in Paystack.
 
 `server.mjs` serves `dist/`, handles SPA deep links, and owns all `/api/*` routes on Render. The files under `api/` are only Vercel adapters and are not required by Render.
+
+User-supplied provider keys are encrypted server-side with AES-256-GCM. The browser only receives a masked status. AI Worker requests send a worker ID to the server; the server verifies ownership, decrypts the selected provider key, calls that provider, and stores only the worker's bounded conversation memory.
 
 ## Optional Vercel deployment
 

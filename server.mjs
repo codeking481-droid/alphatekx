@@ -1,7 +1,7 @@
 import http from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
-import { randomUUID } from 'node:crypto'
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 
 function loadEnv() {
@@ -212,15 +212,14 @@ async function authenticatedUser(req, supabaseUrl, anonKey) {
   }
 }
 
-async function runUserWorker(body) {
-  const provider = String(body.provider || '').toLowerCase()
-  const apiKey = String(body.apiKey || '').trim()
-  const prompt = String(body.prompt || '').trim()
-  const model = String(body.model || '').trim().slice(0, 100)
+async function runUserWorker(worker, apiKey, prompt) {
+  const provider = String(worker.provider || '').toLowerCase()
+  const model = String(worker.model || '').trim().slice(0, 100)
   if (!['openai', 'groq', 'anthropic', 'gemini'].includes(provider)) throw new Error('Unsupported AI provider')
   if (!apiKey || apiKey.length < 12) throw new Error('A valid provider API key is required')
   if (!prompt) throw new Error('Worker prompt is required')
-  const system = `You are ${String(body.name || 'Alpha Worker').slice(0, 80)}, a ${String(body.role || 'specialist').slice(0, 50)} AI worker. Purpose: ${String(body.purpose || '').slice(0, 1000)}. Instructions: ${String(body.instructions || '').slice(0, 3000)}. Follow the user's task accurately. State uncertainty and never pretend an external action completed.`
+  const memory = Array.isArray(worker.memory) ? worker.memory.slice(-12).map(item => String(item).slice(0, 2000)).join('\n') : ''
+  const system = `You are ${String(worker.name || 'Alpha Worker').slice(0, 80)}, a ${String(worker.role || 'specialist').slice(0, 50)} AI worker. Purpose: ${String(worker.purpose || '').slice(0, 1000)}. Instructions: ${String(worker.instructions || '').slice(0, 3000)}. Follow the user's task accurately. State uncertainty and never pretend an external action completed.${memory ? `\nRecent conversation memory:\n${memory}` : ''}`
   if (provider === 'anthropic') {
     const data = await fetchJson('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' }, body: JSON.stringify({ model: model || 'claude-3-5-sonnet-latest', max_tokens: 1800, system, messages: [{ role: 'user', content: prompt }] }) })
     return { text: (data.content || []).map(item => item.text || '').join('\n').trim(), provider }
@@ -250,6 +249,120 @@ const deploymentWriteHeaders = (req, config) => config.service
   ? serviceHeaders(config.service)
   : userDataHeaders(req, config)
 const deploymentReadHeaders = (config) => serviceHeaders(config.service || config.anon)
+const userKeyProviders = ['openai', 'groq', 'anthropic', 'gemini', 'supabase', 'paystack']
+const aiKeyProviders = new Set(['openai', 'groq', 'anthropic', 'gemini'])
+
+function encryptionKey(config) {
+  const secret = process.env.API_KEY_ENCRYPTION_KEY || config.service
+  if (!secret) throw new Error('API key encryption is not configured')
+  return createHash('sha256').update(secret).digest()
+}
+
+function encryptSecret(value, key) {
+  const iv = randomBytes(12)
+  const cipher = createCipheriv('aes-256-gcm', key, iv)
+  const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()])
+  return `v1:${iv.toString('base64url')}:${cipher.getAuthTag().toString('base64url')}:${encrypted.toString('base64url')}`
+}
+
+function decryptSecret(value, key) {
+  if (!value) return ''
+  if (!String(value).startsWith('v1:')) {
+    try { return Buffer.from(String(value), 'base64').toString('utf8') } catch { return '' }
+  }
+  const [, iv, tag, encrypted] = String(value).split(':')
+  const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(iv, 'base64url'))
+  decipher.setAuthTag(Buffer.from(tag, 'base64url'))
+  return Buffer.concat([decipher.update(Buffer.from(encrypted, 'base64url')), decipher.final()]).toString('utf8')
+}
+
+const maskedKey = (value) => value ? `${value.slice(0, Math.min(5, value.length))}${'*'.repeat(8)}${value.slice(-4)}` : ''
+function validateUserKey(provider, value) {
+  if (value.length < 12 || value.length > 1000) throw new Error(`Enter a valid ${provider} key`)
+  const prefixes = { openai: 'sk-', groq: 'gsk_', anthropic: 'sk-ant-', paystack: 'sk_' }
+  if (prefixes[provider] && !value.startsWith(prefixes[provider])) throw new Error(`${provider} key has an unexpected format`)
+}
+
+async function storedUserKeys(userId, config) {
+  const response = await fetch(`${config.url}/rest/v1/user_settings?user_id=eq.${encodeURIComponent(userId)}&select=api_keys`, { headers: serviceHeaders(config.service) })
+  if (!response.ok) throw new Error('Could not load saved API keys. Run the latest Supabase schema first.')
+  return (await response.json())?.[0]?.api_keys || {}
+}
+
+function keyStatus(keys, key) {
+  const status = {}
+  for (const provider of userKeyProviders) {
+    let value = ''
+    try { value = decryptSecret(keys[provider], key) } catch {}
+    status[provider] = { configured: Boolean(value), masked: maskedKey(value) }
+  }
+  return status
+}
+
+async function apiKeySettings(req, res) {
+  const config = supabaseConfig()
+  if (!config.url || !config.anon || !config.service) return json(res, 503, { error: 'Secure API-key storage needs Supabase service configuration.' })
+  const user = await authenticatedUser(req, config.url, config.anon)
+  if (!user) return json(res, 401, { error: 'Authentication required' })
+  const key = encryptionKey(config)
+  const existing = await storedUserKeys(user.id, config)
+  if (req.method === 'GET') return json(res, 200, { providers: keyStatus(existing, key) })
+  const body = await readBody(req)
+  const changes = body.keys && typeof body.keys === 'object' ? body.keys : {}
+  const next = { ...existing }
+  for (const provider of userKeyProviders) {
+    if (!Object.prototype.hasOwnProperty.call(changes, provider)) continue
+    const value = String(changes[provider] || '').trim()
+    if (!value) delete next[provider]
+    else { validateUserKey(provider, value); next[provider] = encryptSecret(value, key) }
+  }
+  const response = await fetch(`${config.url}/rest/v1/user_settings?on_conflict=user_id`, { method: 'POST', headers: { ...serviceHeaders(config.service), Prefer: 'resolution=merge-duplicates,return=representation' }, body: JSON.stringify({ user_id: user.id, api_keys: next, updated_at: new Date().toISOString() }) })
+  if (!response.ok) throw new Error('Could not securely save API keys')
+  return json(res, 200, { saved: true, providers: keyStatus(next, key) })
+}
+
+async function testStoredKey(req, res) {
+  const config = supabaseConfig()
+  if (!config.url || !config.anon || !config.service) return json(res, 503, { error: 'Secure API-key storage is not configured.' })
+  const user = await authenticatedUser(req, config.url, config.anon)
+  if (!user) return json(res, 401, { error: 'Authentication required' })
+  const provider = String((await readBody(req)).provider || '').toLowerCase()
+  if (!aiKeyProviders.has(provider)) return json(res, 400, { error: 'This provider cannot be tested here.' })
+  const keys = await storedUserKeys(user.id, config)
+  const apiKey = decryptSecret(keys[provider], encryptionKey(config))
+  if (!apiKey) return json(res, 400, { error: `No ${provider} key is saved.` })
+  const requests = {
+    openai: ['https://api.openai.com/v1/models', { Authorization: `Bearer ${apiKey}` }],
+    groq: ['https://api.groq.com/openai/v1/models', { Authorization: `Bearer ${apiKey}` }],
+    anthropic: ['https://api.anthropic.com/v1/models', { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' }],
+    gemini: [`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`, {}],
+  }
+  const [url, headers] = requests[provider]
+  const response = await fetch(url, { headers })
+  if (!response.ok) return json(res, 400, { error: `${provider} rejected this key.` })
+  return json(res, 200, { valid: true, provider })
+}
+
+async function runWorkerRequest(req, res) {
+  const config = supabaseConfig()
+  if (!config.url || !config.anon || !config.service) return json(res, 503, { error: 'AI Workers need Supabase service configuration.' })
+  const user = await authenticatedUser(req, config.url, config.anon)
+  if (!user) return json(res, 401, { error: 'Authentication required' })
+  const body = await readBody(req)
+  const workerId = String(body.workerId || '')
+  const prompt = String(body.prompt || '').trim().slice(0, 12000)
+  if (!workerId || !prompt) return json(res, 400, { error: 'Choose a worker and enter a task.' })
+  const workerResponse = await fetch(`${config.url}/rest/v1/workers?id=eq.${encodeURIComponent(workerId)}&user_id=eq.${encodeURIComponent(user.id)}&select=*`, { headers: serviceHeaders(config.service) })
+  const worker = (await workerResponse.json())?.[0]
+  if (!worker) return json(res, 404, { error: 'Worker not found.' })
+  const keys = await storedUserKeys(user.id, config)
+  const apiKey = decryptSecret(keys[worker.provider], encryptionKey(config))
+  if (!apiKey) return json(res, 400, { error: `Add and test your ${String(worker.provider).toUpperCase()} key in API Keys first.` })
+  const result = await runUserWorker(worker, apiKey, prompt)
+  const memory = [...(Array.isArray(worker.memory) ? worker.memory : []), `User: ${prompt.slice(0, 4000)}`, `Worker: ${String(result.text || '').slice(0, 4000)}`].slice(-20)
+  await fetch(`${config.url}/rest/v1/workers?id=eq.${encodeURIComponent(worker.id)}&user_id=eq.${encodeURIComponent(user.id)}`, { method: 'PATCH', headers: serviceHeaders(config.service), body: JSON.stringify({ memory }) })
+  return json(res, 200, { ...result, memory })
+}
 
 async function ensureProfile(user, config) {
   const headers = serviceHeaders(config.service)
@@ -549,12 +662,18 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && req.url === '/api/credits/spend') return creditSpend(req, res)
   if (req.method === 'POST' && req.url === '/api/activity/ping') return activityPing(req, res)
   if (req.method === 'GET' && req.url === '/api/admin/stats') return adminStats(req, res)
+  if (['GET', 'POST'].includes(req.method || '') && req.url === '/api/settings/api-keys') {
+    try { return await apiKeySettings(req, res) } catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : 'API key operation failed' }) }
+  }
+  if (req.method === 'POST' && req.url === '/api/settings/api-keys/test') {
+    try { return await testStoredKey(req, res) } catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : 'API key test failed' }) }
+  }
   if (req.method === 'POST' && req.url === '/api/tools/currency') {
     try { const body = await readBody(req); return json(res, 200, await currencyPair(String(body.from || 'USD').toUpperCase(), String(body.to || 'NGN').toUpperCase(), Number(body.amount || 1))) }
     catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : 'Currency conversion failed' }) }
   }
   if (req.method === 'POST' && req.url === '/api/workers/run') {
-    try { const config = supabaseConfig(); const user = config.url && config.anon ? await authenticatedUser(req, config.url, config.anon) : null; if (!user) return json(res, 401, { error: 'Authentication required' }); return json(res, 200, await runUserWorker(await readBody(req))) }
+    try { return await runWorkerRequest(req, res) }
     catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : 'Worker failed' }) }
   }
   if (req.method === 'POST' && req.url === '/api/alpha') {

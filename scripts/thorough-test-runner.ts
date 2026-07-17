@@ -105,6 +105,8 @@ await test('Memory: prior decisions retained and injected',()=>{assert(memory.in
 // 9. Security and server behavior.
 await test('Security: XSS message is stored as text and rendered by React',()=>{const payload='<script>alert(1)</script>';store.addMessage(m1.id,{role:'user',content:payload,type:'chat'});assert(store.getMissionById(m1.id)?.messages.some(message=>message.content===payload),'payload was altered');assert(!source('src/pages/Builder.tsx').includes('dangerouslySetInnerHTML'),'unsafe chat rendering detected')})
 await test('Security: mission RLS and review ownership policies exist',()=>{const sql=source('supabase/schema.sql');assert(sql.includes('mission owner access')&&sql.includes('review owner write'),'RLS policies missing')})
+await test('Security: user API keys are encrypted and never returned raw',()=>{const server=source('server.mjs');const settings=source('src/lib/userSettings.ts');assert(server.includes("createCipheriv('aes-256-gcm'")&&server.includes('keyStatus(existing, key)')&&!settings.includes('atob(')&&!settings.includes('api_keys'),'secure key vault contract missing')})
+await test('Workers: server resolves owned worker and stored provider key',()=>{const server=source('server.mjs');const workers=source('src/pages/Workers.tsx');assert(server.includes('runWorkerRequest')&&server.includes('storedUserKeys(user.id, config)')&&workers.includes("{ workerId: selected.id, prompt: prompt.trim() }")&&!workers.includes('apiKey'),'worker still exposes provider keys in the browser')})
 
 const port=4328
 const server=spawn(process.execPath,['server.mjs'],{cwd:root,env:{...process.env,PORT:String(port)},stdio:['ignore','pipe','pipe']})
