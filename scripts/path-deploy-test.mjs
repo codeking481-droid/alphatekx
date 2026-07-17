@@ -58,7 +58,7 @@ const app = spawn(process.execPath, ['server.mjs'], {
     PORT: String(appPort),
     VITE_SUPABASE_URL: `http://127.0.0.1:${supabasePort}`,
     VITE_SUPABASE_ANON_KEY: 'anon-test-key',
-    SUPABASE_SERVICE_ROLE_KEY: 'service-test-key',
+    SUPABASE_SERVICE_ROLE_KEY: '',
     PUBLIC_APP_URL: `http://127.0.0.1:${appPort}`,
   },
   stdio: ['ignore', 'pipe', 'pipe'],

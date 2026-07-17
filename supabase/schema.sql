@@ -37,6 +37,7 @@ create policy "mission owner access" on public.missions for all using (auth.uid(
 create policy "message owner access" on public.messages for all using (auth.uid()=user_id) with check (auth.uid()=user_id);
 create policy "activity owner access" on public.activities for all using (auth.uid()=user_id) with check (auth.uid()=user_id);
 create policy "creation owner access" on public.creations for all using (auth.uid()=user_id) with check (auth.uid()=user_id);
+create policy "published creations public read" on public.creations for select using (published=true);
 create policy "worker owner access" on public.workers for all using (auth.uid()=user_id) with check (auth.uid()=user_id);
 create policy "marketplace public read" on public.marketplace_items for select using (true);
 create policy "marketplace owner write" on public.marketplace_items for insert with check (auth.uid()=owner_id);

@@ -39,15 +39,28 @@ export async function deployPastedHtml(input: { title: string; slug: string; htm
   if (!title) throw new Error('Enter an app name.')
   if (!/<(?:!doctype\s+html|html|body)[\s>]/i.test(html)) throw new Error('Paste a complete HTML document.')
   if (new Blob([html]).size > 900_000) throw new Error('HTML must be smaller than 900 KB.')
-  const response = await fetch('/api/creations/publish-code', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${session.access_token}`,
-    },
-    body: JSON.stringify({ title, slug, html }),
-  })
-  const payload = await response.json()
-  if (!response.ok) throw new Error(payload.error || 'Code deployment failed.')
-  return payload as { creationId: string; slug: string; pathUrl: string; subdomainUrl: string }
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), 45_000)
+  try {
+    const response = await fetch('/api/creations/publish-code', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ title, slug, html }),
+      signal: controller.signal,
+    })
+    const raw = await response.text()
+    let payload: Record<string, unknown> = {}
+    try { payload = raw ? JSON.parse(raw) as Record<string, unknown> : {} } catch {}
+    if (!response.ok) throw new Error(String(payload.error || raw || `Deployment server returned HTTP ${response.status}.`))
+    return payload as { creationId: string; slug: string; pathUrl: string; subdomainUrl: string }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw new Error('Deployment timed out. Render may be waking up; try once more.')
+    if (error instanceof TypeError) throw new Error('Could not reach the deployment server. Confirm Render is running the Web Service with `npm start`.')
+    throw error
+  } finally {
+    window.clearTimeout(timeout)
+  }
 }

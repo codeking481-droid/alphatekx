@@ -11,3 +11,11 @@ where owner_id is null;
 create unique index if not exists creations_slug_unique
   on public.creations(slug)
   where slug is not null;
+
+alter table public.creations enable row level security;
+
+drop policy if exists "published creations public read" on public.creations;
+create policy "published creations public read"
+  on public.creations
+  for select
+  using (published = true);

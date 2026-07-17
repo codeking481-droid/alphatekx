@@ -205,8 +205,14 @@ You are AlphaTekX. You turn ideas into reality. AlphaTekX was founded and is led
 }
 
 async function authenticatedUser(req, supabaseUrl, anonKey) {
-  const response = await fetch(`${supabaseUrl}/auth/v1/user`, { headers: { apikey: anonKey, Authorization: String(req.headers.authorization || '') } })
-  return response.ok ? response.json() : null
+  const authorization = String(req.headers.authorization || '')
+  if (!authorization.toLowerCase().startsWith('bearer ')) return null
+  try {
+    const response = await fetch(`${supabaseUrl}/auth/v1/user`, { headers: { apikey: anonKey, Authorization: authorization } })
+    return response.ok ? response.json() : null
+  } catch {
+    return null
+  }
 }
 
 async function runUserWorker(body) {
@@ -238,6 +244,15 @@ const supabaseConfig = () => ({
   service: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
 })
 const serviceHeaders = (service) => ({ apikey: service, Authorization: `Bearer ${service}`, 'Content-Type': 'application/json' })
+const userDataHeaders = (req, config) => ({
+  apikey: config.anon,
+  Authorization: String(req.headers.authorization || ''),
+  'Content-Type': 'application/json',
+})
+const deploymentWriteHeaders = (req, config) => config.service
+  ? serviceHeaders(config.service)
+  : userDataHeaders(req, config)
+const deploymentReadHeaders = (config) => serviceHeaders(config.service || config.anon)
 
 async function ensureProfile(user, config) {
   const headers = serviceHeaders(config.service)
@@ -385,10 +400,10 @@ const requestSubdomain = (req) => {
 
 async function fetchPublishedCreation(slug) {
   const config = supabaseConfig()
-  if (!config.url || !config.service) throw new Error('Path deployment is not configured.')
-  const response = await fetch(`${config.url}/rest/v1/creations?slug=eq.${encodeURIComponent(slug)}&published=eq.true&select=id,title,slug,code&limit=1`, { headers: serviceHeaders(config.service) })
+  if (!config.url || !config.anon) throw new Error('Path deployment is not configured.')
+  const response = await fetch(`${config.url}/rest/v1/creations?slug=eq.${encodeURIComponent(slug)}&published=eq.true&select=id,title,slug,code&limit=1`, { headers: deploymentReadHeaders(config) })
   const payload = await response.json()
-  if (!response.ok) throw new Error(payload.message || 'Could not load the published app.')
+  if (!response.ok) throw new Error(payload.message || 'Could not load the published app. Run supabase/path-deploy.sql once.')
   return payload?.[0] || null
 }
 
@@ -413,7 +428,7 @@ async function servePublishedCreation(req, res, slug) {
 
 async function publishCreationPath(req, res) {
   const config = supabaseConfig()
-  if (!config.url || !config.anon || !config.service) return json(res, 503, { error: 'Path deployment needs Supabase URL, anon key, and service role key.' })
+  if (!config.url || !config.anon) return json(res, 503, { error: 'Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to Render, then redeploy.' })
   try {
     const user = await authenticatedUser(req, config.url, config.anon)
     if (!user) return json(res, 401, { error: 'Authentication required.' })
@@ -422,7 +437,7 @@ async function publishCreationPath(req, res) {
     const slug = String(body.slug || '').toLowerCase().trim()
     if (!/^[0-9a-f-]{36}$/i.test(creationId)) return json(res, 400, { error: 'Invalid creation.' })
     if (!validSlug(slug)) return json(res, 400, { error: 'Use 1-64 lowercase letters, numbers, or hyphens for the slug.' })
-    const headers = serviceHeaders(config.service)
+    const headers = deploymentWriteHeaders(req, config)
     const creationResponse = await fetch(`${config.url}/rest/v1/creations?id=eq.${encodeURIComponent(creationId)}&user_id=eq.${encodeURIComponent(user.id)}&select=id,title,code`, { headers })
     const creationPayload = await creationResponse.json()
     if (!creationResponse.ok) return json(res, 500, { error: creationPayload.message || 'Could not read this creation. Run supabase/path-deploy.sql first.' })
@@ -450,7 +465,7 @@ async function publishCreationPath(req, res) {
 
 async function publishPastedHtml(req, res) {
   const config = supabaseConfig()
-  if (!config.url || !config.anon || !config.service) return json(res, 503, { error: 'Code deployment needs Supabase URL, anon key, and service role key.' })
+  if (!config.url || !config.anon) return json(res, 503, { error: 'Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to Render, then redeploy.' })
   try {
     const user = await authenticatedUser(req, config.url, config.anon)
     if (!user) return json(res, 401, { error: 'Authentication required.' })
@@ -462,7 +477,7 @@ async function publishPastedHtml(req, res) {
     if (!validSlug(slug)) return json(res, 400, { error: 'Use 1-64 lowercase letters, numbers, or hyphens for the slug.' })
     if (!/<(?:!doctype\s+html|html|body)[\s>]/i.test(html)) return json(res, 400, { error: 'Paste a complete HTML document.' })
     if (Buffer.byteLength(html, 'utf8') > 900_000) return json(res, 413, { error: 'HTML must be smaller than 900 KB.' })
-    const headers = serviceHeaders(config.service)
+    const headers = deploymentWriteHeaders(req, config)
     const existingResponse = await fetch(`${config.url}/rest/v1/creations?slug=eq.${encodeURIComponent(slug)}&select=id,user_id,mission_id&limit=1`, { headers })
     const existingPayload = await existingResponse.json()
     if (!existingResponse.ok) return json(res, 500, { error: existingPayload.message || 'Could not validate the slug. Run supabase/path-deploy.sql first.' })
