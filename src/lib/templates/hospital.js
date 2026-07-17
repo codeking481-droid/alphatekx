@@ -81,11 +81,11 @@ function App() {
         React.createElement('span', { style: { fontSize: 20, fontWeight: 800, color: '#1e293b' } }, 'Hospital OS')
       ),
       React.createElement('div', { style: { padding: '8px 12px', flex: 1 } },
-        navItems.map(n => React.createElement('button', { key: n.id, onClick: () => setView(n.id), style: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '12px 16px', borderRadius: 14, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: view === n.id ? 600 : 400, background: view === n.id ? '#3b82f6' : 'transparent', color: view === n.id ? 'white' : '#475569', marginBottom: 4, transition: 'all 0.15s' } }, React.createElement('span', null, n.icon), n.label))
+        navItems.map(n => React.createElement('button', { key: n.id, onClick: () => setView(n.id), style: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '12px 16px', borderRadius: 14, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: view === n.id ? 600 : 400, background: view === n.id ? '#E56B2D' : 'transparent', color: view === n.id ? 'white' : '#475569', marginBottom: 4, transition: 'all 0.15s' } }, React.createElement('span', null, n.icon), n.label))
       ),
       React.createElement('div', { style: { padding: 16 } },
         React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 10, padding: '12px', borderRadius: 14, background: 'rgba(241,245,249,0.7)' } },
-          React.createElement('div', { style: { width: 36, height: 36, borderRadius: 12, background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: 14 } }, 'DR'),
+          React.createElement('div', { style: { width: 36, height: 36, borderRadius: 12, background: 'linear-gradient(135deg, #E56B2D, #C45A26)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: 14 } }, 'DR'),
           React.createElement('div', null, React.createElement('p', { style: { fontSize: 13, fontWeight: 600, color: '#1e293b', margin: 0 } }, 'Dr. Admin'), React.createElement('p', { style: { fontSize: 11, color: '#94a3b8', margin: 0 } }, 'Administrator'))
         )
       )
@@ -99,14 +99,14 @@ function App() {
         ),
         React.createElement('div', { style: { display: 'flex', gap: 12, alignItems: 'center' } },
           React.createElement('input', { value: search, onChange: e => { setSearch(e.target.value); setView('patients'); }, placeholder: 'Search patients...', style: { padding: '10px 20px', borderRadius: 999, border: '1px solid rgba(148,163,184,0.3)', background: 'rgba(255,255,255,0.7)', width: 280, fontSize: 14, outline: 'none' } }),
-          view === 'patients' && React.createElement('button', { onClick: () => setShowAddModal(true), style: { padding: '10px 24px', borderRadius: 999, border: 'none', background: '#3b82f6', color: 'white', fontSize: 14, fontWeight: 600, cursor: 'pointer' } }, '+ Add Patient')
+          view === 'patients' && React.createElement('button', { onClick: () => setShowAddModal(true), style: { padding: '10px 24px', borderRadius: 999, border: 'none', background: '#E56B2D', color: 'white', fontSize: 14, fontWeight: 600, cursor: 'pointer' } }, '+ Add Patient')
         )
       ),
 
       // DASHBOARD
       view === 'dashboard' && React.createElement('div', null,
         React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16, marginBottom: 24 } },
-          [{ l: 'Total', v: stats.total, i: '👥', c: '#3b82f6' }, { l: 'Waiting', v: stats.waiting, i: '⏳', c: '#f59e0b' }, { l: 'In Treatment', v: stats.treating, i: '💊', c: '#6366f1' }, { l: 'Critical', v: stats.critical, i: '🚨', c: '#ef4444' }, { l: 'Discharged', v: stats.discharged, i: '✅', c: '#10b981' }].map(s => React.createElement('div', { key: s.l, style: { ...cardStyle, padding: 20 } },
+          [{ l: 'Total', v: stats.total, i: '👥', c: '#E56B2D' }, { l: 'Waiting', v: stats.waiting, i: '⏳', c: '#f59e0b' }, { l: 'In Treatment', v: stats.treating, i: '💊', c: '#E07A45' }, { l: 'Critical', v: stats.critical, i: '🚨', c: '#ef4444' }, { l: 'Discharged', v: stats.discharged, i: '✅', c: '#10b981' }].map(s => React.createElement('div', { key: s.l, style: { ...cardStyle, padding: 20 } },
             React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
               React.createElement('div', null, React.createElement('p', { style: { fontSize: 12, color: '#94a3b8', margin: 0, fontWeight: 500 } }, s.l), React.createElement('p', { style: { fontSize: 32, fontWeight: 800, color: '#1e293b', margin: '4px 0 0' } }, s.v)),
               React.createElement('span', { style: { fontSize: 28 } }, s.i)
@@ -118,7 +118,7 @@ function App() {
           React.createElement('div', { style: { ...cardStyle, padding: 24 } },
             React.createElement('h3', { style: { fontSize: 16, fontWeight: 700, color: '#1e293b', marginBottom: 16 } }, 'Recent Patients'),
             React.createElement('div', null, patients.slice(0, 5).map(p => React.createElement('div', { key: p.id, onClick: () => { setSelectedPatient(p); }, style: { display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: '1px solid #f1f5f9', cursor: 'pointer' } },
-              React.createElement('div', { style: { width: 36, height: 36, borderRadius: 12, background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: 14 } }, p.name.charAt(0)),
+              React.createElement('div', { style: { width: 36, height: 36, borderRadius: 12, background: 'linear-gradient(135deg, #E56B2D, #C45A26)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: 14 } }, p.name.charAt(0)),
               React.createElement('div', { style: { flex: 1 } }, React.createElement('p', { style: { fontSize: 14, fontWeight: 600, color: '#1e293b', margin: 0 } }, p.name), React.createElement('p', { style: { fontSize: 12, color: '#94a3b8', margin: 0 } }, p.condition + ' • ' + p.department)),
               React.createElement('span', { style: { padding: '4px 12px', borderRadius: 999, fontSize: 11, fontWeight: 600, background: (statusColors[p.status]||{}).bg, color: (statusColors[p.status]||{}).color } }, p.status)
             )))
@@ -127,7 +127,7 @@ function App() {
           React.createElement('div', { style: { ...cardStyle, padding: 24 } },
             React.createElement('h3', { style: { fontSize: 16, fontWeight: 700, color: '#1e293b', marginBottom: 16 } }, "Today's Schedule"),
             React.createElement('div', null, appointments.map(a => React.createElement('div', { key: a.id, style: { display: 'flex', gap: 12, padding: '10px 0', borderBottom: '1px solid #f1f5f9' } },
-              React.createElement('div', { style: { minWidth: 48, fontSize: 14, fontWeight: 700, color: '#3b82f6' } }, a.time),
+              React.createElement('div', { style: { minWidth: 48, fontSize: 14, fontWeight: 700, color: '#E56B2D' } }, a.time),
               React.createElement('div', null, React.createElement('p', { style: { fontSize: 13, fontWeight: 600, color: '#1e293b', margin: 0 } }, a.patient), React.createElement('p', { style: { fontSize: 11, color: '#94a3b8', margin: 0 } }, a.doctor + ' • ' + a.dept))
             )))
           )
@@ -137,15 +137,15 @@ function App() {
       // PATIENTS
       view === 'patients' && React.createElement('div', null,
         React.createElement('div', { style: { display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' } },
-          statuses.map(s => React.createElement('button', { key: s, onClick: () => setStatusFilter(s), style: { padding: '7px 16px', borderRadius: 999, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 500, background: statusFilter === s ? '#3b82f6' : 'rgba(255,255,255,0.7)', color: statusFilter === s ? 'white' : '#475569' } }, s)),
+          statuses.map(s => React.createElement('button', { key: s, onClick: () => setStatusFilter(s), style: { padding: '7px 16px', borderRadius: 999, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 500, background: statusFilter === s ? '#E56B2D' : 'rgba(255,255,255,0.7)', color: statusFilter === s ? 'white' : '#475569' } }, s)),
           React.createElement('div', { style: { width: 1, background: '#e2e8f0', margin: '0 4px' } }),
-          departments.map(d => React.createElement('button', { key: d, onClick: () => setDeptFilter(d), style: { padding: '7px 16px', borderRadius: 999, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 500, background: deptFilter === d ? '#8b5cf6' : 'rgba(255,255,255,0.7)', color: deptFilter === d ? 'white' : '#475569' } }, d))
+          departments.map(d => React.createElement('button', { key: d, onClick: () => setDeptFilter(d), style: { padding: '7px 16px', borderRadius: 999, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 500, background: deptFilter === d ? '#C45A26' : 'rgba(255,255,255,0.7)', color: deptFilter === d ? 'white' : '#475569' } }, d))
         ),
         React.createElement('div', { style: { ...cardStyle, overflow: 'hidden' } },
           React.createElement('table', { style: { width: '100%', borderCollapse: 'collapse' } },
             React.createElement('thead', null, React.createElement('tr', { style: { borderBottom: '1px solid #f1f5f9' } }, ['Patient', 'Age', 'Condition', 'Department', 'Doctor', 'Bed', 'Status', ''].map(h => React.createElement('th', { key: h, style: { padding: '14px 16px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' } }, h)))),
             React.createElement('tbody', null, filteredPatients.map(p => React.createElement('tr', { key: p.id, onClick: () => setSelectedPatient(p), style: { borderBottom: '1px solid #f8fafc', cursor: 'pointer' }, onMouseEnter: e => e.currentTarget.style.background = 'rgba(248,250,252,0.5)', onMouseLeave: e => e.currentTarget.style.background = 'transparent' },
-              React.createElement('td', { style: { padding: '14px 16px' } }, React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, React.createElement('div', { style: { width: 36, height: 36, borderRadius: 12, background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: 14 } }, p.name.charAt(0)), React.createElement('span', { style: { fontWeight: 600, color: '#1e293b', fontSize: 14 } }, p.name))),
+              React.createElement('td', { style: { padding: '14px 16px' } }, React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, React.createElement('div', { style: { width: 36, height: 36, borderRadius: 12, background: 'linear-gradient(135deg, #E56B2D, #C45A26)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: 14 } }, p.name.charAt(0)), React.createElement('span', { style: { fontWeight: 600, color: '#1e293b', fontSize: 14 } }, p.name))),
               React.createElement('td', { style: { padding: '14px 16px', fontSize: 14, color: '#475569' } }, p.age),
               React.createElement('td', { style: { padding: '14px 16px', fontSize: 14, color: '#475569' } }, p.condition),
               React.createElement('td', { style: { padding: '14px 16px', fontSize: 14, color: '#475569' } }, p.department),
@@ -162,7 +162,7 @@ function App() {
       view === 'appointments' && React.createElement('div', { style: { ...cardStyle, padding: 24 } },
         React.createElement('h3', { style: { fontSize: 18, fontWeight: 700, color: '#1e293b', marginBottom: 20 } }, "Today's Appointments"),
         React.createElement('div', null, appointments.map(a => React.createElement('div', { key: a.id, style: { display: 'flex', gap: 20, padding: '16px 0', borderBottom: '1px solid #f1f5f9', alignItems: 'center' } },
-          React.createElement('div', { style: { minWidth: 60, textAlign: 'center', padding: '8px 12px', borderRadius: 12, background: '#3b82f6', color: 'white', fontWeight: 700, fontSize: 14 } }, a.time),
+          React.createElement('div', { style: { minWidth: 60, textAlign: 'center', padding: '8px 12px', borderRadius: 12, background: '#E56B2D', color: 'white', fontWeight: 700, fontSize: 14 } }, a.time),
           React.createElement('div', { style: { flex: 1 } }, React.createElement('p', { style: { fontSize: 15, fontWeight: 600, color: '#1e293b', margin: 0 } }, a.patient), React.createElement('p', { style: { fontSize: 13, color: '#94a3b8', margin: '2px 0 0' } }, a.doctor + ' • ' + a.dept + ' Department')),
           React.createElement('span', { style: { padding: '5px 14px', borderRadius: 999, fontSize: 12, fontWeight: 600, background: (statusColors[a.status]||{}).bg, color: (statusColors[a.status]||{}).color } }, a.status)
         )))
@@ -172,7 +172,7 @@ function App() {
       view === 'staff' && React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 } },
         staff.map(s => React.createElement('div', { key: s.name, style: { ...cardStyle, padding: 24 } },
           React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 } },
-            React.createElement('div', { style: { width: 56, height: 56, borderRadius: 16, background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: 18 } }, s.name.replace('Dr. ', '').charAt(0)),
+            React.createElement('div', { style: { width: 56, height: 56, borderRadius: 16, background: 'linear-gradient(135deg, #E56B2D, #C45A26)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: 18 } }, s.name.replace('Dr. ', '').charAt(0)),
             React.createElement('div', null, React.createElement('h3', { style: { fontSize: 16, fontWeight: 700, color: '#1e293b', margin: 0 } }, s.name), React.createElement('p', { style: { fontSize: 13, color: '#94a3b8', margin: '2px 0 0' } }, s.role))
           ),
           React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
@@ -188,7 +188,7 @@ function App() {
         React.createElement('div', { onClick: e => e.stopPropagation(), style: { background: 'white', borderRadius: 24, padding: 32, width: 560, maxWidth: '90vw', maxHeight: '90vh', overflowY: 'auto' } },
           React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: 24 } },
             React.createElement('div', { style: { display: 'flex', gap: 16, alignItems: 'center' } },
-              React.createElement('div', { style: { width: 56, height: 56, borderRadius: 16, background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: 20 } }, selectedPatient.name.charAt(0)),
+              React.createElement('div', { style: { width: 56, height: 56, borderRadius: 16, background: 'linear-gradient(135deg, #E56B2D, #C45A26)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: 20 } }, selectedPatient.name.charAt(0)),
               React.createElement('div', null, React.createElement('h2', { style: { fontSize: 22, fontWeight: 800, color: '#1e293b', margin: 0 } }, selectedPatient.name), React.createElement('p', { style: { color: '#94a3b8', margin: '4px 0 0', fontSize: 14 } }, selectedPatient.department + ' • ' + selectedPatient.doctor))
             ),
             React.createElement('button', { onClick: () => setSelectedPatient(null), style: { background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#94a3b8' } }, '✕')
@@ -202,7 +202,7 @@ function App() {
           ),
           React.createElement('h3', { style: { fontSize: 15, fontWeight: 700, color: '#1e293b', margin: '0 0 12px' } }, 'Patient History'),
           React.createElement('div', null, selectedPatient.history.map((h, i) => React.createElement('div', { key: i, style: { display: 'flex', gap: 12, padding: '10px 0', borderBottom: '1px solid #f1f5f9' } },
-            React.createElement('div', { style: { minWidth: 60, fontSize: 12, fontWeight: 600, color: '#3b82f6' } }, h.date),
+            React.createElement('div', { style: { minWidth: 60, fontSize: 12, fontWeight: 600, color: '#E56B2D' } }, h.date),
             React.createElement('p', { style: { fontSize: 13, color: '#475569', margin: 0 } }, h.note)
           )))
         )
@@ -222,7 +222,7 @@ function App() {
           ),
           React.createElement('div', { style: { display: 'flex', gap: 12, marginTop: 8 } },
             React.createElement('button', { onClick: () => setShowAddModal(false), style: { flex: 1, padding: '12px', borderRadius: 12, border: '1px solid #e2e8f0', background: 'white', fontSize: 14, fontWeight: 500, cursor: 'pointer' } }, 'Cancel'),
-            React.createElement('button', { onClick: addPatient, style: { flex: 1, padding: '12px', borderRadius: 12, border: 'none', background: '#3b82f6', color: 'white', fontSize: 14, fontWeight: 600, cursor: 'pointer' } }, 'Add Patient')
+            React.createElement('button', { onClick: addPatient, style: { flex: 1, padding: '12px', borderRadius: 12, border: 'none', background: '#E56B2D', color: 'white', fontSize: 14, fontWeight: 600, cursor: 'pointer' } }, 'Add Patient')
           )
         )
       )

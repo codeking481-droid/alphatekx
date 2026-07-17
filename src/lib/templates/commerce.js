@@ -106,12 +106,12 @@ function App() {
         React.createElement('span', { style: { fontSize: 22, fontWeight: 800, color: '#1e293b' } }, 'Commerce OS')
       ),
       React.createElement('div', { style: { display: 'flex', gap: 24 } },
-        ['home', 'shop'].map(v => React.createElement('button', { key: v, onClick: () => setView(v), style: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: view === v ? 700 : 500, color: view === v ? '#3b82f6' : '#64748b' } }, v === 'home' ? 'Home' : 'Shop'))
+        ['home', 'shop'].map(v => React.createElement('button', { key: v, onClick: () => setView(v), style: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: view === v ? 700 : 500, color: view === v ? '#E56B2D' : '#64748b' } }, v === 'home' ? 'Home' : 'Shop'))
       ),
       React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } },
         React.createElement('input', { value: search, onChange: e => { setSearch(e.target.value); setView('shop'); }, placeholder: 'Search products...', style: { padding: '10px 20px', borderRadius: 999, border: '1px solid rgba(148,163,184,0.3)', background: 'rgba(255,255,255,0.7)', width: 240, fontSize: 14, outline: 'none' } }),
         React.createElement('button', { onClick: () => { const w = products.filter(p => wishlist.includes(p.id)); if (w.length) setToast(w.length + ' items in wishlist ❤️'); }, style: { position: 'relative', background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, padding: '8px' } }, '❤️', wishlist.length > 0 && React.createElement('span', { style: { position: 'absolute', top: 2, right: 2, background: '#ef4444', borderRadius: '50%', padding: '1px 6px', fontSize: 10, color: 'white' } }, wishlist.length)),
-        React.createElement('button', { onClick: () => setShowCart(true), style: { position: 'relative', padding: '10px 20px', borderRadius: 999, background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', color: 'white', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600 } }, '🛒 Cart ' + cartCount)
+        React.createElement('button', { onClick: () => setShowCart(true), style: { position: 'relative', padding: '10px 20px', borderRadius: 999, background: 'linear-gradient(135deg, #E56B2D, #C45A26)', color: 'white', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600 } }, '🛒 Cart ' + cartCount)
       )
     ),
 
@@ -120,7 +120,7 @@ function App() {
       React.createElement('div', { style: { padding: '60px 32px', textAlign: 'center', maxWidth: 800, margin: '0 auto' } },
         React.createElement('h1', { style: { fontSize: 48, fontWeight: 800, color: '#1e293b', marginBottom: 16, lineHeight: 1.1 } }, 'Shop Smart,', React.createElement('br', null), 'Live Better'),
         React.createElement('p', { style: { fontSize: 18, color: '#64748b', marginBottom: 32 } }, 'Discover premium products at unbeatable prices. Free shipping on orders over $50.'),
-        React.createElement('button', { onClick: () => setView('shop'), style: { padding: '14px 40px', borderRadius: 999, border: 'none', background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', color: 'white', fontSize: 16, fontWeight: 700, cursor: 'pointer' } }, 'Shop Now')
+        React.createElement('button', { onClick: () => setView('shop'), style: { padding: '14px 40px', borderRadius: 999, border: 'none', background: 'linear-gradient(135deg, #E56B2D, #C45A26)', color: 'white', fontSize: 16, fontWeight: 700, cursor: 'pointer' } }, 'Shop Now')
       ),
       React.createElement('div', { style: { padding: '0 32px 60px', maxWidth: 1200, margin: '0 auto' } },
         React.createElement('h2', { style: { fontSize: 28, fontWeight: 700, color: '#1e293b', marginBottom: 24 } }, '🔥 Trending Now'),
@@ -134,7 +134,7 @@ function App() {
               React.createElement('h3', { style: { fontSize: 15, fontWeight: 700, color: '#1e293b', margin: '0 0 4px' } }, p.name),
               React.createElement(Stars, { rating: p.rating }),
               React.createElement('div', { style: { display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 } },
-                React.createElement('span', { style: { fontSize: 18, fontWeight: 700, color: '#3b82f6' } }, '$' + p.price.toFixed(2)),
+                React.createElement('span', { style: { fontSize: 18, fontWeight: 700, color: '#E56B2D' } }, '$' + p.price.toFixed(2)),
                 p.oldPrice > p.price && React.createElement('span', { style: { fontSize: 13, color: '#94a3b8', textDecoration: 'line-through' } }, '$' + p.oldPrice.toFixed(2))
               )
             )
@@ -148,7 +148,7 @@ function App() {
             React.createElement('img', { src: p.image, style: { width: '100%', height: 120, objectFit: 'cover' } }),
             React.createElement('div', { style: { padding: 10 } },
               React.createElement('p', { style: { fontSize: 12, fontWeight: 600, color: '#1e293b', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, p.name),
-              React.createElement('p', { style: { fontSize: 13, fontWeight: 700, color: '#3b82f6', margin: '4px 0 0' } }, '$' + p.price.toFixed(2))
+              React.createElement('p', { style: { fontSize: 13, fontWeight: 700, color: '#E56B2D', margin: '4px 0 0' } }, '$' + p.price.toFixed(2))
             )
           ))
         )
@@ -159,7 +159,7 @@ function App() {
     view === 'shop' && React.createElement('div', { style: { maxWidth: 1200, margin: '0 auto', padding: '24px 32px' } },
       React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 } },
         React.createElement('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' } },
-          categories.map(c => React.createElement('button', { key: c, onClick: () => setCategory(c), style: { padding: '8px 20px', borderRadius: 999, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 500, background: category === c ? '#3b82f6' : 'rgba(255,255,255,0.7)', color: category === c ? 'white' : '#475569' } }, c))
+          categories.map(c => React.createElement('button', { key: c, onClick: () => setCategory(c), style: { padding: '8px 20px', borderRadius: 999, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 500, background: category === c ? '#E56B2D' : 'rgba(255,255,255,0.7)', color: category === c ? 'white' : '#475569' } }, c))
         ),
         React.createElement('select', { value: sortBy, onChange: e => setSortBy(e.target.value), style: { padding: '8px 16px', borderRadius: 999, border: '1px solid rgba(148,163,184,0.3)', background: 'rgba(255,255,255,0.7)', fontSize: 13, outline: 'none', cursor: 'pointer' } },
           [{ v: 'featured', l: 'Sort: Featured' }, { v: 'price-low', l: 'Price: Low to High' }, { v: 'price-high', l: 'Price: High to Low' }, { v: 'rating', l: 'Top Rated' }].map(o => React.createElement('option', { key: o.v, value: o.v }, o.l))
@@ -175,7 +175,7 @@ function App() {
             React.createElement('span', { style: { position: 'absolute', bottom: 8, right: 8, padding: '3px 10px', borderRadius: 999, fontSize: 10, fontWeight: 600, background: p.stock > 5 ? '#dcfce7' : p.stock > 0 ? '#fef3c7' : '#fee2e2', color: p.stock > 5 ? '#166534' : p.stock > 0 ? '#92400e' : '#991b1b' } }, p.stock > 0 ? p.stock + ' left' : 'Sold out')
           ),
           React.createElement('div', { style: { padding: 16 } },
-            React.createElement('span', { style: { fontSize: 10, color: '#3b82f6', fontWeight: 600, textTransform: 'uppercase' } }, p.category),
+            React.createElement('span', { style: { fontSize: 10, color: '#E56B2D', fontWeight: 600, textTransform: 'uppercase' } }, p.category),
             React.createElement('h3', { style: { fontSize: 15, fontWeight: 700, color: '#1e293b', margin: '4px 0 2px' } }, p.name),
             React.createElement(Stars, { rating: p.rating }),
             React.createElement('span', { style: { fontSize: 12, color: '#94a3b8', marginLeft: 6 } }, p.rating + ' (' + p.reviews + ')'),
@@ -183,7 +183,7 @@ function App() {
               React.createElement('span', { style: { fontSize: 19, fontWeight: 700, color: '#1e293b' } }, '$' + p.price.toFixed(2)),
               p.oldPrice > p.price && React.createElement('span', { style: { fontSize: 13, color: '#94a3b8', textDecoration: 'line-through' } }, '$' + p.oldPrice.toFixed(2))
             ),
-            React.createElement('button', { onClick: () => addToCart(p.id), disabled: p.stock <= 0, style: { marginTop: 12, width: '100%', padding: '10px', borderRadius: 12, border: 'none', background: p.stock > 0 ? '#3b82f6' : '#94a3b8', color: 'white', cursor: p.stock > 0 ? 'pointer' : 'not-allowed', fontSize: 13, fontWeight: 600 } }, p.stock > 0 ? 'Add to Cart' : 'Sold Out')
+            React.createElement('button', { onClick: () => addToCart(p.id), disabled: p.stock <= 0, style: { marginTop: 12, width: '100%', padding: '10px', borderRadius: 12, border: 'none', background: p.stock > 0 ? '#E56B2D' : '#94a3b8', color: 'white', cursor: p.stock > 0 ? 'pointer' : 'not-allowed', fontSize: 13, fontWeight: 600 } }, p.stock > 0 ? 'Add to Cart' : 'Sold Out')
           )
         ))
       )
@@ -195,7 +195,7 @@ function App() {
         React.createElement('div', { style: { display: 'flex', gap: 24 } },
           React.createElement('img', { src: selectedProduct.image, style: { width: 280, height: 280, borderRadius: 16, objectFit: 'cover' } }),
           React.createElement('div', { style: { flex: 1 } },
-            React.createElement('span', { style: { fontSize: 11, color: '#3b82f6', fontWeight: 600, textTransform: 'uppercase' } }, selectedProduct.category),
+            React.createElement('span', { style: { fontSize: 11, color: '#E56B2D', fontWeight: 600, textTransform: 'uppercase' } }, selectedProduct.category),
             React.createElement('h2', { style: { fontSize: 24, fontWeight: 800, color: '#1e293b', margin: '4px 0' } }, selectedProduct.name),
             React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 } }, React.createElement(Stars, { rating: selectedProduct.rating }), React.createElement('span', { style: { fontSize: 13, color: '#94a3b8' } }, selectedProduct.rating + ' (' + selectedProduct.reviews + ' reviews)')),
             React.createElement('p', { style: { color: '#64748b', fontSize: 14, lineHeight: 1.5, margin: '8px 0 16px' } }, selectedProduct.desc),
@@ -206,7 +206,7 @@ function App() {
             ),
             React.createElement('p', { style: { fontSize: 13, color: selectedProduct.stock > 0 ? '#10b981' : '#ef4444', fontWeight: 600, marginBottom: 16 } }, selectedProduct.stock > 0 ? '✓ In stock (' + selectedProduct.stock + ' available)' : '✗ Out of stock'),
             React.createElement('div', { style: { display: 'flex', gap: 12 } },
-              React.createElement('button', { onClick: () => { addToCart(selectedProduct.id); setSelectedProduct(null); }, disabled: selectedProduct.stock <= 0, style: { flex: 1, padding: '14px', borderRadius: 14, border: 'none', background: selectedProduct.stock > 0 ? 'linear-gradient(135deg, #3b82f6, #8b5cf6)' : '#94a3b8', color: 'white', fontSize: 15, fontWeight: 700, cursor: selectedProduct.stock > 0 ? 'pointer' : 'not-allowed' } }, 'Add to Cart'),
+              React.createElement('button', { onClick: () => { addToCart(selectedProduct.id); setSelectedProduct(null); }, disabled: selectedProduct.stock <= 0, style: { flex: 1, padding: '14px', borderRadius: 14, border: 'none', background: selectedProduct.stock > 0 ? 'linear-gradient(135deg, #E56B2D, #C45A26)' : '#94a3b8', color: 'white', fontSize: 15, fontWeight: 700, cursor: selectedProduct.stock > 0 ? 'pointer' : 'not-allowed' } }, 'Add to Cart'),
               React.createElement('button', { onClick: () => toggleWishlist(selectedProduct.id), style: { padding: '14px 20px', borderRadius: 14, border: '1px solid #e2e8f0', background: 'transparent', cursor: 'pointer', fontSize: 18 } }, wishlist.includes(selectedProduct.id) ? '❤️' : '🤍')
             )
           )
@@ -221,7 +221,7 @@ function App() {
           React.createElement('h2', { style: { fontSize: 22, fontWeight: 800, color: '#1e293b' } }, 'Your Cart (' + cartCount + ')'),
           React.createElement('button', { onClick: () => setShowCart(false), style: { background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#94a3b8' } }, '✕')
         ),
-        cart.length === 0 ? React.createElement('div', { style: { textAlign: 'center', padding: 60, color: '#94a3b8', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' } }, React.createElement('p', { style: { fontSize: 48 } }, '🛒'), React.createElement('p', null, 'Your cart is empty'), React.createElement('button', { onClick: () => { setShowCart(false); setView('shop'); }, style: { marginTop: 16, padding: '10px 24px', borderRadius: 999, border: 'none', background: '#3b82f6', color: 'white', cursor: 'pointer', fontSize: 14, fontWeight: 600 } }, 'Shop Now')) :
+        cart.length === 0 ? React.createElement('div', { style: { textAlign: 'center', padding: 60, color: '#94a3b8', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' } }, React.createElement('p', { style: { fontSize: 48 } }, '🛒'), React.createElement('p', null, 'Your cart is empty'), React.createElement('button', { onClick: () => { setShowCart(false); setView('shop'); }, style: { marginTop: 16, padding: '10px 24px', borderRadius: 999, border: 'none', background: '#E56B2D', color: 'white', cursor: 'pointer', fontSize: 14, fontWeight: 600 } }, 'Shop Now')) :
         React.createElement(React.Fragment, null,
           cart.map(item => React.createElement('div', { key: item.id, style: { display: 'flex', gap: 12, padding: '16px 0', borderBottom: '1px solid #f1f5f9' } },
             React.createElement('img', { src: item.image, style: { width: 64, height: 64, borderRadius: 12, objectFit: 'cover', cursor: 'pointer' }, onClick: () => { setSelectedProduct(item); setShowCart(false); } }),
@@ -245,8 +245,8 @@ function App() {
             appliedDiscount > 0 && React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', marginBottom: 8 } }, React.createElement('span', { style: { fontSize: 14, color: '#10b981' } }, 'Discount (' + (appliedDiscount * 100) + '%)'), React.createElement('span', { style: { fontSize: 14, fontWeight: 600, color: '#10b981' } }, '-$' + discountAmt.toFixed(2))),
             React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', marginBottom: 8 } }, React.createElement('span', { style: { fontSize: 14, color: '#64748b' } }, 'Subtotal'), React.createElement('span', { style: { fontSize: 14, fontWeight: 600 } }, '$' + subtotal.toFixed(2))),
             React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', marginBottom: 16 } }, React.createElement('span', { style: { fontSize: 14, color: '#64748b' } }, 'Shipping'), React.createElement('span', { style: { fontSize: 14, fontWeight: 600, color: '#10b981' } }, subtotal >= 50 ? 'Free' : '$5.99')),
-            React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', marginBottom: 20 } }, React.createElement('span', { style: { fontSize: 17, fontWeight: 700, color: '#1e293b' } }, 'Total'), React.createElement('span', { style: { fontSize: 22, fontWeight: 800, color: '#3b82f6' } }, '$' + (total + (subtotal >= 50 ? 0 : 5.99)).toFixed(2))),
-            React.createElement('button', { onClick: () => { setShowCart(false); setCheckoutStep(1); }, style: { width: '100%', padding: '14px', borderRadius: 14, border: 'none', background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', color: 'white', fontSize: 15, fontWeight: 700, cursor: 'pointer' } }, 'Checkout')
+            React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', marginBottom: 20 } }, React.createElement('span', { style: { fontSize: 17, fontWeight: 700, color: '#1e293b' } }, 'Total'), React.createElement('span', { style: { fontSize: 22, fontWeight: 800, color: '#E56B2D' } }, '$' + (total + (subtotal >= 50 ? 0 : 5.99)).toFixed(2))),
+            React.createElement('button', { onClick: () => { setShowCart(false); setCheckoutStep(1); }, style: { width: '100%', padding: '14px', borderRadius: 14, border: 'none', background: 'linear-gradient(135deg, #E56B2D, #C45A26)', color: 'white', fontSize: 15, fontWeight: 700, cursor: 'pointer' } }, 'Checkout')
           )
         )
       )
@@ -260,11 +260,11 @@ function App() {
           React.createElement('button', { onClick: () => setCheckoutStep(null), style: { background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#94a3b8' } }, '✕')
         ),
         React.createElement('div', { style: { display: 'flex', gap: 8, marginBottom: 24 } },
-          [1, 2, 3].map(s => React.createElement('div', { key: s, style: { flex: 1, height: 4, borderRadius: 2, background: s <= checkoutStep ? '#3b82f6' : '#e2e8f0' } }))
+          [1, 2, 3].map(s => React.createElement('div', { key: s, style: { flex: 1, height: 4, borderRadius: 2, background: s <= checkoutStep ? '#E56B2D' : '#e2e8f0' } }))
         ),
         checkoutStep === 1 && React.createElement('div', { style: { display: 'grid', gap: 16 } },
           [{ l: 'Full Name', p: 'John Doe' }, { l: 'Email', p: 'john@email.com' }, { l: 'Address', p: '123 Main St' }, { l: 'City', p: 'New York' }, { l: 'ZIP Code', p: '10001' }].map(f => React.createElement('div', { key: f.l }, React.createElement('label', { style: { fontSize: 13, fontWeight: 500, color: '#475569', display: 'block', marginBottom: 6 } }, f.l), React.createElement('input', { placeholder: f.p, style: { width: '100%', padding: '12px 16px', borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 14, outline: 'none', boxSizing: 'border-box' } }))),
-          React.createElement('button', { onClick: () => setCheckoutStep(2), style: { width: '100%', padding: '14px', borderRadius: 14, border: 'none', background: '#3b82f6', color: 'white', fontSize: 15, fontWeight: 700, cursor: 'pointer', marginTop: 8 } }, 'Continue to Payment')
+          React.createElement('button', { onClick: () => setCheckoutStep(2), style: { width: '100%', padding: '14px', borderRadius: 14, border: 'none', background: '#E56B2D', color: 'white', fontSize: 15, fontWeight: 700, cursor: 'pointer', marginTop: 8 } }, 'Continue to Payment')
         ),
         checkoutStep === 2 && React.createElement('div', { style: { display: 'grid', gap: 16 } },
           React.createElement('div', null, React.createElement('label', { style: { fontSize: 13, fontWeight: 500, color: '#475569', display: 'block', marginBottom: 6 } }, 'Card Number'), React.createElement('input', { placeholder: '4242 4242 4242 4242', style: { width: '100%', padding: '12px 16px', borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 14, outline: 'none', boxSizing: 'border-box' } }))),
@@ -274,17 +274,17 @@ function App() {
           ),
           React.createElement('div', { style: { display: 'flex', gap: 12, marginTop: 8 } },
             React.createElement('button', { onClick: () => setCheckoutStep(1), style: { flex: 1, padding: '14px', borderRadius: 14, border: '1px solid #e2e8f0', background: 'white', fontSize: 14, fontWeight: 500, cursor: 'pointer' } }, 'Back'),
-            React.createElement('button', { onClick: () => setCheckoutStep(3), style: { flex: 1, padding: '14px', borderRadius: 14, border: 'none', background: '#3b82f6', color: 'white', fontSize: 14, fontWeight: 700, cursor: 'pointer' } }, 'Review Order')
+            React.createElement('button', { onClick: () => setCheckoutStep(3), style: { flex: 1, padding: '14px', borderRadius: 14, border: 'none', background: '#E56B2D', color: 'white', fontSize: 14, fontWeight: 700, cursor: 'pointer' } }, 'Review Order')
           )
         ),
         checkoutStep === 3 && React.createElement('div', null,
           React.createElement('div', { style: { background: '#f8fafc', borderRadius: 14, padding: 16, marginBottom: 16 } },
             cart.map(item => React.createElement('div', { key: item.id, style: { display: 'flex', justifyContent: 'space-between', marginBottom: 8 } }, React.createElement('span', { style: { fontSize: 14, color: '#475569' } }, item.name + ' ×' + item.qty), React.createElement('span', { style: { fontSize: 14, fontWeight: 600 } }, '$' + (item.price * item.qty).toFixed(2))))
           ),
-          React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', marginBottom: 8 } }, React.createElement('span', { style: { fontSize: 16, fontWeight: 700 } }, 'Total'), React.createElement('span', { style: { fontSize: 20, fontWeight: 800, color: '#3b82f6' } }, '$' + (total + (subtotal >= 50 ? 0 : 5.99)).toFixed(2))),
+          React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', marginBottom: 8 } }, React.createElement('span', { style: { fontSize: 16, fontWeight: 700 } }, 'Total'), React.createElement('span', { style: { fontSize: 20, fontWeight: 800, color: '#E56B2D' } }, '$' + (total + (subtotal >= 50 ? 0 : 5.99)).toFixed(2))),
           React.createElement('div', { style: { display: 'flex', gap: 12, marginTop: 16 } },
             React.createElement('button', { onClick: () => setCheckoutStep(2), style: { flex: 1, padding: '14px', borderRadius: 14, border: '1px solid #e2e8f0', background: 'white', fontSize: 14, fontWeight: 500, cursor: 'pointer' } }, 'Back'),
-            React.createElement('button', { onClick: placeOrder, style: { flex: 1, padding: '14px', borderRadius: 14, border: 'none', background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', color: 'white', fontSize: 14, fontWeight: 700, cursor: 'pointer' } }, 'Place Order')
+            React.createElement('button', { onClick: placeOrder, style: { flex: 1, padding: '14px', borderRadius: 14, border: 'none', background: 'linear-gradient(135deg, #E56B2D, #C45A26)', color: 'white', fontSize: 14, fontWeight: 700, cursor: 'pointer' } }, 'Place Order')
           )
         )
       )
@@ -298,7 +298,7 @@ function App() {
         React.createElement('p', { style: { color: '#64748b', fontSize: 14, marginBottom: 8 } }, 'Order #' + orderComplete.code),
         React.createElement('p', { style: { color: '#64748b', fontSize: 14, marginBottom: 20 } }, 'Thank you for your purchase of ' + orderComplete.items + ' items for $' + orderComplete.total.toFixed(2)),
         React.createElement('p', { style: { color: '#94a3b8', fontSize: 13, marginBottom: 24 } }, 'A confirmation email has been sent to your inbox.'),
-        React.createElement('button', { onClick: () => { setOrderComplete(null); setView('home'); }, style: { padding: '12px 32px', borderRadius: 999, border: 'none', background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', color: 'white', fontSize: 14, fontWeight: 600, cursor: 'pointer' } }, 'Continue Shopping')
+        React.createElement('button', { onClick: () => { setOrderComplete(null); setView('home'); }, style: { padding: '12px 32px', borderRadius: 999, border: 'none', background: 'linear-gradient(135deg, #E56B2D, #C45A26)', color: 'white', fontSize: 14, fontWeight: 600, cursor: 'pointer' } }, 'Continue Shopping')
       )
     )
   );

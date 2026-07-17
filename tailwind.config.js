@@ -9,7 +9,14 @@ module.exports = {
   			md: 'calc(var(--radius) - 2px)',
   			sm: 'calc(var(--radius) - 4px)'
   		},
-  		colors: {
+		colors: {
+			alphatekx: {
+				DEFAULT: '#E56B2D',
+				light: '#E07A45',
+				dark: '#865D47',
+				deep: '#C45A26',
+				glass: 'rgba(30, 26, 24, 0.72)'
+			},
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',
   			card: {
