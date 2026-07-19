@@ -33,8 +33,22 @@
 }
 * { box-sizing: border-box; }
 html, body, #root { min-height: 100%; margin: 0; }
-body { overflow-x: hidden; background: #0A0A0A; color: #FFFFFF; }
+body {
+  overflow-x: hidden;
+  color: #FFFFFF;
+  background:
+    radial-gradient(1200px at 20% -10%, rgba(229,107,45,0.18), transparent),
+    radial-gradient(800px at 80% 0%, rgba(224,122,69,0.12), transparent),
+    #0A0A0A;
+}
 button, input, textarea, select { font: inherit; }
+input, textarea, select {
+  background-color: rgba(10, 10, 10, 0.72);
+  color: #FFFFFF;
+  caret-color: #E56B2D;
+}
+input::placeholder, textarea::placeholder { color: rgba(255,255,255,0.35); }
+select option { background: #0A0A0A; color: #FFFFFF; }
 button { cursor: pointer; touch-action: manipulation; }
 button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid #E56B2D; outline-offset: 2px; box-shadow: 0 0 0 5px rgba(229, 107, 45, 0.18); }
 pre, code { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
@@ -44,6 +58,7 @@ pre, code { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
 
 @layer components {
+  .liquid-glass-card,
   .liquid-glass {
     background: rgba(30, 26, 24, 0.72);
     backdrop-filter: blur(32px) saturate(180%);
@@ -51,6 +66,20 @@ pre, code { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-top: 1px solid rgba(255, 255, 255, 0.22);
     box-shadow: 0 0 0 1px rgba(229, 107, 45, 0.15), 0 8px 32px rgba(0, 0, 0, 0.4);
+  }
+  .liquid-glass-card {
+    border-radius: 16px;
+    transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+  }
+  .liquid-glass-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 0 0 1px rgba(229, 107, 45, 0.15), 0 12px 40px rgba(0, 0, 0, 0.45), 0 0 24px rgba(229, 107, 45, 0.18);
+  }
+  .dark-field {
+    background: rgba(10, 10, 10, 0.72);
+    color: #FFFFFF;
+    caret-color: #E56B2D;
+    border: 1px solid rgba(255,255,255,0.15);
   }
   .btn-alpha {
     background: linear-gradient(135deg, #E56B2D, #C45A26);
@@ -76,4 +105,13 @@ pre, code { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
   .field { @apply min-h-12 w-full rounded-xl px-4 text-white outline-none placeholder:text-white/35 focus:border-[#E56B2D]; }
   .control { @apply min-h-12 w-full rounded-lg px-3 text-white outline-none placeholder:text-white/35 focus:border-[#E56B2D]; }
   .launch-action { @apply flex min-h-12 items-center justify-center gap-2 rounded-lg px-4 text-sm text-white/90 transition-colors hover:border-[#E56B2D]; }
+  .workspace-bg {
+    background:
+      radial-gradient(1200px at 20% -10%, rgba(229,107,45,0.18), transparent),
+      radial-gradient(800px at 80% 0%, rgba(224,122,69,0.12), transparent),
+      #0A0A0A;
+  }
+  .alpha-logo-glow {
+    box-shadow: 0 0 24px rgba(229,107,45,0.6), 0 0 48px rgba(229,107,45,0.3);
+  }
 }

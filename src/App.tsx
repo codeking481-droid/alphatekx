@@ -20,7 +20,7 @@ const History = lazy(() => import('./pages/History'))
 const Workers = lazy(() => import('./pages/Workers'))
 const Missions = lazy(() => import('./pages/Missions'))
 
-const loader = <div className="grid min-h-screen place-items-center bg-[#FAFAFA] text-sm text-gray-500">Loading AlphaTekx...</div>
+const loader = <div className="grid min-h-screen place-items-center bg-[#0A0A0A] text-sm text-white/60">Loading AlphaTekx...</div>
 const suspended = (page: ReactNode) => <Suspense fallback={loader}>{page}</Suspense>
 const protectedPage = (page: ReactNode) => suspended(<ProtectedPage>{suspended(page)}</ProtectedPage>)
 

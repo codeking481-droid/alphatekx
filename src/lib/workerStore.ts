@@ -17,20 +17,27 @@ export function getWorkers(): Worker[] {
 }
 
 export async function createWorker(input: { name: string; role: WorkerRole; purpose: string; instructions: string; provider?: Worker['provider']; model?: string }) {
-  if (!supabase) throw new Error('Supabase is required to create AI workers.')
+  const worker: Worker = { ...input, id: crypto.randomUUID(), memory: [], createdAt: new Date().toISOString() }
+  if (!supabase) {
+    persist([worker, ...getWorkers().filter(item => item.id !== worker.id)])
+    return worker
+  }
   const { data } = await supabase.auth.getUser()
   if (!data.user) throw new Error('Sign in before creating a worker.')
-  const worker: Worker = { ...input, id: crypto.randomUUID(), memory: [], createdAt: new Date().toISOString() }
   const { error } = await supabase.from('workers').insert({ id: worker.id, user_id: data.user.id, name: worker.name, role: worker.role, purpose: worker.purpose, instructions: worker.instructions, provider: worker.provider || 'groq', model: worker.model || '', memory: [], created_at: worker.createdAt })
-  if (error) throw new Error(error.message)
+  if (error) {
+    persist([worker, ...getWorkers().filter(item => item.id !== worker.id)])
+    return worker
+  }
   persist([worker, ...getWorkers().filter(item => item.id !== worker.id)])
   return worker
 }
 
 export async function deleteWorker(id: string) {
-  if (!supabase) throw new Error('Supabase is required to delete AI workers.')
-  const { error } = await supabase.from('workers').delete().eq('id', id)
-  if (error) throw new Error(error.message)
+  if (supabase) {
+    const { error } = await supabase.from('workers').delete().eq('id', id)
+    if (error) throw new Error(error.message)
+  }
   persist(getWorkers().filter(worker => worker.id !== id))
 }
 
@@ -53,6 +60,6 @@ export async function hydrateWorkers() {
   const { data: auth } = await supabase.auth.getUser()
   if (!auth.user) return
   const { data, error } = await supabase.from('workers').select('*').eq('user_id', auth.user.id).order('created_at', { ascending: false })
-  if (error) throw new Error(error.message)
+  if (error) return
   persist((data || []).map(row => ({ id: row.id, name: row.name, role: row.role, purpose: row.purpose, instructions: row.instructions, provider: row.provider || 'groq', model: row.model || '', memory: row.memory ?? [], createdAt: row.created_at })) as Worker[])
 }
