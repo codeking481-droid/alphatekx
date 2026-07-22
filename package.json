@@ -18,6 +18,9 @@
     "test:e2e": "node scripts/full-test.mjs && node scripts/path-deploy-test.mjs && node scripts/render-smoke.mjs",
     "test:thorough": "node scripts/thorough-test.mjs"
   },
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "dependencies": {
     "@hello-pangea/dnd": "^17.0.0",
     "@hookform/resolvers": "^4.1.2",

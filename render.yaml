@@ -9,7 +9,7 @@ services:
     startCommand: npm start
     envVars:
       - key: NODE_VERSION
-        value: 20.11.0
+        value: 22.11.0
       - key: PUBLIC_APP_URL
         value: https://alphatekx.name.ng
       - key: GOOGLE_REDIRECT_URI
