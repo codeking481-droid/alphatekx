@@ -152,7 +152,8 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
     setStartError('')
     setActivating(true)
     try {
-      const res = await fetch(`/api/agents/campaign/${encodeURIComponent(agent.id)}/activate`, {
+      await saveAgent(draft)
+      const res = await fetch(`/api/agents/campaign/${encodeURIComponent(draft.id)}/activate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ autoPublish: true, startAt: fromDatetimeLocal(startAt) }),
