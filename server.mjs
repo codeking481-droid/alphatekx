@@ -429,11 +429,11 @@ async function callLLMJSON(systemPrompt, userPrompt) {
 
 function getRoleProviderOrder(role, fallbackOrder) {
   const env = process.env[`ALPHA_${role.toUpperCase()}_PROVIDER`] || process.env[`AI_ROLE_${role.toUpperCase()}_PROVIDER`] || process.env[`AI_${role.toUpperCase()}_PROVIDER`]
-  if (role === 'content' && getProviderKey('groq')) {
+  if (role === 'content') {
     const configured = env ? env.split(',').map(s => s.trim().toLowerCase()).filter(Boolean) : []
     const safeFallbacks = [...configured, ...(fallbackOrder || getProviderOrder())]
       .filter(name => name !== 'openai' && name !== 'groq' && getProviderKey(name))
-    return ['groq', ...Array.from(new Set(safeFallbacks))]
+    return [...(getProviderKey('groq') ? ['groq'] : []), ...Array.from(new Set(safeFallbacks))]
   }
   if (env) {
     const configured = env.split(',').map(s => s.trim().toLowerCase()).filter(Boolean).filter(name => getProviderKey(name))
