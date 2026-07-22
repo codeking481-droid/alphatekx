@@ -2243,7 +2243,10 @@ async function buildCampaignPlan(prompt, user, brandProfile) {
 
 function campaignNextRun(campaign) {
   const now = new Date()
-  const next = (campaign.posts || []).filter(p => p.status === 'pending' || p.status === 'pending_approval' || p.status === 'scheduled').sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()).find(p => new Date(p.scheduledAt) > now - 5 * 60 * 1000)
+  const pending = (campaign.posts || []).filter(p => p.status === 'pending' || p.status === 'pending_approval' || p.status === 'scheduled')
+  const due = pending.filter(p => new Date(p.scheduledAt).getTime() <= now.getTime())
+  if (due.length) return now.toISOString()
+  const next = pending.sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime())[0]
   return next?.scheduledAt
 }
 

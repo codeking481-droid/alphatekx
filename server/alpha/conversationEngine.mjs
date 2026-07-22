@@ -594,6 +594,11 @@ Return JSON:
 
   async function generateContent(conversation) {
     const known = conversation.knownFields || {}
+    const isSinglePost = /\ba\s+(?:single\s+|strong\s+)?(?:linkedin\s+|medium\s+|x\s+|twitter\s+|facebook\s+|instagram\s+)?(?:post|article)\b/i.test(conversation.originalRequest || '') && !/\b(every|each|daily|weekly|monthly|monday|tuesday|wednesday|thursday|friday|saturday|sunday|week|month)\b/i.test((conversation.originalRequest || '').toLowerCase())
+    if (isSinglePost && !known.totalPosts && !known.total_posts && !known.durationDays && !known.duration_days) {
+      known.totalPosts = 1
+      known.durationDays = 1
+    }
     const platforms = Array.isArray(known.platforms) && known.platforms.length ? known.platforms : ['facebook']
     const businessName = known.business || known.businessName || ''
     const businessType = known.businessType || known.description || known.business || 'your business'
