@@ -4318,6 +4318,41 @@ async function supabaseSaveExecution(execution) {
 
 function readAgents() { return readJsonFile(agentsFile, []) }
 function writeAgents(agents) { writeJsonFile(agentsFile, agents) }
+
+const AGENTS_PROVIDER = 'alphatekx_agents'
+
+async function remoteAgentsList(config) {
+  const res = await fetch(`${config.url}/rest/v1/connected_accounts?provider=eq.${AGENTS_PROVIDER}&select=*`, { headers: serviceHeaders(config.service) })
+  if (!res.ok) throw new Error('Could not list agents from connected_accounts')
+  const rows = await res.json()
+  return Array.isArray(rows) ? rows.map(r => ({ userId: r.user_id, email: r.email || '', agents: Array.isArray(r.tokens?.agents) ? r.tokens.agents : [] })) : []
+}
+
+async function remoteAgentsForUser(userId, config) {
+  const res = await fetch(`${config.url}/rest/v1/connected_accounts?provider=eq.${AGENTS_PROVIDER}&user_id=eq.${encodeURIComponent(userId)}&select=*`, { headers: serviceHeaders(config.service) })
+  if (!res.ok) throw new Error('Could not load agents for user')
+  const row = (await res.json())?.[0]
+  return Array.isArray(row?.tokens?.agents) ? row.tokens.agents : []
+}
+
+async function remoteAgentsSaveForUser(userId, email, agents, config) {
+  const body = JSON.stringify({ user_id: userId, provider: AGENTS_PROVIDER, email: email || '', identifier: 'agents', scopes: [], tokens: { agents, updated_at: new Date().toISOString() }, updated_at: new Date().toISOString() })
+  const res = await fetch(`${config.url}/rest/v1/connected_accounts?on_conflict=user_id,provider`, { method: 'POST', headers: { ...serviceHeaders(config.service), Prefer: 'resolution=merge-duplicates,return=minimal' }, body })
+  if (!res.ok) throw new Error('Could not save agents to connected_accounts')
+}
+
+async function remoteAgentsDelete(agentId, config) {
+  const rows = await remoteAgentsList(config)
+  for (const row of rows) {
+    const idx = row.agents.findIndex(a => a.id === agentId)
+    if (idx >= 0) {
+      row.agents.splice(idx, 1)
+      await remoteAgentsSaveForUser(row.userId, row.email, row.agents, config)
+      return true
+    }
+  }
+  return false
+}
 function readAgentExecutions() { return readJsonFile(agentExecutionsFile, []) }
 function writeAgentExecutions(executions) { writeJsonFile(agentExecutionsFile, executions.slice(0, 2000)) }
 function readAgentLogs() { return readJsonFile(agentLogsFile, []) }
@@ -4340,7 +4375,14 @@ async function listAgentLogs({ agentId, limit = 100 } = {}) {
 async function saveServerAgent(agent) {
   const record = { ...agent, updated_at: new Date().toISOString() }
   if (useSupabaseAgentDb()) {
-    try { await supabaseSaveAgent(record); return record } catch { /* fall through to local */ }
+    const config = supabaseConfig()
+    try { await supabaseSaveAgent(record); return record } catch { /* fall through */ }
+    try {
+      const existing = await remoteAgentsForUser(record.userId, config)
+      const filtered = existing.filter(a => a.id !== record.id)
+      await remoteAgentsSaveForUser(record.userId, record.userEmail || '', [record, ...filtered], config)
+      return record
+    } catch { /* fall through to local */ }
   }
   const agents = readAgents()
   const index = agents.findIndex(a => a.id === agent.id)
@@ -4352,24 +4394,39 @@ async function saveServerAgent(agent) {
 
 async function getServerAgent(id) {
   if (useSupabaseAgentDb()) {
+    const config = supabaseConfig()
     try { return await supabaseGetAgent(id) } catch { /* fall through */ }
+    try {
+      const rows = await remoteAgentsList(config)
+      for (const row of rows) {
+        const found = row.agents.find(a => a.id === id)
+        if (found) return { ...found, userId: row.userId }
+      }
+    } catch { /* fall through */ }
   }
   return readAgents().find(a => a.id === id) || null
 }
 
+async function listServerAgents() {
+  if (useSupabaseAgentDb()) {
+    const config = supabaseConfig()
+    try { return await supabaseAgents() } catch { /* fall through */ }
+    try {
+      const rows = await remoteAgentsList(config)
+      return rows.flatMap(r => r.agents.map(a => ({ ...a, userId: r.userId })))
+    } catch { /* fall through */ }
+  }
+  return readAgents()
+}
+
 async function deleteServerAgent(id) {
   if (useSupabaseAgentDb()) {
+    const config = supabaseConfig()
     try { await supabaseDeleteAgent(id); return } catch { /* fall through */ }
+    try { if (await remoteAgentsDelete(id, config)) return } catch { /* fall through */ }
   }
   const agents = readAgents().filter(a => a.id !== id)
   writeAgents(agents)
-}
-
-async function listServerAgents() {
-  if (useSupabaseAgentDb()) {
-    try { return await supabaseAgents() } catch { /* fall through */ }
-  }
-  return readAgents()
 }
 
 async function addServerExecution(execution) {
