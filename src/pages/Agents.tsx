@@ -22,7 +22,6 @@ import {
 } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { connectors, getConnector } from '../lib/agents/connectorRegistry'
-import { createAgentFromNL } from '../lib/agents/agentParser'
 import {
   addExecution,
   deleteAgent,
@@ -41,6 +40,13 @@ import { useAuth } from '../lib/auth'
 import { getCredits as getCreditBalance, setCredits as saveCredits, subscribeCredits } from '../lib/creditStore'
 import { CREDIT_PACKS, formatCurrency, getCreditPack, getPlan, PLANS } from '../lib/billing'
 import { initializeCheckout, verifyCheckout, type PaymentItem } from '../lib/payment'
+
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs = 90_000) {
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs)
+  try { return await fetch(input, { ...init, signal: controller.signal }) }
+  finally { window.clearTimeout(timer) }
+}
 
 function formatRelative(iso: string) {
   const date = new Date(iso)
@@ -289,7 +295,7 @@ export default function Agents() {
     setNotice('')
     setInput('')
     try {
-      const res = await fetch('/api/alpha/conversation', {
+      const res = await fetchWithTimeout('/api/alpha/conversation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ prompt: raw }),
@@ -297,15 +303,7 @@ export default function Agents() {
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         setNotice(data.error || 'Alpha could not start the conversation. Check that an AI provider is configured.')
-        // Fallback to legacy parse
-        const fallback = await fetch('/api/agents/parse', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ prompt: raw }) })
-        if (fallback.ok) {
-          const fb = await fallback.json()
-          if (fb.agent) setPendingAgent(fb.agent as Agent)
-        } else {
-          const authUser = user ? { id: user.id, email: user.email } : getLocalUser()
-          setPendingAgent(createAgentFromNL(raw, undefined, authUser || undefined))
-        }
+        setInput(raw)
         return
       }
       const conv = (data.conversation || data) as AlphaConversation
@@ -319,6 +317,9 @@ export default function Agents() {
       } else {
         setPendingAgent(null)
       }
+    } catch (error) {
+      setInput(raw)
+      setNotice(error instanceof DOMException && error.name === 'AbortError' ? 'Alpha took too long to respond. Your request is preserved—please retry.' : 'Could not reach Alpha. Your request is preserved—please retry.')
     } finally { setCreating(false) }
   }
 
@@ -326,7 +327,7 @@ export default function Agents() {
     if (!conversation?.id || !input.trim()) return
     setCreating(true)
     try {
-      const res = await fetch(`/api/alpha/conversation/${encodeURIComponent(conversation.id)}`, {
+      const res = await fetchWithTimeout(`/api/alpha/conversation/${encodeURIComponent(conversation.id)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ message: input.trim() }),
@@ -345,6 +346,8 @@ export default function Agents() {
       } else {
         setPendingAgent(null)
       }
+    } catch (error) {
+      setNotice(error instanceof DOMException && error.name === 'AbortError' ? 'Alpha took too long to respond. Your reply is preserved—please retry.' : 'Could not reach Alpha. Your reply is preserved—please retry.')
     } finally { setCreating(false) }
   }
 
@@ -600,9 +603,9 @@ export default function Agents() {
     </div>
 
     {selected && selected.type !== 'campaign' && <AgentModal agent={selected} onClose={() => setSelected(null)} onRun={() => runNow(selected)} onToggle={() => toggle(selected)} onDelete={() => { if (window.confirm('Delete this automation? It will stop all future runs.')) { deleteAgent(selected.id); setSelected(null) } }} onCopy={() => copyWebhook(selected.id)} copied={copied}/>}
-    {selected && selected.type === 'campaign' && <CampaignPreview agent={selected} integrationStatus={integrationStatus} credits={credits} isAdmin={isAdmin} authHeaders={authHeaders} onClose={() => setSelected(null)} onActivated={(agent) => { saveAgent(agent); setSelected(null); setConversation(null); try { sessionStorage.removeItem(PENDING_CONVERSATION_KEY) } catch {} }} />}
+    {selected && selected.type === 'campaign' && <CampaignPreview agent={selected} integrationStatus={integrationStatus} credits={credits} isAdmin={isAdmin} authHeaders={authHeaders} onClose={() => setSelected(null)} onActivated={() => { setSelected(null); setConversation(null); try { sessionStorage.removeItem(PENDING_CONVERSATION_KEY) } catch {} }} />}
     {pendingAgent && pendingAgent.type !== 'campaign' && <WorkflowPlan agent={pendingAgent} integrationStatus={integrationStatus} credits={credits} isAdmin={isAdmin} onClose={() => setPendingAgent(null)} onApprove={approveAgent} />}
-    {pendingAgent && pendingAgent.type === 'campaign' && <CampaignPreview agent={pendingAgent} integrationStatus={integrationStatus} credits={credits} isAdmin={isAdmin} authHeaders={authHeaders} onClose={() => setPendingAgent(null)} onActivated={(agent) => { saveAgent(agent); setPendingAgent(null); setConversation(null); try { sessionStorage.removeItem(PENDING_CONVERSATION_KEY) } catch {} }} />}
+    {pendingAgent && pendingAgent.type === 'campaign' && <CampaignPreview agent={pendingAgent} integrationStatus={integrationStatus} credits={credits} isAdmin={isAdmin} authHeaders={authHeaders} onClose={() => setPendingAgent(null)} onActivated={() => { setPendingAgent(null); setConversation(null); try { sessionStorage.removeItem(PENDING_CONVERSATION_KEY) } catch {} }} />}
     {upgradeOpen && <UpgradeModal message={upgradeMessage} onUpgrade={() => startPayment({ type: 'subscription', planId: 'pro_early_access' })} onBuyCredits={() => { setUpgradeOpen(false); setSelectedPayment({ type: 'credits', packId: bestPackForCredits(100).id }) }} onCancel={() => setUpgradeOpen(false)} buying={buying} />}
   </div>
 }

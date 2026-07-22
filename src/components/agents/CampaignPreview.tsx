@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { AlertCircle, CalendarClock, CheckCircle2, LoaderCircle, Sparkles, X, Zap } from 'lucide-react'
 import { ConnectorIcon } from './ConnectorIcon'
 import { getConnector } from '../../lib/agents/connectorRegistry'
-import { saveAgent } from '../../lib/agents/agentStore'
+import { getAgents, saveAgent, setCache } from '../../lib/agents/agentStore'
 import type { Agent } from '../../lib/agents/types'
 import type { IntegrationStatus } from '../../lib/integrations'
 
@@ -48,7 +48,7 @@ function defaultStartAt() {
 
 function connectorConnected(id: string, status: IntegrationStatus) {
   const s = status[id] || status[(id === 'x' ? 'twitter' : id)] || { connected: false, ready: false }
-  return Boolean(s.connected || s.ready)
+  return id === 'linkedin' ? Boolean(s.ready) : Boolean(s.connected || s.ready)
 }
 
 export default function CampaignPreview({ agent, integrationStatus, credits, isAdmin, authHeaders, onClose, onActivated }: Props) {
@@ -178,20 +178,26 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
     }
     setStartError('')
     setActivating(true)
+    setNotice('Saving your approval and activating the LinkedIn schedule…')
     try {
       await saveAgent(draft)
+      const controller = new AbortController()
+      const timer = window.setTimeout(() => controller.abort(), 30_000)
       const res = await fetch(`/api/agents/campaign/${encodeURIComponent(draft.id)}/activate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ autoPublish: true, startAt: fromDatetimeLocal(startAt) }),
+        signal: controller.signal,
       })
+      window.clearTimeout(timer)
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Activation failed')
       setNotice(`Campaign approved and scheduled. No credits charged yet. Next post: ${new Date(data.nextRun).toLocaleString()}`)
       setDraft(data.agent)
+      setCache([data.agent, ...getAgents().filter(item => item.id !== data.agent.id)])
       onActivated(data.agent)
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : 'Activation failed')
+      setNotice(err instanceof DOMException && err.name === 'AbortError' ? 'Activation took too long. Nothing was published; please retry.' : (err instanceof Error ? err.message : 'Activation failed'))
     } finally { setActivating(false) }
   }
 
