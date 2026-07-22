@@ -283,7 +283,7 @@ export default function Agents() {
   }
 
   const create = async (seedPrompt?: string) => {
-    const raw = (seedPrompt ?? input).trim()
+    const raw = (typeof seedPrompt === 'string' ? seedPrompt : input).trim()
     if (!raw) return
     setCreating(true)
     setNotice('')
@@ -500,7 +500,8 @@ export default function Agents() {
               </div>
             ) : <div className="text-xs text-white/40">{conversation ? 'Reply with the information Alpha asked for.' : 'Each execution costs credits based on the actions. The estimate is shown before approval.'}</div>}
             <button
-              onClick={conversation ? sendReply : create}
+              type="button"
+              onClick={() => conversation ? sendReply() : create()}
               disabled={!input.trim() || creating}
               className="flex min-h-11 items-center gap-2 rounded-lg btn-alpha px-5 text-sm text-white disabled:opacity-30"
             >

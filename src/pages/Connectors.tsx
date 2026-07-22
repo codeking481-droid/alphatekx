@@ -336,7 +336,7 @@ export default function Connectors() {
         ) : (
           <div className="mt-8 space-y-8">
             {Array.from(grouped.entries()).map(([category, items]) => {
-              const visible = items.filter((c) => selectedIds.includes(c.id))
+              const visible = items.filter((c) => selectedIds.includes(c.id) || serviceStatus(c.id).connected)
               if (!visible.length) return null
               return (
               <section key={category}>

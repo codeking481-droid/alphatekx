@@ -22,7 +22,7 @@ type Props = {
 const statusBadge = (status: string) => {
   if (status === 'connected') return { label: 'Connected', className: 'bg-emerald-500/15 text-emerald-400' }
   if (status === 'coming-soon') return { label: 'Coming Soon', className: 'bg-white/[0.15] text-white/55' }
-  return { label: 'Available', className: 'bg-emerald-500/15 text-emerald-400' }
+  return { label: 'Available', className: 'bg-white/[0.15] text-white/55' }
 }
 
 export default function ConnectedAppsDropdown({

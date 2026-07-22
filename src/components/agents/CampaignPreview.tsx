@@ -309,7 +309,8 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
           )}
         </div>
         <button
-          onClick={activate}
+          type="button"
+          onClick={() => activate()}
           disabled={!canActivate || activating}
           className="flex min-h-10 items-center gap-2 rounded-lg bg-indigo-500 px-5 text-sm text-white hover:bg-indigo-400 disabled:opacity-40"
         >
