@@ -9,6 +9,9 @@ export default defineConfig({
       '/preview': { target: 'http://localhost:3001', changeOrigin: true },
     },
   },
+  preview: {
+    allowedHosts: ['.devinapps.com'],
+  },
   build: {
     rollupOptions: {
       output: {

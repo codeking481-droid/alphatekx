@@ -21,6 +21,7 @@ import {
   FileText,
   GraduationCap,
   Instagram,
+  Layers,
   Layout,
   Linkedin,
   Mail,
