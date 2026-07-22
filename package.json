@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "api": "node server.mjs",
+    "prestart": "npm run build",
     "start": "node server.mjs",
     "build": "vite build",
     "lint": "eslint . --quiet",
