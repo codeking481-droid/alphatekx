@@ -4,6 +4,9 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 import './index.css'
 
+const BUILD_ID = import.meta.env.VITE_BUILD_ID || 'dev'
+if (BUILD_ID) void BUILD_ID
+
 class ErrorBoundary extends React.Component<React.PropsWithChildren, { error: Error | null }> {
   state = { error: null }
   static getDerivedStateFromError(error: Error) { return { error } }
