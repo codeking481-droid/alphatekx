@@ -226,7 +226,7 @@ export default function Agents() {
   const today = agents.flatMap(a => a.executionHistory || []).filter(e => new Date(e.at).toDateString() === new Date().toDateString()).length
   const successRate = useMemo(() => {
     const all = agents.flatMap(a => a.executionHistory || [])
-    return all.length ? Math.round((all.filter(e => e.status === 'success').length / all.length) * 100) : 100
+    return all.length ? Math.round((all.filter(e => e.status === 'success').length / all.length) * 100) : null
   }, [agents])
 
   const recentExecutions = useMemo(() => {
@@ -442,7 +442,7 @@ export default function Agents() {
         </div>
         <div className="liquid-glass rounded-2xl p-5">
           <div className="text-xs text-white/55">Success rate</div>
-          <div className="mt-1 text-2xl font-semibold">{successRate}%</div>
+          <div className="mt-1 text-2xl font-semibold">{successRate === null ? '—' : `${successRate}%`}</div>
         </div>
         <div className="liquid-glass rounded-2xl p-5">
           <div className="flex items-center gap-2 text-xs text-white/55"><Wallet size={12}/> Credits</div>
@@ -534,8 +534,8 @@ export default function Agents() {
                       {agent.status === 'running' && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-1 text-[10px] text-emerald-300"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"/> Live</span>}
                       {(agent.trigger.type === 'schedule' || agent.trigger.type === 'campaign') && <span className="flex items-center gap-1.5 rounded-lg bg-white/[.05] px-2 py-1"><Clock size={12}/> Next: {formatRelative(agent.trigger.nextRun || '')}</span>}
                       {agent.lastRun && <span className="flex items-center gap-1.5 rounded-lg bg-white/[.05] px-2 py-1"><RefreshCw size={12}/> Last: {formatRelative(agent.lastRun)}</span>}
-                      <span className="flex items-center gap-1.5 rounded-lg bg-white/[.05] px-2 py-1"><CheckCircle2 size={12}/> {agent.executionsDone || 0} posts</span>
-                      <span className="flex items-center gap-1.5 rounded-lg bg-white/[.05] px-2 py-1">{agent.successRate ?? 100}% success</span>
+                      <span className="flex items-center gap-1.5 rounded-lg bg-white/[.05] px-2 py-1"><CheckCircle2 size={12}/> {agent.campaign?.completedCount ?? agent.executionsDone ?? 0} posts</span>
+                      <span className="flex items-center gap-1.5 rounded-lg bg-white/[.05] px-2 py-1">{(agent.executionHistory || []).length ? `${agent.successRate ?? 0}% success` : 'No runs'}</span>
                       {agent.trigger.type === 'webhook' && <span className="flex items-center gap-1.5 rounded-lg bg-white/[.05] px-2 py-1"><CheckCircle2 size={12}/> Listening</span>}
                     </div>
                   </button>
@@ -667,7 +667,7 @@ function AgentModal({ agent, onClose, onRun, onToggle, onDelete, onCopy, copied 
             </div>
             <div className="rounded-xl border border-white/[.08] bg-white/[.04] p-4">
               <div className="text-xs text-white/45">Success rate</div>
-              <div className="mt-1 text-xl font-semibold">{agent.successRate ?? 100}%</div>
+              <div className="mt-1 text-xl font-semibold">{(agent.executionHistory || []).length ? `${agent.successRate ?? 0}%` : '—'}</div>
             </div>
             <div className="rounded-xl border border-white/[.08] bg-white/[.04] p-4">
               <div className="text-xs text-white/45">Status</div>

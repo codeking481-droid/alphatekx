@@ -15,7 +15,7 @@ import { buildCapabilityPlan, detectCapability, isSupportedAction } from './serv
 import { createConversationEngine } from './server/alpha/conversationEngine.mjs'
 import * as providerHealth from './server/alpha/providerHealth.mjs'
 import * as billing from './server/billing.mjs'
-import { publishLinkedInTextPost } from './server/linkedin.mjs'
+import { normalizeLinkedInScopes, publishLinkedInTextPost } from './server/linkedin.mjs'
 
 function loadEnv() {
   for (const filename of ['.env.local', '.env']) {
@@ -1401,8 +1401,9 @@ async function integrationsStatus(req, res) {
     const identifier = token?.chat_id || token?.author_urn || token?.channel || token?.page_id || token?.pageId || token?.phone_number_id || token?.phoneNumberId || integration?.identifier || null
     const expiresAt = Number(token?.expiry || token?.expires_at || token?.expiry_date || 0)
     const expired = expiresAt > 0 && expiresAt <= Date.now()
-    const requiredScopeReady = provider !== 'linkedin' || (integration?.scopes || []).includes('w_member_social')
-    status[provider] = { connected, ready: ready && !expired && requiredScopeReady, expired, scopes: integration?.scopes || [], hasOwnKey: token?.hasOwnKey === true || token?.hasOwnKey === 'true', isMaster: token?.isMaster === true || token?.isMaster === 'true', identifier, email: integration?.email || integration?.identifier || null }
+    const integrationScopes = provider === 'linkedin' ? normalizeLinkedInScopes(integration?.scopes) : (integration?.scopes || [])
+    const requiredScopeReady = provider !== 'linkedin' || integrationScopes.includes('w_member_social')
+    status[provider] = { connected, ready: ready && !expired && requiredScopeReady, expired, scopes: integrationScopes, hasOwnKey: token?.hasOwnKey === true || token?.hasOwnKey === 'true', isMaster: token?.isMaster === true || token?.isMaster === 'true', identifier, email: integration?.email || integration?.identifier || null }
   }
   if (!status.paystack.connected && process.env.PAYSTACK_SECRET_KEY) status.paystack = { connected: true, ready: true, email: 'AlphaTekX backend' }
   if (!status.supabase.connected && config.url && config.service) status.supabase = { connected: true, ready: true, email: 'AlphaTekX backend' }
@@ -1725,7 +1726,7 @@ async function linkedinCallback(req, res) {
     }
     if (!linkedinId) throw new Error('Could not fetch LinkedIn profile id')
     const authorUrn = `urn:li:person:${linkedinId}`
-    const grantedScopes = String(tokenData.scope || '').split(/\s+/).filter(Boolean)
+    const grantedScopes = normalizeLinkedInScopes(tokenData.scope)
     await saveUserIntegration(parsed.userId, 'linkedin', { email: parsed.email, identifier: authorUrn, tokens: { access_token: accessToken, author_urn: authorUrn, isMaster: false, hasOwnKey: true, expiry: tokenData.expires_in ? Date.now() + tokenData.expires_in * 1000 : undefined }, scopes: grantedScopes.length ? grantedScopes : ['openid', 'profile', 'w_member_social', 'email'] }, config)
   } catch (error) {
     destination = new URL('/connected-apps?connected=error', publicAppUrl())
@@ -2487,20 +2488,32 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
     output = missionReport
   }
 
-  const executionStatus = failedCount > 0 && postedCount === 0 ? 'error' : 'success'
+  const executionStatus = failedCount > 0 || postedCount === 0 ? 'error' : 'success'
+  const executionError = failedCount > 0 ? 'PUBLISH_FAILED' : postedCount === 0 ? 'NO_DUE_POSTS' : null
+  if (postedCount === 0 && failedCount === 0) log = 'Campaign execution failed: the scheduler marked this campaign due, but no approved scheduled post was eligible for publication.'
+  const completedExecution = { ...execution, status: executionStatus, duration: Date.now() - startTime, output, error_code: executionError, credits_used: creditsUsed, log }
+  const executionHistory = [completedExecution, ...(existing.executionHistory || [])].slice(0, 100)
+  const successfulRuns = executionHistory.filter(item => item.status === 'success').length
+  const failedRuns = executionHistory.filter(item => item.status === 'error').length
   const record = {
     ...existing,
     status,
     campaign,
-    executionHistory: [{ ...execution, status: executionStatus, duration: Date.now() - startTime, output, error_code: executionStatus === 'error' ? 'PUBLISH_FAILED' : null, credits_used: creditsUsed, log }, ...(existing.executionHistory || [])].slice(0, 100),
+    executionHistory,
+    executionsDone: executionHistory.length,
+    successfulRuns,
+    failedRuns,
+    successRate: executionHistory.length ? Math.round((successfulRuns / executionHistory.length) * 100) : 0,
     lastRun: now.toISOString(),
+    lastRunAt: now.toISOString(),
+    nextRunAt: nextRun || null,
     updated_at: now.toISOString(),
   }
   if (nextRun) record.trigger = { ...existing.trigger, nextRun, type: 'campaign' }
   else record.trigger = { ...existing.trigger, type: 'campaign' }
   await saveServerAgent(record)
 
-  execution = { ...execution, status: executionStatus, duration: Date.now() - startTime, output, error_code: executionStatus === 'error' ? 'PUBLISH_FAILED' : null, credits_used: creditsUsed, log }
+  execution = completedExecution
   await saveServerExecution(execution)
   return execution
 }
@@ -2534,7 +2547,7 @@ async function runAgent(agent, trigger = 'schedule') {
     const expectedLocal = formatLocalTime(expectedAt.toISOString(), timezone)
     const nowLocal = formatLocalTime(now.toISOString(), timezone)
     const diff = now.getTime() - expectedAt.getTime()
-    if (diff < -5 * 60 * 1000 || diff > 5 * 60 * 1000) {
+    if (diff < -5 * 60 * 1000) {
       return { id: executionId, agentId: existing.id, at: now.toISOString(), status: 'aborted', duration: 0, output: null, error_code: 'TIMING_MISMATCH', credits_used: 0, log: `Timing mismatch - expected ${expectedLocal}, got ${nowLocal}. Aborted.`, trigger: triggerType }
     }
   }
@@ -2807,7 +2820,7 @@ function getConversationEngine() {
       const tokens = integration.tokens || {}
       const expiresAt = Number(tokens.expiry || tokens.expires_at || tokens.expiry_date || 0)
       const expired = expiresAt > 0 && expiresAt <= Date.now()
-      const scopes = integration.scopes || []
+      const scopes = provider === 'linkedin' ? normalizeLinkedInScopes(integration.scopes) : (integration.scopes || [])
       const personalProfile = String(tokens.author_urn || tokens.authorUrn || '').startsWith('urn:li:person:')
       return { connected: true, ready: !expired && provider === 'linkedin' ? personalProfile && scopes.includes('w_member_social') : !expired, expired, scopes, identifier: tokens.author_urn || integration.identifier || '' }
     },
@@ -4430,7 +4443,7 @@ async function supabaseGetExecution(id) {
 async function supabaseSaveExecution(execution) {
   const c = supabaseConfig()
   const body = JSON.stringify({ id: execution.id, agent_id: execution.agentId, data: execution, updated_at: new Date().toISOString() })
-  const res = await fetch(`${c.url}/rest/v1/agent_executions?id=eq.${encodeURIComponent(execution.id)}`, { method: 'PUT', headers: serviceHeaders(c.service), body })
+  const res = await fetch(`${c.url}/rest/v1/agent_executions?id=eq.${encodeURIComponent(execution.id)}`, { method: 'PATCH', headers: { ...serviceHeaders(c.service), Prefer: 'return=minimal' }, body })
   if (!res.ok) throw new Error('Could not update execution in Supabase')
   return execution
 }
@@ -4501,7 +4514,8 @@ async function saveServerAgent(agent) {
       const filtered = existing.filter(a => a.id !== record.id)
       await remoteAgentsSaveForUser(record.userId, record.userEmail || '', [record, ...filtered], config)
       return record
-    } catch { /* fall through to local */ }
+    } catch { /* handled below */ }
+    throw new Error('Durable agent persistence is unavailable; refusing to save to ephemeral storage')
   }
   const agents = readAgents()
   const index = agents.findIndex(a => a.id === agent.id)
@@ -4521,7 +4535,8 @@ async function getServerAgent(id) {
         const found = row.agents.find(a => a.id === id)
         if (found) return { ...found, userId: row.userId }
       }
-    } catch { /* fall through */ }
+    } catch { /* handled below */ }
+    throw new Error('Durable agent persistence is unavailable; refusing to read ephemeral storage')
   }
   return readAgents().find(a => a.id === id) || null
 }
@@ -4533,7 +4548,8 @@ async function listServerAgents() {
     try {
       const rows = await remoteAgentsList(config)
       return rows.flatMap(r => r.agents.map(a => ({ ...a, userId: r.userId })))
-    } catch { /* fall through */ }
+    } catch { /* handled below */ }
+    throw new Error('Durable agent persistence is unavailable; refusing to read ephemeral storage')
   }
   return readAgents()
 }
@@ -4550,7 +4566,7 @@ async function deleteServerAgent(id) {
 
 async function addServerExecution(execution) {
   if (useSupabaseAgentDb()) {
-    try { await supabaseAddExecution(execution); return execution } catch { /* fall through */ }
+    try { await supabaseAddExecution(execution); return execution } catch { throw new Error('Durable execution persistence is unavailable') }
   }
   const ex = readAgentExecutions()
   ex.unshift(execution)
@@ -4569,14 +4585,14 @@ async function claimServerExecution(execution) {
 
 async function getServerExecution(id) {
   if (useSupabaseAgentDb()) {
-    try { return await supabaseGetExecution(id) } catch { /* fall through */ }
+    try { return await supabaseGetExecution(id) } catch { throw new Error('Durable execution persistence is unavailable') }
   }
   return readAgentExecutions().find(e => e.id === id) || null
 }
 
 async function saveServerExecution(execution) {
   if (useSupabaseAgentDb()) {
-    try { await supabaseSaveExecution(execution); return execution } catch { /* fall through */ }
+    try { await supabaseSaveExecution(execution); return execution } catch { throw new Error('Durable execution persistence is unavailable') }
   }
   const ex = readAgentExecutions()
   const idx = ex.findIndex(e => e.id === execution.id)
@@ -4588,7 +4604,7 @@ async function saveServerExecution(execution) {
 
 async function listServerExecutions() {
   if (useSupabaseAgentDb()) {
-    try { return await supabaseAgentExecutions() } catch { /* fall through */ }
+    try { return await supabaseAgentExecutions() } catch { throw new Error('Durable execution persistence is unavailable') }
   }
   return readAgentExecutions()
 }
@@ -5136,7 +5152,15 @@ const server = http.createServer(async (req, res) => {
     } catch (error) { return json(res, error instanceof Error && error.message.includes('No AI provider') ? 503 : 400, { error: error instanceof Error ? error.message : 'Parse failed' }) }
   }
   if (req.method === 'GET' && req.url === '/api/agents') {
-    try { return json(res, 200, { agents: await listServerAgents(), executions: await listServerExecutions() }) }
+    try {
+      const config = supabaseConfig()
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      if (!user) return json(res, 401, { error: 'Authentication required' })
+      const agents = (await listServerAgents()).filter(agent => agent.userId === user.id)
+      const agentIds = new Set(agents.map(agent => agent.id))
+      const executions = (await listServerExecutions()).filter(execution => agentIds.has(execution.agentId))
+      return json(res, 200, { agents, executions })
+    }
     catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Could not load agents' }) }
   }
   if (req.method === 'POST' && req.url === '/api/agents') {
