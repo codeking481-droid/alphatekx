@@ -34,7 +34,7 @@ const root = path.dirname(fileURLToPath(import.meta.url))
 const distRoot = path.resolve(root, 'dist')
 
 function buildDistIfNeeded() {
-  if (process.env.NODE_ENV !== 'production' && !process.env.RENDER) return
+  if (process.env.NODE_ENV !== 'production' && !process.env.RENDER && !process.env.PORT) return
   try {
     process.stdout.write('[startup] Building production assets...\n')
     execSync('npm run build', { cwd: root, stdio: 'pipe', timeout: 120_000 })
