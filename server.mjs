@@ -5035,16 +5035,17 @@ const server = http.createServer(async (req, res) => {
         const canCreate = await billing.canCreateAgent(user, config, activeCount)
         if (!canCreate.ok) return json(res, 402, { error: canCreate.reason, plan: canCreate.plan, code: 'PLAN_LIMIT' })
       }
+      const trigger = merged.trigger || {}
       const timezone = merged.timezone || merged.schedule?.timezone || existing.timezone || 'UTC'
-      const cron = merged.trigger?.cron || '0 0 8 * * *'
-      if (!merged.trigger.nextRun || merged.status === 'running') {
+      const cron = trigger.cron || '0 0 8 * * *'
+      if (!trigger.nextRun || merged.status === 'running') {
         let nextRun
-        if (merged.trigger?.type === 'campaign' || cron === 'campaign') {
+        if (trigger.type === 'campaign' || cron === 'campaign') {
           nextRun = campaignNextRun(merged.campaign)
         } else {
           try { nextRun = nextRunFromCronServer(cron, new Date(), timezone).toISOString() } catch { nextRun = new Date().toISOString() }
         }
-        merged.trigger = { ...merged.trigger, nextRun: nextRun || new Date().toISOString() }
+        merged.trigger = { ...trigger, nextRun: nextRun || new Date().toISOString() }
         merged.nextRunAt = merged.trigger.nextRun
       }
       merged.updatedAt = new Date().toISOString()
