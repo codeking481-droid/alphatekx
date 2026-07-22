@@ -4,7 +4,6 @@ import path from 'node:path'
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { schedule } from 'node-cron'
-import { execSync } from 'node:child_process'
 
 import { fallbackAlphaBuilder } from './alphaFallback.mjs'
 import { extractPlan, isPlatformPrompt } from './server/alphaPlatformBuilder.mjs'
@@ -32,18 +31,6 @@ loadEnv()
 const port = Number(process.env.PORT || 3001)
 const root = path.dirname(fileURLToPath(import.meta.url))
 const distRoot = path.resolve(root, 'dist')
-
-function buildDistIfNeeded() {
-  if (process.env.SKIP_BUILD === 'true') return
-  try {
-    process.stdout.write('[startup] Building production assets...\n')
-    execSync('node node_modules/.bin/vite build', { cwd: root, stdio: 'inherit', timeout: 180_000 })
-    process.stdout.write('[startup] Production assets built.\n')
-  } catch (err) {
-    process.stdout.write(`[startup] Build failed: ${err instanceof Error ? err.message : String(err)}\n`)
-  }
-}
-buildDistIfNeeded()
 
 const deploymentsDir = path.resolve(root, 'deployed')
 const previewsDir = path.resolve(root, 'data', 'previews')
