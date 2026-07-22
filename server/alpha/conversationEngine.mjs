@@ -300,6 +300,43 @@ export function createConversationEngine(deps) {
     const prompt = promptOverride || conversation.originalRequest
     const capability = detectCapability(prompt)
 
+    const fastHeuristic = heuristicParseRequest(prompt)
+    if (SOCIAL_CONTENT_INTENTS.has(fastHeuristic.intent) && requiredMissingFields(fastHeuristic.intent, fastHeuristic.knownFields).length === 0) {
+      conversation.intent = fastHeuristic.intent
+      conversation.confidence = 0.9
+      conversation.currentGoal = fastHeuristic.knownFields.topic || prompt
+      conversation.knownFields = normalizeKnownFields(fastHeuristic.knownFields, prompt)
+      conversation.knownFields.platforms = conversation.knownFields.platforms || fastHeuristic.knownFields.platforms || []
+      if (!conversation.knownFields.time) {
+        const extractedTime = extractTimeFromText(prompt)
+        if (extractedTime) conversation.knownFields.time = extractedTime
+      }
+      if (!conversation.knownFields.durationDays && !conversation.knownFields.duration_days) {
+        const extractedDuration = extractDurationFromText(prompt)
+        if (extractedDuration) conversation.knownFields.durationDays = extractedDuration
+      }
+      if (!conversation.knownFields.business) {
+        const businessMatch = prompt.match(/my\s+business\s+(?:is|offers?)\s+([^,.!?]+)/i)
+        if (businessMatch) conversation.knownFields.business = businessMatch[1].trim()
+      }
+      const missing = requiredMissingFields(conversation.intent, conversation.knownFields)
+      const known = conversation.knownFields
+      conversation.missingFields = missing.filter(m => {
+        const value = known[m.field]
+        if (Array.isArray(value)) return value.length === 0
+        if (typeof value === 'boolean') return false
+        return value === undefined || value === null || String(value).trim() === ''
+      })
+      conversation.askedFields = conversation.askedFields || []
+      if (conversation.missingFields.length > 0) {
+        conversation.conversationStage = 'gathering_information'
+        await askNextQuestion(conversation)
+      } else {
+        await moveToPlanningOrContent(conversation)
+      }
+      return
+    }
+
     const system = `${ALPHA_SYSTEM_IDENTITY}
 
 Analyze the user's request and return a JSON object with:
