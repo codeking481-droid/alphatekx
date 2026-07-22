@@ -354,12 +354,10 @@ Do not return placeholder text. Use the words the user actually provided.`
       parsed.knownFields = { ...extractKnownFieldsFromCapability(capabilityPlan), ...parsed.knownFields }
     }
 
-    if (!SOCIAL_CONTENT_INTENTS.has(parsed.intent || '')) {
-      const heuristic = heuristicParseRequest(prompt)
-      if (SOCIAL_CONTENT_INTENTS.has(heuristic.intent)) {
-        parsed.intent = heuristic.intent
-        parsed.knownFields = { ...heuristic.knownFields, ...parsed.knownFields }
-      }
+    const heuristic = heuristicParseRequest(prompt)
+    if (SOCIAL_CONTENT_INTENTS.has(heuristic.intent)) {
+      if (!SOCIAL_CONTENT_INTENTS.has(parsed.intent || '')) parsed.intent = heuristic.intent
+      parsed.knownFields = { ...heuristic.knownFields, ...parsed.knownFields }
     }
 
     conversation.intent = parsed.intent || 'unknown'
