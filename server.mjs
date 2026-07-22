@@ -5334,6 +5334,15 @@ const server = http.createServer(async (req, res) => {
     }
   }
   if (req.url?.startsWith('/api/')) return json(res, 404, { error: 'API route not found' })
+  if (req.method === 'GET' && req.url === '/debug/dist') {
+    try {
+      const indexHtml = fs.readFileSync(path.join(distRoot, 'index.html'), 'utf8').slice(0, 1000)
+      const assets = fs.readdirSync(path.join(distRoot, 'assets')).filter(f => f.endsWith('.js')).slice(0, 20)
+      return json(res, 200, { root, distRoot, indexHtml, assets })
+    } catch (err) {
+      return json(res, 500, { error: err instanceof Error ? err.message : String(err), root, distRoot })
+    }
+  }
   const subdomain = requestSubdomain(req)
   if (subdomain && ['GET', 'HEAD'].includes(req.method || '')) return servePublishedCreation(req, res, subdomain)
   if (subdomain) return json(res, 404, { error: 'App route not found' })
