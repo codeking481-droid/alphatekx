@@ -1,0 +1,1 @@
+export const DEFAULT_CREDIT_BALANCE = 30

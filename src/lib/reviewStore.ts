@@ -1,0 +1,9 @@
+import { supabase } from './supabase'
+import type { MarketplaceReview } from './types'
+const KEY='alphatekx_marketplace_reviews';const EVENT='alphatekx:reviews-change';let memory:MarketplaceReview[]=[]
+const read=()=>{if(typeof localStorage==='undefined')return memory;try{memory=JSON.parse(localStorage.getItem(KEY)||'[]')}catch{}return memory}
+const write=(values:MarketplaceReview[])=>{memory=values;if(typeof localStorage!=='undefined')localStorage.setItem(KEY,JSON.stringify(values));if(typeof window!=='undefined')window.dispatchEvent(new Event(EVENT))}
+export function getReviews(){return [...read()].sort((a,b)=>b.createdAt.localeCompare(a.createdAt))}
+export async function saveReview(itemId:string,userId:string,rating:number,comment:string){const review:MarketplaceReview={id:read().find(item=>item.itemId===itemId&&item.userId===userId)?.id??crypto.randomUUID(),itemId,userId,rating:Math.max(1,Math.min(5,rating)),comment:comment.trim(),createdAt:new Date().toISOString()};write([review,...read().filter(item=>!(item.itemId===itemId&&item.userId===userId))]);if(supabase)await supabase.from('marketplace_reviews').upsert({id:review.id,item_id:itemId,user_id:userId,rating:review.rating,comment:review.comment,created_at:review.createdAt},{onConflict:'item_id,user_id'});return review}
+export async function hydrateReviews(){if(!supabase)return getReviews();const{data}=await supabase.from('marketplace_reviews').select('id,item_id,user_id,rating,comment,created_at').order('created_at',{ascending:false});if(data)write(data.map(row=>({id:row.id,itemId:row.item_id,userId:row.user_id,rating:row.rating,comment:row.comment,createdAt:row.created_at})));return getReviews()}
+export function subscribeReviews(listener:()=>void){if(typeof window==='undefined')return()=>{};window.addEventListener(EVENT,listener);return()=>window.removeEventListener(EVENT,listener)}
