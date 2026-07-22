@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: alphatekx
+    env: node
+    plan: free
+    branch: main
+    autoDeploy: true
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: 20.11.0
+      - key: PUBLIC_APP_URL
+        value: https://alphatekx.name.ng
+      - key: GOOGLE_REDIRECT_URI
+        value: https://alphatekx.name.ng/api/auth/gmail/callback

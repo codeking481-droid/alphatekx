@@ -1,0 +1,13 @@
+const storage=new Map<string,string>();const events=new EventTarget();Object.assign(globalThis,{localStorage:{getItem:(key:string)=>storage.get(key)??null,setItem:(key:string,value:string)=>storage.set(key,String(value)),removeItem:(key:string)=>storage.delete(key),clear:()=>storage.clear()},window:{localStorage:null,dispatchEvent:(event:Event)=>events.dispatchEvent(event),addEventListener:(type:string,listener:EventListener)=>events.addEventListener(type,listener),removeEventListener:(type:string,listener:EventListener)=>events.removeEventListener(type,listener),setTimeout}});(globalThis.window as unknown as {localStorage:unknown}).localStorage=globalThis.localStorage
+const assert=(condition:unknown,message:string)=>{if(!condition)throw new Error(message)}
+const store=await import('../src/lib/missionStore.ts');const credits=await import('../src/lib/creditStore.ts');const reviews=await import('../src/lib/reviewStore.ts')
+localStorage.clear();credits.setCredits(100)
+const mission=store.createMission('Build hospital management system','Hospital OS');assert(store.getMissionById(mission.id)?.title==='Hospital OS','1 missions table/store')
+store.addMessage(mission.id,{role:'user',content:'Build it',type:'chat'});assert(await credits.spendCredits(1),'2 credit deduction');assert(credits.getCredits()===99,'2 credit balance')
+store.addActivity(mission.id,'[Product Manager] Defining requirements...');assert(store.getActivities(mission.id).some(item=>item.role==='Product Manager'),'3 activities table/store')
+store.updateMissionProgress(mission.id,90);const creation=store.saveCreation({missionId:mission.id,title:'Hospital OS',code:'function App(){return <button>Open</button>}',files:[{path:'src/App.tsx',code:'function App(){return <button>Open</button>'}]});store.completeMission(mission.id);assert(store.getMissionById(mission.id)?.progress===100&&store.getCreationById(creation.id),'4 creations/progress')
+const item=store.publishCreation(creation.id,{title:'Hospital OS',description:'Hospital workflow',category:'Web Apps',priceType:'free',price:0},'Test Creator');assert(store.getMarketplaceItems().some(entry=>entry.id===item.id),'5 marketplace items')
+await reviews.saveReview(item.id,'00000000-0000-4000-8000-000000000001',5,'Production quality');assert(reviews.getReviews().some(review=>review.itemId===item.id),'6 marketplace reviews')
+const cloned=store.cloneMarketplaceItem(item.id);assert(cloned&&cloned.id!==creation.id&&store.getMarketplaceItems().find(entry=>entry.id===item.id)?.downloads===1,'7 free acquisition clone')
+credits.addCredits(500);assert(credits.getCredits()===599,'8 Paystack credit verification mock')
+process.stdout.write('FULL_TEST_OK\n')
