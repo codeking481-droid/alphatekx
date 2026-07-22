@@ -34,14 +34,10 @@ const root = path.dirname(fileURLToPath(import.meta.url))
 const distRoot = path.resolve(root, 'dist')
 
 function buildDistIfNeeded() {
-  process.stdout.write(`[startup] env: NODE_ENV=${process.env.NODE_ENV} RENDER=${process.env.RENDER} PORT=${process.env.PORT}\n`)
-  if (process.env.NODE_ENV !== 'production' && !process.env.RENDER && !process.env.PORT) {
-    process.stdout.write('[startup] Skipping build: not production/render\n')
-    return
-  }
+  if (process.env.SKIP_BUILD === 'true') return
   try {
     process.stdout.write('[startup] Building production assets...\n')
-    execSync('npm run build', { cwd: root, stdio: 'inherit', timeout: 180_000 })
+    execSync('node node_modules/.bin/vite build', { cwd: root, stdio: 'inherit', timeout: 180_000 })
     process.stdout.write('[startup] Production assets built.\n')
   } catch (err) {
     process.stdout.write(`[startup] Build failed: ${err instanceof Error ? err.message : String(err)}\n`)
