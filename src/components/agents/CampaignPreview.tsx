@@ -48,13 +48,13 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
       .then(r => r.json().catch(() => ({})))
       .then(data => {
         if (data.brandProfile) {
-          setBrand({
-            business: data.brandProfile.business || '',
-            audience: data.brandProfile.audience || '',
-            tone: data.brandProfile.tone || '',
-            website: data.brandProfile.website || '',
-            dontPost: Array.isArray(data.brandProfile.dontPost) ? data.brandProfile.dontPost.join(', ') : (data.brandProfile.dontPost || ''),
-          })
+          setBrand(prev => ({
+            business: prev.business || data.brandProfile.business || '',
+            audience: prev.audience || data.brandProfile.audience || '',
+            tone: prev.tone || data.brandProfile.tone || '',
+            website: prev.website || data.brandProfile.website || '',
+            dontPost: prev.dontPost || (Array.isArray(data.brandProfile.dontPost) ? data.brandProfile.dontPost.join(', ') : (data.brandProfile.dontPost || '')),
+          }))
         }
       })
       .catch(() => {})

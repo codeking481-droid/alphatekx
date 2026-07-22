@@ -129,6 +129,60 @@ function cleanBusiness(text) {
     .trim()
 }
 
+function heuristicParseRequest(prompt) {
+  const lower = String(prompt || '').toLowerCase()
+  const result = { intent: 'unknown', knownFields: {} }
+  const hasPost = /\b(post|article|content)\b/.test(lower)
+  const platformList = [
+    { id: 'linkedin', test: /\blinkedin\b/ },
+    { id: 'medium', test: /\bmedium\b/ },
+    { id: 'x', test: /(?:^|\s)x(?:\s|$|\.|,|!|\?)/ },
+    { id: 'twitter', test: /\btwitter\b/ },
+    { id: 'facebook', test: /\bfacebook\b/ },
+    { id: 'instagram', test: /\binstagram\b/ },
+    { id: 'threads', test: /\bthreads\b/ },
+    { id: 'tiktok', test: /\btiktok\b/ },
+    { id: 'youtube', test: /\byoutube\b/ },
+  ]
+  const platforms = platformList.filter(p => p.test.test(lower)).map(p => p.id === 'twitter' ? 'x' : p.id)
+  if (!hasPost || platforms.length === 0) return result
+  result.intent = 'social_content'
+  result.knownFields.platforms = platforms
+
+  const businessPatterns = [
+    /\bintroducing\s+([^,.!?]+)/i,
+    /\bmy\s+business\s+(?:is|offers?)\s+([^,.!?]+)/i,
+    /\b(?:post|article)\s+(?:about|on)\s+([^,.!?]+)/i,
+    /\babout\s+([^,.!?]+)/i,
+  ]
+  for (const re of businessPatterns) {
+    const m = prompt.match(re)
+    if (m) { result.knownFields.business = cleanBusiness(m[1]); break }
+  }
+
+  const audienceMatch = prompt.match(/\b(?:for|target(?:ed)?\s+audience(?:\s+is)?)\s*[:=]?\s*([^\.\n]+(?:,[^\.\n]+)*)/i) ||
+                        prompt.match(/\baudience(?:\s+is)?\s*[:=]?\s*([^\.\n]+(?:,[^\.\n]+)*)/i)
+  if (audienceMatch) result.knownFields.audience = audienceMatch[1].trim().replace(/\s+/g, ' ')
+
+  const toneMatch = prompt.match(/\btone(?:\s+is)?\s*[:=]?\s*([^\.\n]+)/i) ||
+                    prompt.match(/(?:\bin a|\bwith a)\s+([^\.\n]+?)\s+\btone\b/i)
+  if (toneMatch) result.knownFields.tone = toneMatch[1].trim().replace(/\s+/g, ' ')
+
+  const time = extractTimeFromText(prompt)
+  result.knownFields.time = time || '09:00'
+
+  const isSinglePost = /\ba\s+(?:single|strong|great)?\s*(?:linkedin\s+|medium\s+|x\s+|twitter\s+|facebook\s+|instagram\s+)?(?:post|article)\b/i.test(prompt) &&
+    !/\b(every|each|daily|weekly|monthly|monday|tuesday|wednesday|thursday|friday|saturday|sunday|week|month)\b/.test(lower)
+  if (isSinglePost) { result.knownFields.totalPosts = 1; result.knownFields.durationDays = 1 }
+  const duration = extractDurationFromText(prompt)
+  if (duration) result.knownFields.durationDays = duration
+
+  if (/\b(do not publish|until i approve|manual approval|review before publishing|approve it)\b/i.test(lower)) result.knownFields.approvalPreference = 'manual'
+  else if (/\b(auto publish|publish automatically|auto approval)\b/i.test(lower)) result.knownFields.approvalPreference = 'auto'
+
+  return result
+}
+
 function normalizePlatform(name) {
   const n = String(name).toLowerCase().replace(/\s+/g, '').replace(/^@/, '')
   if (n.includes('facebook')) return 'facebook'
@@ -298,6 +352,14 @@ Do not return placeholder text. Use the words the user actually provided.`
         parsed.alternative = capabilityPlan.alternative
       }
       parsed.knownFields = { ...extractKnownFieldsFromCapability(capabilityPlan), ...parsed.knownFields }
+    }
+
+    if (!SOCIAL_CONTENT_INTENTS.has(parsed.intent || '')) {
+      const heuristic = heuristicParseRequest(prompt)
+      if (SOCIAL_CONTENT_INTENTS.has(heuristic.intent)) {
+        parsed.intent = heuristic.intent
+        parsed.knownFields = { ...heuristic.knownFields, ...parsed.knownFields }
+      }
     }
 
     conversation.intent = parsed.intent || 'unknown'
