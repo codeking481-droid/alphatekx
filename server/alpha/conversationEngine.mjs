@@ -169,7 +169,26 @@ function heuristicParseRequest(prompt) {
   if (toneMatch) result.knownFields.tone = toneMatch[1].trim().replace(/\s+/g, ' ')
 
   const time = extractTimeFromText(prompt)
-  result.knownFields.time = time || '09:00'
+  if (time) result.knownFields.time = time
+
+  const weekdays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].filter(day => new RegExp(`\\b${day}s?\\b`, 'i').test(prompt))
+  if (weekdays.length) {
+    result.knownFields.daysOfWeek = weekdays
+    result.knownFields.frequency = 'weekly'
+  } else if (/\bweekdays?\b/i.test(prompt)) result.knownFields.frequency = 'weekdays'
+  else if (/\b(?:every\s+day|daily)\b/i.test(prompt)) result.knownFields.frequency = 'daily'
+  else if (/\bmonthly\b|\bevery\s+month\b/i.test(prompt)) result.knownFields.frequency = 'monthly'
+
+  const timezoneMatch = prompt.match(/\b(?:timezone\s*[:=]?\s*)?(UTC|GMT|WAT|[A-Za-z_]+\/[A-Za-z_]+)\b/i)
+  if (timezoneMatch) result.knownFields.timezone = timezoneMatch[1]
+  const startMatch = prompt.match(/\bstart(?:ing)?\s+(?:on\s+)?(\d{4}-\d{2}-\d{2}|today|tomorrow)\b/i)
+  if (startMatch) result.knownFields.startDate = startMatch[1].toLowerCase()
+  const endMatch = prompt.match(/\b(?:until|end(?:ing)?\s+(?:on\s+)?)(\d{4}-\d{2}-\d{2})\b/i)
+  if (endMatch) result.knownFields.endDate = endMatch[1]
+  const runMatch = prompt.match(/\b(?:for|stop\s+after)\s+(\d+)\s+(?:posts?|runs?)\b/i)
+  if (runMatch) result.knownFields.totalPosts = Number(runMatch[1])
+  const ctaMatch = prompt.match(/\b(?:cta|call to action)\s*[:=]\s*([^\n.]+)/i)
+  if (ctaMatch) result.knownFields.callToAction = ctaMatch[1].trim()
 
   const isSinglePost = /\ba\s+(?:single|strong|great)?\s*(?:linkedin\s+|medium\s+|x\s+|twitter\s+|facebook\s+|instagram\s+)?(?:post|article)\b/i.test(prompt) &&
     !/\b(every|each|daily|weekly|monthly|monday|tuesday|wednesday|thursday|friday|saturday|sunday|week|month)\b/.test(lower)
@@ -179,6 +198,7 @@ function heuristicParseRequest(prompt) {
 
   if (/\b(do not publish|until i approve|manual approval|review before publishing|approve it)\b/i.test(lower)) result.knownFields.approvalPreference = 'manual'
   else if (/\b(auto publish|publish automatically|auto approval)\b/i.test(lower)) result.knownFields.approvalPreference = 'auto'
+  else if (platforms.includes('linkedin')) result.knownFields.approvalPreference = 'manual'
 
   return result
 }
@@ -218,11 +238,16 @@ Always respond in valid JSON when asked.`
 function requiredMissingFields(intent, knownFields) {
   const missing = []
   if (SOCIAL_CONTENT_INTENTS.has(intent)) {
+    const linkedinOnly = Array.isArray(knownFields.platforms) && knownFields.platforms.length === 1 && knownFields.platforms[0] === 'linkedin'
+    const recurring = linkedinOnly && ((knownFields.frequency && knownFields.frequency !== 'once') || (knownFields.daysOfWeek || []).length > 0)
     if (!knownFields.business) missing.push({ field: 'business', question: 'What does your business offer, or what is it about?', reason: 'I need this to generate relevant, original posts.', required: true })
     if (!knownFields.audience) missing.push({ field: 'audience', question: 'Who is your target customer or audience?', reason: 'I need this to make the posts persuasive.', required: true })
     if (!knownFields.tone) missing.push({ field: 'tone', question: 'What tone should the posts use? (e.g. professional, friendly, playful, bold, persuasive)', reason: 'This determines how the content sounds.', required: true })
-    if (!knownFields.time) missing.push({ field: 'time', question: 'What time should the posts go out? (e.g. 9:00 AM, morning, 6 PM)', reason: 'I need a schedule time.', required: true })
-    if (!knownFields.durationDays && !knownFields.duration_days && !knownFields.totalPosts && !knownFields.total_posts) missing.push({ field: 'durationDays', question: 'For how many days should I create posts?', reason: 'This determines how many posts to generate.', required: true })
+    if ((!linkedinOnly || recurring) && !knownFields.time) missing.push({ field: 'time', question: 'What time should the posts go out? (e.g. 9:00 AM, morning, 6 PM)', reason: 'I need a schedule time.', required: true })
+    if (recurring && !knownFields.timezone) missing.push({ field: 'timezone', question: 'Which timezone should I use? (for example Africa/Lagos)', reason: 'The server needs an exact timezone for reliable scheduling.', required: true })
+    if (recurring && !knownFields.startDate) missing.push({ field: 'startDate', question: 'When should this LinkedIn schedule start?', reason: 'I need the first eligible publishing date.', required: true })
+    if (recurring && !knownFields.endDate && !knownFields.totalPosts && !knownFields.total_posts) missing.push({ field: 'endCondition', question: 'When should it stop: on a date, or after how many posts?', reason: 'Recurring publishing needs a clear stopping condition.', required: true })
+    if (!linkedinOnly && !knownFields.durationDays && !knownFields.duration_days && !knownFields.totalPosts && !knownFields.total_posts) missing.push({ field: 'durationDays', question: 'For how many days should I create posts?', reason: 'This determines how many posts to generate.', required: true })
     if (!knownFields.platforms || !knownFields.platforms.length) missing.push({ field: 'platforms', question: 'Which platform(s) should the posts be for? (Facebook, LinkedIn, X, Instagram, etc.)', reason: 'Each platform has a different style.', required: true })
     if (knownFields.approvalPreference === undefined || knownFields.approvalPreference === null) missing.push({ field: 'approvalPreference', question: 'Should I publish automatically after you approve each post, or do you want to review every post first?', reason: 'This controls the approval flow.', required: false })
     return missing
@@ -600,6 +625,21 @@ Return JSON:
       const lower = text.toLowerCase()
       extracted.approvalPreference = /\b(auto|automatic|publish|yes)\b/.test(lower) ? 'auto' : 'manual'
     }
+    if (field === 'timezone') {
+      extracted.timezone = /\bWAT\b/i.test(text) ? 'Africa/Lagos' : text.trim()
+    }
+    if (field === 'startDate') {
+      const base = new Date()
+      if (/\btomorrow\b/i.test(text)) base.setDate(base.getDate() + 1)
+      extracted.startDate = /\b(?:today|tomorrow)\b/i.test(text) ? base.toISOString().split('T')[0] : text.trim()
+    }
+    if (field === 'endCondition') {
+      const count = text.match(/\b(\d+)\s*(?:posts?|runs?)\b/i)
+      const date = text.match(/\b(\d{4}-\d{2}-\d{2})\b/)
+      if (count) extracted.totalPosts = Number(count[1])
+      if (date) extracted.endDate = date[1]
+      extracted.endCondition = text.trim()
+    }
 
     if (clarification) {
       addMessage(conversation, 'alpha', clarification)
@@ -644,6 +684,18 @@ Return JSON:
       extracted.platforms = String(text).split(/[,\s]+and[,\s]+|[,;]/).map(normalizePlatform).filter(Boolean)
     } else if (field === 'approvalPreference') {
       extracted.approvalPreference = /\b(auto|automatic|publish|yes)\b/.test(lower) ? 'auto' : 'manual'
+    } else if (field === 'timezone') {
+      extracted.timezone = /\bWAT\b/i.test(text) ? 'Africa/Lagos' : text.trim()
+    } else if (field === 'startDate') {
+      const date = new Date()
+      if (/\btomorrow\b/i.test(text)) date.setDate(date.getDate() + 1)
+      extracted.startDate = /\b(?:today|tomorrow)\b/i.test(text) ? date.toISOString().split('T')[0] : text.trim()
+    } else if (field === 'endCondition') {
+      const count = text.match(/\b(\d+)\s*(?:posts?|runs?)\b/i)
+      const date = text.match(/\b(\d{4}-\d{2}-\d{2})\b/)
+      if (count) extracted.totalPosts = Number(count[1])
+      if (date) extracted.endDate = date[1]
+      extracted.endCondition = text.trim()
     } else {
       extracted[field] = text.trim()
     }
@@ -710,9 +762,9 @@ Return JSON:
 
     const business = businessName || businessType
     const brand = { business, businessType, audience, tone, website: known.website || '', dontPost }
-    const startDate = new Date().toISOString().split('T')[0]
-    const endDate = addDays(new Date(), durationDays)
-    const timezone = known.timezone || 'UTC'
+    const startDate = known.startDate || new Date().toISOString().split('T')[0]
+    const endDate = known.endDate || addDays(new Date(startDate), durationDays)
+    const timezone = known.timezone === 'WAT' ? 'Africa/Lagos' : (known.timezone || 'UTC')
     const baseHour = parseTime(time)?.hour || 8
     const scheduleSlots = []
     for (let i = 0; i < postsPerDay; i++) {
@@ -730,7 +782,9 @@ Return JSON:
       endDate,
       includeImages,
       timezone,
-      frequencyText: `Daily for ${durationDays} days`,
+      frequency: known.frequency || (isSinglePost ? 'once' : 'daily'),
+      daysOfWeek: known.daysOfWeek || [],
+      frequencyText: isSinglePost ? 'One time' : `${known.frequency || 'daily'} for ${totalPosts} post(s)`,
     }
 
     const system = `You are Alpha, a creative social media copywriter.
@@ -789,14 +843,14 @@ Total posts: ${totalPosts}.`
 
     try {
       const calendar = await tryGenerate(false)
-      posts = normalizeCalendar(calendar, platforms, scheduleSlots, startDate, timezone, postsPerDay, includeImages)
+      posts = normalizeCalendar(calendar, platforms, scheduleSlots, startDate, timezone, postsPerDay, includeImages, meta)
       generationMode = 'model'
     } catch (err) {
       lastError = err
       console.error('[conversationEngine] generateContent first attempt failed:', err)
       try {
         const calendar = await tryGenerate(true)
-        posts = normalizeCalendar(calendar, platforms, scheduleSlots, startDate, timezone, postsPerDay, includeImages)
+        posts = normalizeCalendar(calendar, platforms, scheduleSlots, startDate, timezone, postsPerDay, includeImages, meta)
         generationMode = 'model'
       } catch (err2) {
         lastError = err2
@@ -805,7 +859,8 @@ Total posts: ${totalPosts}.`
     }
 
     if (!posts.length) {
-      const fallbackEnabled = process.env.ALPHA_ENABLE_DETERMINISTIC_FALLBACK !== 'false'
+      const linkedinOnly = platforms.length === 1 && platforms[0] === 'linkedin'
+      const fallbackEnabled = !linkedinOnly && process.env.ALPHA_ENABLE_DETERMINISTIC_FALLBACK !== 'false'
       if (fallbackEnabled) {
         generationMode = 'fallback'
         posts = generateFallbackPosts(platforms, business, audience, tone, durationDays, postsPerDay, scheduleSlots, startDate, timezone, includeImages)
@@ -866,20 +921,22 @@ Total posts: ${totalPosts}.`
     conversation.pendingConnections = []
     conversation.selectedCapabilities = platforms.map(p => `generate_${p}_content`)
 
-    const status = await checkPublishingCapabilities(platforms)
+    const status = await checkPublishingCapabilities(platforms, conversation.userId)
     if (!status.allReady) {
       conversation.automationDraft.missing = [{ field: 'connection', step: 'Publishing', connector: status.missing.join(', '), reason: `I can generate the posts, but direct publishing to ${status.missing.join(', ')} is not available. You can copy the posts manually or connect the app later.` }]
     }
 
     const platformList = platforms.map(p => PLATFORM_NAMES[p] || p).join(', ')
     if (generationMode === 'model') {
-      addMessage(conversation, 'alpha', `I generated ${posts.length} original posts for ${platformList}. Take a look, edit or regenerate any post, then approve. Note: direct publishing to ${platformList} is not available yet, so I'll prepare the content for you to copy or publish through your connected tools.`, { generatedCount: posts.length, totalCredits })
+      addMessage(conversation, 'alpha', status.allReady
+        ? `I generated ${posts.length} original post${posts.length === 1 ? '' : 's'} for ${platformList}. Review or improve the content, then explicitly approve it before scheduling or publishing.`
+        : `I generated ${posts.length} original post${posts.length === 1 ? '' : 's'} for ${platformList}. Review it now, then connect ${status.missing.join(', ')} before approval.`, { generatedCount: posts.length, totalCredits })
     } else {
       addMessage(conversation, 'alpha', `Alpha’s content-generation models are temporarily unavailable. Your automation details have been saved, so you can continue without starting again. I've prepared ${posts.length} starter posts you can edit, regenerate, or approve once the models are back.`, { generatedCount: posts.length, totalCredits })
     }
   }
 
-  function normalizeCalendar(calendar, platforms, scheduleSlots, startDate, timezone, postsPerDay, includeImages) {
+  function normalizeCalendar(calendar, platforms, scheduleSlots, startDate, timezone, postsPerDay, includeImages, meta = {}) {
     return calendar.map((p, i) => {
       const postPlatforms = Array.isArray(p.platforms) && p.platforms.length ? p.platforms.map(normalizePlatform).filter(Boolean) : platforms
       const day = Number(p.day) || Math.floor(i / postsPerDay) + 1
@@ -893,7 +950,9 @@ Total posts: ${totalPosts}.`
         id: p.id || randomUUID(),
         day,
         slot: p.slot || slot.label,
-        scheduledAt: p.scheduledAt || scheduleDate(day, p.slot ? { label: p.slot, hour: parseTime(p.slot)?.hour || slot.hour, minute: parseTime(p.slot)?.minute || slot.minute } : slot, startDate, timezone),
+        scheduledAt: platforms.length === 1 && platforms[0] === 'linkedin'
+          ? scheduleOccurrence(i, startDate, p.slot ? { label: p.slot, hour: parseTime(p.slot)?.hour || slot.hour, minute: parseTime(p.slot)?.minute || slot.minute } : slot, meta.frequency, meta.daysOfWeek, timezone)
+          : (p.scheduledAt || scheduleDate(day, p.slot ? { label: p.slot, hour: parseTime(p.slot)?.hour || slot.hour, minute: parseTime(p.slot)?.minute || slot.minute } : slot, startDate, timezone)),
         platforms: postPlatforms,
         topic: p.topic || '',
         postType: ['educational', 'product', 'story', 'cta'].includes(p.postType) ? p.postType : 'educational',
@@ -940,6 +999,42 @@ Total posts: ${totalPosts}.`
     return date.toISOString()
   }
 
+  function zonedTimeToUtc(date, hour, minute, timezone) {
+    const desired = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), hour, minute, 0)
+    if (!timezone || timezone === 'UTC') return new Date(desired).toISOString()
+    let candidate = desired
+    try {
+      for (let i = 0; i < 3; i++) {
+        const parts = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(candidate))
+        const values = Object.fromEntries(parts.map(part => [part.type, part.value]))
+        const represented = Date.UTC(Number(values.year), Number(values.month) - 1, Number(values.day), Number(values.hour), Number(values.minute), 0)
+        candidate += desired - represented
+      }
+    } catch { return new Date(desired).toISOString() }
+    return new Date(candidate).toISOString()
+  }
+
+  function scheduleOccurrence(index, startDate, slot, frequency = 'once', daysOfWeek = [], timezone = 'UTC') {
+    const [year, month, day] = startDate.split('-').map(Number)
+    const date = new Date(Date.UTC(year, month - 1, day))
+    const targetDays = daysOfWeek.map(name => ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'].indexOf(String(name).toLowerCase())).filter(value => value >= 0)
+    if (frequency === 'monthly') date.setUTCMonth(date.getUTCMonth() + index)
+    else if (frequency === 'weekly' && targetDays.length) {
+      let found = -1
+      while (found < index) {
+        if (targetDays.includes(date.getUTCDay())) found += 1
+        if (found < index) date.setUTCDate(date.getUTCDate() + 1)
+      }
+    } else if (frequency === 'weekdays') {
+      let found = -1
+      while (found < index) {
+        if (date.getUTCDay() >= 1 && date.getUTCDay() <= 5) found += 1
+        if (found < index) date.setUTCDate(date.getUTCDate() + 1)
+      }
+    } else date.setUTCDate(date.getUTCDate() + index)
+    return zonedTimeToUtc(date, slot.hour, slot.minute, timezone)
+  }
+
   function generateFallbackCaption(platform, business, audience, tone, postType, day) {
     const ctas = ['Learn more', 'Shop now', 'Book a session', 'DM us', 'Visit our store', 'Get started today']
     const cta = ctas[(day - 1) % ctas.length]
@@ -949,10 +1044,11 @@ Total posts: ${totalPosts}.`
     return `Day ${day}: Big moves only. If you're part of ${audience}, this is for you. ${cta}. #CallToAction #${business.replace(/\s+/g, '')}`
   }
 
-  async function checkPublishingCapabilities(platforms) {
+  async function checkPublishingCapabilities(platforms, userId) {
     const missing = []
     for (const p of platforms) {
-      missing.push(p)
+      const status = await getIntegrationStatus(userId, p)
+      if (!status?.ready) missing.push(p)
     }
     return { allReady: missing.length === 0, missing }
   }

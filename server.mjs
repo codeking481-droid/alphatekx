@@ -15,6 +15,7 @@ import { buildCapabilityPlan, detectCapability, isSupportedAction } from './serv
 import { createConversationEngine } from './server/alpha/conversationEngine.mjs'
 import * as providerHealth from './server/alpha/providerHealth.mjs'
 import * as billing from './server/billing.mjs'
+import { publishLinkedInTextPost } from './server/linkedin.mjs'
 
 function loadEnv() {
   for (const filename of ['.env.local', '.env']) {
@@ -1398,7 +1399,10 @@ async function integrationsStatus(req, res) {
     const connected = Boolean(token?.api_key || token?.access_token || token?.token || token?.webhook_url || token?.bot_token)
     const ready = connected || connectorReady(provider)
     const identifier = token?.chat_id || token?.author_urn || token?.channel || token?.page_id || token?.pageId || token?.phone_number_id || token?.phoneNumberId || integration?.identifier || null
-    status[provider] = { connected, ready, hasOwnKey: token?.hasOwnKey === true || token?.hasOwnKey === 'true', isMaster: token?.isMaster === true || token?.isMaster === 'true', identifier, email: integration?.email || integration?.identifier || null }
+    const expiresAt = Number(token?.expiry || token?.expires_at || token?.expiry_date || 0)
+    const expired = expiresAt > 0 && expiresAt <= Date.now()
+    const requiredScopeReady = provider !== 'linkedin' || (integration?.scopes || []).includes('w_member_social')
+    status[provider] = { connected, ready: ready && !expired && requiredScopeReady, expired, scopes: integration?.scopes || [], hasOwnKey: token?.hasOwnKey === true || token?.hasOwnKey === 'true', isMaster: token?.isMaster === true || token?.isMaster === 'true', identifier, email: integration?.email || integration?.identifier || null }
   }
   if (!status.paystack.connected && process.env.PAYSTACK_SECRET_KEY) status.paystack = { connected: true, ready: true, email: 'AlphaTekX backend' }
   if (!status.supabase.connected && config.url && config.service) status.supabase = { connected: true, ready: true, email: 'AlphaTekX backend' }
@@ -1691,8 +1695,10 @@ async function linkedinCallback(req, res) {
   const url = new URL(req.url || '/', `http://localhost`)
   const code = url.searchParams.get('code')
   const state = url.searchParams.get('state')
-  let destination = new URL('/connectors?connected=linkedin', publicAppUrl())
+  let destination = new URL('/connected-apps?connected=linkedin', publicAppUrl())
   try {
+    const denied = url.searchParams.get('error_description') || url.searchParams.get('error')
+    if (denied) throw new Error(`LinkedIn authorization was denied: ${denied}`)
     if (!code || !state) throw new Error('Missing LinkedIn authorization code or state')
     const parsed = verifyOAuthState(state, config)
     const clientId = process.env.MASTER_LINKEDIN_CLIENT_ID || process.env.LINKEDIN_CLIENT_ID || ''
@@ -1722,7 +1728,7 @@ async function linkedinCallback(req, res) {
     const grantedScopes = String(tokenData.scope || '').split(/\s+/).filter(Boolean)
     await saveUserIntegration(parsed.userId, 'linkedin', { email: parsed.email, identifier: authorUrn, tokens: { access_token: accessToken, author_urn: authorUrn, isMaster: false, hasOwnKey: true, expiry: tokenData.expires_in ? Date.now() + tokenData.expires_in * 1000 : undefined }, scopes: grantedScopes.length ? grantedScopes : ['openid', 'profile', 'w_member_social', 'email'] }, config)
   } catch (error) {
-    destination = new URL('/connectors?connected=error', publicAppUrl())
+    destination = new URL('/connected-apps?connected=error', publicAppUrl())
     destination.searchParams.set('reason', error instanceof Error ? error.message.slice(0, 180) : 'LinkedIn connection failed')
   }
   res.writeHead(302, { Location: destination.toString(), 'Cache-Control': 'no-store' })
@@ -1860,22 +1866,73 @@ async function activateCampaignHandler(req, res) {
   if (total > 0 && !admin) {
     const balance = await getUserCredits(user, config)
     if (balance < total) return json(res, 402, { error: 'Insufficient credits', total, balance })
-    const ok = await spendUserCredits(user, total)
-    if (!ok) return json(res, 402, { error: 'Could not charge credits' })
-    try { await alphaBrain.logMemory(user.id, { event_type: 'credit_spend', summary: `Campaign charged ${total} credits upfront`, source_workflow_id: agentId, metadata: { credits: total, type: 'campaign' } }) } catch {}
   }
+
+  const platforms = Array.from(new Set((agent.campaign.posts || []).flatMap(post => post.platforms || [])))
+  if (platforms.some(platform => platform !== 'linkedin')) return json(res, 400, { error: 'This release supports LinkedIn personal-profile text campaigns only.' })
+  await getPostingCredentials(user, 'linkedin', { _skipFreeLimit: true })
 
   const autoPublish = body.autoPublish === true || body.autoPublish === 'true'
   agent.campaign.approved = true
-  agent.campaign.charged = true
+  agent.campaign.charged = false
   agent.campaign.autoPublish = autoPublish
   agent.campaign.status = 'running'
   agent.approved = true
   agent.status = 'running'
-  agent.campaign.posts = (agent.campaign.posts || []).map(p => ({ ...p, status: p.status === 'pending_approval' ? 'scheduled' : p.status }))
+  agent.campaign.posts = (agent.campaign.posts || []).map(p => ({ ...p, approved: true, charged: p.charged === true, status: p.status === 'pending_approval' ? 'scheduled' : p.status }))
   agent.trigger = { type: 'campaign', nextRun: campaignNextRun(agent.campaign), cron: agent.campaign.meta?.frequencyText || 'campaign' }
   await saveServerAgent(agent)
-  return json(res, 200, { agent, charged: total, autoPublish, nextRun: agent.trigger.nextRun })
+  return json(res, 200, { agent, charged: 0, estimatedCredits: total, autoPublish, nextRun: agent.trigger.nextRun })
+}
+
+async function reviewCampaignPostHandler(req, res) {
+  const match = String(req.url || '').match(/^\/api\/agents\/campaign\/([^/]+)\/review\/?$/)
+  const agentId = match ? decodeURIComponent(match[1]) : ''
+  const config = supabaseConfig()
+  const user = await currentOrLocalUser(req, config.url, config.anon)
+  if (!user) return json(res, 401, { error: 'Authentication required' })
+  const agent = await getServerAgent(agentId)
+  if (!agent?.campaign) return json(res, 404, { error: 'Campaign not found' })
+  if (agent.userId && agent.userId !== user.id) return json(res, 403, { error: 'Not authorized' })
+  const body = await readBody(req)
+  const post = agent.campaign.posts?.find(item => item.id === body.postId)
+  if (!post) return json(res, 404, { error: 'Post not found' })
+  const platform = String(body.platform || 'linkedin')
+  if (platform !== 'linkedin' || !post.platforms?.includes('linkedin')) return json(res, 400, { error: 'Only LinkedIn text-post review is supported here' })
+  const action = String(body.action || '')
+  const current = String(post.captions?.linkedin || '')
+  let text = String(body.text || '').trim()
+  if (action === 'edit') {
+    if (!text) return json(res, 400, { error: 'Edited post text is required' })
+  } else if (action === 'remove_hashtags') {
+    text = current.replace(/(^|\s)#[\p{L}\p{N}_-]+/gu, '').replace(/[ \t]+\n/g, '\n').replace(/ {2,}/g, ' ').trim()
+  } else {
+    const instructions = {
+      regenerate: 'Rewrite it from a fresh angle while preserving the truthful core message.',
+      improve_hook: 'Replace the opening with a stronger, natural LinkedIn hook. Keep the rest coherent.',
+      shorten: 'Make it substantially shorter without losing the main point or call to action.',
+      expand: 'Expand it with useful detail, readable spacing, and no invented facts or experiences.',
+      change_tone: `Rewrite it in this tone: ${String(body.tone || 'professional and natural')}.`,
+      add_hashtags: 'Add 3 to 5 relevant, restrained hashtags at the end.',
+    }
+    const instruction = instructions[action]
+    if (!instruction) return json(res, 400, { error: 'Unsupported review action' })
+    const system = `You are Alpha, a professional LinkedIn editor. ${instruction}
+Return JSON with exactly {"text":"..."}. Preserve factual accuracy. Do not invent statistics, testimonials, or personal experiences. Produce a personal-profile text post only.`
+    const generated = await callLLMForRole('content', system, `Current post:\n${current}`, { jsonMode: true, maxTokens: 1400 })
+    text = String(generated.result?.text || '').trim()
+    if (!text) return json(res, 502, { error: 'The active AI provider returned invalid post content' })
+  }
+  post.captions = { ...post.captions, linkedin: text }
+  post.approved = false
+  post.status = 'pending_approval'
+  post.edited = true
+  post.reviewedAt = new Date().toISOString()
+  agent.approved = false
+  agent.campaign.approved = false
+  agent.campaign.status = 'pending_approval'
+  await saveServerAgent(agent)
+  return json(res, 200, { agent, post, text })
 }
 
 async function campaignReportHandler(req, res) {
@@ -2285,7 +2342,19 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
   }
 
   let execution = { id: executionId, agentId: existing.id, at: now.toISOString(), status: 'in_progress', duration: 0, output: null, error_code: null, credits_used: 0, log: 'Campaign execution in progress', trigger, steps: [] }
-  await addServerExecution(execution)
+  const claimed = await claimServerExecution(execution)
+  if (!claimed) return { ...execution, status: 'skipped', error_code: 'CONCURRENT', log: 'Execution lock already exists; duplicate publication prevented.' }
+
+  // Complete a pending charge without republishing if the provider already confirmed the post.
+  for (const post of (campaign.posts || []).filter(item => item.status === 'posted' && item.charged !== true)) {
+    const cost = post.credits || computeCampaignPostCredits(post.platforms || [], false)
+    const charged = admin || await spendUserCredits(user, cost, { automationId: existing.id, reason: 'Confirmed LinkedIn publication', postId: post.id, providerPostId: post.result?.linkedin?.id, idempotencyKey: `${existing.id}:${post.id}:linkedin` })
+    if (charged) {
+      post.charged = true
+      post.chargedAt = now.toISOString()
+    }
+  }
+  await saveServerAgent({ ...existing, campaign })
 
   const duePosts = (campaign.posts || []).filter(p => (p.status === 'scheduled' || p.status === 'pending_approval') && new Date(p.scheduledAt).getTime() <= now.getTime() + 5 * 60 * 1000)
     .sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime())
@@ -2300,6 +2369,34 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
     let postSuccess = 0
     let postFailed = 0
     let postSkipped = 0
+
+    if (post.approved !== true || campaign.approved !== true) {
+      postResults.linkedin = { status: 'skipped', log: 'Explicit approval is required' }
+      postSkipped++
+      steps.push({ postId: post.id, status: 'skipped', error_code: 'APPROVAL_REQUIRED', credits_used: 0 })
+      continue
+    }
+
+    const postCost = post.credits || computeCampaignPostCredits(post.platforms || [], false)
+    if (!admin) {
+      const balance = await getUserCredits(user, config)
+      if (balance < postCost) {
+        postResults.linkedin = { status: 'error', log: `Insufficient credits. Need ${postCost}, have ${balance}.` }
+        postFailed++
+        post.result = postResults
+        post.status = 'scheduled'
+        post.lastError = 'Insufficient credits'
+        post.scheduledAt = new Date(now.getTime() + backoffMs(3)).toISOString()
+        failedCount++
+        steps.push({ postId: post.id, status: 'error', error_code: 'INSUFFICIENT_CREDITS', credits_used: 0, result: postResults })
+        continue
+      }
+    }
+
+    post.status = 'publishing'
+    post.executionKey = `${existing.id}:${post.id}:${post.scheduledAt}`
+    post.publishStartedAt = now.toISOString()
+    await saveServerAgent({ ...existing, campaign })
 
     for (const platform of (post.platforms || [])) {
       const action = { connector: platform, action: 'post', params: { text: post.captions?.[platform] || '', _skipFreeLimit: true } }
@@ -2317,6 +2414,7 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
       }
       try {
         const result = await postToSocial(platform, user, { text: caption, _skipFreeLimit: true })
+        if (platform === 'linkedin' && !result.id) throw new Error('LinkedIn did not return a confirmed post identifier')
         postResults[platform] = { status: 'success', id: result.id || result.message_id || '', link: result.link || result.permalink || result.url || '', log: `Posted to ${platform}` }
         postSuccess++
         await addAgentLog({ agentId: existing.id, connectorType: platform, content: caption.slice(0, 500), status: 'success', response: JSON.stringify(result) })
@@ -2328,13 +2426,34 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
       }
     }
 
-    creditsUsed += post.credits || computeCampaignPostCredits(post.platforms || [], false)
     post.result = postResults
-    post.status = postSuccess === post.platforms.length ? 'posted' : (postSuccess > 0 ? 'partial' : 'failed')
-    post.postedAt = now.toISOString()
-    if (postSuccess > 0) postedCount++
-    if (postFailed > 0 || postSkipped > 0) failedCount++
-    steps.push({ day: post.day, slot: post.slot, platforms: post.platforms, result: postResults, credits_used: post.credits, status: post.status })
+    if (postSuccess === post.platforms.length) {
+      post.status = 'posted'
+      post.postedAt = now.toISOString()
+      post.providerPostId = postResults.linkedin?.id || ''
+      post.providerUrl = postResults.linkedin?.link || ''
+      post.lastError = ''
+      await saveServerAgent({ ...existing, campaign })
+      const charged = admin || await spendUserCredits(user, postCost, { automationId: existing.id, reason: 'Confirmed LinkedIn publication', postId: post.id, providerPostId: post.providerPostId, idempotencyKey: `${existing.id}:${post.id}:linkedin` })
+      if (charged) {
+        post.charged = true
+        post.chargedAt = new Date().toISOString()
+        creditsUsed += admin ? 0 : postCost
+      } else {
+        post.chargeStatus = 'pending'
+      }
+      postedCount++
+    } else {
+      post.retryCount = (post.retryCount || 0) + 1
+      post.lastError = Object.values(postResults).map(result => result.log).filter(Boolean).join('; ')
+      if (post.retryCount <= 3) {
+        post.status = 'scheduled'
+        post.scheduledAt = new Date(now.getTime() + backoffMs(post.retryCount)).toISOString()
+      } else post.status = 'failed'
+      failedCount++
+    }
+    steps.push({ postId: post.id, day: post.day, slot: post.slot, platforms: post.platforms, result: postResults, credits_used: post.charged ? postCost : 0, status: post.status, retry_count: post.retryCount || 0 })
+    await saveServerAgent({ ...existing, campaign })
     try {
       if (user?.id) await alphaBrain.logMemory(user.id, { event_type: 'post', summary: `Day ${post.day} ${post.slot}: ${postSuccess > 0 ? 'posted' : 'failed'} to ${post.platforms.join(', ')}`, source_workflow_id: existing.id, metadata: { topic: post.topic, platforms: post.platforms, results: postResults, status: post.status } })
     } catch {}
@@ -2368,11 +2487,12 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
     output = missionReport
   }
 
+  const executionStatus = failedCount > 0 && postedCount === 0 ? 'error' : 'success'
   const record = {
     ...existing,
     status,
     campaign,
-    executionHistory: [{ ...execution, status: status === 'completed' ? 'success' : 'success', duration: Date.now() - startTime, output, error_code: null, credits_used: creditsUsed, log }, ...(existing.executionHistory || [])].slice(0, 100),
+    executionHistory: [{ ...execution, status: executionStatus, duration: Date.now() - startTime, output, error_code: executionStatus === 'error' ? 'PUBLISH_FAILED' : null, credits_used: creditsUsed, log }, ...(existing.executionHistory || [])].slice(0, 100),
     lastRun: now.toISOString(),
     updated_at: now.toISOString(),
   }
@@ -2380,7 +2500,7 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
   else record.trigger = { ...existing.trigger, type: 'campaign' }
   await saveServerAgent(record)
 
-  execution = { ...execution, status: status === 'completed' ? 'success' : 'success', duration: Date.now() - startTime, output, error_code: null, credits_used: creditsUsed, log }
+  execution = { ...execution, status: executionStatus, duration: Date.now() - startTime, output, error_code: executionStatus === 'error' ? 'PUBLISH_FAILED' : null, credits_used: creditsUsed, log }
   await saveServerExecution(execution)
   return execution
 }
@@ -2456,7 +2576,8 @@ async function runAgent(agent, trigger = 'schedule') {
 
   // 6. Create in-progress execution record
   let execution = { id: executionId, agentId: existing.id, at: now.toISOString(), status: 'in_progress', duration: 0, output: null, error_code: null, credits_used: 0, log: 'Execution in progress', trigger: triggerType, steps: [] }
-  await addServerExecution(execution)
+  const claimed = await claimServerExecution(execution)
+  if (!claimed) return { ...execution, status: 'skipped', error_code: 'CONCURRENT', log: 'Execution lock already exists; duplicate execution prevented.' }
 
   let monitorResult = null
   if (existing.trigger?.type === 'monitor' && existing.trigger?.url) {
@@ -2680,7 +2801,16 @@ function getConversationEngine() {
     getServerAgent,
     getUserCredits,
     spendUserCredits,
-    getIntegrationStatus: async () => ({}),
+    getIntegrationStatus: async (userId, provider) => {
+      const integration = await getUserIntegration(userId, provider, supabaseConfig()).catch(() => null)
+      if (!integration) return { connected: false, ready: false }
+      const tokens = integration.tokens || {}
+      const expiresAt = Number(tokens.expiry || tokens.expires_at || tokens.expiry_date || 0)
+      const expired = expiresAt > 0 && expiresAt <= Date.now()
+      const scopes = integration.scopes || []
+      const personalProfile = String(tokens.author_urn || tokens.authorUrn || '').startsWith('urn:li:person:')
+      return { connected: true, ready: !expired && provider === 'linkedin' ? personalProfile && scopes.includes('w_member_social') : !expired, expired, scopes, identifier: tokens.author_urn || integration.identifier || '' }
+    },
   })
   return conversationEngine
 }
@@ -3752,6 +3882,9 @@ async function getPostingCredentials(user, platform, params = {}) {
   const pageId = ownTokens.page_id || ownTokens.pageId || ''
   const phoneNumberId = ownTokens.phone_number_id || ownTokens.phoneNumberId || ''
   const scopes = own?.scopes || []
+  const expiresAt = Number(ownTokens.expiry || ownTokens.expires_at || ownTokens.expiry_date || 0)
+  if (platform === 'linkedin' && expiresAt > 0 && expiresAt <= Date.now()) throw new Error('LinkedIn access token has expired. Reconnect LinkedIn in Connected Apps.')
+  if (platform === 'linkedin' && authorUrn && !String(authorUrn).startsWith('urn:li:person:')) throw new Error('Only LinkedIn personal profile publishing is supported in this release.')
   const hasToken = Boolean(accessToken || webhookUrl || botToken)
   if (hasToken && (hasOwnKey || !isMasterToken)) {
     return { platform, isMaster: false, accessToken, webhookUrl, botToken, chatId, channel, authorUrn, pageId, phoneNumberId, scopes, ...ownTokens }
@@ -3780,40 +3913,7 @@ async function postToX(creds, params) {
 }
 
 async function postToLinkedIn(creds, params) {
-  const text = String(params.text || params.message || '')
-  const imageUrl = String(params.imageUrl || '')
-  if (!text && !imageUrl) throw new Error('LinkedIn post requires text or image')
-  const token = creds.accessToken
-  const author = creds.authorUrn || creds.author_urn || creds.identifier
-  const scopes = creds.scopes || []
-  if (!token || !author) throw new Error('LinkedIn token or author URN missing. Connect LinkedIn in Connectors.')
-  if (scopes.length && !scopes.includes('w_member_social') && !process.env.MASTER_LINKEDIN_ACCESS_TOKEN) {
-    throw new Error('LinkedIn connection is missing w_member_social permission. Reconnect LinkedIn and make sure Share on LinkedIn is approved.')
-  }
-  const bodyText = imageUrl && !text.includes(imageUrl) ? `${text}\n\n${imageUrl}` : text
-  const body = {
-    author,
-    commentary: bodyText,
-    visibility: 'PUBLIC',
-    distribution: { feedDistribution: 'MAIN_FEED', targetEntities: [], thirdPartyDistributionChannels: [] },
-    lifecycleState: 'PUBLISHED',
-    isReshareDisabledByAuthor: false,
-  }
-  const response = await fetch('https://api.linkedin.com/rest/posts', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-Restli-Protocol-Version': '2.0.0', 'LinkedIn-Version': '202404' },
-    body: JSON.stringify(body),
-  })
-  const postId = response.headers.get('x-restli-id') || response.headers.get('X-Restli-Id') || response.headers.get('x-restli-id')
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}))
-    throw new Error(data.message || data.error || data.error_description || `LinkedIn post failed (${response.status})`)
-  }
-  if (!postId) {
-    const responseText = await response.text().catch(() => '')
-    throw new Error(`LinkedIn did not return a post ID. ${responseText.slice(0, 200)}`)
-  }
-  return { id: postId, ok: true, status: response.status, link: `https://www.linkedin.com/feed/update/${postId}` }
+  return publishLinkedInTextPost(creds, params)
 }
 
 async function postToDiscord(creds, params) {
@@ -4309,6 +4409,15 @@ async function supabaseAddExecution(execution) {
   return execution
 }
 
+async function supabaseClaimExecution(execution) {
+  const c = supabaseConfig()
+  const body = JSON.stringify({ id: execution.id, agent_id: execution.agentId, data: execution, created_at: new Date().toISOString() })
+  const res = await fetch(`${c.url}/rest/v1/agent_executions`, { method: 'POST', headers: serviceHeaders(c.service), body })
+  if (res.status === 409) return false
+  if (!res.ok) throw new Error(`Could not claim execution lock (${res.status})`)
+  return true
+}
+
 async function supabaseGetExecution(id) {
   const c = supabaseConfig()
   const res = await fetch(`${c.url}/rest/v1/agent_executions?id=eq.${encodeURIComponent(id)}&select=*`, { headers: serviceHeaders(c.service) })
@@ -4447,6 +4556,15 @@ async function addServerExecution(execution) {
   ex.unshift(execution)
   writeAgentExecutions(ex)
   return execution
+}
+
+async function claimServerExecution(execution) {
+  if (useSupabaseAgentDb()) return supabaseClaimExecution(execution)
+  const executions = readAgentExecutions()
+  if (executions.some(item => item.id === execution.id)) return false
+  executions.unshift(execution)
+  writeAgentExecutions(executions)
+  return true
 }
 
 async function getServerExecution(id) {
@@ -5088,6 +5206,9 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'POST' && /^\/api\/agents\/campaign\/[^/]+\/activate\/?$/.test(req.url || '')) {
     try { return await activateCampaignHandler(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Campaign activation failed' }) }
+  }
+  if (req.method === 'POST' && /^\/api\/agents\/campaign\/[^/]+\/review\/?$/.test(req.url || '')) {
+    try { return await reviewCampaignPostHandler(req, res) } catch (error) { return json(res, 502, { error: error instanceof Error ? error.message : 'Post review failed' }) }
   }
   if (req.method === 'GET' && /^\/api\/agents\/campaign\/[^/]+\/report\/?$/.test(req.url || '')) {
     try { return await campaignReportHandler(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Campaign report failed' }) }

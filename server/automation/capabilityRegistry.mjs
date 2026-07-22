@@ -1,5 +1,16 @@
 const CAPABILITIES = [
   {
+    id: 'linkedin-post',
+    name: 'Publish LinkedIn Post',
+    description: 'Generate, review, schedule, and publish a text post to a connected LinkedIn personal profile.',
+    supported: true,
+    requiredConnectors: ['linkedin'],
+    patterns: [
+      /(?:create|write|generate|publish|schedule|post).*(?:linkedin)/i,
+      /linkedin.*(?:post|publish|schedule|content)/i,
+    ],
+  },
+  {
     id: 'calendar-to-email',
     name: 'Daily Calendar Summary Email',
     description: 'Read today\'s Google Calendar events and email a schedule summary.',
@@ -425,6 +436,45 @@ function buildSheetsPlan(prompt, user, extracted) {
   }
 }
 
+function buildLinkedInPlan(prompt, user, extracted) {
+  const topicMatch = String(prompt).match(/(?:about|on)\s+([^,.!?]+)/i)
+  const topic = topicMatch?.[1]?.trim() || ''
+  const audienceMatch = String(prompt).match(/(?:for|audience(?:\s+is)?[:=]?)\s+([^,.!?]+)/i)
+  const toneMatch = String(prompt).match(/(?:in a|with a|tone(?:\s+is)?[:=]?)\s+([^,.!?]+?)(?:\s+tone)?(?:[,.!?]|$)/i)
+  const time = extracted.time || extractTime(prompt)
+  const timezone = extracted.timezone || extractTimezone(prompt) || user?.timezone || ''
+  const recurring = /\b(every|daily|weekly|monthly|weekdays?|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(prompt)
+  const missing = []
+  if (!topic) missing.push({ field: 'topic', step: 'Content', connector: 'linkedin', reason: 'What should the LinkedIn post be about?' })
+  if (!audienceMatch?.[1]) missing.push({ field: 'audience', step: 'Content', connector: 'linkedin', reason: 'Who should this post speak to?' })
+  if (!toneMatch?.[1]) missing.push({ field: 'tone', step: 'Content', connector: 'linkedin', reason: 'What tone should the post use?' })
+  if (recurring && !time) missing.push({ field: 'time', step: 'Schedule', connector: 'schedule', reason: 'What time should the post be published?' })
+  if (recurring && !timezone) missing.push({ field: 'timezone', step: 'Schedule', connector: 'schedule', reason: 'Which timezone should the schedule use?' })
+  const cron = buildCron(time, 9)
+  return {
+    id: null,
+    title: 'LinkedIn Personal Profile Post',
+    name: 'LinkedIn Personal Profile Post',
+    description: `Generate, review, and publish a LinkedIn text post${topic ? ` about ${topic}` : ''}.`,
+    originalRequest: prompt,
+    interpretedGoal: 'Publish approved text content to a connected LinkedIn personal profile.',
+    trigger: { type: 'schedule', cron, nextRun: null },
+    schedule: { frequency: recurring ? 'weekly' : 'once', cron, time: time?.display, timezone: timezone || 'UTC' },
+    timezone: timezone || 'UTC',
+    integrations: ['LinkedIn'],
+    requiredPermissions: ['w_member_social'],
+    actions: [{ connector: 'linkedin', action: 'post', label: 'Publish approved LinkedIn post', requiresApproval: true, approvalStatus: 'pending', params: { text: '', topic, audience: audienceMatch?.[1]?.trim() || '', tone: toneMatch?.[1]?.trim() || '', generate: true, profileType: 'personal' } }],
+    status: missing.length ? 'awaiting_information' : 'awaiting_approval',
+    approved: false,
+    missing,
+    creditsNeeded: 3,
+    creditsPerRun: 3,
+    creditsPerStep: [{ step: 'Generate and publish LinkedIn post', cost: 3, reason: 'AI writing and confirmed LinkedIn publishing' }],
+    approvalPolicy: 'explicit',
+    retryPolicy: { maxRetries: 3, backoffMinutes: [1, 5, 15] },
+  }
+}
+
 export function buildCapabilityPlan(prompt, user = null, options = {}) {
   const text = String(prompt || '')
   const capability = detectCapability(text)
@@ -441,6 +491,7 @@ export function buildCapabilityPlan(prompt, user = null, options = {}) {
   }
   if (!capability.supported) return unsupportedResponse(capability, prompt)
   switch (capability.id) {
+    case 'linkedin-post': return buildLinkedInPlan(prompt, user, extracted)
     case 'calendar-to-email': return buildCalendarToEmailPlan(prompt, user, extracted)
     case 'gmail-to-telegram': return buildGmailToTelegramPlan(prompt, user, extracted)
     case 'send-email': return buildSendEmailPlan(prompt, user, extracted)
