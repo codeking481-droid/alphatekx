@@ -1837,6 +1837,23 @@ async function activateCampaignHandler(req, res) {
   if (agent.userId && agent.userId !== user.id) return json(res, 403, { error: 'Not authorized' })
   if (!agent.campaign) return json(res, 400, { error: 'Not a campaign agent' })
 
+  const startAtRaw = body.startAt
+  const startAt = startAtRaw ? new Date(startAtRaw) : null
+  if (!startAt || isNaN(startAt.getTime())) return json(res, 400, { error: 'Start date and time are required' })
+  if (startAt.getTime() <= Date.now()) return json(res, 400, { error: 'Start time must be in the future' })
+
+  const posts = agent.campaign.posts || []
+  if (posts.length) {
+    const firstScheduled = new Date(posts[0].scheduledAt)
+    if (!isNaN(firstScheduled.getTime())) {
+      const offsetMs = startAt.getTime() - firstScheduled.getTime()
+      if (offsetMs !== 0) {
+        agent.campaign.posts = posts.map(p => ({ ...p, scheduledAt: new Date(new Date(p.scheduledAt).getTime() + offsetMs).toISOString() }))
+        if (agent.campaign.meta) agent.campaign.meta.startDate = startAt.toISOString()
+      }
+    }
+  }
+
   const admin = String(user.email || '').toLowerCase() === adminEmail
   const total = agent.campaign.totalCredits || 0
   if (total > 0 && !admin) {
@@ -3284,7 +3301,7 @@ function deleteLocalIntegration(userId, provider) {
 async function getAuthAppMetadata(userId, config) {
   if (!config.url || !config.service) return null
   try {
-    const res = await fetch(`${config.url}/auth/v1/admin/users/${encodeURIComponent(userId)}`, { headers: { apikey: config.service, Authorization: `Bearer ${config.service}` } })
+    const res = await fetch(`${config.url}/auth/v1/admin/users/${encodeURIComponent(userId)}`, { headers: serviceHeaders(config.service) })
     if (!res.ok) return null
     const data = await res.json()
     return data?.user?.app_metadata || data?.app_metadata || null

@@ -28,6 +28,24 @@ const platformNames: Record<string, string> = {
   facebook: 'Facebook', linkedin: 'LinkedIn', instagram: 'Instagram', x: 'X', twitter: 'X', whatsapp: 'WhatsApp', telegram: 'Telegram', slack: 'Slack', discord: 'Discord'
 }
 
+function toDatetimeLocal(iso?: string) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return ''
+  const offset = d.getTimezoneOffset() * 60000
+  return new Date(d.getTime() - offset).toISOString().slice(0, 16)
+}
+
+function fromDatetimeLocal(value: string) {
+  return new Date(value).toISOString()
+}
+
+function defaultStartAt() {
+  const d = new Date()
+  d.setHours(d.getHours() + 1, 0, 0, 0)
+  return d.toISOString()
+}
+
 function connectorConnected(id: string, status: IntegrationStatus) {
   const s = status[id] || status[(id === 'x' ? 'twitter' : id)] || { connected: false, ready: false }
   return Boolean(s.connected || s.ready)
@@ -42,6 +60,8 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
   const [tab, setTab] = useState<'calendar' | 'cost' | 'brand'>('calendar')
   const [editing, setEditing] = useState<{ postId: string; platform: string; text: string } | null>(null)
   const [savingPost, setSavingPost] = useState(false)
+  const [startAt, setStartAt] = useState(() => toDatetimeLocal(agent.campaign?.posts?.[0]?.scheduledAt) || toDatetimeLocal(defaultStartAt()) || '')
+  const [startError, setStartError] = useState('')
 
   useEffect(() => {
     fetch('/api/user/brand-profile', { headers: authHeaders() })
@@ -69,7 +89,9 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
   const total = campaign.totalCredits
   const balance = credits ?? 0
   const canAfford = isAdmin || balance >= total
-  const canActivate = requiredConnectors.length === 0 && !missingBrand && canAfford && campaign.status !== 'running'
+  const startAtDate = startAt ? new Date(fromDatetimeLocal(startAt)) : null
+  const startValid = Boolean(startAtDate && !isNaN(startAtDate.getTime()) && startAtDate.getTime() > Date.now())
+  const canActivate = requiredConnectors.length === 0 && !missingBrand && canAfford && campaign.status !== 'running' && startValid
 
   const groupedPosts = useMemo(() => {
     const map: Record<string, typeof campaign.posts> = {}
@@ -123,13 +145,17 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
   }
 
   const activate = async () => {
-    if (!canActivate) return
+    if (!canActivate) {
+      if (!startValid) setStartError('Please pick a future date and time for the first post.')
+      return
+    }
+    setStartError('')
     setActivating(true)
     try {
       const res = await fetch(`/api/agents/campaign/${encodeURIComponent(agent.id)}/activate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ autoPublish: true }),
+        body: JSON.stringify({ autoPublish: true, startAt: fromDatetimeLocal(startAt) }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Activation failed')
@@ -182,6 +208,17 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
       </div>
 
       {tab === 'calendar' && <div className="mt-4 space-y-4">
+        <div className="rounded-2xl border border-white/[.08] bg-white/[.03] p-4">
+          <label className="flex items-center gap-2 text-sm font-medium text-white/80"><CalendarClock size={16} className="text-indigo-400"/> Start date & time</label>
+          <p className="mt-1 text-xs text-white/50">When should the first post go out?</p>
+          <input
+            type="datetime-local"
+            value={startAt}
+            onChange={e => { setStartAt(e.target.value); setStartError('') }}
+            className="mt-3 w-full rounded-xl bg-white/[.05] px-3 py-2 text-sm text-white outline-none placeholder:text-white/30"
+          />
+          {startError && <p className="mt-2 text-xs text-amber-300">{startError}</p>}
+        </div>
         {Object.entries(groupedPosts).map(([day, posts]) => (
           <div key={day} className="rounded-2xl border border-white/[.08] bg-white/[.03] p-4">
             <h3 className="text-sm font-semibold text-white/80">{day}</h3>
@@ -258,7 +295,7 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
         <div className="text-xs text-white/50">
           {!canActivate && campaign.status !== 'running' && (
             <span className="flex items-center gap-1.5 text-amber-300"><AlertCircle size={12}/>
-              {missingBrand ? 'Fill brand profile first' : requiredConnectors.length ? `Connect ${requiredConnectors.join(', ')}` : !canAfford ? 'Not enough credits' : 'Cannot activate'}
+              {missingBrand ? 'Fill brand profile first' : requiredConnectors.length ? `Connect ${requiredConnectors.join(', ')}` : !canAfford ? 'Not enough credits' : !startValid ? 'Pick a future start date & time' : 'Cannot activate'}
             </span>
           )}
         </div>
