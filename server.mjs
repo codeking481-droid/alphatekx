@@ -3281,6 +3281,48 @@ function deleteLocalIntegration(userId, provider) {
   writeLocalIntegrations(all)
 }
 
+async function getAuthAppMetadata(userId, config) {
+  if (!config.url || !config.service) return null
+  try {
+    const res = await fetch(`${config.url}/auth/v1/admin/users/${encodeURIComponent(userId)}`, { headers: { apikey: config.service, Authorization: `Bearer ${config.service}` } })
+    if (!res.ok) return null
+    const data = await res.json()
+    return data?.user?.app_metadata || data?.app_metadata || null
+  } catch (err) { process.stdout.write(`[auth metadata] get failed: ${err instanceof Error ? err.message : err}\n`); return null }
+}
+
+async function saveAuthAppIntegration(userId, provider, data, config) {
+  if (!config.url || !config.service) return false
+  try {
+    const meta = (await getAuthAppMetadata(userId, config)) || {}
+    const integrations = meta.integrations || {}
+    const key = encryptionKey(config)
+    integrations[provider] = {
+      provider,
+      email: data.email || data.identifier || null,
+      identifier: data.identifier || null,
+      scopes: data.scopes || [],
+      tokens: encryptGenericTokens(data.tokens || {}, key),
+      updated_at: new Date().toISOString(),
+    }
+    const res = await fetch(`${config.url}/auth/v1/admin/users/${encodeURIComponent(userId)}`, {
+      method: 'PUT',
+      headers: { apikey: config.service, Authorization: `Bearer ${config.service}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ app_metadata: { ...meta, integrations } }),
+    })
+    return res.ok
+  } catch (err) { process.stdout.write(`[auth metadata] save failed: ${err instanceof Error ? err.message : err}\n`); return false }
+}
+
+async function getAuthAppIntegration(userId, provider, config) {
+  const meta = await getAuthAppMetadata(userId, config)
+  const record = meta?.integrations?.[provider]
+  if (!record) return null
+  const key = encryptionKey(config)
+  const tokens = decryptGenericTokens(record.tokens, key)
+  return { id: `${userId}-${provider}`, user_id: userId, provider, email: record.email || null, identifier: record.identifier || record.email || tokens.identifier || null, tokens, scopes: record.scopes || [], source: 'auth_app_metadata' }
+}
+
 async function getUserIntegration(userId, provider, config) {
   if (provider === 'google') return getGoogleIntegration(userId, config)
   if (config.url && config.service) {
@@ -3295,7 +3337,11 @@ async function getUserIntegration(userId, provider, config) {
           return { id: row.id, user_id: row.user_id, provider, email: row.email || null, identifier: row.email || tokens.identifier || null, tokens, scopes: row.scopes || [], source: 'connected_accounts' }
         }
       }
-    } catch (err) { process.stdout.write(`[get integration] remote lookup failed: ${err instanceof Error ? err.message : err}\n`) }
+    } catch (err) { process.stdout.write(`[get integration] connected_accounts lookup failed: ${err instanceof Error ? err.message : err}\n`) }
+    try {
+      const fromAuth = await getAuthAppIntegration(userId, provider, config)
+      if (fromAuth) return fromAuth
+    } catch (err) { process.stdout.write(`[get integration] auth metadata lookup failed: ${err instanceof Error ? err.message : err}\n`) }
   }
   return getLocalIntegration(userId, provider)
 }
@@ -3309,7 +3355,11 @@ async function saveUserIntegration(userId, provider, data, config) {
     try {
       const response = await fetch(`${config.url}/rest/v1/connected_accounts?on_conflict=user_id,provider`, { method: 'POST', headers: { ...serviceHeaders(config.service), Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(remote) })
       if (response.ok) savedRemote = true
-    } catch (err) { process.stdout.write(`[save integration] remote save failed: ${err instanceof Error ? err.message : err}\n`) }
+      else if (response.status === 404) {
+        savedRemote = await saveAuthAppIntegration(userId, provider, data, config)
+      }
+    } catch (err) { process.stdout.write(`[save integration] connected_accounts save failed: ${err instanceof Error ? err.message : err}\n`) }
+    if (!savedRemote) savedRemote = await saveAuthAppIntegration(userId, provider, data, config)
   }
   if (!savedRemote) setLocalIntegration(userId, provider, { ...record, tokens: data.tokens || {} })
 }
@@ -3318,6 +3368,18 @@ async function deleteUserIntegration(userId, provider, config) {
   if (provider === 'google') return disconnectGoogleByUser(userId, config)
   if (config.url && config.service) {
     await fetch(`${config.url}/rest/v1/connected_accounts?user_id=eq.${encodeURIComponent(userId)}&provider=eq.${encodeURIComponent(provider)}`, { method: 'DELETE', headers: serviceHeaders(config.service) }).catch(() => {})
+    try {
+      const meta = await getAuthAppMetadata(userId, config)
+      if (meta?.integrations?.[provider]) {
+        const integrations = { ...meta.integrations }
+        delete integrations[provider]
+        await fetch(`${config.url}/auth/v1/admin/users/${encodeURIComponent(userId)}`, {
+          method: 'PUT',
+          headers: { apikey: config.service, Authorization: `Bearer ${config.service}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ app_metadata: { ...meta, integrations } }),
+        }).catch(() => {})
+      }
+    } catch {}
   }
   deleteLocalIntegration(userId, provider)
 }
