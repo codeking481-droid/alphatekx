@@ -4965,7 +4965,7 @@ const server = http.createServer(async (req, res) => {
       const existing = await getServerAgent(agentId) || {}
       const merged = { ...existing, ...incoming, id: agentId, userId: user.id, userEmail: user.email }
       const status = incoming.status
-      if (status === 'awaiting_approval' || status === 'active' || status === 'pending') {
+      if (status === 'active' || status === 'pending') {
         merged.status = 'running'
         merged.approved = true
       }
@@ -4981,7 +4981,13 @@ const server = http.createServer(async (req, res) => {
       const timezone = merged.timezone || merged.schedule?.timezone || existing.timezone || 'UTC'
       const cron = merged.trigger?.cron || '0 0 8 * * *'
       if (!merged.trigger.nextRun || merged.status === 'running') {
-        merged.trigger = { ...merged.trigger, nextRun: nextRunFromCronServer(cron, new Date(), timezone).toISOString() }
+        let nextRun
+        if (merged.trigger?.type === 'campaign' || cron === 'campaign') {
+          nextRun = campaignNextRun(merged.campaign)
+        } else {
+          try { nextRun = nextRunFromCronServer(cron, new Date(), timezone).toISOString() } catch { nextRun = new Date().toISOString() }
+        }
+        merged.trigger = { ...merged.trigger, nextRun: nextRun || new Date().toISOString() }
         merged.nextRunAt = merged.trigger.nextRun
       }
       merged.updatedAt = new Date().toISOString()
