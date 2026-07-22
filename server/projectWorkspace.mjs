@@ -83,6 +83,15 @@ export function cleanupOldWorkspaces(maxPerMission = 3) {
 }
 
 function resolveCommand(workspaceDir, command) {
+  if (command === 'npm') {
+    const candidates = [
+      process.env.npm_execpath,
+      path.resolve(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    ].filter(Boolean)
+    const npmCli = candidates.find(candidate => fs.existsSync(candidate))
+    if (npmCli) return { type: 'node', script: npmCli }
+    return { type: 'exec', bin: process.platform === 'win32' ? 'npm.cmd' : 'npm' }
+  }
   const candidates = {
     tsc: ['typescript', 'bin', 'tsc'],
     eslint: ['eslint', 'bin', 'eslint.js'],

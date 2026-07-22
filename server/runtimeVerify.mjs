@@ -73,15 +73,19 @@ async function connectBrowser() {
   const p = puppeteerModule?.default || puppeteerModule
   if (!p) return null
   const cdp = await getCdpEndpoint()
-  if (cdp) return p.connect({ browserWSEndpoint: cdp })
+  if (cdp) return { browser: await p.connect({ browserWSEndpoint: cdp }), launchedLocally: false }
   const executablePath = findChromeExecutable()
   if (!executablePath) return null
-  return p.launch({ executablePath, headless: 'new', args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] })
+  return {
+    browser: await p.launch({ executablePath, headless: 'new', args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] }),
+    launchedLocally: true,
+  }
 }
 
 export async function verifyRuntime({ distDir, base = '/', timeoutMs = 30_000, screenshot = true, expectedFeatures = [] }) {
-  const browser = await connectBrowser()
-  if (!browser) return { ok: false, skipped: true, reason: 'No Chrome CDP or Chrome executable found' }
+  const connection = await connectBrowser()
+  if (!connection) return { ok: false, skipped: true, reason: 'No Chrome CDP or Chrome executable found' }
+  const { browser, launchedLocally } = connection
 
   const port = 10000 + Math.floor(Math.random() * 30000)
   const host = getLocalIp()
@@ -126,7 +130,10 @@ export async function verifyRuntime({ distDir, base = '/', timeoutMs = 30_000, s
     return { ok: false, reason: error instanceof Error ? error.message : String(error) }
   } finally {
     try { await page?.close() } catch {}
-    try { browser.disconnect() } catch {}
+    try {
+      if (launchedLocally) await browser.close()
+      else browser.disconnect()
+    } catch {}
     try { server.close() } catch {}
   }
 }

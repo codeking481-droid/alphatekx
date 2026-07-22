@@ -8,7 +8,7 @@
     "api": "node server.mjs",
     "start": "node server.mjs",
     "postinstall": "npm run build",
-    "build": "VITE_BUILD_ID=$(git rev-parse --short HEAD 2>/dev/null || echo dev) vite build",
+    "build": "node scripts/build.mjs",
     "lint": "eslint . --quiet",
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc -p ./jsconfig.json",
