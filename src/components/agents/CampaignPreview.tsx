@@ -64,7 +64,7 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
   if (!campaign) return null
 
   const platformIds = campaign.meta.platforms
-  const missingBrand = !brand.business.trim() || !brand.audience.trim() || !brand.tone.trim()
+  const missingBrand = !brand.audience.trim() || !brand.tone.trim()
   const requiredConnectors = platformIds.filter(id => !connectorConnected(id, integrationStatus))
   const total = campaign.totalCredits
   const balance = credits ?? 0

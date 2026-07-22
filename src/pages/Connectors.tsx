@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowRight, CheckCircle2, Key, Linkedin, LoaderCircle, Mail, PlugZap, RefreshCw, Unplug } from 'lucide-react'
-import { useSearchParams } from 'react-router-dom'
+import { AlertCircle, ArrowRight, CheckCircle2, Key, Linkedin, LoaderCircle, Mail, PlugZap, RefreshCw, Unplug } from 'lucide-react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { connectors, getConnector } from '../lib/agents/connectorRegistry'
 import { ConnectorIcon } from '../components/agents/ConnectorIcon'
@@ -104,9 +104,10 @@ export default function Connectors() {
 
   useEffect(() => {
     if (connectedParam === 'google' || connectedParam === 'gmail') setNotice('Google connected successfully. Gmail, Sheets, Calendar, and Drive are now live.')
-    if (connectedParam === 'linkedin') setNotice('LinkedIn connected successfully. You can now publish posts.')
+    if (connectedParam === 'linkedin') setNotice('LinkedIn connected successfully. Your account is linked and ready to publish posts.')
     if (connectedParam === 'error') setNotice(`Connection failed: ${errorParam || 'Unknown error'}`)
     if (connectedParam || errorParam) {
+      void loadStatus()
       const next = new URLSearchParams(searchParams)
       next.delete('connected'); next.delete('reason'); next.delete('error')
       setSearchParams(next, { replace: true })
@@ -290,7 +291,21 @@ export default function Connectors() {
           </div>
         )}
 
-        {notice && <p role="status" className="mt-6 rounded-2xl border border-white/[.12] bg-white/[.06] p-4 text-sm text-white/90">{notice}</p>}
+        {notice && (
+          <div role="status" className={`mt-6 rounded-2xl border p-4 text-sm ${notice.toLowerCase().includes('failed') ? 'border-rose-500/30 bg-rose-500/10 text-rose-200' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'}`}>
+            <div className="flex items-start gap-3">
+              {notice.toLowerCase().includes('failed') ? <AlertCircle size={18} /> : <CheckCircle2 size={18} />}
+              <div className="flex-1">
+                <p className="font-medium">{notice}</p>
+                {!notice.toLowerCase().includes('failed') && (
+                  <Link to="/agents" className="mt-3 inline-flex items-center gap-2 rounded-lg bg-emerald-500/20 px-4 py-2 text-xs font-semibold hover:bg-emerald-500/30">
+                    Go to Automation <ArrowRight size={14} />
+                  </Link>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="mt-8">
           <ConnectedAppsDropdown
@@ -313,10 +328,15 @@ export default function Connectors() {
               </div>
             ))}
           </div>
+        ) : selectedIds.length === 0 ? (
+          <div className="mt-10 rounded-2xl border border-white/[.08] bg-white/[0.03] p-8 text-center">
+            <p className="text-lg font-medium text-white/90">Choose the apps you use</p>
+            <p className="mt-2 text-sm text-white/55">Use the dropdown above to pick the platforms you want to connect. Only selected apps will appear here.</p>
+          </div>
         ) : (
           <div className="mt-8 space-y-8">
             {Array.from(grouped.entries()).map(([category, items]) => {
-              const visible = selectedIds.length ? items.filter((c) => selectedIds.includes(c.id)) : items
+              const visible = items.filter((c) => selectedIds.includes(c.id))
               if (!visible.length) return null
               return (
               <section key={category}>

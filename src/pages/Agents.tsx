@@ -204,6 +204,10 @@ export default function Agents() {
   }, [session?.access_token, selected, agents.length])
 
   useEffect(() => {
+    if (pendingAgent) refreshStatus()
+  }, [pendingAgent])
+
+  useEffect(() => {
     const connected = searchParams.get('connected')
     const email = searchParams.get('email')
     const reason = searchParams.get('reason')
@@ -306,8 +310,15 @@ export default function Agents() {
       }
       const conv = (data.conversation || data) as AlphaConversation
       setConversation(conv)
-      if (data.agent) setPendingAgent(data.agent as Agent)
-      else setPendingAgent(null)
+      const draft = conv.automationDraft || data.agent || null
+      if (conv.conversationStage === 'created' || data.created) {
+        setNotice(`Automation ${conv.automationDraft?.name || ''} is active.`)
+        startNewConversation()
+      } else if (draft) {
+        setPendingAgent(draft as Agent)
+      } else {
+        setPendingAgent(null)
+      }
     } finally { setCreating(false) }
   }
 
@@ -325,10 +336,14 @@ export default function Agents() {
       const conv = (data.conversation || data) as AlphaConversation
       setConversation(conv)
       setInput('')
-      if (data.agent) setPendingAgent(data.agent as Agent)
+      const draft = conv.automationDraft || data.agent || null
       if (conv.conversationStage === 'created' || data.created) {
         setNotice(`Automation ${conv.automationDraft?.name || ''} is active.`)
         startNewConversation()
+      } else if (draft) {
+        setPendingAgent(draft as Agent)
+      } else {
+        setPendingAgent(null)
       }
     } finally { setCreating(false) }
   }
