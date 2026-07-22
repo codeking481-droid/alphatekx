@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, Bot, CalendarClock, CheckCircle2, Clock, LoaderCircle, Wallet, X, Zap } from 'lucide-react'
+import { AlertCircle, CalendarClock, CheckCircle2, LoaderCircle, Sparkles, X, Zap } from 'lucide-react'
 import { ConnectorIcon } from './ConnectorIcon'
 import { getConnector } from '../../lib/agents/connectorRegistry'
 import { saveAgent } from '../../lib/agents/agentStore'
@@ -60,6 +60,7 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
   const [tab, setTab] = useState<'calendar' | 'cost' | 'brand'>('calendar')
   const [editing, setEditing] = useState<{ postId: string; platform: string; text: string } | null>(null)
   const [savingPost, setSavingPost] = useState(false)
+  const [reviewingPost, setReviewingPost] = useState<string | null>(null)
   const [startAt, setStartAt] = useState(() => {
     const first = toDatetimeLocal(agent.campaign?.posts?.[0]?.scheduledAt)
     const fallback = toDatetimeLocal(defaultStartAt())
@@ -152,6 +153,24 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
     } finally { setSavingPost(false) }
   }
 
+  const reviewPost = async (postId: string, action: string, tone = '') => {
+    setReviewingPost(`${postId}:${action}`)
+    setNotice('')
+    try {
+      const res = await fetch(`/api/agents/campaign/${encodeURIComponent(draft.id)}/review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ postId, platform: 'linkedin', action, tone }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Could not update the post')
+      setDraft(data.agent)
+      setNotice('Post updated. Review the new version before approval.')
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Could not update the post')
+    } finally { setReviewingPost(null) }
+  }
+
   const activate = async () => {
     if (!canActivate) {
       if (!startValid) setStartError('Please pick a future date and time for the first post.')
@@ -168,7 +187,7 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Activation failed')
-      setNotice(`Campaign activated. ${data.charged} credits charged. Next post: ${new Date(data.nextRun).toLocaleString()}`)
+      setNotice(`Campaign approved and scheduled. No credits charged yet. Next post: ${new Date(data.nextRun).toLocaleString()}`)
       setDraft(data.agent)
       onActivated(data.agent)
     } catch (err) {
@@ -254,7 +273,21 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
                               <button onClick={savePostEdit} disabled={savingPost} className="rounded-md bg-indigo-500 px-2 py-1 text-[10px] text-white hover:bg-indigo-400 disabled:opacity-50">{savingPost ? 'Saving...' : 'Save'}</button>
                             </div>
                           </div>
-                        ) : <p className="mt-1 whitespace-pre-wrap text-xs text-white/80">{post.captions[platform]}</p>}
+                        ) : <>
+                          <p className="mt-1 whitespace-pre-wrap text-xs text-white/80">{post.captions[platform]}</p>
+                          <div className="mt-2 text-[10px] text-white/40">{(post.captions[platform] || '').length.toLocaleString()} characters</div>
+                          {platform === 'linkedin' && <div className="mt-2 flex flex-wrap gap-1.5">
+                            {[
+                              ['regenerate', 'Regenerate'],
+                              ['improve_hook', 'Improve hook'],
+                              ['shorten', 'Shorten'],
+                              ['expand', 'Expand'],
+                              ['add_hashtags', 'Add hashtags'],
+                              ['remove_hashtags', 'Remove hashtags'],
+                            ].map(([action, label]) => <button key={action} disabled={Boolean(reviewingPost)} onClick={() => reviewPost(post.id, action)} className="rounded-md border border-white/[.1] px-2 py-1 text-[10px] text-white/65 hover:bg-white/[.06] disabled:opacity-40">{reviewingPost === `${post.id}:${action}` ? 'Working...' : label}</button>)}
+                            <button disabled={Boolean(reviewingPost)} onClick={() => { const tone = window.prompt('What tone should Alpha use?', brand.tone || 'professional'); if (tone) reviewPost(post.id, 'change_tone', tone) }} className="rounded-md border border-white/[.1] px-2 py-1 text-[10px] text-white/65 hover:bg-white/[.06] disabled:opacity-40">Change tone</button>
+                          </div>}
+                        </>}
                       </div>
                     ))}
                   </div>
@@ -294,7 +327,7 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
             const C = getConnector(id) || { id, name: platformNames[id] || id, icon: 'bot', color: '#6366f1', authType: 'apiKey', description: '', triggers: [], actions: [], permissions: [] }
             return <div key={id} className="flex items-center justify-between text-xs">
               <span className="flex items-center gap-2"><ConnectorIcon connector={C}/> {C.name}</span>
-              {connected ? <span className="text-emerald-400 flex items-center gap-1"><CheckCircle2 size={12}/> Connected</span> : <a href={`/connectors?service=${id}`} className="text-indigo-400 hover:underline">Connect</a>}
+              {connected ? <span className="text-emerald-400 flex items-center gap-1"><CheckCircle2 size={12}/> Connected personal profile</span> : <a href={`/connected-apps?service=${id}`} className="text-indigo-400 hover:underline">Connect</a>}
             </div>
           })}
         </div>
@@ -314,8 +347,8 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
           disabled={!canActivate || activating}
           className="flex min-h-10 items-center gap-2 rounded-lg bg-indigo-500 px-5 text-sm text-white hover:bg-indigo-400 disabled:opacity-40"
         >
-          {activating ? <LoaderCircle className="animate-spin" size={16}/> : <Wallet size={16}/>}
-          {campaign.status === 'running' ? 'Campaign active' : `Approve & Pay ${total} credits`}
+          {activating ? <LoaderCircle className="animate-spin" size={16}/> : <Sparkles size={16}/>}
+          {campaign.status === 'running' ? 'Campaign active' : `Approve & Schedule · estimated ${total} credits`}
         </button>
       </div>
     </div>

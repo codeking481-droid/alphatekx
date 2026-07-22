@@ -256,6 +256,11 @@ export async function spendCredits(user, amount, config, metadata = {}) {
   const cost = Number(amount) || 0
   if (cost <= 0) return { ok: true, remaining: await getUserCredits(user, config) }
   if (isAdmin(user)) return { ok: true, remaining: Infinity }
+  const idempotencyKey = String(metadata.idempotencyKey || '')
+  if (idempotencyKey) {
+    const existing = (await getTransactions(user.id, 10000)).find(transaction => transaction.type === 'spend' && transaction.metadata?.idempotencyKey === idempotencyKey)
+    if (existing) return { ok: true, remaining: Number(existing.balance_after) || 0, duplicate: true }
+  }
   const profile = await readProfile(user, config)
   if (!profile) return { ok: false, remaining: 0, error: 'Profile not found' }
   let monthly = Number(profile.monthly_credits) || 0
