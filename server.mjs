@@ -429,6 +429,12 @@ async function callLLMJSON(systemPrompt, userPrompt) {
 
 function getRoleProviderOrder(role, fallbackOrder) {
   const env = process.env[`ALPHA_${role.toUpperCase()}_PROVIDER`] || process.env[`AI_ROLE_${role.toUpperCase()}_PROVIDER`] || process.env[`AI_${role.toUpperCase()}_PROVIDER`]
+  if (role === 'content' && getProviderKey('groq')) {
+    const configured = env ? env.split(',').map(s => s.trim().toLowerCase()).filter(Boolean) : []
+    const safeFallbacks = [...configured, ...(fallbackOrder || getProviderOrder())]
+      .filter(name => name !== 'openai' && name !== 'groq' && getProviderKey(name))
+    return ['groq', ...Array.from(new Set(safeFallbacks))]
+  }
   if (env) {
     const configured = env.split(',').map(s => s.trim().toLowerCase()).filter(Boolean).filter(name => getProviderKey(name))
     if (configured.length) return configured
@@ -4452,25 +4458,69 @@ function readAgents() { return readJsonFile(agentsFile, []) }
 function writeAgents(agents) { writeJsonFile(agentsFile, agents) }
 
 const AGENTS_PROVIDER = 'alphatekx_agents'
+const AGENT_EXECUTIONS_PROVIDER = 'alphatekx_agent_executions'
+
+async function authMetadataBundles(config, provider) {
+  const res = await fetch(`${config.url}/auth/v1/admin/users?per_page=1000`, { headers: serviceHeaders(config.service) })
+  if (!res.ok) throw new Error(`Could not list ${provider} from Supabase Auth metadata`)
+  const payload = await res.json()
+  const users = Array.isArray(payload) ? payload : (payload.users || [])
+  const key = encryptionKey(config)
+  return users.map(user => {
+    const record = user.app_metadata?.integrations?.[provider]
+    if (!record) return null
+    return { userId: user.id, email: user.email || record.email || '', tokens: decryptGenericTokens(record.tokens, key) }
+  }).filter(Boolean)
+}
 
 async function remoteAgentsList(config) {
   const res = await fetch(`${config.url}/rest/v1/connected_accounts?provider=eq.${AGENTS_PROVIDER}&select=*`, { headers: serviceHeaders(config.service) })
-  if (!res.ok) throw new Error('Could not list agents from connected_accounts')
-  const rows = await res.json()
-  return Array.isArray(rows) ? rows.map(r => ({ userId: r.user_id, email: r.email || '', agents: Array.isArray(r.tokens?.agents) ? r.tokens.agents : [] })) : []
+  if (res.ok) {
+    const rows = await res.json()
+    if (Array.isArray(rows) && rows.length) return rows.map(r => ({ userId: r.user_id, email: r.email || '', agents: Array.isArray(r.tokens?.agents) ? r.tokens.agents : [] }))
+  }
+  const bundles = await authMetadataBundles(config, AGENTS_PROVIDER)
+  return bundles.map(bundle => ({ userId: bundle.userId, email: bundle.email, agents: Array.isArray(bundle.tokens?.agents) ? bundle.tokens.agents : [] }))
 }
 
 async function remoteAgentsForUser(userId, config) {
   const res = await fetch(`${config.url}/rest/v1/connected_accounts?provider=eq.${AGENTS_PROVIDER}&user_id=eq.${encodeURIComponent(userId)}&select=*`, { headers: serviceHeaders(config.service) })
-  if (!res.ok) throw new Error('Could not load agents for user')
-  const row = (await res.json())?.[0]
-  return Array.isArray(row?.tokens?.agents) ? row.tokens.agents : []
+  if (res.ok) {
+    const row = (await res.json())?.[0]
+    if (row) return Array.isArray(row.tokens?.agents) ? row.tokens.agents : []
+  }
+  const record = await getAuthAppIntegration(userId, AGENTS_PROVIDER, config)
+  return Array.isArray(record?.tokens?.agents) ? record.tokens.agents : []
 }
 
 async function remoteAgentsSaveForUser(userId, email, agents, config) {
   const body = JSON.stringify({ user_id: userId, provider: AGENTS_PROVIDER, email: email || '', identifier: 'agents', scopes: [], tokens: { agents, updated_at: new Date().toISOString() }, updated_at: new Date().toISOString() })
   const res = await fetch(`${config.url}/rest/v1/connected_accounts?on_conflict=user_id,provider`, { method: 'POST', headers: { ...serviceHeaders(config.service), Prefer: 'resolution=merge-duplicates,return=minimal' }, body })
-  if (!res.ok) throw new Error('Could not save agents to connected_accounts')
+  if (res.ok) return
+  const saved = await saveAuthAppIntegration(userId, AGENTS_PROVIDER, { email, identifier: 'agents', scopes: [], tokens: { agents } }, config)
+  if (!saved) throw new Error('Could not save agents to durable Supabase Auth metadata')
+}
+
+async function remoteExecutionsList(config) {
+  const bundles = await authMetadataBundles(config, AGENT_EXECUTIONS_PROVIDER)
+  return bundles.flatMap(bundle => (Array.isArray(bundle.tokens?.executions) ? bundle.tokens.executions : []).map(execution => ({ ...execution, userId: execution.userId || bundle.userId })))
+}
+
+async function remoteExecutionsForUser(userId, config) {
+  const record = await getAuthAppIntegration(userId, AGENT_EXECUTIONS_PROVIDER, config)
+  return Array.isArray(record?.tokens?.executions) ? record.tokens.executions : []
+}
+
+async function remoteExecutionsSaveForUser(userId, email, executions, config) {
+  const saved = await saveAuthAppIntegration(userId, AGENT_EXECUTIONS_PROVIDER, { email, identifier: 'agent-executions', scopes: [], tokens: { executions: executions.slice(0, 200) } }, config)
+  if (!saved) throw new Error('Could not save executions to durable Supabase Auth metadata')
+}
+
+async function executionOwner(execution, config) {
+  if (execution.userId) return { id: execution.userId, email: execution.userEmail || '' }
+  const agent = await getServerAgent(execution.agentId)
+  if (!agent?.userId) throw new Error('Execution has no durable owner')
+  return { id: agent.userId, email: agent.userEmail || '' }
 }
 
 async function remoteAgentsDelete(agentId, config) {
@@ -4566,7 +4616,12 @@ async function deleteServerAgent(id) {
 
 async function addServerExecution(execution) {
   if (useSupabaseAgentDb()) {
-    try { await supabaseAddExecution(execution); return execution } catch { throw new Error('Durable execution persistence is unavailable') }
+    try { await supabaseAddExecution(execution); return execution } catch { /* use durable Auth metadata fallback */ }
+    const config = supabaseConfig()
+    const owner = await executionOwner(execution, config)
+    const executions = await remoteExecutionsForUser(owner.id, config)
+    await remoteExecutionsSaveForUser(owner.id, owner.email, [execution, ...executions.filter(item => item.id !== execution.id)], config)
+    return execution
   }
   const ex = readAgentExecutions()
   ex.unshift(execution)
@@ -4575,7 +4630,15 @@ async function addServerExecution(execution) {
 }
 
 async function claimServerExecution(execution) {
-  if (useSupabaseAgentDb()) return supabaseClaimExecution(execution)
+  if (useSupabaseAgentDb()) {
+    try { return await supabaseClaimExecution(execution) } catch { /* use durable Auth metadata fallback */ }
+    const config = supabaseConfig()
+    const owner = await executionOwner(execution, config)
+    const executions = await remoteExecutionsForUser(owner.id, config)
+    if (executions.some(item => item.id === execution.id)) return false
+    await remoteExecutionsSaveForUser(owner.id, owner.email, [execution, ...executions], config)
+    return true
+  }
   const executions = readAgentExecutions()
   if (executions.some(item => item.id === execution.id)) return false
   executions.unshift(execution)
@@ -4585,14 +4648,20 @@ async function claimServerExecution(execution) {
 
 async function getServerExecution(id) {
   if (useSupabaseAgentDb()) {
-    try { return await supabaseGetExecution(id) } catch { throw new Error('Durable execution persistence is unavailable') }
+    try { return await supabaseGetExecution(id) } catch { /* use durable Auth metadata fallback */ }
+    return (await remoteExecutionsList(supabaseConfig())).find(execution => execution.id === id) || null
   }
   return readAgentExecutions().find(e => e.id === id) || null
 }
 
 async function saveServerExecution(execution) {
   if (useSupabaseAgentDb()) {
-    try { await supabaseSaveExecution(execution); return execution } catch { throw new Error('Durable execution persistence is unavailable') }
+    try { await supabaseSaveExecution(execution); return execution } catch { /* use durable Auth metadata fallback */ }
+    const config = supabaseConfig()
+    const owner = await executionOwner(execution, config)
+    const executions = await remoteExecutionsForUser(owner.id, config)
+    await remoteExecutionsSaveForUser(owner.id, owner.email, [execution, ...executions.filter(item => item.id !== execution.id)], config)
+    return execution
   }
   const ex = readAgentExecutions()
   const idx = ex.findIndex(e => e.id === execution.id)
@@ -4604,7 +4673,7 @@ async function saveServerExecution(execution) {
 
 async function listServerExecutions() {
   if (useSupabaseAgentDb()) {
-    try { return await supabaseAgentExecutions() } catch { throw new Error('Durable execution persistence is unavailable') }
+    try { return await supabaseAgentExecutions() } catch { return remoteExecutionsList(supabaseConfig()) }
   }
   return readAgentExecutions()
 }
