@@ -1,0 +1,1 @@
+import{am as n,an as t}from"./vendor-BpDmVvq2.js";function c(...x){return n(t(x))}function e(){return"xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g,x=>{const r=Math.random()*16|0;return(x==="x"?r:r&3|8).toString(16)})}export{c,e as r};
