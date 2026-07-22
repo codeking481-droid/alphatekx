@@ -119,7 +119,7 @@ await test('Approved campaign publishes once, charges once, persists history, an
   const request = (path, options = {}) => fetch(`http://127.0.0.1:${port}${path}`, { ...options, headers: { ...headers, ...(options.headers || {}) } })
   const agentId = `linkedin-agent-${randomUUID()}`
   try {
-    let response = await request('/api/connectors/save', { method: 'POST', body: JSON.stringify({ platform: 'linkedin', tokens: { access_token: 'test-token', author_urn: 'urn:li:person:test-member', expiry: Date.now() + 3600_000 }, identifier: 'urn:li:person:test-member', scopes: ['w_member_social'] }) })
+    let response = await request('/api/connectors/save', { method: 'POST', body: JSON.stringify({ platform: 'linkedin', tokens: { access_token: 'test-token', author_urn: 'urn:li:person:test-member', expiry: Date.now() + 3600_000 }, identifier: 'urn:li:person:test-member', scopes: ['email,openid,profile,w_member_social'] }) })
     assert.equal(response.status, 200)
     const scheduledAt = new Date(Date.now() + 1_000).toISOString()
     const agent = { id: agentId, type: 'campaign', name: 'LinkedIn test', description: 'Focused integration test', trigger: { type: 'campaign', cron: 'campaign', nextRun: scheduledAt }, status: 'awaiting_approval', approved: false, actions: [], executionHistory: [], permissions: ['linkedin'], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), campaign: { name: 'LinkedIn test', description: 'test', brand: { business: 'AlphaTekx', audience: 'Founders', tone: 'Professional', website: '', dontPost: [] }, meta: { platforms: ['linkedin'], slots: [{ label: '09:00', hour: 9, minute: 0 }], durationDays: 1, postsPerDay: 1, totalPosts: 1, startDate: scheduledAt, includeImages: false, timezone: 'UTC', frequencyText: 'One time' }, posts: [{ id: `post-${randomUUID()}`, day: 1, slot: '09:00', scheduledAt, platforms: ['linkedin'], topic: 'AlphaTekx', postType: 'educational', captions: { linkedin: 'Focused LinkedIn automation integration test.' }, status: 'pending_approval', result: {}, credits: 3 }], totalCredits: 3, status: 'pending_approval', charged: false, approved: false, autoPublish: false } }
@@ -189,6 +189,50 @@ await test('Provider success without post ID does not charge and records failure
     assert.equal(saved.executionHistory[0].status, 'error')
     assert.ok(new Date(saved.trigger.nextRun).getTime() > Date.now())
   } finally { app.child.kill('SIGTERM') }
+})
+
+await test('Exact one-post review prompt creates one non-recurring draft without extra questions', async () => {
+  const records = new Map()
+  const calls = []
+  const requiredSentence = 'Tell AlphaTekx the result you want. Watch Alpha get it done.'
+  const engine = createConversationEngine({
+    saveServerAgent: async record => { records.set(record.id, structuredClone(record)); return record },
+    getServerAgent: async id => structuredClone(records.get(id)),
+    getUserCredits: async () => 30,
+    spendUserCredits: async () => true,
+    getIntegrationStatus: async () => ({ connected: true, ready: true, scopes: ['w_member_social'], identifier: 'urn:li:person:test-member' }),
+    callLLMForRole: async role => {
+      calls.push(role)
+      if (role !== 'content') return { result: {}, provider: 'test', model: 'test', generationMode: 'model' }
+      return { result: { calendar: [{ day: 1, slot: 'morning', platforms: ['linkedin'], topic: 'AlphaTekx', postType: 'product', captions: { linkedin: `One intelligent AI for getting work done.\n\n${requiredSentence}\n\n#AlphaTekx #AI #Startups` } }] }, provider: 'test', model: 'test', generationMode: 'model' }
+    },
+  })
+  const prompt = `Create one LinkedIn post introducing AlphaTekx.
+
+Audience: startup founders, creators, freelancers, and small business owners.
+
+Tone: confident, professional, exciting, and human.
+
+Explain that AlphaTekx is one intelligent AI that understands what users want, asks the right questions, generates content, schedules it, and publishes it after approval.
+
+Include this sentence:
+
+“${requiredSentence}”
+
+Use no more than five relevant hashtags.
+
+Create only one post.
+Do not schedule a recurring campaign.
+Show me the post for review before publishing.`
+  const conversation = await engine.start({ id: 'exact-prompt-user', email: 'exact@test.local' }, prompt)
+  assert.deepEqual(calls, ['content'], JSON.stringify({ calls, knownFields: conversation.knownFields, missingFields: conversation.missingFields, askedFields: conversation.askedFields }))
+  assert.equal(conversation.conversationStage, 'awaiting_content_review')
+  assert.equal(conversation.generatedContent.length, 1)
+  assert.equal(conversation.automationDraft.campaign.meta.totalPosts, 1)
+  assert.equal(conversation.automationDraft.campaign.meta.durationDays, 1)
+  assert.equal(conversation.automationDraft.campaign.meta.frequency, 'once')
+  assert.equal(conversation.automationDraft.approved, false)
+  assert.match(conversation.generatedContent[0].captions.linkedin, new RegExp(requiredSentence.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
 })
 
 await test('Production regression: overdue scheduler run without LinkedIn readiness is recorded honestly', async () => {

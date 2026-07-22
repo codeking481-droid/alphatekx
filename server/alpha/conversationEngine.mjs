@@ -129,6 +129,14 @@ function cleanBusiness(text) {
     .trim()
 }
 
+function requestsSinglePost(prompt) {
+  const lower = String(prompt || '').toLowerCase()
+  if (/\b(every|each|daily|weekly|monthly|monday|tuesday|wednesday|thursday|friday|saturday|sunday|week|month)\b/.test(lower)) return false
+  return /\b(?:create|generate|make|write)\s+(?:a(?:\s+(?:single|strong|great))?|one)\s+(?:linkedin\s+|medium\s+|x\s+|twitter\s+|facebook\s+|instagram\s+)?(?:post|article)\b/i.test(prompt) ||
+    /\b(?:only|exactly)\s+one\s+posts?\b/i.test(prompt) ||
+    /\bdo not schedule (?:a )?recurring campaign\b/i.test(prompt)
+}
+
 function heuristicParseRequest(prompt) {
   const lower = String(prompt || '').toLowerCase()
   const result = { intent: 'unknown', knownFields: {} }
@@ -190,10 +198,16 @@ function heuristicParseRequest(prompt) {
   const ctaMatch = prompt.match(/\b(?:cta|call to action)\s*[:=]\s*([^\n.]+)/i)
   if (ctaMatch) result.knownFields.callToAction = ctaMatch[1].trim()
 
-  const isSinglePost = /\ba\s+(?:single|strong|great)?\s*(?:linkedin\s+|medium\s+|x\s+|twitter\s+|facebook\s+|instagram\s+)?(?:post|article)\b/i.test(prompt) &&
-    !/\b(every|each|daily|weekly|monthly|monday|tuesday|wednesday|thursday|friday|saturday|sunday|week|month)\b/.test(lower)
-  if (isSinglePost) { result.knownFields.totalPosts = 1; result.knownFields.durationDays = 1 }
-  const duration = extractDurationFromText(prompt)
+  const explicitPostCount = prompt.match(/\b(?:create|generate|make|write)(?:\s+only)?\s+(one|\d+)\s+(?:linkedin\s+|medium\s+|x\s+|twitter\s+|facebook\s+|instagram\s+)?posts?\b/i) ||
+    prompt.match(/\b(?:only|exactly)\s+(one|\d+)\s+posts?\b/i)
+  if (explicitPostCount) result.knownFields.totalPosts = explicitPostCount[1].toLowerCase() === 'one' ? 1 : Number(explicitPostCount[1])
+  const isSinglePost = requestsSinglePost(prompt)
+  if (isSinglePost || result.knownFields.totalPosts === 1 || /\bdo not schedule (?:a )?recurring campaign\b/i.test(prompt)) {
+    result.knownFields.totalPosts = 1
+    result.knownFields.durationDays = 1
+    result.knownFields.frequency = 'once'
+  }
+  const duration = /\b(?:days?|weeks?|months?)\b/i.test(prompt) ? extractDurationFromText(prompt) : null
   if (duration) result.knownFields.durationDays = duration
 
   if (/\b(do not publish|until i approve|manual approval|review before publishing|approve it)\b/i.test(lower)) result.knownFields.approvalPreference = 'manual'
@@ -743,7 +757,7 @@ Return JSON:
 
   async function generateContent(conversation) {
     const known = conversation.knownFields || {}
-    const isSinglePost = /\ba\s+(?:single\s+|strong\s+)?(?:linkedin\s+|medium\s+|x\s+|twitter\s+|facebook\s+|instagram\s+)?(?:post|article)\b/i.test(conversation.originalRequest || '') && !/\b(every|each|daily|weekly|monthly|monday|tuesday|wednesday|thursday|friday|saturday|sunday|week|month)\b/i.test((conversation.originalRequest || '').toLowerCase())
+    const isSinglePost = requestsSinglePost(conversation.originalRequest || '')
     if (isSinglePost && !known.totalPosts && !known.total_posts && !known.durationDays && !known.duration_days) {
       known.totalPosts = 1
       known.durationDays = 1
@@ -831,7 +845,7 @@ Total posts: ${totalPosts}.`
     let providerLog = null
 
     async function tryGenerate(strict = false) {
-      const estimatedTokens = Math.max(1200, Math.min(3000, totalPosts * 180 + 400))
+      const estimatedTokens = totalPosts === 1 ? 700 : Math.max(1200, Math.min(3000, totalPosts * 180 + 400))
       const res = await callLLMForRole('content', strict ? strictSystem : system, JSON.stringify({ brand, meta }), { jsonMode: true, maxTokens: estimatedTokens })
       logModelCall(conversation, res, 'generate_content')
       providerLog = { provider: res.provider, model: res.model, usage: res.usage, latencyMs: res.latencyMs }

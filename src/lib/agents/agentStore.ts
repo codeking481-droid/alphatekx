@@ -19,6 +19,13 @@ const listeners = new Set<() => void>()
 function notify() { listeners.forEach(fn => { try { fn() } catch {} }) }
 export function subscribeAgents(callback: () => void) { listeners.add(callback); return () => listeners.delete(callback) }
 
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs = 30_000) {
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs)
+  try { return await fetch(input, { ...init, signal: controller.signal }) }
+  finally { window.clearTimeout(timer) }
+}
+
 let cache: Agent[] | null = null
 export function getAgents(): Agent[] {
   if (!cache) cache = loadAgents()
@@ -49,7 +56,7 @@ async function authHeaders() {
 
 export async function saveAgent(agent: Agent) {
   const record = { ...agent, updatedAt: new Date().toISOString() }
-  const res = await fetch('/api/agents', { method: 'POST', headers: { 'Content-Type': 'application/json', ...await authHeaders() }, body: JSON.stringify({ agent: record }) })
+  const res = await fetchWithTimeout('/api/agents', { method: 'POST', headers: { 'Content-Type': 'application/json', ...await authHeaders() }, body: JSON.stringify({ agent: record }) })
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
     const error = new Error(data.error || `Could not save agent (${res.status})`)
