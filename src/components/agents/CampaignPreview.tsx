@@ -60,7 +60,15 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
   const [tab, setTab] = useState<'calendar' | 'cost' | 'brand'>('calendar')
   const [editing, setEditing] = useState<{ postId: string; platform: string; text: string } | null>(null)
   const [savingPost, setSavingPost] = useState(false)
-  const [startAt, setStartAt] = useState(() => toDatetimeLocal(agent.campaign?.posts?.[0]?.scheduledAt) || toDatetimeLocal(defaultStartAt()) || '')
+  const [startAt, setStartAt] = useState(() => {
+    const first = toDatetimeLocal(agent.campaign?.posts?.[0]?.scheduledAt)
+    const fallback = toDatetimeLocal(defaultStartAt())
+    if (first) {
+      const d = new Date(fromDatetimeLocal(first))
+      if (!isNaN(d.getTime()) && d.getTime() > Date.now()) return first
+    }
+    return fallback || ''
+  })
   const [startError, setStartError] = useState('')
 
   useEffect(() => {
