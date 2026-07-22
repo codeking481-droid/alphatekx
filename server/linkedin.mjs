@@ -1,7 +1,12 @@
+export function normalizeLinkedInScopes(value) {
+  const entries = Array.isArray(value) ? value : [value]
+  return Array.from(new Set(entries.flatMap(entry => String(entry || '').split(/[\s,]+/)).filter(Boolean)))
+}
+
 export function validateLinkedInCredentials(creds, now = Date.now()) {
   const token = creds?.accessToken || creds?.access_token || ''
   const author = creds?.authorUrn || creds?.author_urn || creds?.identifier || ''
-  const scopes = Array.isArray(creds?.scopes) ? creds.scopes : []
+  const scopes = normalizeLinkedInScopes(creds?.scopes)
   const expiresAt = Number(creds?.expiry || creds?.expires_at || creds?.expiry_date || 0)
   if (!token || !author) throw new Error('LinkedIn token or author URN missing. Connect LinkedIn in Connected Apps.')
   if (!String(author).startsWith('urn:li:person:')) throw new Error('Only LinkedIn personal profile publishing is supported in this release.')

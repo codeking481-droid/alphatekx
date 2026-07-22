@@ -103,7 +103,7 @@ export function useAgents() {
         const res = await fetch('/api/agents', { headers: await authHeaders() })
         if (!res.ok) return
         const data = await res.json()
-        if (Array.isArray(data.agents) && data.agents.length) {
+        if (Array.isArray(data.agents)) {
           cache = data.agents
           saveAgents(data.agents)
           notify()

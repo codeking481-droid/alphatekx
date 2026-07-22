@@ -59,6 +59,7 @@ await test('Missing-field questioning, model generation, review and explicit app
 })
 
 await test('Expired token and missing permission are rejected', () => {
+  assert.doesNotThrow(() => validateLinkedInCredentials({ ...validCredentials, scopes: ['email,openid,profile,w_member_social'] }))
   assert.throws(() => validateLinkedInCredentials({ ...validCredentials, expiry: Date.now() - 1 }), /expired/i)
   assert.throws(() => validateLinkedInCredentials({ ...validCredentials, scopes: [] }), /w_member_social/i)
   assert.throws(() => validateLinkedInCredentials({ ...validCredentials, authorUrn: 'urn:li:organization:1' }), /personal profile/i)
@@ -71,12 +72,14 @@ await test('Successful response requires and returns LinkedIn post ID', async ()
 })
 
 let providerCalls = 0
+const providerRequests = []
 const provider = http.createServer(async (req, res) => {
   if (req.method !== 'POST' || req.url !== '/rest/posts') { res.writeHead(404); res.end(); return }
   providerCalls++
   let raw = ''
   for await (const chunk of req) raw += chunk
   const body = JSON.parse(raw || '{}')
+  providerRequests.push(String(body.commentary || ''))
   if (String(body.commentary).includes('NO_ID')) { res.writeHead(201); res.end(); return }
   res.writeHead(201, { 'x-restli-id': `urn:li:share:${providerCalls}` })
   res.end()
@@ -141,6 +144,11 @@ await test('Approved campaign publishes once, charges once, persists history, an
     assert.match(saved.campaign.posts[0].providerPostId, /^urn:li:share:/)
     assert.equal(saved.campaign.posts[0].charged, true)
     assert.ok(saved.executionHistory.length >= 1)
+    assert.equal(saved.executionsDone, 1)
+    assert.equal(saved.successfulRuns, 1)
+    assert.equal(saved.failedRuns, 0)
+    assert.equal(saved.successRate, 100)
+    assert.ok(saved.lastRunAt)
     app.child.kill('SIGTERM')
     await new Promise(resolve => setTimeout(resolve, 500))
     app = await startApp(port)
@@ -174,6 +182,42 @@ await test('Provider success without post ID does not charge and records failure
     assert.equal(saved.campaign.posts[0].charged, false)
     assert.equal(saved.campaign.posts[0].status, 'scheduled')
     assert.equal(saved.campaign.posts[0].retryCount, 1)
+    assert.equal(saved.executionsDone, 1)
+    assert.equal(saved.successfulRuns, 0)
+    assert.equal(saved.failedRuns, 1)
+    assert.equal(saved.successRate, 0)
+    assert.equal(saved.executionHistory[0].status, 'error')
+    assert.ok(new Date(saved.trigger.nextRun).getTime() > Date.now())
+  } finally { app.child.kill('SIGTERM') }
+})
+
+await test('Production regression: overdue scheduler run without LinkedIn readiness is recorded honestly', async () => {
+  const port = 5000 + Math.floor(Math.random() * 100)
+  const app = await startApp(port)
+  const userId = `linkedin-regression-${randomUUID()}`
+  const headers = { 'content-type': 'application/json', 'x-local-user-id': userId, 'x-local-user-email': `${userId}@test.local` }
+  const request = (path, options = {}) => fetch(`http://127.0.0.1:${port}${path}`, { ...options, headers: { ...headers, ...(options.headers || {}) } })
+  const agentId = `linkedin-regression-agent-${randomUUID()}`
+  const postId = `post-${randomUUID()}`
+  const overdueAt = new Date(Date.now() - 10 * 60_000).toISOString()
+  const blockedCaption = `This must not be sent without a ready connection: ${randomUUID()}`
+  try {
+    const agent = { id: agentId, type: 'campaign', name: 'Social Content - 7 days', description: 'Regression fixture', trigger: { type: 'campaign', cron: 'campaign', nextRun: overdueAt }, status: 'running', approved: true, actions: [], executionHistory: [], executionsDone: 0, successRate: 100, permissions: ['linkedin'], createdAt: overdueAt, updatedAt: overdueAt, campaign: { name: 'Social Content - 7 days', description: 'test', brand: { business: 'AlphaTekx', audience: 'Founders', tone: 'Professional', website: '', dontPost: [] }, meta: { platforms: ['linkedin'], slots: [], durationDays: 7, postsPerDay: 1, totalPosts: 1, startDate: overdueAt, includeImages: false, timezone: 'Africa/Lagos', frequencyText: 'Daily' }, posts: [{ id: postId, day: 1, slot: '09:00', scheduledAt: overdueAt, platforms: ['linkedin'], topic: 'test', postType: 'educational', captions: { linkedin: blockedCaption }, status: 'scheduled', approved: true, charged: false, result: {}, credits: 3 }], totalCredits: 3, status: 'running', charged: false, approved: true, autoPublish: true } }
+    assert.equal((await request('/api/agents', { method: 'POST', body: JSON.stringify({ agent }) })).status, 200)
+    const before = (await (await request('/api/credits/balance')).json()).credits
+    const due = await (await request('/api/agents/run-due')).json()
+    assert.ok(due.results.some(result => result.agentId === agentId && result.status === 'error'))
+    assert.equal(providerRequests.includes(blockedCaption), false)
+    const after = (await (await request('/api/credits/balance')).json()).credits
+    assert.equal(after, before)
+    const saved = (await (await request('/api/agents')).json()).agents.find(item => item.id === agentId)
+    assert.equal(saved.executionsDone, 1)
+    assert.equal(saved.successRate, 0)
+    assert.equal(saved.executionHistory.length, 1)
+    assert.equal(saved.executionHistory[0].status, 'error')
+    assert.equal(saved.campaign.completedCount, 0)
+    assert.ok(new Date(saved.trigger.nextRun).getTime() > Date.now())
+    assert.equal(saved.campaign.posts[0].charged, false)
   } finally { app.child.kill('SIGTERM') }
 })
 
