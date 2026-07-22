@@ -4,6 +4,7 @@ import path from 'node:path'
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { schedule } from 'node-cron'
+import { execSync } from 'node:child_process'
 
 import { fallbackAlphaBuilder } from './alphaFallback.mjs'
 import { extractPlan, isPlatformPrompt } from './server/alphaPlatformBuilder.mjs'
@@ -31,6 +32,19 @@ loadEnv()
 const port = Number(process.env.PORT || 3001)
 const root = path.dirname(fileURLToPath(import.meta.url))
 const distRoot = path.resolve(root, 'dist')
+
+function buildDistIfNeeded() {
+  if (process.env.NODE_ENV !== 'production' && !process.env.RENDER) return
+  try {
+    process.stdout.write('[startup] Building production assets...\n')
+    execSync('npm run build', { cwd: root, stdio: 'pipe', timeout: 120_000 })
+    process.stdout.write('[startup] Production assets built.\n')
+  } catch (err) {
+    process.stdout.write(`[startup] Build skipped/failed: ${err instanceof Error ? err.message : String(err)}\n`)
+  }
+}
+buildDistIfNeeded()
+
 const deploymentsDir = path.resolve(root, 'deployed')
 const previewsDir = path.resolve(root, 'data', 'previews')
 const dataDir = path.resolve(root, 'data')
@@ -3750,14 +3764,15 @@ async function getPostingCredentials(user, platform, params = {}) {
   const authorUrn = ownTokens.author_urn || ownTokens.authorUrn || ''
   const pageId = ownTokens.page_id || ownTokens.pageId || ''
   const phoneNumberId = ownTokens.phone_number_id || ownTokens.phoneNumberId || ''
+  const scopes = own?.scopes || []
   const hasToken = Boolean(accessToken || webhookUrl || botToken)
   if (hasToken && (hasOwnKey || !isMasterToken)) {
-    return { platform, isMaster: false, accessToken, webhookUrl, botToken, chatId, channel, authorUrn, pageId, phoneNumberId, ...ownTokens }
+    return { platform, isMaster: false, accessToken, webhookUrl, botToken, chatId, channel, authorUrn, pageId, phoneNumberId, scopes, ...ownTokens }
   }
   if (isMasterToken) {
     if (!skipFreeLimit && (full.freePostsUsed || 0) >= (full.freePostsLimit || 0)) throw new Error('FREE_LIMIT_REACHED')
     if (!accessToken) throw new Error(`${platform} master token is missing`)
-    return { platform, isMaster: true, accessToken, webhookUrl: '', botToken: accessToken, chatId, channel, authorUrn, pageId, phoneNumberId, ...ownTokens }
+    return { platform, isMaster: true, accessToken, webhookUrl: '', botToken: accessToken, chatId, channel, authorUrn, pageId, phoneNumberId, scopes, ...ownTokens }
   }
   if (!skipFreeLimit && (full.freePostsUsed || 0) >= (full.freePostsLimit || 0)) throw new Error('FREE_LIMIT_REACHED')
   const master = masterCredentials(platform)
@@ -3783,7 +3798,11 @@ async function postToLinkedIn(creds, params) {
   if (!text && !imageUrl) throw new Error('LinkedIn post requires text or image')
   const token = creds.accessToken
   const author = creds.authorUrn || creds.author_urn || creds.identifier
+  const scopes = creds.scopes || []
   if (!token || !author) throw new Error('LinkedIn token or author URN missing. Connect LinkedIn in Connectors.')
+  if (scopes.length && !scopes.includes('w_member_social') && !process.env.MASTER_LINKEDIN_ACCESS_TOKEN) {
+    throw new Error('LinkedIn connection is missing w_member_social permission. Reconnect LinkedIn and make sure Share on LinkedIn is approved.')
+  }
   const bodyText = imageUrl && !text.includes(imageUrl) ? `${text}\n\n${imageUrl}` : text
   const body = {
     author,
@@ -3795,15 +3814,19 @@ async function postToLinkedIn(creds, params) {
   }
   const response = await fetch('https://api.linkedin.com/rest/posts', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-Restli-Protocol-Version': '2.0.0', 'LinkedIn-Version': '202401' },
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-Restli-Protocol-Version': '2.0.0', 'LinkedIn-Version': '202404' },
     body: JSON.stringify(body),
   })
-  const postId = response.headers.get('x-restli-id')
+  const postId = response.headers.get('x-restli-id') || response.headers.get('X-Restli-Id') || response.headers.get('x-restli-id')
   if (!response.ok) {
     const data = await response.json().catch(() => ({}))
     throw new Error(data.message || data.error || data.error_description || `LinkedIn post failed (${response.status})`)
   }
-  return { id: postId || 'posted', ok: true, status: response.status }
+  if (!postId) {
+    const responseText = await response.text().catch(() => '')
+    throw new Error(`LinkedIn did not return a post ID. ${responseText.slice(0, 200)}`)
+  }
+  return { id: postId, ok: true, status: response.status, link: `https://www.linkedin.com/feed/update/${postId}` }
 }
 
 async function postToDiscord(creds, params) {
