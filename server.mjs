@@ -1655,11 +1655,12 @@ async function testConnectorHandler(req, res) {
 async function startLinkedInOAuth(req, res) {
   const config = supabaseConfig()
   const url = new URL(req.url || '/', 'http://localhost')
-  let user = await currentOrLocalUser(req, config.url, config.anon)
+  const localUser = localUserFromRequest(req)
+  let user = config.url && config.anon ? (await authenticatedUser(req, config.url, config.anon).catch(() => null) || localUser) : localUser
   if (!user && url.searchParams.has('localUserId') && url.searchParams.has('localUserEmail')) {
     user = { id: String(url.searchParams.get('localUserId')), email: String(url.searchParams.get('localUserEmail')) }
   }
-  if (!user) return json(res, 401, { error: 'Authentication required' })
+  if (!user?.id) return json(res, 401, { error: 'Authentication required' })
   const clientId = process.env.MASTER_LINKEDIN_CLIENT_ID || process.env.LINKEDIN_CLIENT_ID || ''
   if (!clientId) return json(res, 503, { error: 'LinkedIn client ID not configured' })
   const redirectUri = `${publicAppUrl()}/api/connectors/linkedin/callback`
@@ -1667,6 +1668,21 @@ async function startLinkedInOAuth(req, res) {
   const authUrl = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent('openid profile w_member_social email')}&state=${encodeURIComponent(state)}`
   res.writeHead(302, { Location: authUrl, 'Cache-Control': 'no-store' })
   return res.end()
+}
+
+async function startLinkedInConnection(req, res) {
+  const config = supabaseConfig()
+  const body = await readBody(req)
+  const localUser = body?.localUser ? { id: String(body.localUser.id || ''), email: String(body.localUser.email || '') } : localUserFromRequest(req)
+  const user = config.url && config.anon ? (await authenticatedUser(req, config.url, config.anon).catch(() => null) || localUser) : localUser
+  if (!user?.id || !user?.email) return json(res, 401, { error: 'Authentication required' })
+  const clientId = process.env.MASTER_LINKEDIN_CLIENT_ID || process.env.LINKEDIN_CLIENT_ID || ''
+  const clientSecret = process.env.MASTER_LINKEDIN_CLIENT_SECRET || process.env.LINKEDIN_CLIENT_SECRET || ''
+  if (!clientId || !clientSecret) return json(res, 503, { error: 'LinkedIn client credentials not configured' })
+  const redirectUri = `${publicAppUrl()}/api/connectors/linkedin/callback`
+  const state = createOAuthState(user.id, config, user.email, '/connectors')
+  const authUrl = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent('openid profile w_member_social email')}&state=${encodeURIComponent(state)}`
+  return json(res, 200, { url: authUrl })
 }
 
 async function linkedinCallback(req, res) {
@@ -1689,20 +1705,21 @@ async function linkedinCallback(req, res) {
     const accessToken = tokenData.access_token
     let linkedinId = ''
     try {
-      const meResponse = await fetch('https://api.linkedin.com/v2/me?projection=(id)', { headers: { Authorization: `Bearer ${accessToken}`, 'X-Restli-Protocol-Version': '2.0.0' } })
-      const me = await meResponse.json()
-      if (meResponse.ok && me.id) linkedinId = me.id
+      const uiResponse = await fetch('https://api.linkedin.com/v2/userinfo', { headers: { Authorization: `Bearer ${accessToken}` } })
+      const ui = await uiResponse.json()
+      if (uiResponse.ok && ui.sub) linkedinId = ui.sub
     } catch {}
     if (!linkedinId) {
       try {
-        const uiResponse = await fetch('https://api.linkedin.com/v2/userinfo', { headers: { Authorization: `Bearer ${accessToken}` } })
-        const ui = await uiResponse.json()
-        if (uiResponse.ok && ui.sub) linkedinId = ui.sub
+        const meResponse = await fetch('https://api.linkedin.com/v2/me?projection=(id)', { headers: { Authorization: `Bearer ${accessToken}`, 'X-Restli-Protocol-Version': '2.0.0' } })
+        const me = await meResponse.json()
+        if (meResponse.ok && me.id) linkedinId = me.id
       } catch {}
     }
     if (!linkedinId) throw new Error('Could not fetch LinkedIn profile id')
     const authorUrn = `urn:li:person:${linkedinId}`
-    await saveUserIntegration(parsed.userId, 'linkedin', { email: parsed.email, identifier: authorUrn, tokens: { access_token: accessToken, author_urn: authorUrn, isMaster: false, hasOwnKey: true, expiry: tokenData.expires_in ? Date.now() + tokenData.expires_in * 1000 : undefined }, scopes: ['r_liteprofile', 'w_member_social'] }, config)
+    const grantedScopes = String(tokenData.scope || '').split(/\s+/).filter(Boolean)
+    await saveUserIntegration(parsed.userId, 'linkedin', { email: parsed.email, identifier: authorUrn, tokens: { access_token: accessToken, author_urn: authorUrn, isMaster: false, hasOwnKey: true, expiry: tokenData.expires_in ? Date.now() + tokenData.expires_in * 1000 : undefined }, scopes: grantedScopes.length ? grantedScopes : ['openid', 'profile', 'w_member_social', 'email'] }, config)
   } catch (error) {
     destination = new URL('/connectors?connected=error', publicAppUrl())
     destination.searchParams.set('reason', error instanceof Error ? error.message.slice(0, 180) : 'LinkedIn connection failed')
@@ -3681,18 +3698,30 @@ async function postToX(creds, params) {
 async function postToLinkedIn(creds, params) {
   const text = String(params.text || params.message || '')
   const imageUrl = String(params.imageUrl || '')
-  if (!text) throw new Error('LinkedIn post requires text')
+  if (!text && !imageUrl) throw new Error('LinkedIn post requires text or image')
   const token = creds.accessToken
   const author = creds.authorUrn || creds.author_urn || creds.identifier
-  if (!token || !author) throw new Error('LinkedIn token or author URN missing. Paste your access token and author URN (urn:li:person:...) in Connectors.')
+  if (!token || !author) throw new Error('LinkedIn token or author URN missing. Connect LinkedIn in Connectors.')
   const bodyText = imageUrl && !text.includes(imageUrl) ? `${text}\n\n${imageUrl}` : text
-  const shareMediaCategory = imageUrl ? 'IMAGE' : 'NONE'
-  const shareContent = { 'com.linkedin.ugc.ShareContent': { shareCommentary: { text: bodyText }, shareMediaCategory } }
-  if (imageUrl && shareMediaCategory === 'IMAGE') shareContent['com.linkedin.ugc.ShareContent'].media = [{ status: 'READY', originalUrl: imageUrl, title: { text: text.slice(0, 80) } }]
-  const response = await fetch('https://api.linkedin.com/v2/ugcPosts', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-Restli-Protocol-Version': '2.0.0' }, body: JSON.stringify({ author, lifecycleState: 'PUBLISHED', specificContent: shareContent, visibility: { 'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC' } }) })
-  const data = await response.json()
-  if (!response.ok) throw new Error(data.message || data.error || 'LinkedIn post failed')
-  return { id: data.id, data }
+  const body = {
+    author,
+    commentary: bodyText,
+    visibility: 'PUBLIC',
+    distribution: { feedDistribution: 'MAIN_FEED', targetEntities: [], thirdPartyDistributionChannels: [] },
+    lifecycleState: 'PUBLISHED',
+    isReshareDisabledByAuthor: false,
+  }
+  const response = await fetch('https://api.linkedin.com/rest/posts', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-Restli-Protocol-Version': '2.0.0', 'LinkedIn-Version': '202401' },
+    body: JSON.stringify(body),
+  })
+  const postId = response.headers.get('x-restli-id')
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}))
+    throw new Error(data.message || data.error || data.error_description || `LinkedIn post failed (${response.status})`)
+  }
+  return { id: postId || 'posted', ok: true, status: response.status }
 }
 
 async function postToDiscord(creds, params) {
@@ -4760,6 +4789,9 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'GET' && req.url === '/api/connectors/linkedin/auth') {
     try { return await startLinkedInOAuth(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'LinkedIn auth failed' }) }
+  }
+  if (req.method === 'POST' && req.url === '/api/connectors/linkedin/start') {
+    try { return await startLinkedInConnection(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'LinkedIn auth failed' }) }
   }
   if (req.method === 'GET' && req.url?.startsWith('/api/connectors/linkedin/callback')) {
     try { return await linkedinCallback(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'LinkedIn callback failed' }) }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowRight, CheckCircle2, Key, LoaderCircle, Mail, PlugZap, RefreshCw, Unplug } from 'lucide-react'
+import { ArrowRight, CheckCircle2, Key, Linkedin, LoaderCircle, Mail, PlugZap, RefreshCw, Unplug } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { connectors, getConnector } from '../lib/agents/connectorRegistry'
@@ -15,6 +15,7 @@ import {
   saveConnector,
   sendGmail,
   startGmailConnection,
+  startLinkedInAuth,
   testConnector,
   type IntegrationStatus,
   type SendEmailInput,
@@ -165,6 +166,12 @@ export default function Connectors() {
       setBusy(true); setNotice('')
       try { await startGmailConnection(session?.access_token, '/connectors') }
       catch (error) { setNotice(error instanceof Error ? error.message : 'Could not start Google connection.'); setBusy(false) }
+      return
+    }
+    if (c.id === 'linkedin') {
+      setBusy(true); setNotice('')
+      try { await startLinkedInAuth(session?.access_token, '/connectors') }
+      catch (error) { setNotice(error instanceof Error ? error.message : 'Could not start LinkedIn connection.'); setBusy(false) }
       return
     }
     const key = keyInput[c.id]?.trim()
@@ -358,7 +365,7 @@ export default function Connectors() {
                                 ) : (
                                   <>
                                     {!status.connected ? (
-                                      <button onClick={() => void connect(c)} disabled={busy || (c.authType === 'apiKey' && !keyInput[c.id]?.trim())} className="btn-alpha flex flex-1 min-h-10 items-center justify-center gap-2 rounded-xl px-3 text-sm text-white disabled:opacity-50">{busy ? <LoaderCircle className="animate-spin" size={16}/> : <Key size={16}/>} Connect</button>
+                                      <button onClick={() => void connect(c)} disabled={busy || (c.authType === 'apiKey' && !keyInput[c.id]?.trim())} className="btn-alpha flex flex-1 min-h-10 items-center justify-center gap-2 rounded-xl px-3 text-sm text-white disabled:opacity-50">{busy ? <LoaderCircle className="animate-spin" size={16}/> : c.id === 'linkedin' ? <Linkedin size={16}/> : <Key size={16}/>} {c.id === 'linkedin' ? 'Connect with LinkedIn' : 'Connect'}</button>
                                     ) : (
                                       <button onClick={() => void disconnect(c)} disabled={busy} className="flex flex-1 min-h-10 items-center justify-center gap-2 rounded-xl border border-white/[.15] text-sm transition hover:border-red-400/50 hover:bg-red-400/10 disabled:opacity-50"><Unplug size={16}/> Disconnect</button>
                                     )}

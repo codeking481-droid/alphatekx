@@ -106,6 +106,8 @@ export const testConnector = (platform: string, token: string | undefined, text 
 export const initializePostsPayment = (credits: number, token?: string) =>
   request<{ authorization_url: string; reference: string; credits: number; amount: number; source: string }>('/api/paystack/initialize', token, { method: 'POST', body: JSON.stringify({ credits, source: 'posts' }) })
 
-export const startLinkedInAuth = () => {
-  window.location.assign('/api/connectors/linkedin/auth')
+export async function startLinkedInAuth(token?: string, redirect = '/connectors') {
+  const data = await request<{ url: string }>('/api/connectors/linkedin/start', token, { method: 'POST', body: JSON.stringify({ redirect }) })
+  if (!data.url) throw new Error('LinkedIn OAuth URL was not returned')
+  window.location.assign(data.url)
 }
