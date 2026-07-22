@@ -5333,6 +5333,15 @@ const server = http.createServer(async (req, res) => {
       } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Preview build failed.' }) }
     }
   }
+  if (req.method === 'GET' && req.url === '/api/debug/dist') {
+    try {
+      const indexHtml = fs.readFileSync(path.join(distRoot, 'index.html'), 'utf8').slice(0, 1000)
+      const assets = fs.readdirSync(path.join(distRoot, 'assets')).filter(f => f.endsWith('.js')).slice(0, 30)
+      return json(res, 200, { root, distRoot, indexHtml, assets })
+    } catch (err) {
+      return json(res, 500, { error: err instanceof Error ? err.message : String(err), root, distRoot })
+    }
+  }
   if (req.url?.startsWith('/api/')) return json(res, 404, { error: 'API route not found' })
   if (req.method === 'GET' && req.url === '/debug/dist') {
     try {
