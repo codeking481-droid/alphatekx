@@ -1,6 +1,11 @@
-# AlphaTekX God Craft OS
+# AlphaTekx
 
-AlphaTekX turns ideas into Missions, coordinates AI Workers, produces Creations, and prepares them for Marketplace publishing and Launch.
+AlphaTekx is an AI Employee. It plans work with the user, executes approved
+work, continues while the user is offline, and reports back when work completes
+or needs attention.
+
+Product and engineering decisions are governed by
+[`docs/PRODUCT_PHILOSOPHY.md`](docs/PRODUCT_PHILOSOPHY.md).
 
 Founded and owned by **Daniel Thompson, Founder and CEO**. Contact: iamdan4live@gmail.com
 
