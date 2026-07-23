@@ -1851,10 +1851,16 @@ async function activateCampaignHandler(req, res) {
   if (agent.userId && agent.userId !== user.id) return json(res, 403, { error: 'Not authorized' })
   if (!agent.campaign) return json(res, 400, { error: 'Not a campaign agent' })
 
-  const startAtRaw = body.startAt
-  const startAt = startAtRaw ? new Date(startAtRaw) : null
-  if (!startAt || isNaN(startAt.getTime())) return json(res, 400, { error: 'Start date and time are required' })
-  if (startAt.getTime() <= Date.now()) return json(res, 400, { error: 'Start time must be in the future' })
+  const postingOption = ['now', 'later', 'recurring'].includes(String(body.postingOption)) ? String(body.postingOption) : 'later'
+  const timezone = String(body.timezone || agent.campaign.meta?.timezone || user.timezone || 'UTC')
+  let startAt
+  try {
+    startAt = postingOption === 'now'
+      ? new Date(Date.now() + 250)
+      : (body.localDate && body.localTime ? localScheduleToUtc(body.localDate, body.localTime, timezone) : new Date(body.startAt))
+  } catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : 'Invalid schedule' }) }
+  if (!startAt || isNaN(startAt.getTime())) return json(res, 400, { error: 'Date, exact time, and timezone are required' })
+  if (postingOption !== 'now' && startAt.getTime() <= Date.now()) return json(res, 400, { error: 'That time has already passed. Choose another time or use Publish Now.' })
 
   const posts = agent.campaign.posts || []
   if (posts.length) {
@@ -1866,6 +1872,12 @@ async function activateCampaignHandler(req, res) {
         if (agent.campaign.meta) agent.campaign.meta.startDate = startAt.toISOString()
       }
     }
+  }
+  if (agent.campaign.meta) {
+    agent.campaign.meta.timezone = timezone
+    agent.campaign.meta.postingOption = postingOption
+    agent.campaign.meta.localDate = body.localDate || null
+    agent.campaign.meta.localTime = body.localTime || null
   }
 
   const admin = String(user.email || '').toLowerCase() === adminEmail
@@ -1886,9 +1898,14 @@ async function activateCampaignHandler(req, res) {
   agent.campaign.status = 'running'
   agent.approved = true
   agent.status = 'running'
-  agent.campaign.posts = (agent.campaign.posts || []).map(p => ({ ...p, approved: true, charged: p.charged === true, status: p.status === 'pending_approval' ? 'scheduled' : p.status }))
+  agent.campaign.posts = (agent.campaign.posts || []).map(p => ({ ...p, approved: true, charged: p.charged === true, timezone, postingOption, scheduledLocalDate: body.localDate || null, scheduledLocalTime: body.localTime || null, status: p.status === 'pending_approval' || p.status === 'draft' ? 'scheduled' : p.status }))
   agent.trigger = { type: 'campaign', nextRun: campaignNextRun(agent.campaign), cron: agent.campaign.meta?.frequencyText || 'campaign' }
   await saveServerAgent(agent)
+  if (postingOption === 'now') {
+    const execution = await runAgent(agent, 'manual')
+    const published = await getServerAgent(agent.id)
+    return json(res, execution.status === 'success' ? 200 : 502, { agent: published || agent, execution, charged: execution.credits_used || 0, estimatedCredits: total, autoPublish, nextRun: published?.trigger?.nextRun || null })
+  }
   return json(res, 200, { agent, charged: 0, estimatedCredits: total, autoPublish, nextRun: agent.trigger.nextRun })
 }
 
@@ -1940,6 +1957,27 @@ Return JSON with exactly {"text":"..."}. Preserve factual accuracy. Do not inven
   agent.campaign.status = 'pending_approval'
   await saveServerAgent(agent)
   return json(res, 200, { agent, post, text })
+}
+
+async function cancelCampaignHandler(req, res) {
+  const match = String(req.url || '').match(/^\/api\/agents\/campaign\/([^/]+)\/cancel\/?$/)
+  const agentId = match ? decodeURIComponent(match[1]) : ''
+  const config = supabaseConfig()
+  const user = await currentOrLocalUser(req, config.url, config.anon)
+  if (!user) return json(res, 401, { error: 'Authentication required' })
+  const agent = await getServerAgent(agentId)
+  if (!agent?.campaign) return json(res, 404, { error: 'Campaign not found' })
+  if (agent.userId && agent.userId !== user.id) return json(res, 403, { error: 'Not authorized' })
+  if ((agent.campaign.posts || []).some(post => post.status === 'publishing')) return json(res, 409, { error: 'This post is already publishing and cannot be cancelled.' })
+  agent.status = 'paused'
+  agent.approved = false
+  agent.campaign.status = 'cancelled'
+  agent.campaign.approved = false
+  agent.campaign.posts = (agent.campaign.posts || []).map(post => post.status === 'scheduled' || post.status === 'pending_approval' ? { ...post, status: 'cancelled', approved: false } : post)
+  agent.trigger = { ...agent.trigger, nextRun: null }
+  agent.nextRunAt = null
+  await saveServerAgent(agent)
+  return json(res, 200, { agent })
 }
 
 async function campaignReportHandler(req, res) {
@@ -2459,7 +2497,7 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
       } else post.status = 'failed'
       failedCount++
     }
-    steps.push({ postId: post.id, day: post.day, slot: post.slot, platforms: post.platforms, result: postResults, credits_used: post.charged ? postCost : 0, status: post.status, retry_count: post.retryCount || 0 })
+    steps.push({ postId: post.id, day: post.day, slot: post.slot, platforms: post.platforms, content: post.captions?.linkedin || '', scheduledAt: post.scheduledAt, scheduledTimezone: post.timezone || campaign.meta?.timezone || 'UTC', publishedAt: post.postedAt || null, linkedinAccount: postResults.linkedin?.account || user?.email || '', linkedinPostId: postResults.linkedin?.id || null, linkedinUrl: postResults.linkedin?.link || null, result: postResults, credits_used: post.charged ? postCost : 0, status: post.status, retry_count: post.retryCount || 0 })
     await saveServerAgent({ ...existing, campaign })
     try {
       if (user?.id) await alphaBrain.logMemory(user.id, { event_type: 'post', summary: `Day ${post.day} ${post.slot}: ${postSuccess > 0 ? 'posted' : 'failed'} to ${post.platforms.join(', ')}`, source_workflow_id: existing.id, metadata: { topic: post.topic, platforms: post.platforms, results: postResults, status: post.status } })
@@ -2487,6 +2525,7 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
       failed: campaign.posts.filter(p => p.status === 'failed').length,
       creditsUsed,
       links: campaign.posts.map(p => ({ day: p.day, slot: p.slot, results: p.result })),
+      steps,
       finishedAt: now.toISOString(),
     }
     campaign.missionReport = missionReport
@@ -3935,6 +3974,29 @@ async function postToLinkedIn(creds, params) {
   return publishLinkedInTextPost(creds, params)
 }
 
+function localScheduleToUtc(date, time, timeZone = 'UTC') {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date)) || !/^\d{2}:\d{2}$/.test(String(time))) throw new Error('Choose a valid date and exact time')
+  const [year, month, day] = String(date).split('-').map(Number)
+  const [hour, minute] = String(time).split(':').map(Number)
+  const desired = Date.UTC(year, month - 1, day, hour, minute, 0)
+  if (timeZone === 'UTC') return new Date(desired)
+  let candidate = desired
+  try {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(candidate)).map(part => [part.type, part.value]))
+      const represented = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(parts.hour), Number(parts.minute), 0)
+      candidate += desired - represented
+    }
+    const finalParts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(candidate)).map(part => [part.type, part.value]))
+    const finalLocal = Date.UTC(Number(finalParts.year), Number(finalParts.month) - 1, Number(finalParts.day), Number(finalParts.hour), Number(finalParts.minute), 0)
+    if (finalLocal !== desired) throw new Error('That local time does not exist in the selected timezone. Choose another exact time.')
+    return new Date(candidate)
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('does not exist')) throw error
+    throw new Error('Choose a valid IANA timezone such as Africa/Lagos')
+  }
+}
+
 async function postToDiscord(creds, params) {
   const content = String(params.text || params.message || '')
   const imageUrl = String(params.imageUrl || '')
@@ -5302,6 +5364,9 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'POST' && /^\/api\/agents\/campaign\/[^/]+\/review\/?$/.test(req.url || '')) {
     try { return await reviewCampaignPostHandler(req, res) } catch (error) { return json(res, 502, { error: error instanceof Error ? error.message : 'Post review failed' }) }
+  }
+  if (req.method === 'POST' && /^\/api\/agents\/campaign\/[^/]+\/cancel\/?$/.test(req.url || '')) {
+    try { return await cancelCampaignHandler(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Campaign cancellation failed' }) }
   }
   if (req.method === 'GET' && /^\/api\/agents\/campaign\/[^/]+\/report\/?$/.test(req.url || '')) {
     try { return await campaignReportHandler(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Campaign report failed' }) }

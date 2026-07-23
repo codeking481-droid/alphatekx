@@ -61,7 +61,7 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
   const [editing, setEditing] = useState<{ postId: string; platform: string; text: string } | null>(null)
   const [savingPost, setSavingPost] = useState(false)
   const [reviewingPost, setReviewingPost] = useState<string | null>(null)
-  const [startAt, setStartAt] = useState(() => {
+  const [startAt] = useState(() => {
     const first = toDatetimeLocal(agent.campaign?.posts?.[0]?.scheduledAt)
     const fallback = toDatetimeLocal(defaultStartAt())
     if (first) {
@@ -70,6 +70,10 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
     }
     return fallback || ''
   })
+  const [postingOption, setPostingOption] = useState<'now' | 'later' | 'recurring'>(() => agent.campaign?.meta?.postingOption === 'now' || agent.campaign?.meta?.postingOption === 'recurring' ? agent.campaign.meta.postingOption : (agent.campaign?.meta?.frequency && agent.campaign.meta.frequency !== 'once' ? 'recurring' : 'later'))
+  const [scheduleDate, setScheduleDate] = useState(() => (startAt || toDatetimeLocal(defaultStartAt())).slice(0, 10))
+  const [scheduleTime, setScheduleTime] = useState(() => (startAt || toDatetimeLocal(defaultStartAt())).slice(11, 16))
+  const [timezone, setTimezone] = useState(() => agent.campaign?.meta?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC')
   const [startError, setStartError] = useState('')
 
   useEffect(() => {
@@ -98,9 +102,10 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
   const total = campaign.totalCredits
   const balance = credits ?? 0
   const canAfford = isAdmin || balance >= total
-  const startAtDate = startAt ? new Date(fromDatetimeLocal(startAt)) : null
-  const startValid = Boolean(startAtDate && !isNaN(startAtDate.getTime()) && startAtDate.getTime() > Date.now())
-  const canActivate = requiredConnectors.length === 0 && !missingBrand && canAfford && campaign.status !== 'running' && startValid
+  const startAtDate = scheduleDate && scheduleTime ? new Date(`${scheduleDate}T${scheduleTime}`) : null
+  const startValid = postingOption === 'now' || Boolean(startAtDate && !isNaN(startAtDate.getTime()) && startAtDate.getTime() > Date.now())
+  const canActivate = requiredConnectors.length === 0 && !missingBrand && canAfford && startValid && !campaign.posts.some(post => post.status === 'publishing') && !campaign.posts.every(post => post.status === 'posted')
+  const confirmation = postingOption === 'now' ? 'This post will publish immediately after approval.' : (scheduleDate && scheduleTime ? `This post will be published on ${new Date(`${scheduleDate}T${scheduleTime}`).toLocaleDateString(undefined, { dateStyle: 'long' })} at ${new Date(`${scheduleDate}T${scheduleTime}`).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}, ${timezone} time.` : '')
 
   const groupedPosts = useMemo(() => {
     const map: Record<string, typeof campaign.posts> = {}
@@ -141,9 +146,9 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
     try {
       const nextPosts = campaign.posts.map(p => {
         if (p.id !== editing.postId) return p
-        return { ...p, captions: { ...p.captions, [editing.platform]: editing.text } }
+        return { ...p, captions: { ...p.captions, [editing.platform]: editing.text }, approved: false, status: 'pending_approval' as const, edited: true }
       })
-      const next = { ...draft, campaign: { ...campaign, posts: nextPosts }, updatedAt: new Date().toISOString() }
+      const next = { ...draft, approved: false, status: 'awaiting_approval' as const, campaign: { ...campaign, approved: false, status: 'pending_approval' as const, posts: nextPosts }, updatedAt: new Date().toISOString() }
       await saveAgent(next)
       setDraft(next)
       setNotice('Post updated.')
@@ -173,7 +178,7 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
 
   const activate = async () => {
     if (!canActivate) {
-      if (!startValid) setStartError('Please pick a future date and time for the first post.')
+      if (!startValid) setStartError('That time has passed. Choose another exact time or use Publish Now.')
       return
     }
     setStartError('')
@@ -186,19 +191,32 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
       const res = await fetch(`/api/agents/campaign/${encodeURIComponent(draft.id)}/activate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ autoPublish: true, startAt: fromDatetimeLocal(startAt) }),
+        body: JSON.stringify({ autoPublish: true, postingOption, localDate: scheduleDate, localTime: scheduleTime, timezone, startAt: postingOption === 'now' ? new Date().toISOString() : fromDatetimeLocal(`${scheduleDate}T${scheduleTime}`) }),
         signal: controller.signal,
       })
       window.clearTimeout(timer)
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Activation failed')
-      setNotice(`Campaign approved and scheduled. No credits charged yet. Next post: ${new Date(data.nextRun).toLocaleString()}`)
+      setNotice(postingOption === 'now' ? `Published successfully. LinkedIn post ID: ${data.execution?.steps?.[0]?.linkedinPostId || data.agent?.campaign?.posts?.[0]?.providerPostId || 'confirmed'}` : `Approved and scheduled. No credits charged yet. ${confirmation}`)
       setDraft(data.agent)
       setCache([data.agent, ...getAgents().filter(item => item.id !== data.agent.id)])
       onActivated(data.agent)
     } catch (err) {
       setNotice(err instanceof DOMException && err.name === 'AbortError' ? 'Activation took too long. Nothing was published; please retry.' : (err instanceof Error ? err.message : 'Activation failed'))
     } finally { setActivating(false) }
+  }
+
+  const cancelSchedule = async () => {
+    setActivating(true)
+    try {
+      const res = await fetch(`/api/agents/campaign/${encodeURIComponent(draft.id)}/cancel`, { method: 'POST', headers: authHeaders() })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Cancellation failed')
+      setDraft(data.agent)
+      setCache([data.agent, ...getAgents().filter(item => item.id !== data.agent.id)])
+      setNotice('Schedule cancelled. Nothing was published or charged.')
+    } catch (err) { setNotice(err instanceof Error ? err.message : 'Cancellation failed') }
+    finally { setActivating(false) }
   }
 
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={onClose}>
@@ -243,14 +261,17 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
 
       {tab === 'calendar' && <div className="mt-4 space-y-4">
         <div className="rounded-2xl border border-white/[.08] bg-white/[.03] p-4">
-          <label className="flex items-center gap-2 text-sm font-medium text-white/80"><CalendarClock size={16} className="text-indigo-400"/> Start date & time</label>
-          <p className="mt-1 text-xs text-white/50">When should the first post go out?</p>
-          <input
-            type="datetime-local"
-            value={startAt}
-            onChange={e => { setStartAt(e.target.value); setStartError('') }}
-            className="mt-3 w-full rounded-xl bg-white/[.05] px-3 py-2 text-sm text-white outline-none placeholder:text-white/30"
-          />
+          <label className="flex items-center gap-2 text-sm font-medium text-white/80"><CalendarClock size={16} className="text-indigo-400"/> Posting option</label>
+          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            {([['now', 'Publish Now'], ['later', 'Schedule for Later'], ['recurring', 'Recurring Schedule']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => { setPostingOption(value); setStartError('') }} className={`rounded-xl border px-3 py-2 text-xs ${postingOption === value ? 'border-indigo-400 bg-indigo-500/20 text-white' : 'border-white/10 text-white/60 hover:bg-white/5'}`}>{label}</button>)}
+          </div>
+          {postingOption !== 'now' && <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <label className="text-xs text-white/55">Date<input type="date" value={scheduleDate} onChange={e => { setScheduleDate(e.target.value); setStartError('') }} className="mt-1 w-full rounded-xl bg-white/[.05] px-3 py-2 text-sm text-white outline-none" /></label>
+            <label className="text-xs text-white/55">Exact time<input type="time" step="60" value={scheduleTime} onChange={e => { setScheduleTime(e.target.value); setStartError('') }} className="mt-1 w-full rounded-xl bg-white/[.05] px-3 py-2 text-sm text-white outline-none" /></label>
+            <label className="text-xs text-white/55">Timezone<select value={timezone} onChange={e => setTimezone(e.target.value)} className="mt-1 w-full rounded-xl bg-zinc-900 px-3 py-2 text-sm text-white outline-none">{Array.from(new Set([timezone, 'Africa/Lagos', 'UTC', 'Europe/London', 'America/New_York', 'America/Los_Angeles', 'Asia/Dubai', 'Asia/Kolkata'])).map(zone => <option key={zone} value={zone}>{zone}</option>)}</select></label>
+          </div>}
+          {postingOption === 'recurring' && <p className="mt-3 text-xs text-white/50">The selected weekdays, start/end condition, and post count from your approved plan remain unchanged. This sets their exact local publishing time.</p>}
+          {confirmation && <p className="mt-3 rounded-lg bg-indigo-500/10 p-3 text-xs text-indigo-200">{confirmation}</p>}
           {startError && <p className="mt-2 text-xs text-amber-300">{startError}</p>}
         </div>
         {Object.entries(groupedPosts).map(([day, posts]) => (
@@ -261,7 +282,7 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
                 <div key={post.id} className="rounded-xl bg-white/[.04] p-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-medium text-indigo-300">{post.slot} · {new Date(post.scheduledAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</span>
-                    <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-white/60">{post.postType}</span>
+                    <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-white/60">{post.status === 'posted' ? 'Published' : post.status === 'pending_approval' ? 'Awaiting Approval' : post.status === 'scheduled' ? 'Scheduled' : post.status === 'publishing' ? 'Publishing' : post.status === 'failed' ? 'Failed' : post.status === 'cancelled' ? 'Cancelled' : 'Draft'}</span>
                   </div>
                   <p className="mt-1 text-xs text-white/70">{post.topic}</p>
                   <div className="mt-2 space-y-2">
@@ -341,12 +362,13 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
 
       <div className="mt-6 flex items-center justify-between gap-3">
         <div className="text-xs text-white/50">
-          {!canActivate && campaign.status !== 'running' && (
+          {!canActivate && (
             <span className="flex items-center gap-1.5 text-amber-300"><AlertCircle size={12}/>
               {missingBrand ? 'Fill brand profile first' : requiredConnectors.length ? `Connect ${requiredConnectors.join(', ')}` : !canAfford ? 'Not enough credits' : !startValid ? 'Pick a future start date & time' : 'Cannot activate'}
             </span>
           )}
         </div>
+        {campaign.status === 'running' && <button type="button" onClick={cancelSchedule} disabled={activating} className="min-h-10 rounded-lg border border-red-400/30 px-4 text-sm text-red-300 hover:bg-red-500/10 disabled:opacity-40">Cancel</button>}
         <button
           type="button"
           onClick={() => activate()}
@@ -354,7 +376,7 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
           className="flex min-h-10 items-center gap-2 rounded-lg bg-indigo-500 px-5 text-sm text-white hover:bg-indigo-400 disabled:opacity-40"
         >
           {activating ? <LoaderCircle className="animate-spin" size={16}/> : <Sparkles size={16}/>}
-          {campaign.status === 'running' ? 'Campaign active' : `Approve & Schedule · estimated ${total} credits`}
+          {postingOption === 'now' ? `Approve & Publish Now · ${total} credits` : campaign.status === 'running' ? 'Approve & Update Schedule' : `Approve & Schedule · estimated ${total} credits`}
         </button>
       </div>
     </div>
