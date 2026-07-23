@@ -100,6 +100,10 @@ async function startApp(port) {
   throw new Error(`Server did not start: ${output}`)
 }
 
+function onePostCampaign(agentId, scheduledAt, caption = 'Focused LinkedIn automation integration test.') {
+  return { id: agentId, type: 'campaign', name: 'LinkedIn one post', description: 'Focused integration test', trigger: { type: 'campaign', cron: 'campaign', nextRun: scheduledAt }, status: 'awaiting_approval', approved: false, actions: [], executionHistory: [], permissions: ['linkedin'], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), campaign: { name: 'LinkedIn one post', description: 'test', brand: { business: 'AlphaTekx', audience: 'Founders', tone: 'Professional', website: '', dontPost: [] }, meta: { platforms: ['linkedin'], slots: [{ label: '09:00', hour: 9, minute: 0 }], durationDays: 1, postsPerDay: 1, totalPosts: 1, startDate: scheduledAt, includeImages: false, timezone: 'UTC', frequency: 'once', frequencyText: 'One time' }, posts: [{ id: `post-${randomUUID()}`, day: 1, slot: '09:00', scheduledAt, platforms: ['linkedin'], topic: 'AlphaTekx', postType: 'educational', captions: { linkedin: caption }, status: 'pending_approval', result: {}, credits: 3 }], totalCredits: 3, status: 'pending_approval', charged: false, approved: false, autoPublish: false } }
+}
+
 await test('OAuth denial redirects to canonical Connected Apps route', async () => {
   const port = 4500 + Math.floor(Math.random() * 200)
   const app = await startApp(port)
@@ -155,6 +159,73 @@ await test('Approved campaign publishes once, charges once, persists history, an
     saved = (await (await request('/api/agents')).json()).agents.find(item => item.id === agentId)
     assert.equal(saved.campaign.posts[0].status, 'posted')
     assert.match(saved.campaign.posts[0].providerPostId, /^urn:li:share:/)
+  } finally { app.child.kill('SIGTERM') }
+})
+
+await test('Publish Now confirms a real post ID, history, counters and one credit charge', async () => {
+  const port = 5100 + Math.floor(Math.random() * 100)
+  const app = await startApp(port)
+  const userId = `linkedin-now-${randomUUID()}`
+  const headers = { 'content-type': 'application/json', 'x-local-user-id': userId, 'x-local-user-email': `${userId}@test.local` }
+  const request = (path, options = {}) => fetch(`http://127.0.0.1:${port}${path}`, { ...options, headers: { ...headers, ...(options.headers || {}) } })
+  const agentId = `linkedin-now-agent-${randomUUID()}`
+  const caption = `Publish now exact content ${randomUUID()}`
+  try {
+    await request('/api/connectors/save', { method: 'POST', body: JSON.stringify({ platform: 'linkedin', tokens: { access_token: 'test-token', author_urn: 'urn:li:person:test-member', expiry: Date.now() + 3600_000 }, scopes: ['email,openid,profile,w_member_social'] }) })
+    await request('/api/agents', { method: 'POST', body: JSON.stringify({ agent: onePostCampaign(agentId, new Date(Date.now() + 60_000).toISOString(), caption) }) })
+    const before = (await (await request('/api/credits/balance')).json()).credits
+    const response = await request(`/api/agents/campaign/${agentId}/activate`, { method: 'POST', body: JSON.stringify({ autoPublish: true, postingOption: 'now', timezone: 'Africa/Lagos' }) })
+    assert.equal(response.status, 200)
+    const data = await response.json()
+    assert.equal(data.execution.status, 'success')
+    assert.match(data.agent.campaign.posts[0].providerPostId, /^urn:li:share:/)
+    assert.equal(data.agent.campaign.posts[0].status, 'posted')
+    assert.equal(data.agent.campaign.posts[0].charged, true)
+    assert.equal(data.agent.campaign.meta.postingOption, 'now')
+    assert.equal(data.agent.campaign.meta.totalPosts, 1)
+    assert.equal(data.agent.executionsDone, 1)
+    assert.equal(data.agent.successRate, 100)
+    assert.equal(data.agent.executionHistory[0].output.steps[0].content, caption)
+    assert.match(data.agent.executionHistory[0].output.steps[0].linkedinPostId, /^urn:li:share:/)
+    const after = (await (await request('/api/credits/balance')).json()).credits
+    assert.equal(before - after, 3)
+  } finally { app.child.kill('SIGTERM') }
+})
+
+await test('Custom local date/time converts safely, can be edited, rejects past time and can cancel', async () => {
+  const port = 5200 + Math.floor(Math.random() * 100)
+  const app = await startApp(port)
+  const userId = `linkedin-later-${randomUUID()}`
+  const headers = { 'content-type': 'application/json', 'x-local-user-id': userId, 'x-local-user-email': `${userId}@test.local` }
+  const request = (path, options = {}) => fetch(`http://127.0.0.1:${port}${path}`, { ...options, headers: { ...headers, ...(options.headers || {}) } })
+  const agentId = `linkedin-later-agent-${randomUUID()}`
+  try {
+    await request('/api/connectors/save', { method: 'POST', body: JSON.stringify({ platform: 'linkedin', tokens: { access_token: 'test-token', author_urn: 'urn:li:person:test-member', expiry: Date.now() + 3600_000 }, scopes: ['w_member_social'] }) })
+    await request('/api/agents', { method: 'POST', body: JSON.stringify({ agent: onePostCampaign(agentId, '2030-07-23T20:30:00.000Z') }) })
+    let response = await request(`/api/agents/campaign/${agentId}/activate`, { method: 'POST', body: JSON.stringify({ autoPublish: true, postingOption: 'later', localDate: '2030-07-23', localTime: '21:30', timezone: 'Africa/Lagos' }) })
+    assert.equal(response.status, 200)
+    let data = await response.json()
+    assert.equal(data.agent.campaign.posts[0].scheduledAt, '2030-07-23T20:30:00.000Z')
+    assert.equal(data.agent.campaign.posts[0].scheduledLocalTime, '21:30')
+    response = await request(`/api/agents/campaign/${agentId}/review`, { method: 'POST', body: JSON.stringify({ postId: data.agent.campaign.posts[0].id, platform: 'linkedin', action: 'edit', text: 'Edited content must require fresh approval.' }) })
+    assert.equal(response.status, 200)
+    data = await response.json()
+    assert.equal(data.agent.approved, false)
+    assert.equal(data.agent.campaign.approved, false)
+    assert.equal(data.post.approved, false)
+    assert.equal(data.post.status, 'pending_approval')
+    response = await request(`/api/agents/campaign/${agentId}/activate`, { method: 'POST', body: JSON.stringify({ autoPublish: true, postingOption: 'later', localDate: '2030-07-24', localTime: '13:40', timezone: 'Africa/Lagos' }) })
+    assert.equal(response.status, 200)
+    data = await response.json()
+    assert.equal(data.agent.campaign.posts[0].scheduledAt, '2030-07-24T12:40:00.000Z')
+    response = await request(`/api/agents/campaign/${agentId}/activate`, { method: 'POST', body: JSON.stringify({ autoPublish: true, postingOption: 'later', localDate: '2020-01-01', localTime: '08:15', timezone: 'Africa/Lagos' }) })
+    assert.equal(response.status, 400)
+    assert.match((await response.json()).error, /passed|Publish Now/i)
+    response = await request(`/api/agents/campaign/${agentId}/cancel`, { method: 'POST', body: '{}' })
+    assert.equal(response.status, 200)
+    data = await response.json()
+    assert.equal(data.agent.campaign.status, 'cancelled')
+    assert.equal(data.agent.trigger.nextRun, null)
   } finally { app.child.kill('SIGTERM') }
 })
 

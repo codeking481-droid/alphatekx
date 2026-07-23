@@ -109,8 +109,8 @@ export type Agent = {
     name: string
     description: string
     brand: { business: string; audience: string; tone: string; website: string; dontPost: string[] }
-    meta: { platforms: string[]; slots: { label: string; hour: number; minute: number }[]; durationDays: number; postsPerDay: number; totalPosts: number; startDate: string; includeImages: boolean; timezone: string; frequencyText: string }
-    posts: { id: string; day: number; slot: string; scheduledAt: string; platforms: string[]; topic: string; postType: string; captions: Record<string, string>; status: string; result: Record<string, unknown>; credits: number; approved?: boolean; charged?: boolean; chargedAt?: string; edited?: boolean; reviewedAt?: string; postedAt?: string; providerPostId?: string; providerUrl?: string; executionKey?: string; publishStartedAt?: string; retryCount?: number; lastError?: string; chargeStatus?: string }[]
+    meta: { platforms: string[]; slots: { label: string; hour: number; minute: number }[]; durationDays: number; postsPerDay: number; totalPosts: number; startDate: string; includeImages: boolean; timezone: string; frequency?: string; frequencyText: string; postingOption?: 'now' | 'later' | 'recurring'; localDate?: string | null; localTime?: string | null }
+    posts: { id: string; day: number; slot: string; scheduledAt: string; platforms: string[]; topic: string; postType: string; captions: Record<string, string>; status: string; result: Record<string, unknown>; credits: number; approved?: boolean; charged?: boolean; chargedAt?: string; edited?: boolean; reviewedAt?: string; postedAt?: string; providerPostId?: string; providerUrl?: string; executionKey?: string; publishStartedAt?: string; retryCount?: number; lastError?: string; chargeStatus?: string; timezone?: string; postingOption?: string; scheduledLocalDate?: string | null; scheduledLocalTime?: string | null }[]
     totalCredits: number
     status: string
     charged: boolean
