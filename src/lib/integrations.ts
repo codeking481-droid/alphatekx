@@ -111,3 +111,15 @@ export async function startLinkedInAuth(token?: string, redirect = '/connectors'
   if (!data.url) throw new Error('LinkedIn OAuth URL was not returned')
   window.location.assign(data.url)
 }
+
+export async function startFacebookAuth(token?: string, redirect = '/connected-apps') {
+  const data = await request<{ url: string }>('/api/connectors/facebook/start', token, { method: 'POST', body: JSON.stringify({ redirect }) })
+  if (!data.url) throw new Error('Facebook OAuth URL was not returned')
+  window.location.assign(data.url)
+}
+
+export const getFacebookPages = (token?: string) =>
+  request<{ pages: { id: string; name: string }[] }>('/api/connectors/facebook/pages', token)
+
+export const selectFacebookPage = (pageId: string, token?: string) =>
+  request<{ connected: true; page: { id: string; name: string } }>('/api/connectors/facebook/select-page', token, { method: 'POST', body: JSON.stringify({ pageId }) })

@@ -1753,6 +1753,146 @@ async function linkedinCallback(req, res) {
   return res.end()
 }
 
+const facebookScopes = ['pages_show_list', 'pages_read_engagement', 'pages_manage_posts']
+const facebookRedirectUri = () => String(process.env.META_REDIRECT_URI || `${publicAppUrl()}/api/connectors/facebook/callback`).trim()
+const facebookGraphBaseUrl = () => String(process.env.FACEBOOK_GRAPH_BASE_URL || 'https://graph.facebook.com/v22.0').replace(/\/$/, '')
+const facebookDialogUrl = () => String(process.env.FACEBOOK_OAUTH_DIALOG_URL || 'https://www.facebook.com/v22.0/dialog/oauth')
+
+function facebookCredentials() {
+  return {
+    appId: String(process.env.META_APP_ID || '').trim(),
+    appSecret: String(process.env.META_APP_SECRET || '').trim(),
+  }
+}
+
+async function startFacebookConnection(req, res) {
+  const config = supabaseConfig()
+  const body = await readBody(req)
+  const localUser = body?.localUser ? { id: String(body.localUser.id || ''), email: String(body.localUser.email || '') } : localUserFromRequest(req)
+  const user = config.url && config.anon ? (await authenticatedUser(req, config.url, config.anon).catch(() => null) || localUser) : localUser
+  if (!user?.id || !user?.email) return json(res, 401, { error: 'Authentication required' })
+  const { appId, appSecret } = facebookCredentials()
+  if (!appId || !appSecret) return json(res, 503, { error: 'Facebook app credentials are not configured' })
+  const requestedRedirect = String(body?.redirect || '/connected-apps')
+  const safeRedirect = requestedRedirect.startsWith('/') && !requestedRedirect.startsWith('//') ? requestedRedirect : '/connected-apps'
+  const state = createOAuthState(user.id, config, user.email, safeRedirect)
+  const params = new URLSearchParams({
+    client_id: appId,
+    redirect_uri: facebookRedirectUri(),
+    state,
+    response_type: 'code',
+    scope: facebookScopes.join(','),
+  })
+  return json(res, 200, { url: `${facebookDialogUrl()}?${params.toString()}`, redirectUri: facebookRedirectUri() })
+}
+
+async function facebookCallback(req, res) {
+  const config = supabaseConfig()
+  const url = new URL(req.url || '/', 'http://localhost')
+  let destination = new URL('/connected-apps?connected=facebook', publicAppUrl())
+  try {
+    const denied = url.searchParams.get('error_message') || url.searchParams.get('error_description') || url.searchParams.get('error')
+    if (denied) throw new Error(`Facebook authorization was denied: ${denied}`)
+    const code = url.searchParams.get('code')
+    const state = url.searchParams.get('state')
+    if (!code || !state) throw new Error('Missing Facebook authorization code or state')
+    const parsed = verifyOAuthState(state, config)
+    const safeRedirect = String(parsed.redirect || '').startsWith('/') && !String(parsed.redirect || '').startsWith('//') ? String(parsed.redirect) : '/connected-apps'
+    destination = new URL(safeRedirect, publicAppUrl())
+    destination.searchParams.set('connected', 'facebook')
+    const { appId, appSecret } = facebookCredentials()
+    if (!appId || !appSecret) throw new Error('Facebook app credentials are not configured')
+
+    const tokenUrl = new URL(`${facebookGraphBaseUrl()}/oauth/access_token`)
+    tokenUrl.search = new URLSearchParams({
+      client_id: appId,
+      client_secret: appSecret,
+      redirect_uri: facebookRedirectUri(),
+      code,
+    }).toString()
+    const tokenResponse = await fetch(tokenUrl)
+    const tokenData = await tokenResponse.json().catch(() => ({}))
+    if (!tokenResponse.ok || !tokenData.access_token) throw new Error(tokenData.error?.message || 'Facebook token exchange failed')
+
+    const userToken = String(tokenData.access_token)
+    const profileResponse = await fetch(`${facebookGraphBaseUrl()}/me?fields=id,name&access_token=${encodeURIComponent(userToken)}`)
+    const profile = await profileResponse.json().catch(() => ({}))
+    if (!profileResponse.ok || !profile.id) throw new Error(profile.error?.message || 'Could not fetch Facebook profile')
+
+    const pagesResponse = await fetch(`${facebookGraphBaseUrl()}/me/accounts?fields=id,name,access_token,tasks&access_token=${encodeURIComponent(userToken)}`)
+    const pagesData = await pagesResponse.json().catch(() => ({}))
+    if (!pagesResponse.ok) throw new Error(pagesData.error?.message || 'Could not fetch Facebook Pages')
+    const pages = Array.isArray(pagesData.data) ? pagesData.data : []
+    const publishablePages = pages.filter(item => item.id && item.access_token && (!Array.isArray(item.tasks) || item.tasks.includes('CREATE_CONTENT')))
+    if (!publishablePages.length) throw new Error('No Facebook Page with publishing access was found')
+
+    const expiresAt = tokenData.expires_in ? Date.now() + Number(tokenData.expires_in) * 1000 : undefined
+    await saveUserIntegration(parsed.userId, 'facebook_pending', {
+      email: parsed.email,
+      identifier: String(profile.id),
+      scopes: facebookScopes,
+      tokens: {
+        user_access_token: userToken,
+        facebook_user_id: String(profile.id),
+        pages: publishablePages.map(page => ({ id: String(page.id), name: String(page.name || 'Facebook Page'), access_token: String(page.access_token), tasks: page.tasks || [] })),
+        expiry: expiresAt,
+        selection_expires_at: Date.now() + 10 * 60_000,
+      },
+    }, config)
+    destination.searchParams.set('connected', 'facebook_select')
+  } catch (error) {
+    destination = new URL('/connected-apps?connected=error', publicAppUrl())
+    destination.searchParams.set('reason', error instanceof Error ? error.message.slice(0, 180) : 'Facebook connection failed')
+  }
+  res.writeHead(302, { Location: destination.toString(), 'Cache-Control': 'no-store' })
+  return res.end()
+}
+
+async function listFacebookPages(req, res) {
+  const config = supabaseConfig()
+  const user = await currentOrLocalUser(req, config.url, config.anon)
+  if (!user) return json(res, 401, { error: 'Authentication required' })
+  const pending = await getUserIntegration(user.id, 'facebook_pending', config)
+  const expiresAt = Number(pending?.tokens?.selection_expires_at || 0)
+  if (!pending || !expiresAt || expiresAt <= Date.now()) return json(res, 404, { error: 'Facebook Page selection expired. Connect Facebook again.' })
+  const pages = Array.isArray(pending.tokens?.pages) ? pending.tokens.pages : []
+  return json(res, 200, { pages: pages.map(page => ({ id: String(page.id), name: String(page.name || 'Facebook Page') })) })
+}
+
+async function selectFacebookPage(req, res) {
+  const config = supabaseConfig()
+  const user = await currentOrLocalUser(req, config.url, config.anon)
+  if (!user) return json(res, 401, { error: 'Authentication required' })
+  const body = await readBody(req)
+  const pageId = String(body.pageId || '')
+  if (!pageId) return json(res, 400, { error: 'Select a Facebook Page' })
+  const pending = await getUserIntegration(user.id, 'facebook_pending', config)
+  const expiresAt = Number(pending?.tokens?.selection_expires_at || 0)
+  if (!pending || !expiresAt || expiresAt <= Date.now()) return json(res, 410, { error: 'Facebook Page selection expired. Connect Facebook again.' })
+  const page = (Array.isArray(pending.tokens?.pages) ? pending.tokens.pages : []).find(item => String(item.id) === pageId)
+  if (!page?.access_token) return json(res, 404, { error: 'Selected Facebook Page is unavailable' })
+  const verifyResponse = await fetch(`${facebookGraphBaseUrl()}/${encodeURIComponent(pageId)}?fields=id,name&access_token=${encodeURIComponent(page.access_token)}`)
+  const verifiedPage = await verifyResponse.json().catch(() => ({}))
+  if (!verifyResponse.ok || String(verifiedPage.id || '') !== pageId) return json(res, 502, { error: verifiedPage.error?.message || 'Facebook Page verification failed' })
+  await saveUserIntegration(user.id, 'facebook', {
+    email: user.email,
+    identifier: pageId,
+    scopes: facebookScopes,
+    tokens: {
+      access_token: String(page.access_token),
+      page_access_token: String(page.access_token),
+      page_id: pageId,
+      page_name: String(verifiedPage.name || page.name || 'Facebook Page'),
+      facebook_user_id: String(pending.tokens?.facebook_user_id || ''),
+      expiry: pending.tokens?.expiry,
+      hasOwnKey: true,
+      isMaster: false,
+    },
+  }, config)
+  await deleteUserIntegration(user.id, 'facebook_pending', config)
+  return json(res, 200, { connected: true, page: { id: pageId, name: String(verifiedPage.name || page.name || 'Facebook Page') } })
+}
+
 const cleanHeader = (value) => String(value || '').replace(/[\r\n]+/g, ' ').trim()
 function gmailRawMessage({ from, to, subject, text, html }) {
   const boundary = `alphatekx_${randomBytes(12).toString('hex')}`
@@ -1899,8 +2039,11 @@ async function activateCampaignHandler(req, res) {
   }
 
   const platforms = Array.from(new Set((agent.campaign.posts || []).flatMap(post => post.platforms || [])))
-  if (platforms.some(platform => platform !== 'linkedin')) return json(res, 400, { error: 'This release supports LinkedIn personal-profile text campaigns only.' })
-  await getPostingCredentials(user, 'linkedin', { _skipFreeLimit: true })
+  if (platforms.length !== 1 || !['linkedin', 'facebook'].includes(platforms[0])) return json(res, 400, { error: 'This release supports one publishing platform per automation: LinkedIn or Facebook Pages.' })
+  if (platforms[0] === 'facebook' && ((agent.campaign.posts || []).length !== 1 || postingOption === 'recurring')) {
+    return json(res, 400, { error: 'This release supports one Facebook Page text post only. Recurring Facebook campaigns are not available yet.' })
+  }
+  await getPostingCredentials(user, platforms[0], { _skipFreeLimit: true })
 
   const autoPublish = body.autoPublish === true || body.autoPublish === 'true'
   agent.campaign.approved = true
@@ -1933,9 +2076,9 @@ async function reviewCampaignPostHandler(req, res) {
   const post = agent.campaign.posts?.find(item => item.id === body.postId)
   if (!post) return json(res, 404, { error: 'Post not found' })
   const platform = String(body.platform || 'linkedin')
-  if (platform !== 'linkedin' || !post.platforms?.includes('linkedin')) return json(res, 400, { error: 'Only LinkedIn text-post review is supported here' })
+  if (!['linkedin', 'facebook'].includes(platform) || !post.platforms?.includes(platform)) return json(res, 400, { error: 'Only LinkedIn or Facebook Page text-post review is supported here' })
   const action = String(body.action || '')
-  const current = String(post.captions?.linkedin || '')
+  const current = String(post.captions?.[platform] || '')
   let text = String(body.text || '').trim()
   if (action === 'edit') {
     if (!text) return json(res, 400, { error: 'Edited post text is required' })
@@ -1944,7 +2087,7 @@ async function reviewCampaignPostHandler(req, res) {
   } else {
     const instructions = {
       regenerate: 'Rewrite it from a fresh angle while preserving the truthful core message.',
-      improve_hook: 'Replace the opening with a stronger, natural LinkedIn hook. Keep the rest coherent.',
+      improve_hook: `Replace the opening with a stronger, natural ${platform === 'facebook' ? 'Facebook' : 'LinkedIn'} hook. Keep the rest coherent.`,
       shorten: 'Make it substantially shorter without losing the main point or call to action.',
       expand: 'Expand it with useful detail, readable spacing, and no invented facts or experiences.',
       change_tone: `Rewrite it in this tone: ${String(body.tone || 'professional and natural')}.`,
@@ -1952,13 +2095,13 @@ async function reviewCampaignPostHandler(req, res) {
     }
     const instruction = instructions[action]
     if (!instruction) return json(res, 400, { error: 'Unsupported review action' })
-    const system = `You are Alpha, a professional LinkedIn editor. ${instruction}
-Return JSON with exactly {"text":"..."}. Preserve factual accuracy. Do not invent statistics, testimonials, or personal experiences. Produce a personal-profile text post only.`
+    const system = `You are Alpha, a professional ${platform === 'facebook' ? 'Facebook Page' : 'LinkedIn'} editor. ${instruction}
+Return JSON with exactly {"text":"..."}. Preserve factual accuracy. Do not invent statistics, testimonials, or personal experiences. Produce one text post only.`
     const generated = await callLLMForRole('content', system, `Current post:\n${current}`, { jsonMode: true, maxTokens: 1400 })
     text = String(generated.result?.text || '').trim()
     if (!text) return json(res, 502, { error: 'The active AI provider returned invalid post content' })
   }
-  post.captions = { ...post.captions, linkedin: text }
+  post.captions = { ...post.captions, [platform]: text }
   post.approved = false
   post.status = 'pending_approval'
   post.edited = true
@@ -2420,8 +2563,11 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
 
   // Complete a pending charge without republishing if the provider already confirmed the post.
   for (const post of (campaign.posts || []).filter(item => item.status === 'posted' && item.charged !== true)) {
+    const publishedPlatform = (post.platforms || []).find(platform => post.result?.[platform]?.id) || post.platforms?.[0] || 'linkedin'
+    const providerPostId = post.providerPostId || post.result?.[publishedPlatform]?.id
+    if (!providerPostId) continue
     const cost = post.credits || computeCampaignPostCredits(post.platforms || [], false)
-    const charged = admin || await spendUserCredits(user, cost, { automationId: existing.id, reason: 'Confirmed LinkedIn publication', postId: post.id, providerPostId: post.result?.linkedin?.id, idempotencyKey: `${existing.id}:${post.id}:linkedin` })
+    const charged = admin || await spendUserCredits(user, cost, { automationId: existing.id, reason: `Confirmed ${publishedPlatform} publication`, postId: post.id, providerPostId, idempotencyKey: `${existing.id}:${post.id}:${publishedPlatform}` })
     if (charged) {
       post.charged = true
       post.chargedAt = now.toISOString()
@@ -2444,7 +2590,7 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
     let postSkipped = 0
 
     if (post.approved !== true || campaign.approved !== true) {
-      postResults.linkedin = { status: 'skipped', log: 'Explicit approval is required' }
+      postResults[post.platforms?.[0] || 'facebook'] = { status: 'skipped', log: 'Explicit approval is required' }
       postSkipped++
       steps.push({ postId: post.id, status: 'skipped', error_code: 'APPROVAL_REQUIRED', credits_used: 0 })
       continue
@@ -2454,7 +2600,7 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
     if (!admin) {
       const balance = await getUserCredits(user, config)
       if (balance < postCost) {
-        postResults.linkedin = { status: 'error', log: `Insufficient credits. Need ${postCost}, have ${balance}.` }
+        postResults[post.platforms?.[0] || 'facebook'] = { status: 'error', log: `Insufficient credits. Need ${postCost}, have ${balance}.` }
         postFailed++
         post.result = postResults
         post.status = 'scheduled'
@@ -2487,8 +2633,8 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
       }
       try {
         const result = await postToSocial(platform, user, { text: caption, _skipFreeLimit: true })
-        if (platform === 'linkedin' && !result.id) throw new Error('LinkedIn did not return a confirmed post identifier')
-        postResults[platform] = { status: 'success', id: result.id || result.message_id || '', link: result.link || result.permalink || result.url || '', log: `Posted to ${platform}` }
+        if ((platform === 'linkedin' || platform === 'facebook') && !result.id) throw new Error(`${platform === 'facebook' ? 'Facebook' : 'LinkedIn'} did not return a confirmed post identifier`)
+        postResults[platform] = { status: 'success', id: result.id || result.message_id || '', link: result.link || result.permalink || result.url || '', pageId: result.pageId || null, pageName: result.pageName || null, log: `Posted to ${platform}` }
         postSuccess++
         await addAgentLog({ agentId: existing.id, connectorType: platform, content: caption.slice(0, 500), status: 'success', response: JSON.stringify(result) })
       } catch (error) {
@@ -2501,13 +2647,14 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
 
     post.result = postResults
     if (postSuccess === post.platforms.length) {
+      const publishedPlatform = post.platforms[0] || 'linkedin'
       post.status = 'posted'
       post.postedAt = now.toISOString()
-      post.providerPostId = postResults.linkedin?.id || ''
-      post.providerUrl = postResults.linkedin?.link || ''
+      post.providerPostId = postResults[publishedPlatform]?.id || ''
+      post.providerUrl = postResults[publishedPlatform]?.link || ''
       post.lastError = ''
       await saveServerAgent({ ...existing, campaign })
-      const charged = admin || await spendUserCredits(user, postCost, { automationId: existing.id, reason: 'Confirmed LinkedIn publication', postId: post.id, providerPostId: post.providerPostId, idempotencyKey: `${existing.id}:${post.id}:linkedin` })
+      const charged = admin || await spendUserCredits(user, postCost, { automationId: existing.id, reason: `Confirmed ${publishedPlatform} publication`, postId: post.id, providerPostId: post.providerPostId, idempotencyKey: `${existing.id}:${post.id}:${publishedPlatform}` })
       if (charged) {
         post.charged = true
         post.chargedAt = new Date().toISOString()
@@ -2516,7 +2663,6 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
         post.chargeStatus = 'pending'
       }
       postedCount++
-      const publishedPlatform = post.platforms[0] || 'linkedin'
       const publishedContent = post.captions?.[publishedPlatform] || post.captions?.linkedin || ''
       const memoryRecord = createContentMemoryRecord({ automationId: existing.id, platform: publishedPlatform, content: publishedContent, post, creditsUsed: post.charged ? postCost : 0 })
       campaign.contentMemory = [memoryRecord, ...(campaign.contentMemory || [])].slice(0, 500)
@@ -2530,7 +2676,8 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
       } else post.status = 'failed'
       failedCount++
     }
-    steps.push({ postId: post.id, day: post.day, slot: post.slot, platforms: post.platforms, content: post.captions?.linkedin || '', scheduledAt: post.scheduledAt, scheduledTimezone: post.timezone || campaign.meta?.timezone || 'UTC', publishedAt: post.postedAt || null, linkedinAccount: postResults.linkedin?.account || user?.email || '', linkedinPostId: postResults.linkedin?.id || null, linkedinUrl: postResults.linkedin?.link || null, result: postResults, credits_used: post.charged ? postCost : 0, status: post.status, retry_count: post.retryCount || 0 })
+    const primaryPlatform = post.platforms?.[0] || 'linkedin'
+    steps.push({ postId: post.id, day: post.day, slot: post.slot, platforms: post.platforms, content: post.captions?.[primaryPlatform] || '', pageId: primaryPlatform === 'facebook' ? postResults.facebook?.pageId || null : null, pageName: primaryPlatform === 'facebook' ? postResults.facebook?.pageName || null : null, scheduledAt: post.scheduledAt, scheduledTimezone: post.timezone || campaign.meta?.timezone || 'UTC', publishedAt: post.postedAt || null, providerPostId: postResults[primaryPlatform]?.id || null, linkedinAccount: postResults.linkedin?.account || user?.email || '', linkedinPostId: postResults.linkedin?.id || null, linkedinUrl: postResults.linkedin?.link || null, result: postResults, credits_used: post.charged ? postCost : 0, status: post.status, retry_count: post.retryCount || 0 })
     await saveServerAgent({ ...existing, campaign })
     try {
       if (user?.id) await alphaBrain.logMemory(user.id, { event_type: 'post', summary: `Day ${post.day} ${post.slot}: ${postSuccess > 0 ? 'posted' : 'failed'} to ${post.platforms.join(', ')}`, source_workflow_id: existing.id, metadata: { topic: post.topic, platforms: post.platforms, results: postResults, status: post.status } })
@@ -2569,7 +2716,7 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
   const executionStatus = failedCount > 0 || postedCount === 0 ? 'error' : 'success'
   const executionError = failedCount > 0 ? 'PUBLISH_FAILED' : postedCount === 0 ? 'NO_DUE_POSTS' : null
   if (postedCount === 0 && failedCount === 0) log = 'Campaign execution failed: the scheduler marked this campaign due, but no approved scheduled post was eligible for publication.'
-  const completedExecution = { ...execution, status: executionStatus, duration: Date.now() - startTime, output, error_code: executionError, credits_used: creditsUsed, log }
+  const completedExecution = { ...execution, status: executionStatus, duration: Date.now() - startTime, output, steps, error_code: executionError, credits_used: creditsUsed, log }
   const executionHistory = [completedExecution, ...(existing.executionHistory || [])].slice(0, 100)
   const successfulRuns = executionHistory.filter(item => item.status === 'success').length
   const failedRuns = executionHistory.filter(item => item.status === 'error').length
@@ -4097,17 +4244,16 @@ async function postToTelegram(creds, params) {
 
 async function postToFacebook(creds, params) {
   const message = String(params.text || params.message || '')
-  const imageUrl = String(params.imageUrl || '')
-  if (!message && !imageUrl) throw new Error('Facebook post requires text or image')
+  if (!message) throw new Error('Facebook Page post requires text')
   const token = creds.accessToken || creds.token
   const pageId = creds.pageId || creds.page_id || creds.identifier
   if (!token || !pageId) throw new Error('Facebook page access token and Page ID are missing. Add them in Connectors.')
-  const url = `https://graph.facebook.com/v18.0/${encodeURIComponent(pageId)}/feed`
-  const body = imageUrl && !message.includes(imageUrl) ? { message, link: imageUrl } : { message }
-  const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, access_token: token }) })
-  const data = await response.json()
+  const url = `${facebookGraphBaseUrl()}/${encodeURIComponent(pageId)}/feed`
+  const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message, access_token: token }) })
+  const data = await response.json().catch(() => ({}))
   if (!response.ok || data.error) throw new Error(data.error?.message || 'Facebook post failed')
-  return { id: data.id, data }
+  if (!data.id) throw new Error('Facebook did not return a confirmed post identifier')
+  return { id: String(data.id), pageId: String(pageId), pageName: String(creds.page_name || creds.pageName || ''), data }
 }
 
 async function postToWhatsApp(creds, params) {
@@ -5289,6 +5435,18 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'GET' && req.url?.startsWith('/api/connectors/linkedin/callback')) {
     try { return await linkedinCallback(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'LinkedIn callback failed' }) }
+  }
+  if (req.method === 'POST' && req.url === '/api/connectors/facebook/start') {
+    try { return await startFacebookConnection(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Facebook auth failed' }) }
+  }
+  if (req.method === 'GET' && req.url?.startsWith('/api/connectors/facebook/callback')) {
+    try { return await facebookCallback(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Facebook callback failed' }) }
+  }
+  if (req.method === 'GET' && req.url === '/api/connectors/facebook/pages') {
+    try { return await listFacebookPages(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Could not load Facebook Pages' }) }
+  }
+  if (req.method === 'POST' && req.url === '/api/connectors/facebook/select-page') {
+    try { return await selectFacebookPage(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Could not select Facebook Page' }) }
   }
   if (req.method === 'POST' && (req.url === '/api/gmail/send' || req.url === '/api/send-email')) {
     try { return await sendGmail(req, res) } catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : 'Email could not be sent' }) }
