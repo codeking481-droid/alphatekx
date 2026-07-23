@@ -8,7 +8,8 @@ import { useAuth } from '../lib/auth'
 import { deleteIntegration, disconnectGoogle, getFacebookPages, getIntegrationStatus, saveConnector, selectFacebookPage, startFacebookAuth, startGmailConnection, startLinkedInAuth, testConnector, type IntegrationStatus } from '../lib/integrations'
 
 const googleIds = new Set(['gmail', 'google_sheets', 'google_calendar', 'google_drive', 'calendar'])
-const apiKeyAvailable = new Set(['telegram', 'slack', 'discord'])
+const apiKeyAvailable = new Set(['slack', 'discord'])
+const manualConnectionAvailable = new Set(['telegram', 'slack', 'discord'])
 const comingSoon = [
   { id: 'instagram', name: 'Instagram', description: 'Social publishing is coming soon.' },
   { id: 'threads', name: 'Threads', description: 'Social publishing is coming soon.' },
@@ -18,13 +19,13 @@ const comingSoon = [
 function fieldConfig(id: string) {
   if (id === 'discord') return { key: 'Webhook URL', keyPlaceholder: 'https://discord.com/api/webhooks/...', identifier: '' }
   if (id === 'slack') return { key: 'Bot token or webhook URL', keyPlaceholder: 'xoxb-... or webhook URL', identifier: 'Channel ID or name' }
-  return { key: 'Bot token', keyPlaceholder: 'Paste Telegram bot token', identifier: 'Chat ID' }
+  return { key: '', keyPlaceholder: '', identifier: 'Telegram chat ID' }
 }
 
 function connectorTokens(id: string, key: string, identifier: string) {
   if (id === 'discord') return { webhook_url: key, hasOwnKey: true }
   if (id === 'slack') return key.startsWith('http') ? { webhook_url: key, channel: identifier, hasOwnKey: true } : { bot_token: key, channel: identifier, hasOwnKey: true }
-  return { bot_token: key, chat_id: identifier, hasOwnKey: true }
+  return { chat_id: identifier, isMaster: true }
 }
 
 export default function Connectors() {
@@ -131,7 +132,9 @@ export default function Connectors() {
         return await startFacebookAuth(session?.access_token, redirect)
       }
       if (selected === 'google') return await startGmailConnection(session?.access_token, redirect)
-      if (!apiKeyAvailable.has(selected) || !key.trim()) throw new Error('Enter the required connection details.')
+      if (!manualConnectionAvailable.has(selected)) throw new Error('This connection method is not available.')
+      if (selected === 'telegram' && !identifier.trim()) throw new Error('Enter the Telegram chat ID that should receive Alpha’s messages.')
+      if (selected !== 'telegram' && !key.trim()) throw new Error('Enter the required connection details.')
       await saveConnector(selected, session?.access_token, connectorTokens(selected, key.trim(), identifier.trim()), identifier.trim() || undefined)
       await load()
       setNotice(`${getConnector(selected)?.name || selected} connected.`)
@@ -172,9 +175,9 @@ export default function Connectors() {
 
     {selected && <section className="mt-5 rounded-2xl border border-violet-400/20 bg-violet-500/[.055] p-5">
       <div className="flex items-start justify-between gap-3"><div className="flex items-center gap-3">{selectedConnector && <span className="grid size-11 place-items-center rounded-xl bg-white/[.07]"><ConnectorIcon connector={selectedConnector}/></span>}<div><h2 className="font-semibold">{selected === 'google' ? 'Google' : selectedConnector?.name}</h2><p className="mt-1 text-xs text-white/50">{selectedConnected ? 'Connected' : 'Complete this connection to continue.'}</p></div></div><button onClick={() => setSelected(null)} aria-label="Close connection details"><X size={18}/></button></div>
-      {!selectedConnected && apiKeyAvailable.has(selected) && config && <div className="mt-5 grid gap-3"><label className="text-xs text-white/55">{config.key}<input type="password" value={key} onChange={event => setKey(event.target.value)} placeholder={config.keyPlaceholder} className="field mt-1"/></label>{config.identifier && <label className="text-xs text-white/55">{config.identifier}<input value={identifier} onChange={event => setIdentifier(event.target.value)} className="field mt-1"/></label>}</div>}
+      {!selectedConnected && manualConnectionAvailable.has(selected) && config && <div className="mt-5 grid gap-3">{config.key && <label className="text-xs text-white/55">{config.key}<input type="password" value={key} onChange={event => setKey(event.target.value)} placeholder={config.keyPlaceholder} className="field mt-1"/></label>}{selected === 'telegram' && <p className="text-sm text-white/60">Send a message to the AlphaTekx Telegram bot first, then enter that chat’s numeric ID. AlphaTekx supplies and protects the bot token.</p>}{config.identifier && <label className="text-xs text-white/55">{config.identifier}<input value={identifier} onChange={event => setIdentifier(event.target.value)} placeholder={selected === 'telegram' ? 'For example: 123456789' : undefined} className="field mt-1"/></label>}</div>}
       {!selectedConnected && selected === 'facebook' && facebookPages.length > 0 && <fieldset className="mt-5 grid gap-2"><legend className="mb-2 text-xs text-white/55">Select one Facebook Page</legend>{facebookPages.map(page => <label key={page.id} className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 ${facebookPageId === page.id ? 'border-violet-400 bg-violet-500/10' : 'border-white/10'}`}><input type="radio" name="facebook-page" value={page.id} checked={facebookPageId === page.id} onChange={() => setFacebookPageId(page.id)}/><span className="text-sm">{page.name}</span></label>)}</fieldset>}
-      <div className="mt-5 flex flex-wrap gap-2">{selectedConnected ? <><button onClick={() => void verify(selected)} disabled={busy} className="action">{busy ? <LoaderCircle className="animate-spin" size={16}/> : <CheckCircle2 size={16}/>}Verify</button><button onClick={() => void connect()} disabled={busy} className="action"><RefreshCw size={16}/>Reconnect</button><button onClick={() => void disconnect(selected)} disabled={busy} className="action text-rose-300"><Unplug size={16}/>Disconnect</button></> : <button onClick={() => void connect()} disabled={busy || (apiKeyAvailable.has(selected) && !key.trim())} className="flex min-h-11 items-center gap-2 rounded-xl btn-alpha px-5 text-sm disabled:opacity-40">{busy ? <LoaderCircle className="animate-spin" size={16}/> : <Plug size={16}/>}Connect {selected === 'google' ? 'Google' : selectedConnector?.name}</button>}</div>
+      <div className="mt-5 flex flex-wrap gap-2">{selectedConnected ? <><button onClick={() => void verify(selected)} disabled={busy} className="action">{busy ? <LoaderCircle className="animate-spin" size={16}/> : <CheckCircle2 size={16}/>}Verify</button><button onClick={() => void connect()} disabled={busy} className="action"><RefreshCw size={16}/>Reconnect</button><button onClick={() => void disconnect(selected)} disabled={busy} className="action text-rose-300"><Unplug size={16}/>Disconnect</button></> : <button onClick={() => void connect()} disabled={busy || (apiKeyAvailable.has(selected) && !key.trim()) || (selected === 'telegram' && !identifier.trim())} className="flex min-h-11 items-center gap-2 rounded-xl btn-alpha px-5 text-sm disabled:opacity-40">{busy ? <LoaderCircle className="animate-spin" size={16}/> : <Plug size={16}/>}Connect {selected === 'google' ? 'Google' : selectedConnector?.name}</button>}</div>
     </section>}
 
     <section className="mt-10"><h2 className="text-sm font-medium text-white/70">Your connected apps</h2>{connected.length === 0 ? <div className="mt-4 rounded-2xl border border-dashed border-white/15 p-8 text-center"><p className="font-medium">No apps connected yet.</p><p className="mt-2 text-sm text-white/50">Choose a platform to connect.</p></div> : <div className="mt-4 grid gap-3 md:grid-cols-2">{connected.map(item => <button key={item.id} onClick={() => setSelected(item.id)} className="flex w-full items-center gap-4 rounded-2xl border border-white/[.09] bg-white/[.035] p-4 text-left hover:border-violet-400/25"><span className="grid size-11 shrink-0 place-items-center rounded-xl bg-white/[.06]"><ConnectorIcon connector={item.connector}/></span><span className="min-w-0 flex-1"><span className="flex items-center gap-2 font-medium">{item.name}<Check size={14} className="text-emerald-300"/></span><span className="mt-1 block truncate text-xs text-white/55">{item.account}</span><span className="mt-1 block text-xs text-white/40">{item.capabilities}</span></span><ChevronRight size={17} className="text-white/35"/></button>)}</div>}</section>
