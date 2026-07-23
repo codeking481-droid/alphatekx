@@ -157,7 +157,9 @@ function stripHtml(html) {
 
 const firstKey = (name) => process.env[`${name}_1`] || process.env[name] || ''
 
-const DEFAULT_PROVIDER_ORDER = 'flatkey,openai,qwen,kimi,minimax,groq'
+// Groq is the primary provider for interactive planning. OpenAI remains a
+// last-resort fallback so an exhausted OpenAI quota cannot stall Alpha first.
+const DEFAULT_PROVIDER_ORDER = 'groq,qwen,kimi,minimax,flatkey,openai'
 
 function getProviderOrder() {
   return (process.env.BUILDER_PROVIDER_ORDER || DEFAULT_PROVIDER_ORDER)
@@ -1855,7 +1857,7 @@ async function activateCampaignHandler(req, res) {
   const user = await currentOrLocalUser(req, config.url, config.anon)
   if (!user) return json(res, 401, { error: 'Authentication required' })
   const body = await readBody(req)
-  const agent = await getServerAgent(agentId)
+  const agent = await getServerAgent(agentId, user.id)
   if (!agent) return json(res, 404, { error: 'Campaign agent not found' })
   if (agent.userId && agent.userId !== user.id) return json(res, 403, { error: 'Not authorized' })
   if (!agent.campaign) return json(res, 400, { error: 'Not a campaign agent' })
@@ -1924,7 +1926,7 @@ async function reviewCampaignPostHandler(req, res) {
   const config = supabaseConfig()
   const user = await currentOrLocalUser(req, config.url, config.anon)
   if (!user) return json(res, 401, { error: 'Authentication required' })
-  const agent = await getServerAgent(agentId)
+  const agent = await getServerAgent(agentId, user.id)
   if (!agent?.campaign) return json(res, 404, { error: 'Campaign not found' })
   if (agent.userId && agent.userId !== user.id) return json(res, 403, { error: 'Not authorized' })
   const body = await readBody(req)
@@ -1974,7 +1976,7 @@ async function cancelCampaignHandler(req, res) {
   const config = supabaseConfig()
   const user = await currentOrLocalUser(req, config.url, config.anon)
   if (!user) return json(res, 401, { error: 'Authentication required' })
-  const agent = await getServerAgent(agentId)
+  const agent = await getServerAgent(agentId, user.id)
   if (!agent?.campaign) return json(res, 404, { error: 'Campaign not found' })
   if (agent.userId && agent.userId !== user.id) return json(res, 403, { error: 'Not authorized' })
   if ((agent.campaign.posts || []).some(post => post.status === 'publishing')) return json(res, 409, { error: 'This post is already publishing and cannot be cancelled.' })
@@ -1996,7 +1998,7 @@ async function campaignReportHandler(req, res) {
   const config = supabaseConfig()
   const user = await currentOrLocalUser(req, config.url, config.anon)
   if (!user) return json(res, 401, { error: 'Authentication required' })
-  const agent = await getServerAgent(agentId)
+  const agent = await getServerAgent(agentId, user.id)
   if (!agent) return json(res, 404, { error: 'Campaign agent not found' })
   if (agent.userId && agent.userId !== user.id) return json(res, 403, { error: 'Not authorized' })
   const report = agent.campaign?.missionReport || {
@@ -4668,15 +4670,24 @@ async function saveServerAgent(agent) {
   return record
 }
 
-async function getServerAgent(id) {
+async function getServerAgent(id, userId = '') {
   if (useSupabaseAgentDb()) {
     const config = supabaseConfig()
-    try { return await supabaseGetAgent(id) } catch { /* fall through */ }
     try {
-      const rows = await remoteAgentsList(config)
-      for (const row of rows) {
-        const found = row.agents.find(a => a.id === id)
-        if (found) return { ...found, userId: row.userId }
+      const primary = await supabaseGetAgent(id)
+      if (primary) return primary
+    } catch { /* fall through */ }
+    try {
+      if (userId) {
+        const agents = await remoteAgentsForUser(userId, config)
+        const found = agents.find(agent => agent.id === id)
+        return found ? { ...found, userId: found.userId || userId } : null
+      } else {
+        const rows = await remoteAgentsList(config)
+        for (const row of rows) {
+          const found = row.agents.find(a => a.id === id)
+          if (found) return { ...found, userId: row.userId }
+        }
       }
     } catch { /* handled below */ }
     throw new Error('Durable agent persistence is unavailable; refusing to read ephemeral storage')
@@ -4706,6 +4717,26 @@ async function deleteServerAgent(id) {
   }
   const agents = readAgents().filter(a => a.id !== id)
   writeAgents(agents)
+}
+
+async function listServerAgentsForUser(userId) {
+  if (useSupabaseAgentDb()) {
+    const config = supabaseConfig()
+    let primary = []
+    try {
+      const rows = await supabaseAgents()
+      primary = rows.filter(agent => agent.userId === userId)
+    } catch { /* use the owner-scoped durable fallback */ }
+    try {
+      const agents = await remoteAgentsForUser(userId, config)
+      const merged = new Map(primary.map(agent => [agent.id, agent]))
+      for (const agent of agents) if (!merged.has(agent.id)) merged.set(agent.id, { ...agent, userId: agent.userId || userId })
+      return [...merged.values()]
+    } catch { /* handled below */ }
+    if (primary.length) return primary
+    throw new Error('Durable agent persistence is unavailable for this account')
+  }
+  return readAgents().filter(agent => agent.userId === userId)
 }
 
 function resumeAgentSchedule(agent, now = new Date()) {
@@ -5336,7 +5367,7 @@ const server = http.createServer(async (req, res) => {
       const config = supabaseConfig()
       const user = await currentOrLocalUser(req, config.url, config.anon)
       if (!user) return json(res, 401, { error: 'Authentication required' })
-      const agents = (await listServerAgents()).filter(agent => agent.userId === user.id && agent.status !== 'deleted')
+      const agents = (await listServerAgentsForUser(user.id)).filter(agent => agent.status !== 'deleted')
       const agentIds = new Set(agents.map(agent => agent.id))
       const executions = (await listServerExecutions()).filter(execution => agentIds.has(execution.agentId))
       return json(res, 200, { agents, executions })
@@ -5351,7 +5382,7 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req)
       const incoming = body.agent || body
       const agentId = incoming.id || randomUUID()
-      const existing = await getServerAgent(agentId) || {}
+      const existing = await getServerAgent(agentId, user.id) || {}
       const merged = { ...existing, ...incoming, id: agentId, userId: user.id, userEmail: user.email }
       const status = incoming.status
       if (status === 'active' || status === 'pending') {
@@ -5362,8 +5393,8 @@ const server = http.createServer(async (req, res) => {
         merged.status = (merged.missing && merged.missing.length) ? 'awaiting_information' : 'running'
       }
       if (merged.status === 'running' || merged.status === 'active') {
-        const allAgents = await listServerAgents()
-        const activeCount = allAgents.filter(a => (a.status === 'running' || a.status === 'active') && a.userId === user.id && a.id !== agentId).length
+        const allAgents = await listServerAgentsForUser(user.id)
+        const activeCount = allAgents.filter(a => (a.status === 'running' || a.status === 'active') && a.id !== agentId).length
         const canCreate = await billing.canCreateAgent(user, config, activeCount)
         if (!canCreate.ok) return json(res, 402, { error: canCreate.reason, plan: canCreate.plan, code: 'PLAN_LIMIT' })
       }
@@ -5442,7 +5473,9 @@ const server = http.createServer(async (req, res) => {
     const config = supabaseConfig()
     const user = await currentOrLocalUser(req, config.url, config.anon).catch(() => null)
     if (!user) return json(res, 401, { error: 'Authentication required' })
-    const existingAgent = await getServerAgent(agentId)
+    let existingAgent
+    try { existingAgent = await getServerAgent(agentId, user.id) }
+    catch (error) { return json(res, 503, { error: error instanceof Error ? error.message : 'Automation storage is temporarily unavailable' }) }
     if (!existingAgent) return json(res, 404, { error: 'Automation not found' })
     if (existingAgent.userId && existingAgent.userId !== user.id) return json(res, 403, { error: 'Not authorized to modify this automation' })
     if (existingAgent.status === 'deleted') {
@@ -5486,7 +5519,7 @@ const server = http.createServer(async (req, res) => {
       } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Could not update automation' }) }
     }
     if (req.method === 'POST') {
-      try { const body = await readBody(req); const existing = await getServerAgent(agentId) || {}; const agent = await saveServerAgent({ ...existing, ...body.agent, id: agentId }); return json(res, 200, { agent }) }
+      try { const body = await readBody(req); const existing = await getServerAgent(agentId, user.id) || {}; const agent = await saveServerAgent({ ...existing, ...body.agent, id: agentId, userId: user.id, userEmail: user.email }); return json(res, 200, { agent }) }
       catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : 'Could not update agent' }) }
     }
     if (req.method === 'DELETE') {

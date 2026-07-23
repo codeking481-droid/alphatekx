@@ -7,6 +7,13 @@ export type PaymentItem =
 
 export type PaymentProvider = 'paystack'
 
+async function responsePayload(response: Response) {
+  const text = await response.text()
+  if (!text.trim()) return {}
+  try { return JSON.parse(text) as Record<string, unknown> }
+  catch { throw new Error(`Payment server returned an invalid response (${response.status}). Please retry.`) }
+}
+
 async function authHeaders(): Promise<Record<string, string>> {
   const headers: Record<string, string> = { ...localUserHeaders() }
   try {
@@ -22,9 +29,10 @@ export async function initializeCheckout(provider: PaymentProvider, item: Paymen
     headers: { 'Content-Type': 'application/json', ...await authHeaders() },
     body: JSON.stringify(item),
   })
-  const data = await res.json()
-  if (!res.ok) throw new Error(data.error || 'Payment start failed')
-  return data
+  const data = await responsePayload(res)
+  if (!res.ok) throw new Error(String(data.error || `Payment start failed (${res.status})`))
+  if (!data.authorization_url) throw new Error('Paystack did not return a checkout link. Please retry.')
+  return data as { authorization_url: string; reference: string; credits: number; amount: number; source: string; provider: string }
 }
 
 function localUserHeaders(): Record<string, string> {
@@ -44,7 +52,7 @@ export async function verifyCheckout(provider: PaymentProvider, reference: strin
     headers: { 'Content-Type': 'application/json', ...await authHeaders() },
     body: JSON.stringify({ reference }),
   })
-  const data = await res.json()
-  if (!res.ok) throw new Error(data.error || 'Payment verification failed')
-  return data
+  const data = await responsePayload(res)
+  if (!res.ok) throw new Error(String(data.error || `Payment verification failed (${res.status})`))
+  return data as { verified: boolean; credits?: number; plan?: string; amount?: number; reference?: string; mock?: boolean }
 }
