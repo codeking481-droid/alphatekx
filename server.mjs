@@ -12,6 +12,7 @@ import { marketplaceHandler, fulfillMarketplaceOrder } from './server/marketplac
 import { getRecords, getRecord, createRecord, updateRecord, deleteRecord, appEntitiesMigrationSql } from './server/appData.mjs'
 import { createAlphaBrain } from './server/alphaBrain.mjs'
 import { buildCapabilityPlan, detectCapability, isSupportedAction } from './server/automation/capabilityRegistry.mjs'
+import { createContentMemoryRecord } from './server/automation/contentMemory.mjs'
 import { createConversationEngine } from './server/alpha/conversationEngine.mjs'
 import * as providerHealth from './server/alpha/providerHealth.mjs'
 import * as billing from './server/billing.mjs'
@@ -668,7 +669,7 @@ function makeUnsupportedAgent(prompt, reason, alternative) {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     executionHistory: [],
-    successRate: 100,
+    successRate: 0,
     permissions: [],
     executionsDone: 0,
     executionsTotal: null,
@@ -706,7 +707,7 @@ function finalizeAgentPlan(plan, prompt, user) {
     createdAt: plan.createdAt || now.toISOString(),
     updatedAt: now.toISOString(),
     executionHistory: plan.executionHistory || [],
-    successRate: plan.successRate ?? 100,
+    successRate: plan.successRate ?? 0,
     executionsDone: plan.executionsDone || 0,
     executionsTotal,
     creditsNeeded: plan.creditsNeeded || plan.creditsPerRun || (plan.actions?.length || 1),
@@ -1692,7 +1693,9 @@ async function startLinkedInConnection(req, res) {
   const clientSecret = process.env.MASTER_LINKEDIN_CLIENT_SECRET || process.env.LINKEDIN_CLIENT_SECRET || ''
   if (!clientId || !clientSecret) return json(res, 503, { error: 'LinkedIn client credentials not configured' })
   const redirectUri = `${publicAppUrl()}/api/connectors/linkedin/callback`
-  const state = createOAuthState(user.id, config, user.email, '/connectors')
+  const requestedRedirect = String(body?.redirect || '/connected-apps')
+  const safeRedirect = requestedRedirect.startsWith('/') && !requestedRedirect.startsWith('//') ? requestedRedirect : '/connected-apps'
+  const state = createOAuthState(user.id, config, user.email, safeRedirect)
   const authUrl = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent('openid profile w_member_social email')}&state=${encodeURIComponent(state)}`
   return json(res, 200, { url: authUrl })
 }
@@ -1708,6 +1711,9 @@ async function linkedinCallback(req, res) {
     if (denied) throw new Error(`LinkedIn authorization was denied: ${denied}`)
     if (!code || !state) throw new Error('Missing LinkedIn authorization code or state')
     const parsed = verifyOAuthState(state, config)
+    const safeRedirect = String(parsed.redirect || '').startsWith('/') && !String(parsed.redirect || '').startsWith('//') ? String(parsed.redirect) : '/connected-apps'
+    destination = new URL(safeRedirect, publicAppUrl())
+    destination.searchParams.set('connected', 'linkedin')
     const clientId = process.env.MASTER_LINKEDIN_CLIENT_ID || process.env.LINKEDIN_CLIENT_ID || ''
     const clientSecret = process.env.MASTER_LINKEDIN_CLIENT_SECRET || process.env.LINKEDIN_CLIENT_SECRET || ''
     if (!clientId || !clientSecret) throw new Error('LinkedIn client credentials not configured')
@@ -2020,6 +2026,23 @@ function backoffMs(retryCount) {
   if (retryCount <= 1) return 60_000
   if (retryCount === 2) return 300_000
   return 900_000
+}
+
+async function persistAutomationContentMemory(userId, record) {
+  const config = supabaseConfig()
+  if (!userId || !config.url || !config.service) return
+  const body = {
+    id: record.id, automation_id: record.automationId, user_id: userId, platform: record.platform,
+    content: record.content, content_fingerprint: record.contentFingerprint, semantic_topic: record.semanticTopic || null,
+    hook: record.hook || null, cta: record.cta || null, hashtags: record.hashtags || [],
+    image_concept: record.imageConcept || null, image_asset_id: record.imageAssetId || null,
+    scheduled_at: record.scheduledAt || null, published_at: record.publishedAt || null,
+    provider_post_id: record.providerPostId || null, status: record.status, credits_used: record.creditsUsed || 0,
+    user_edits: record.userEdits || [], created_at: record.createdAt,
+  }
+  try {
+    await fetch(`${config.url}/rest/v1/automation_content_memory`, { method: 'POST', headers: { ...serviceHeaders(config.service), Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(body) })
+  } catch { /* The agent record remains the compatible source until this migration is applied. */ }
 }
 
 function formatLocalTime(iso, timeZone = 'UTC') {
@@ -2488,6 +2511,11 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
         post.chargeStatus = 'pending'
       }
       postedCount++
+      const publishedPlatform = post.platforms[0] || 'linkedin'
+      const publishedContent = post.captions?.[publishedPlatform] || post.captions?.linkedin || ''
+      const memoryRecord = createContentMemoryRecord({ automationId: existing.id, platform: publishedPlatform, content: publishedContent, post, creditsUsed: post.charged ? postCost : 0 })
+      campaign.contentMemory = [memoryRecord, ...(campaign.contentMemory || [])].slice(0, 500)
+      await persistAutomationContentMemory(user?.id, memoryRecord)
     } else {
       post.retryCount = (post.retryCount || 0) + 1
       post.lastError = Object.values(postResults).map(result => result.log).filter(Boolean).join('; ')
@@ -2775,7 +2803,7 @@ async function runAgent(agent, trigger = 'schedule') {
 
   const newHistory = [execution, ...(existing.executionHistory || [])].slice(0, 100)
   const successes = newHistory.filter(e => e.status === 'success').length
-  const successRate = newHistory.length ? Math.round((successes / newHistory.length) * 100) : 100
+  const successRate = newHistory.length ? Math.round((successes / newHistory.length) * 100) : 0
 
   const record = { ...existing, executionHistory: newHistory, lastRun: execution.at, status, updated_at: now.toISOString(), executionsDone, retryCount: nextRetryCount, successRate }
   if (existing.trigger?.type === 'schedule' || existing.trigger?.type === 'monitor') record.trigger = { ...existing.trigger, nextRun }

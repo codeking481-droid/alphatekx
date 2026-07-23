@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { buildCapabilityPlan, detectCapability, isSupportedAction } from '../automation/capabilityRegistry.mjs'
+import { calendarHasDuplicates } from '../automation/contentMemory.mjs'
+import { listImageProviders } from '../automation/imageGateway.mjs'
 
 const STAGES = [
   'understanding',
@@ -213,6 +215,8 @@ function heuristicParseRequest(prompt) {
   if (/\b(do not publish|until i approve|manual approval|review before publishing|approve it)\b/i.test(lower)) result.knownFields.approvalPreference = 'manual'
   else if (/\b(auto publish|publish automatically|auto approval)\b/i.test(lower)) result.knownFields.approvalPreference = 'auto'
   else if (platforms.includes('linkedin')) result.knownFields.approvalPreference = 'manual'
+  if (/\b(with|add|include|generate|use)\s+(?:a |an )?(?:matching )?(?:image|picture|visual|photo)\b/i.test(prompt)) result.knownFields.includeImages = true
+  if (/\b(?:without|no|do not use|don'?t use)\s+(?:an? )?(?:image|picture|visual|photo)s?\b/i.test(prompt)) result.knownFields.includeImages = false
 
   return result
 }
@@ -772,7 +776,8 @@ Return JSON:
     const totalPosts = Number(known.totalPosts || known.total_posts || (durationDays * 1))
     const postsPerDay = Math.max(1, Math.ceil(totalPosts / durationDays))
     const dontPost = Array.isArray(known.dontPost) ? known.dontPost : []
-    const includeImages = Boolean(known.includeImages || known.include_images)
+    const imageRequested = Boolean(known.includeImages || known.include_images)
+    const includeImages = imageRequested && listImageProviders().length > 0
 
     const business = businessName || businessType
     const brand = { business, businessType, audience, tone, website: known.website || '', dontPost }
@@ -795,6 +800,7 @@ Return JSON:
       startDate,
       endDate,
       includeImages,
+      imageRequested,
       timezone,
       frequency: known.frequency || (isSinglePost ? 'once' : 'daily'),
       daysOfWeek: known.daysOfWeek || [],
@@ -850,6 +856,8 @@ Total posts: ${totalPosts}.`
       logModelCall(conversation, res, 'generate_content')
       providerLog = { provider: res.provider, model: res.model, usage: res.usage, latencyMs: res.latencyMs }
       if (validateCalendar(res.result?.calendar, platforms, totalPosts)) {
+        const duplicate = calendarHasDuplicates(res.result.calendar, conversation.automationDraft?.contentMemory || [])
+        if (duplicate.duplicate) throw new Error(`Generated calendar repeated prior content (${duplicate.reason})`)
         return res.result.calendar
       }
       throw new Error('Model returned invalid or incomplete calendar')
@@ -894,6 +902,15 @@ Total posts: ${totalPosts}.`
     conversation.lastModelError = lastError && lastError.message ? lastError.message.slice(0, 200) : ''
     conversation.providerLog = providerLog
 
+    const mission = String(known.mission || known.outcome || conversation.currentGoal || conversation.originalRequest)
+    const contentPillars = Array.isArray(known.contentPillars) && known.contentPillars.length
+      ? known.contentPillars
+      : ['Education', 'Practical examples', 'Lessons and insights', 'Questions and discussion']
+    const strategy = {
+      summary: `Build consistent recognition with useful ${platforms.map(p => PLATFORM_NAMES[p] || p).join(' and ')} content for ${audience}.`,
+      contentPillars,
+      calendar: contentPillars.slice(0, 6).map((theme, index) => ({ week: index + 1, theme })),
+    }
     conversation.automationDraft = {
       id: conversation.id,
       type: 'campaign',
@@ -903,6 +920,14 @@ Total posts: ${totalPosts}.`
       description: `Generate and schedule ${totalPosts} posts for ${platforms.map(p => PLATFORM_NAMES[p] || p).join(', ')} for ${business}.`,
       originalRequest: conversation.originalRequest,
       interpretedGoal: conversation.currentGoal,
+      mission,
+      strategy,
+      targetAudience: audience,
+      tone,
+      brandProfile: brand,
+      knowledge: { business, businessType, website: known.website || '', approvedClaims: known.approvedClaims || [], prohibitedClaims: dontPost },
+      contentMemory: [],
+      approvalPolicy: known.approvalPreference === 'auto' ? 'implicit' : 'explicit',
       trigger: { type: 'campaign', cron: 'campaign', nextRun: posts[0]?.scheduledAt },
       actions: [],
       status: 'awaiting_approval',
@@ -910,7 +935,7 @@ Total posts: ${totalPosts}.`
       createdAt: conversation.createdAt,
       updatedAt: nowIso(),
       executionHistory: [],
-      successRate: 100,
+      successRate: 0,
       permissions: platforms,
       creditsNeeded: totalCredits,
       creditsPerRun: 0,
@@ -929,6 +954,7 @@ Total posts: ${totalPosts}.`
         approved: false,
         autoPublish: false,
         generationMode,
+        contentMemory: [],
       },
     }
 
@@ -948,6 +974,7 @@ Total posts: ${totalPosts}.`
     } else {
       addMessage(conversation, 'alpha', `Alpha’s content-generation models are temporarily unavailable. Your automation details have been saved, so you can continue without starting again. I've prepared ${posts.length} starter posts you can edit, regenerate, or approve once the models are back.`, { generatedCount: posts.length, totalCredits })
     }
+    if (imageRequested && !includeImages) addMessage(conversation, 'alpha', 'Image generation is not configured yet, so this plan will continue with text only and no image credits will be charged.')
   }
 
   function normalizeCalendar(calendar, platforms, scheduleSlots, startDate, timezone, postsPerDay, includeImages, meta = {}) {
@@ -1135,7 +1162,7 @@ Turn the user's goal into an automation plan. Return JSON:
       createdAt: conversation.createdAt,
       updatedAt: nowIso(),
       executionHistory: [],
-      successRate: 100,
+      successRate: 0,
       executionsDone: 0,
       executionsTotal: null,
     }
@@ -1148,6 +1175,8 @@ Turn the user's goal into an automation plan. Return JSON:
       description: plan.description,
       originalRequest: conversation.originalRequest,
       interpretedGoal: plan.interpretedGoal || plan.description,
+      mission: conversation.knownFields?.mission || conversation.currentGoal || plan.description,
+      strategy: { summary: plan.description || conversation.currentGoal, contentPillars: [], calendar: [] },
       userId: conversation.userId,
       userEmail: conversation.userEmail,
       trigger: plan.trigger,
@@ -1169,7 +1198,7 @@ Turn the user's goal into an automation plan. Return JSON:
       createdAt: conversation.createdAt,
       updatedAt: nowIso(),
       executionHistory: [],
-      successRate: 100,
+      successRate: 0,
       executionsDone: 0,
       executionsTotal: plan.executionsTotal,
     }
@@ -1301,7 +1330,7 @@ Return JSON: { "text": "..." }`
       createdAt: nowIso(),
       updatedAt: nowIso(),
       executionHistory: [],
-      successRate: 100,
+      successRate: 0,
       actions: [],
       trigger: { type: 'schedule', cron: '0 0 8 * *' },
       permissions: [],

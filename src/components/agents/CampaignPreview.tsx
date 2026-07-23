@@ -219,8 +219,8 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
     finally { setActivating(false) }
   }
 
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={onClose}>
-    <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-3xl border border-white/[.12] bg-background p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+  return <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 p-0 sm:items-center sm:p-4" onClick={onClose} role="dialog" aria-modal="true" aria-label="Review and approve automation">
+    <div className="max-h-[94dvh] w-full max-w-3xl overflow-y-auto rounded-t-3xl border border-white/[.12] bg-background p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl sm:rounded-3xl sm:p-6" onClick={e => e.stopPropagation()}>
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 text-xs font-medium text-indigo-400"><Zap size={12}/> Content Employee plan</div>
@@ -329,6 +329,7 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
         <div className="rounded-xl border border-white/[.08] bg-white/[.03] p-4">
           <p>AI writing: 3 credits × {campaign.meta.totalPosts} posts = {3 * campaign.meta.totalPosts}</p>
           {campaign.meta.includeImages && <p>Image generation: 2 credits × {campaign.meta.totalPosts} = {2 * campaign.meta.totalPosts}</p>}
+          {campaign.meta.imageRequested && !campaign.meta.includeImages && <p className="text-amber-300">Image generation is not configured. This automation will publish text only and will not charge image credits.</p>}
           <p>Publishing: {platformIds.length} platform(s) × {campaign.meta.totalPosts} posts = {platformIds.length * campaign.meta.totalPosts}</p>
           <div className="mt-2 border-t border-white/[.08] pt-2 text-base font-semibold text-white">Total: {total} credits</div>
         </div>

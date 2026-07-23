@@ -192,7 +192,7 @@ export function createAgentFromNL(input: string, missionId?: string, user?: { id
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     executionHistory: [],
-    successRate: 100,
+    successRate: 0,
     permissions,
     creditsNeeded,
     creditsPerRun: 1,

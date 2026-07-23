@@ -75,9 +75,9 @@ export async function saveAgent(agent: Agent) {
 }
 
 export async function deleteAgent(id: string) {
-  const agents = getAgents().filter(a => a.id !== id)
-  setCache(agents)
-  void fetch(`/api/agents/${encodeURIComponent(id)}`, { method: 'DELETE', headers: await authHeaders() }).catch(() => {})
+  const response = await fetch(`/api/agents/${encodeURIComponent(id)}`, { method: 'DELETE', headers: await authHeaders() })
+  if (!response.ok) throw new Error('Could not delete automation from the server')
+  setCache(getAgents().filter(a => a.id !== id))
 }
 
 export function updateAgent(id: string, patch: Partial<Agent>) {
@@ -92,7 +92,7 @@ export function addExecution(agentId: string, execution: AgentExecution) {
   if (!agent) return
   const history = [execution, ...agent.executionHistory].slice(0, 100)
   const successes = history.filter(e => e.status === 'success').length
-  const successRate = history.length ? Math.round((successes / history.length) * 100) : 100
+  const successRate = history.length ? Math.round((successes / history.length) * 100) : 0
   const status = execution.status === 'error' && agent.status !== 'paused' ? 'warning' : agent.status
   saveAgent({ ...agent, executionHistory: history, successRate, status, updatedAt: new Date().toISOString() })
 }
