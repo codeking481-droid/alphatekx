@@ -76,6 +76,12 @@ export async function saveAgent(agent: Agent) {
 
 export async function deleteAgent(id: string) {
   const response = await fetch(`/api/agents/${encodeURIComponent(id)}`, { method: 'DELETE', headers: await authHeaders() })
+  if (response.status === 404) {
+    // A stale browser cache may reference a legacy/ephemeral automation that
+    // no longer exists durably. Removing that local ghost is idempotent.
+    setCache(getAgents().filter(a => a.id !== id))
+    return
+  }
   if (!response.ok) {
     const data = await response.json().catch(() => ({}))
     throw new Error(data.error || 'Could not delete automation from the server')

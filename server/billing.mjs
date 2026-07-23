@@ -413,6 +413,13 @@ function publicAppUrl() {
   return process.env.PUBLIC_APP_URL || process.env.VITE_PUBLIC_APP_URL || process.env.RENDER_EXTERNAL_URL || `http://localhost:${process.env.PORT || 3001}`
 }
 
+export async function parsePaystackResponse(response, operation) {
+  const raw = await response.text()
+  if (!raw.trim()) throw new Error(`Paystack returned an empty response during ${operation}`)
+  try { return JSON.parse(raw) }
+  catch { throw new Error(`Paystack returned an invalid response during ${operation}`) }
+}
+
 async function initializePaystack(user, item, config) {
   const secret = process.env.PAYSTACK_SECRET_KEY
   const isSubscription = item.type === 'subscription'
@@ -439,8 +446,9 @@ async function initializePaystack(user, item, config) {
     headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, amount, reference, callback_url: callback, metadata: { user_id: user.id, credits, source, plan: isSubscription ? plan.id : undefined, pack: !isSubscription ? pack.id : undefined } })
   })
-  const data = await response.json()
+  const data = await parsePaystackResponse(response, 'checkout initialization')
   if (!response.ok) throw new Error(data.message || 'Paystack initialization failed')
+  if (!data.data?.authorization_url) throw new Error('Paystack did not return a checkout URL')
   return { authorization_url: data.data.authorization_url, reference, credits, amount, source, provider: 'paystack' }
 }
 
@@ -470,7 +478,7 @@ async function verifyPaystack(reference, config) {
     return { ok: true, reference, credits, balance: result.remaining, plan: result.plan, paidAt: nowIso(), provider: 'paystack', mock: true, amount: Number(pendingRecord.amount || 0) / 100, user }
   }
   const response = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, { headers: { Authorization: `Bearer ${secret}` } })
-  const data = await response.json()
+  const data = await parsePaystackResponse(response, 'payment verification')
   if (!response.ok || data.data?.status !== 'success') return { ok: false, reference, message: data.message || 'Payment not successful' }
   const pending = readJsonFile(path.resolve(dataDir, 'pending-transactions.json'), {})
   const pendingRecord = pending[reference]

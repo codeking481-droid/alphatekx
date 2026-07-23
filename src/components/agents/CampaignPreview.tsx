@@ -211,6 +211,13 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
     try {
       const res = await fetch(`/api/agents/campaign/${encodeURIComponent(draft.id)}/cancel`, { method: 'POST', headers: authHeaders() })
       const data = await res.json().catch(() => ({}))
+      if (res.status === 404) {
+        const cancelled = { ...draft, status: 'paused' as const, approved: false, nextRunAt: undefined, trigger: { ...draft.trigger, nextRun: undefined }, campaign: { ...draft.campaign!, status: 'cancelled', approved: false, posts: draft.campaign!.posts.map(post => ['scheduled', 'pending_approval'].includes(post.status) ? { ...post, status: 'cancelled', approved: false } : post) } }
+        setDraft(cancelled)
+        setCache(getAgents().filter(item => item.id !== draft.id))
+        setNotice('This old schedule was no longer on the server and has been removed from this browser. Nothing was published or charged.')
+        return
+      }
       if (!res.ok) throw new Error(data.error || 'Cancellation failed')
       setDraft(data.agent)
       setCache([data.agent, ...getAgents().filter(item => item.id !== data.agent.id)])

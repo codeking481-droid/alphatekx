@@ -107,8 +107,14 @@ export async function verifyPaystack(reference: string, packOrPlan: PaymentPack 
     headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: JSON.stringify({ reference, plan: pack.id, amount: pack.amountKobo, credits: pack.credits }),
   })
-  const data = await res.json()
-  if (!res.ok) throw new Error(data.error || 'Payment verification failed.')
+  const raw = await res.text()
+  let data: Record<string, unknown> = {}
+  if (raw.trim()) {
+    try { data = JSON.parse(raw) as Record<string, unknown> }
+    catch { throw new Error(`Payment server returned an invalid response (${res.status}). Please retry.`) }
+  }
+  if (!res.ok) throw new Error(String(data.error || `Payment verification failed (${res.status}).`))
+  if (!raw.trim()) throw new Error('Payment server returned an empty response. No credits were changed; please retry verification.')
   localStorage.setItem('alphatekx_plan', pack.plan || pack.id)
   localStorage.setItem('alphatekx_freeCount', '0')
   if (typeof data.credits === 'number') setCredits(data.credits)

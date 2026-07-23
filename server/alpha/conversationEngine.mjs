@@ -311,7 +311,7 @@ export function createConversationEngine(deps) {
   }
 
   async function loadConversation(id, user) {
-    const conversation = await getServerAgent(id)
+    const conversation = await getServerAgent(id, user.id)
     if (!conversation) throw new Error('Conversation not found')
     if (conversation.userId && conversation.userId !== user.id) throw new Error('Not authorized')
     return conversation
