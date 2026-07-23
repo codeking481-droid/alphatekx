@@ -1,5 +1,5 @@
 import { useEffect, useState, type PropsWithChildren } from 'react'
-import { Bot, HelpCircle, History, LayoutDashboard, LogOut, Menu, Plug, Settings, Sparkles, X } from 'lucide-react'
+import { Bot, HelpCircle, History, ListChecks, LogOut, Menu, Plug, Settings, Sparkles, X } from 'lucide-react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { getCredits, hydrateCredits, subscribeCredits } from '../../lib/creditStore'
 import { useAuth } from '../../lib/auth'
@@ -9,8 +9,8 @@ import { getPlan } from '../../lib/billing'
 const ONBOARDING_KEY = 'alphatekx:workspace-onboarding'
 
 const primary = [
-  ['Dashboard', '/dashboard', LayoutDashboard],
-  ['My Automations', '/automations', Bot],
+  ['Automate', '/automations', Sparkles],
+  ['Active Automations', '/active-automations', ListChecks],
   ['History', '/history', History],
   ['Connected Apps', '/connected-apps', Plug],
 ] as const
@@ -21,10 +21,10 @@ const secondary = [
 ] as const
 
 const mobileNav = [
-  ['Dashboard', '/dashboard', LayoutDashboard],
-  ['Auto', '/automations', Bot],
-  ['Connect', '/connected-apps', Plug],
+  ['Automate', '/automations', Sparkles],
+  ['Active', '/active-automations', Bot],
   ['History', '/history', History],
+  ['Apps', '/connected-apps', Plug],
   ['Settings', '/settings', Settings],
 ] as const
 
@@ -83,7 +83,7 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
     <aside className={`fixed inset-y-0 left-0 z-50 flex w-[300px] max-w-[88vw] flex-col border-r border-white/[.12] liquid-glass transition-transform duration-200 ${open ? 'translate-x-0' : '-translate-x-full'}`}>
       <div className="flex h-16 items-center justify-between border-b border-white/10 px-5"><span className="text-sm font-semibold tracking-[.14em]">ALPHATEKX</span><button onClick={() => setOpen(false)} className="grid size-10 place-items-center rounded-full hover:bg-white/[.08]" aria-label="Close menu"><X size={19}/></button></div>
       <nav className="flex-1 space-y-1 overflow-y-auto p-3">
-        {primary.map(([label, to, Icon]) => <NavLink key={label} to={to} title={label} onClick={() => setOpen(false)} className={({ isActive }) => `flex min-h-12 items-center gap-3 rounded-lg px-4 text-sm ${isActive ? 'bg-white/[.08] font-medium text-white' : 'text-white/70 hover:bg-white/[.04]'}`}><Icon size={18}/>{label}{label === 'My Automations' && running > 0 && <span className="ml-auto flex h-2 w-2 rounded-full bg-emerald-500" />}</NavLink>)}
+        {primary.map(([label, to, Icon]) => <NavLink key={label} to={to} title={label} onClick={() => setOpen(false)} className={({ isActive }) => `flex min-h-12 items-center gap-3 rounded-lg px-4 text-sm ${isActive ? 'bg-white/[.08] font-medium text-white' : 'text-white/70 hover:bg-white/[.04]'}`}><Icon size={18}/>{label}{label === 'Active Automations' && running > 0 && <span className="ml-auto flex h-2 w-2 rounded-full bg-emerald-500" />}</NavLink>)}
         <div className="my-3 border-t border-white/[0.08]" />
         {secondary.map(([label, to, Icon]) => <NavLink key={label} to={to} title={label} onClick={() => setOpen(false)} className={({ isActive }) => `flex min-h-12 items-center gap-3 rounded-lg px-4 text-sm ${isActive ? 'bg-white/[.08] font-medium text-white' : 'text-white/70 hover:bg-white/[.04]'}`}><Icon size={18}/>{label}</NavLink>)}
         <div className="my-3 border-t border-white/[0.08]" />
@@ -120,7 +120,7 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
       {children}
     </main>
 
-    <nav className="fixed bottom-0 left-0 right-0 z-30 flex h-16 items-center gap-1 overflow-x-auto border-t border-white/[0.08] bg-background/80 px-2 backdrop-blur-xl scrollbar-hide lg:hidden">
+    <nav className="fixed bottom-0 left-0 right-0 z-30 flex min-h-16 items-center gap-1 overflow-x-auto border-t border-white/[0.08] bg-background/80 px-2 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl scrollbar-hide lg:hidden">
       {mobileNav.map(([label, to, Icon]) => (
         <NavLink key={label} to={to} title={label} className={({ isActive }) => `flex min-w-[64px] flex-1 flex-col items-center justify-center gap-1 py-2 text-[10px] font-medium ${isActive ? 'text-violet-300' : 'text-zinc-500'}`}>
           <Icon size={20} />

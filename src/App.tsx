@@ -8,6 +8,7 @@ const AuthRoute = lazy(() => import('./pages/AuthRoute'))
 const ProtectedPage = lazy(() => import('./components/auth/ProtectedPage'))
 const Home = lazy(() => import('./pages/Home'))
 const Automations = lazy(() => import('./pages/Agents'))
+const ActiveAutomations = lazy(() => import('./pages/ActiveAutomations'))
 const Connectors = lazy(() => import('./pages/Connectors'))
 const History = lazy(() => import('./pages/History'))
 const Settings = lazy(() => import('./pages/Settings'))
@@ -37,6 +38,8 @@ export default function App() {
       {/* Core authenticated product */}
       <Route path="/dashboard" element={protectedPage(<Home />)} />
       <Route path="/automations" element={protectedPage(<Automations />)} />
+      <Route path="/active-automations" element={protectedPage(<ActiveAutomations />)} />
+      <Route path="/active-automations/:id" element={protectedPage(<ActiveAutomations />)} />
       <Route path="/history" element={protectedPage(<History />)} />
       <Route path="/connected-apps" element={protectedPage(<Connectors />)} />
       <Route path="/connectors" element={protectedPage(<Connectors />)} />
@@ -58,7 +61,7 @@ export default function App() {
 
       {/* Backward-compatible redirect: /agents -> /automations */}
       <Route path="/agents" element={toAutomations} />
-      <Route path="/agents/:id" element={toAutomations} />
+      <Route path="/agents/:id" element={<Navigate to="/active-automations" replace />} />
 
       {/* Retired product routes - redirect safely to dashboard */}
       <Route path="/workspace" element={toDashboard} />

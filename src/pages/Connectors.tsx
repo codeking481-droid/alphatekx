@@ -1,424 +1,158 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, ArrowRight, CheckCircle2, Key, Linkedin, LoaderCircle, Mail, PlugZap, RefreshCw, Unplug } from 'lucide-react'
-import { Link, useSearchParams } from 'react-router-dom'
-import { useAuth } from '../lib/auth'
-import { connectors, getConnector } from '../lib/agents/connectorRegistry'
+import { Check, CheckCircle2, ChevronRight, LoaderCircle, Plug, RefreshCw, Search, Unplug, X } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
 import { ConnectorIcon } from '../components/agents/ConnectorIcon'
-import ConnectedAppsDropdown from '../components/ConnectedAppsDropdown'
-import type { Connector, ConnectorCategory } from '../lib/agents/types'
-import {
-  deleteIntegration,
-  disconnectGoogle,
-  getIntegrationStatus,
-  getUserUsage,
-  initializePostsPayment,
-  saveConnector,
-  sendGmail,
-  startGmailConnection,
-  startLinkedInAuth,
-  testConnector,
-  type IntegrationStatus,
-  type SendEmailInput,
-  type UserUsage,
-} from '../lib/integrations'
+import { connectors, getConnector } from '../lib/agents/connectorRegistry'
+import type { Connector } from '../lib/agents/types'
+import { useAuth } from '../lib/auth'
+import { deleteIntegration, disconnectGoogle, getIntegrationStatus, saveConnector, startGmailConnection, startLinkedInAuth, testConnector, type IntegrationStatus } from '../lib/integrations'
 
-const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID
-const googleProviderIds = new Set(['gmail', 'google_sheets', 'google_calendar', 'google_drive', 'calendar'])
-const socialConnectorIds = new Set(['linkedin', 'x', 'facebook', 'slack', 'discord', 'telegram'])
+const googleIds = new Set(['gmail', 'google_sheets', 'google_calendar', 'google_drive', 'calendar'])
+const apiKeyAvailable = new Set(['telegram', 'slack', 'discord'])
+const comingSoon = [
+  { id: 'instagram', name: 'Instagram', description: 'Social publishing is coming soon.' },
+  { id: 'threads', name: 'Threads', description: 'Social publishing is coming soon.' },
+  { id: 'youtube', name: 'YouTube', description: 'Video automation is coming later.' },
+]
 
-function emptyUsage(): UserUsage { return { freePostsUsed: 0, freePostsLimit: 2, remaining: 2, connectors: {} } }
-
-const categoryOrder: ConnectorCategory[] = ['Communication', 'Productivity', 'Development', 'Social Media', 'Storage', 'AI Providers', 'Automation', 'Business']
-
-function getFieldConfig(c: Connector) {
-  if (c.id === 'discord') return { label: 'Webhook URL', placeholder: 'https://discord.com/api/webhooks/...', identifier: null as string | null }
-  if (c.id === 'slack') return { label: 'Bot token or webhook URL', placeholder: 'xoxb-... or https://hooks.slack.com/...', identifier: 'Channel ID / name' }
-  if (c.id === 'telegram') return { label: 'Bot token', placeholder: '8898016809:AAH...', identifier: 'Chat ID' }
-  if (c.id === 'linkedin') return { label: 'Access token', placeholder: 'Paste LinkedIn access token', identifier: 'Author URN (urn:li:person:...)' }
-  if (c.id === 'x') return { label: 'Bearer token', placeholder: 'Paste X Bearer token', identifier: null as string | null }
-  if (c.id === 'facebook') return { label: 'Page access token', placeholder: 'Paste Facebook page token', identifier: 'Page ID' }
-  if (c.id === 'whatsapp') return { label: 'WhatsApp token', placeholder: 'EAA...', identifier: 'Phone number ID' }
-  if (c.id === 'github') return { label: 'GitHub token', placeholder: 'ghp_...', identifier: null as string | null }
-  if (c.id === 'notion') return { label: 'Notion token', placeholder: 'secret_...', identifier: null as string | null }
-  if (c.id === 'paystack') return { label: 'Paystack secret key', placeholder: 'sk_...', identifier: null as string | null }
-  if (c.id === 'supabase') return { label: 'Supabase service role key', placeholder: 'eyJ...', identifier: null as string | null }
-  if (c.id === 'email') return { label: 'SMTP / API key', placeholder: 'Paste key', identifier: null as string | null }
-  return { label: 'API key / token', placeholder: 'Paste key', identifier: null as string | null }
+function fieldConfig(id: string) {
+  if (id === 'discord') return { key: 'Webhook URL', keyPlaceholder: 'https://discord.com/api/webhooks/...', identifier: '' }
+  if (id === 'slack') return { key: 'Bot token or webhook URL', keyPlaceholder: 'xoxb-... or webhook URL', identifier: 'Channel ID or name' }
+  return { key: 'Bot token', keyPlaceholder: 'Paste Telegram bot token', identifier: 'Chat ID' }
 }
 
-function buildConnectorTokens(c: Connector, key: string, identifier: string): Record<string, unknown> {
-  const tokens: Record<string, unknown> = { hasOwnKey: true, isMaster: false }
-  if (c.id === 'discord') tokens.webhook_url = key
-  else if (c.id === 'slack') {
-    if (key.startsWith('http')) tokens.webhook_url = key
-    else tokens.bot_token = key
-    if (identifier) tokens.channel = identifier
-  } else if (c.id === 'telegram') {
-    tokens.bot_token = key
-    if (identifier) tokens.chat_id = identifier
-  } else if (c.id === 'linkedin') {
-    tokens.access_token = key
-    if (identifier) tokens.author_urn = identifier
-  } else if (c.id === 'x') tokens.token = key
-  else if (c.id === 'facebook') {
-    tokens.access_token = key
-    if (identifier) tokens.page_id = identifier
-  } else if (c.id === 'whatsapp') {
-    tokens.api_key = key
-    if (identifier) tokens.phone_number_id = identifier
-  } else tokens.api_key = key
-  return tokens
+function connectorTokens(id: string, key: string, identifier: string) {
+  if (id === 'discord') return { webhook_url: key, hasOwnKey: true }
+  if (id === 'slack') return key.startsWith('http') ? { webhook_url: key, channel: identifier, hasOwnKey: true } : { bot_token: key, channel: identifier, hasOwnKey: true }
+  return { bot_token: key, chat_id: identifier, hasOwnKey: true }
 }
-
-type Health = { status: 'connected' | 'connecting' | 'syncing' | 'waiting' | 'auth_failed' | 'config_required' | 'rate_limited' | 'offline'; message: string; lastOk?: string; error?: string }
 
 export default function Connectors() {
-  const { user, session } = useAuth()
+  const { session } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
-  const isAdmin = user?.email?.toLowerCase() === 'iamdan4live@gmail.com'
-  const [integration, setIntegration] = useState<IntegrationStatus>(() => ({
-    google: { connected: false, email: null, scopes: [] },
-    gmail: { connected: false, email: null },
-    sheets: { connected: false, email: null },
-    calendar: { connected: false, email: null },
-    drive: { connected: false, email: null },
-    google_sheets: { connected: false, email: null },
-    google_calendar: { connected: false, email: null },
-    google_drive: { connected: false, email: null },
-  }))
+  const [status, setStatus] = useState<IntegrationStatus>({})
+  const [selectorOpen, setSelectorOpen] = useState(false)
+  const [selected, setSelected] = useState<string | null>(searchParams.get('platform'))
+  const [query, setQuery] = useState('')
+  const [key, setKey] = useState('')
+  const [identifier, setIdentifier] = useState('')
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
-  const [loaded, setLoaded] = useState(false)
-  const [usage, setUsage] = useState<UserUsage>(emptyUsage())
-  const [keyInput, setKeyInput] = useState<Record<string, string>>({})
-  const [identifierInput, setIdentifierInput] = useState<Record<string, string>>({})
-  const [lastSuccess, setLastSuccess] = useState<Record<string, string>>({})
-  const [errors, setErrors] = useState<Record<string, string>>({})
-  const [openCategory, setOpenCategory] = useState<string | null>(null)
-  const [openConnector, setOpenConnector] = useState<string | null>(null)
-  const [selectedIds, setSelectedIds] = useState<string[]>([])
-  const STORAGE_KEY = 'alphatekx-default-platforms'
+  const returnTo = searchParams.get('returnTo') || ''
 
-  const connectedParam = searchParams.get('connected')
-  const errorParam = searchParams.get('reason') || searchParams.get('error')
-
+  const load = async () => {
+    try { setStatus(await getIntegrationStatus(session?.access_token)) }
+    catch (error) { setNotice(error instanceof Error ? error.message : 'Could not load connected apps.') }
+  }
+  useEffect(() => { void load() }, [session?.access_token])
   useEffect(() => {
-    if (connectedParam === 'google' || connectedParam === 'gmail') setNotice('Google connected successfully. Gmail, Sheets, Calendar, and Drive are now live.')
-    if (connectedParam === 'linkedin') setNotice('LinkedIn connected successfully. Your account is linked and ready to publish posts.')
-    if (connectedParam === 'error') setNotice(`Connection failed: ${errorParam || 'Unknown error'}`)
-    if (connectedParam || errorParam) {
-      void loadStatus()
+    const connected = searchParams.get('connected')
+    if (connected === 'linkedin') setNotice('LinkedIn connected successfully and is ready to publish.')
+    else if (connected === 'google' || connected === 'gmail') setNotice('Google connected successfully.')
+    else if (connected === 'error') setNotice(searchParams.get('reason') || 'Connection was not completed.')
+    if (connected && returnTo && connected !== 'error') {
+      window.setTimeout(() => window.location.assign(returnTo), 700)
+      return
+    }
+    if (connected) {
       const next = new URLSearchParams(searchParams)
-      next.delete('connected'); next.delete('reason'); next.delete('error')
+      next.delete('connected'); next.delete('reason')
       setSearchParams(next, { replace: true })
+      void load()
     }
-  }, [connectedParam, errorParam, searchParams, setSearchParams])
+  }, [searchParams])
 
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY)
-      if (saved) setSelectedIds(JSON.parse(saved))
-    } catch {}
-  }, [])
+  const service = (id: string) => {
+    if (id === 'google') return status.google || status.gmail || { connected: false }
+    return status[id] || { connected: false }
+  }
 
-  useEffect(() => { void loadStatus() }, [session?.access_token, user?.email])
+  const choices = useMemo(() => {
+    const ids = ['linkedin', 'gmail', 'telegram', 'slack', 'discord']
+    const available = ids.map(id => {
+      const connector = getConnector(id)!
+      return { id: id === 'gmail' ? 'google' : id, name: id === 'gmail' ? 'Google' : connector.name, description: id === 'gmail' ? 'Gmail, Calendar, Sheets and Drive.' : connector.description, connector, availability: service(id === 'gmail' ? 'google' : id).connected ? 'Connected' : 'Available' }
+    })
+    return [...available, ...comingSoon.map(item => ({ ...item, connector: null, availability: 'Coming Soon' }))].filter(item => `${item.name} ${item.description}`.toLowerCase().includes(query.toLowerCase()))
+  }, [query, status])
 
-  const loadStatus = async () => {
+  const connected = useMemo(() => {
+    const result: { id: string; name: string; connector: Connector; account: string; capabilities: string }[] = []
+    const linkedIn = getConnector('linkedin')
+    if (service('linkedin').connected && linkedIn) result.push({ id: 'linkedin', name: 'LinkedIn', connector: linkedIn, account: service('linkedin').email || service('linkedin').identifier || 'Personal profile', capabilities: 'Personal-profile text publishing' })
+    const google = getConnector('gmail')
+    if ((service('google').connected || service('gmail').connected) && google) result.push({ id: 'google', name: 'Google', connector: google, account: service('google').email || service('gmail').email || 'Google account', capabilities: 'Gmail, Calendar, Sheets and Drive' })
+    for (const id of apiKeyAvailable) {
+      const connector = getConnector(id)
+      if (connector && service(id).connected) result.push({ id, name: connector.name, connector, account: service(id).email || service(id).identifier || 'Connected', capabilities: connector.actions.map(action => action.label).join(', ') })
+    }
+    return result
+  }, [status])
+
+  const choose = (id: string, availability: string) => {
+    if (availability === 'Coming Soon') return
+    setSelected(id)
+    setSelectorOpen(false)
+    setNotice('')
+    setKey('')
+    setIdentifier('')
+  }
+
+  const connect = async () => {
+    if (!selected) return
     setBusy(true)
+    setNotice('')
     try {
-      const [status, usageData] = await Promise.all([
-        getIntegrationStatus(session?.access_token),
-        getUserUsage(session?.access_token),
-      ])
-      setIntegration(prev => ({ ...prev, ...status }))
-      setUsage(usageData || emptyUsage())
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'Could not load connector status.')
-    } finally { setBusy(false); setLoaded(true) }
-  }
-
-  const serviceStatus = (id: string) => integration[id] || { connected: false, email: null, hasOwnKey: false, isMaster: false }
-
-  const health = (c: Connector): Health => {
-    const status = serviceStatus(c.id)
-    if (errors[c.id]) return { status: 'offline', message: errors[c.id] }
-    if (status.connected) return { status: 'connected', message: status.email ? `Connected as ${status.email}` : 'Connected', lastOk: lastSuccess[c.id] }
-    if (status.ready) return { status: 'waiting', message: 'Master key configured. Add your own key for full access.' }
-    if (c.authType === 'oauth') return { status: 'config_required', message: 'OAuth credentials required on backend.' }
-    return { status: 'config_required', message: 'API key required.' }
-  }
-
-  const healthDot = (h: Health) => {
-    const map: Record<Health['status'], string> = {
-      connected: 'bg-emerald-500',
-      connecting: 'bg-sky-500 animate-pulse',
-      syncing: 'bg-sky-500 animate-pulse',
-      waiting: 'bg-amber-500',
-      auth_failed: 'bg-rose-500',
-      config_required: 'bg-zinc-500',
-      rate_limited: 'bg-amber-500',
-      offline: 'bg-rose-500',
-    }
-    return <span className={`inline-block h-2.5 w-2.5 rounded-full ${map[h.status]}`} title={h.message} />
-  }
-
-  const connect = async (c: Connector) => {
-    if (googleProviderIds.has(c.id)) {
-      setBusy(true); setNotice('')
-      try { await startGmailConnection(session?.access_token, '/connectors') }
-      catch (error) { setNotice(error instanceof Error ? error.message : 'Could not start Google connection.'); setBusy(false) }
-      return
-    }
-    if (c.id === 'linkedin') {
-      setBusy(true); setNotice('')
-      try { await startLinkedInAuth(session?.access_token, '/connectors') }
-      catch (error) { setNotice(error instanceof Error ? error.message : 'Could not start LinkedIn connection.'); setBusy(false) }
-      return
-    }
-    const key = keyInput[c.id]?.trim()
-    const identifier = identifierInput[c.id]?.trim()
-    if (!key) return
-    setBusy(true); setNotice(''); setErrors(prev => ({ ...prev, [c.id]: '' }))
-    try {
-      const tokens = buildConnectorTokens(c, key, identifier)
-      await saveConnector(c.id, session?.access_token, tokens, identifier || undefined)
-      setNotice(`${c.name} connected.`)
-      setLastSuccess(prev => ({ ...prev, [c.id]: new Date().toLocaleString() }))
-      setKeyInput(prev => ({ ...prev, [c.id]: '' }))
-      setIdentifierInput(prev => ({ ...prev, [c.id]: '' }))
-      await loadStatus()
-    } catch (error) {
-      const message = error instanceof Error ? error.message : `Could not connect ${c.name}.`
-      setErrors(prev => ({ ...prev, [c.id]: message }))
-      setNotice(message)
-    } finally { setBusy(false) }
-  }
-
-  const test = async (c: Connector) => {
-    setBusy(true); setNotice(`Testing ${c.name}...`); setErrors(prev => ({ ...prev, [c.id]: '' }))
-    try {
-      await testConnector(c.id, session?.access_token, `AlphaTekX test from ${c.name}`)
-      setNotice(`${c.name} test succeeded.`)
-      setLastSuccess(prev => ({ ...prev, [c.id]: new Date().toLocaleString() }))
-      await loadStatus()
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      setErrors(prev => ({ ...prev, [c.id]: message }))
-      setNotice(`${c.name} test failed: ${message}`)
-    } finally { setBusy(false) }
-  }
-
-  const disconnect = async (c: Connector) => {
-    setBusy(true); setNotice(''); setErrors(prev => ({ ...prev, [c.id]: '' }))
-    try {
-      if (googleProviderIds.has(c.id)) {
-        await disconnectGoogle(session?.access_token)
-        setIntegration({
-          google: { connected: false, email: null, scopes: [] },
-          gmail: { connected: false, email: null },
-          sheets: { connected: false, email: null },
-          calendar: { connected: false, email: null },
-          drive: { connected: false, email: null },
-          google_sheets: { connected: false, email: null },
-          google_calendar: { connected: false, email: null },
-          google_drive: { connected: false, email: null },
-        })
-      } else {
-        await deleteIntegration(c.id, session?.access_token)
-        setIntegration(prev => ({ ...prev, [c.id]: { connected: false, email: null } }))
-      }
-      setNotice(`${c.name} disconnected.`)
-      await loadStatus()
-    } catch (error) {
-      const message = error instanceof Error ? error.message : `Could not disconnect ${c.name}.`
-      setErrors(prev => ({ ...prev, [c.id]: message }))
-      setNotice(message)
-    } finally { setBusy(false) }
-  }
-
-  const grouped = useMemo(() => {
-    const map = new Map<ConnectorCategory, Connector[]>()
-    for (const cat of categoryOrder) map.set(cat, [])
-    for (const c of connectors) {
-      const list = map.get(c.category) || []
-      list.push(c)
-      map.set(c.category, list)
-    }
-    return map
-  }, [])
-
-  const [testEmail, setTestEmail] = useState<SendEmailInput>({ to: user?.email || '', subject: 'AlphaTekX Gmail test', text: 'This email was sent through your AlphaTekX Google connector.' })
-
-  const dropdownItems = useMemo(() => connectors.map((c) => ({
-    id: c.id,
-    name: c.name,
-    icon: <ConnectorIcon connector={c} size={18} />,
-    status: serviceStatus(c.id).connected ? 'connected' : 'available',
-  })), [integration])
-
-  const sendTest = async () => {
-    if (!integration.gmail.connected || !testEmail.to.trim() || !testEmail.subject.trim() || !testEmail.text?.trim()) return
-    setBusy(true); setNotice('Sending test email...')
-    try {
-      await sendGmail(session?.access_token, testEmail)
-      setNotice(`Test email sent to ${testEmail.to}.`)
-      setLastSuccess(prev => ({ ...prev, gmail: new Date().toLocaleString() }))
-    } catch (error) { setNotice(error instanceof Error ? error.message : 'Test email failed.') }
+      const redirect = returnTo ? `/connected-apps?returnTo=${encodeURIComponent(returnTo)}` : '/connected-apps'
+      if (selected === 'linkedin') return await startLinkedInAuth(session?.access_token, redirect)
+      if (selected === 'google') return await startGmailConnection(session?.access_token, redirect)
+      if (!apiKeyAvailable.has(selected) || !key.trim()) throw new Error('Enter the required connection details.')
+      await saveConnector(selected, session?.access_token, connectorTokens(selected, key.trim(), identifier.trim()), identifier.trim() || undefined)
+      await load()
+      setNotice(`${getConnector(selected)?.name || selected} connected.`)
+    } catch (error) { setNotice(error instanceof Error ? error.message : 'Connection failed.') }
     finally { setBusy(false) }
   }
 
-  const connectedCount = useMemo(() => connectors.filter(c => serviceStatus(c.id).connected).length, [integration])
+  const disconnect = async (id: string) => {
+    if (!window.confirm(`Disconnect ${id === 'google' ? 'Google' : getConnector(id)?.name || id}? Existing automations may need attention.`)) return
+    setBusy(true)
+    try {
+      if (id === 'google') await disconnectGoogle(session?.access_token)
+      else await deleteIntegration(id, session?.access_token)
+      await load()
+      setSelected(null)
+      setNotice('App disconnected.')
+    } catch (error) { setNotice(error instanceof Error ? error.message : 'Could not disconnect app.') }
+    finally { setBusy(false) }
+  }
 
-  return (
-    <div className="min-h-screen px-5 py-8 md:px-10">
-      <div className="mx-auto max-w-6xl">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-3">
-            <span className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-pink-500 text-white"><PlugZap size={20} /></span>
-            <div>
-              <h1 className="text-2xl font-bold md:text-3xl">Connected Apps</h1>
-              <p className="text-sm text-white/55">Connect the apps Alpha works with. {connectedCount}/{connectors.length} connected.</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button onClick={() => void loadStatus()} disabled={busy} className="flex min-h-10 items-center gap-2 rounded-xl border border-white/[.12] px-4 text-sm transition hover:bg-white/[0.04] disabled:opacity-50"><RefreshCw size={16} className={busy ? 'animate-spin' : ''} /> Refresh</button>
-          </div>
-        </div>
+  const verify = async (id: string) => {
+    setBusy(true)
+    try {
+      if (id === 'google' || id === 'linkedin') { await load(); setNotice(`${id === 'google' ? 'Google' : 'LinkedIn'} connection verified without publishing anything.`) }
+      else { await testConnector(id, session?.access_token, 'AlphaTekx connection verification'); setNotice(`${getConnector(id)?.name || id} connection verified.`) }
+    } catch (error) { setNotice(error instanceof Error ? error.message : 'Verification failed.') }
+    finally { setBusy(false) }
+  }
 
-        {!GOOGLE_CLIENT_ID && (
-          <div className="mt-6 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
-            Add <code className="rounded bg-amber-500/20 px-1">VITE_GOOGLE_CLIENT_ID</code> and <code className="rounded bg-amber-500/20 px-1">GOOGLE_CLIENT_SECRET</code> to your Render environment to enable Google OAuth.
-          </div>
-        )}
+  const selectedConnector = selected && selected !== 'google' ? getConnector(selected) : selected === 'google' ? getConnector('gmail') : null
+  const selectedConnected = selected ? Boolean(service(selected).connected || (selected === 'google' && service('gmail').connected)) : false
+  const config = selected ? fieldConfig(selected) : null
 
-        {notice && (
-          <div role="status" className={`mt-6 rounded-2xl border p-4 text-sm ${notice.toLowerCase().includes('failed') ? 'border-rose-500/30 bg-rose-500/10 text-rose-200' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'}`}>
-            <div className="flex items-start gap-3">
-              {notice.toLowerCase().includes('failed') ? <AlertCircle size={18} /> : <CheckCircle2 size={18} />}
-              <div className="flex-1">
-                <p className="font-medium">{notice}</p>
-                {!notice.toLowerCase().includes('failed') && (
-                  <Link to="/agents" className="mt-3 inline-flex items-center gap-2 rounded-lg bg-emerald-500/20 px-4 py-2 text-xs font-semibold hover:bg-emerald-500/30">
-                    Go to Automation <ArrowRight size={14} />
-                  </Link>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
+  return <main className="mx-auto min-h-[calc(100dvh-8rem)] w-full max-w-4xl px-4 py-10 sm:px-6">
+    <header><p className="text-xs uppercase tracking-[.2em] text-violet-300">Connections</p><h1 className="mt-2 text-3xl font-semibold">Connected Apps</h1><p className="mt-2 text-sm text-white/55">Connect only the apps Alpha needs for your automations.</p></header>
+    {notice && <div role="status" className="mt-5 rounded-xl border border-violet-400/20 bg-violet-500/10 p-3 text-sm">{notice}</div>}
+    <button onClick={() => setSelectorOpen(true)} className="mt-7 flex min-h-14 w-full items-center justify-between rounded-2xl border border-white/10 bg-white/[.045] px-5 text-left hover:border-violet-400/30"><span className="flex items-center gap-3"><Plug size={18} className="text-violet-300"/><span><span className="block text-sm font-medium">Select or add a platform</span><span className="text-xs text-white/45">Search available and upcoming connections</span></span></span><ChevronRight size={18}/></button>
 
-        <div className="mt-8">
-          <ConnectedAppsDropdown
-            title="Connect the Apps You Already Use"
-            subtitle="Select platforms to connect. Save your selection as a dashboard default."
-            items={dropdownItems}
-            onSelectionChange={setSelectedIds}
-            storageKey={STORAGE_KEY}
-          />
-        </div>
+    {selected && <section className="mt-5 rounded-2xl border border-violet-400/20 bg-violet-500/[.055] p-5">
+      <div className="flex items-start justify-between gap-3"><div className="flex items-center gap-3">{selectedConnector && <span className="grid size-11 place-items-center rounded-xl bg-white/[.07]"><ConnectorIcon connector={selectedConnector}/></span>}<div><h2 className="font-semibold">{selected === 'google' ? 'Google' : selectedConnector?.name}</h2><p className="mt-1 text-xs text-white/50">{selectedConnected ? 'Connected' : 'Complete this connection to continue.'}</p></div></div><button onClick={() => setSelected(null)} aria-label="Close connection details"><X size={18}/></button></div>
+      {!selectedConnected && apiKeyAvailable.has(selected) && config && <div className="mt-5 grid gap-3"><label className="text-xs text-white/55">{config.key}<input type="password" value={key} onChange={event => setKey(event.target.value)} placeholder={config.keyPlaceholder} className="field mt-1"/></label>{config.identifier && <label className="text-xs text-white/55">{config.identifier}<input value={identifier} onChange={event => setIdentifier(event.target.value)} className="field mt-1"/></label>}</div>}
+      <div className="mt-5 flex flex-wrap gap-2">{selectedConnected ? <><button onClick={() => void verify(selected)} disabled={busy} className="action">{busy ? <LoaderCircle className="animate-spin" size={16}/> : <CheckCircle2 size={16}/>}Verify</button><button onClick={() => void connect()} disabled={busy} className="action"><RefreshCw size={16}/>Reconnect</button><button onClick={() => void disconnect(selected)} disabled={busy} className="action text-rose-300"><Unplug size={16}/>Disconnect</button></> : <button onClick={() => void connect()} disabled={busy || (apiKeyAvailable.has(selected) && !key.trim())} className="flex min-h-11 items-center gap-2 rounded-xl btn-alpha px-5 text-sm disabled:opacity-40">{busy ? <LoaderCircle className="animate-spin" size={16}/> : <Plug size={16}/>}Connect {selected === 'google' ? 'Google' : selectedConnector?.name}</button>}</div>
+    </section>}
 
-        {!loaded ? (
-          <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-2">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="rounded-2xl border border-white/[.08] bg-white/[0.03] p-5">
-                <div className="h-11 w-11 rounded-xl bg-white/10" />
-                <div className="mt-4 h-5 w-32 rounded bg-white/10" />
-                <div className="mt-2 h-3 w-full max-w-[260px] rounded bg-white/10" />
-                <div className="mt-5 h-9 rounded-xl bg-white/10" />
-              </div>
-            ))}
-          </div>
-        ) : selectedIds.length === 0 ? (
-          <div className="mt-10 rounded-2xl border border-white/[.08] bg-white/[0.03] p-8 text-center">
-            <p className="text-lg font-medium text-white/90">Choose the apps you use</p>
-            <p className="mt-2 text-sm text-white/55">Use the dropdown above to pick the platforms you want to connect. Only selected apps will appear here.</p>
-          </div>
-        ) : (
-          <div className="mt-8 space-y-8">
-            {Array.from(grouped.entries()).map(([category, items]) => {
-              const visible = items.filter((c) => selectedIds.includes(c.id) || serviceStatus(c.id).connected)
-              if (!visible.length) return null
-              return (
-              <section key={category}>
-                <button onClick={() => setOpenCategory(openCategory === category ? null : category)} className="flex w-full items-center justify-between rounded-2xl border border-white/[.08] bg-white/[0.03] px-5 py-4 text-left transition hover:bg-white/[0.05]">
-                  <span className="font-semibold">{category}</span>
-                  <span className="flex items-center gap-2 text-sm text-white/55">{visible.filter(c => serviceStatus(c.id).connected).length}/{visible.length} <ArrowRight size={14} className={`transition-transform ${openCategory === category ? 'rotate-90' : ''}`} /></span>
-                </button>
-                {openCategory === category && (
-                  <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-                    {visible.map(c => {
-                      const h = health(c)
-                      const status = serviceStatus(c.id)
-                      const isGoogle = googleProviderIds.has(c.id)
-                      const config = getFieldConfig(c)
-                      return (
-                        <div key={c.id} className="rounded-2xl border border-white/[.08] bg-white/[0.03] p-5 transition hover:border-indigo-400/30 hover:bg-white/[0.05]">
-                          <div className="flex items-start justify-between">
-                            <div className="flex items-center gap-3">
-                              <span className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-indigo-500/20 to-pink-500/20 text-white"><ConnectorIcon connector={c} className="" /></span>
-                              <div>
-                                <h3 className="font-semibold">{c.name}</h3>
-                                <p className="flex items-center gap-1.5 text-xs text-white/55">{healthDot(h)} {h.status.replace(/_/g, ' ')}</p>
-                              </div>
-                            </div>
-                          </div>
-                          <p className="mt-3 text-sm text-white/70">{c.description}</p>
-                          {h.error && <p className="mt-2 rounded-lg bg-rose-500/10 p-2 text-xs text-rose-300">{h.error}</p>}
-                          {h.lastOk && <p className="mt-2 text-xs text-white/40">Last success: {h.lastOk}</p>}
-                          {openConnector === c.id && (
-                            <div className="mt-4 space-y-3 border-t border-white/[.08] pt-3">
-                              {!isGoogle && c.authType === 'apiKey' && !status.connected && (
-                                <div className="space-y-2">
-                                  <input type="password" value={keyInput[c.id] || ''} onChange={e => setKeyInput(prev => ({ ...prev, [c.id]: e.target.value }))} className="field text-sm" placeholder={config.placeholder} />
-                                  {config.identifier && <input value={identifierInput[c.id] || ''} onChange={e => setIdentifierInput(prev => ({ ...prev, [c.id]: e.target.value }))} className="field text-sm" placeholder={config.identifier} />}
-                                  <p className="text-[10px] text-white/40">{config.label}</p>
-                                </div>
-                              )}
-                              {c.permissions.length > 0 && <p className="text-xs text-white/40">Permissions: {c.permissions.join(', ')}</p>}
-                              <div className="flex flex-wrap gap-2">
-                                {isGoogle ? (
-                                  status.connected ? (
-                                    <button onClick={() => void disconnect(c)} disabled={busy} className="flex flex-1 min-h-10 items-center justify-center gap-2 rounded-xl border border-white/[.15] text-sm transition hover:border-red-400/50 hover:bg-red-400/10 disabled:opacity-50"><Unplug size={16}/> Disconnect</button>
-                                  ) : (
-                                    <button onClick={() => void connect(c)} disabled={busy || !GOOGLE_CLIENT_ID} className="btn-alpha flex flex-1 min-h-10 items-center justify-center gap-2 rounded-xl px-4 text-sm text-white disabled:opacity-50">{busy ? <LoaderCircle className="animate-spin" size={16}/> : <PlugZap size={16}/>}Connect</button>
-                                  )
-                                ) : (
-                                  <>
-                                    {!status.connected ? (
-                                      <button onClick={() => void connect(c)} disabled={busy || (c.authType === 'apiKey' && !keyInput[c.id]?.trim())} className="btn-alpha flex flex-1 min-h-10 items-center justify-center gap-2 rounded-xl px-3 text-sm text-white disabled:opacity-50">{busy ? <LoaderCircle className="animate-spin" size={16}/> : c.id === 'linkedin' ? <Linkedin size={16}/> : <Key size={16}/>} {c.id === 'linkedin' ? 'Connect with LinkedIn' : 'Connect'}</button>
-                                    ) : (
-                                      <button onClick={() => void disconnect(c)} disabled={busy} className="flex flex-1 min-h-10 items-center justify-center gap-2 rounded-xl border border-white/[.15] text-sm transition hover:border-red-400/50 hover:bg-red-400/10 disabled:opacity-50"><Unplug size={16}/> Disconnect</button>
-                                    )}
-                                    <button onClick={() => void test(c)} disabled={busy} className="flex flex-1 min-h-10 items-center justify-center gap-2 rounded-xl border border-white/[.15] text-sm transition hover:bg-white/5 disabled:opacity-50">{busy ? <LoaderCircle className="animate-spin" size={16}/> : <CheckCircle2 size={16}/>} Test</button>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                          )}
-                          <button onClick={() => setOpenConnector(openConnector === c.id ? null : c.id)} className="mt-4 w-full rounded-xl border border-white/[.08] bg-white/[0.04] py-2 text-sm transition hover:bg-white/[0.06]">{openConnector === c.id ? 'Close' : 'Manage'}</button>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </section>
-            )})}
-          </div>
-        )}
+    <section className="mt-10"><h2 className="text-sm font-medium text-white/70">Your connected apps</h2>{connected.length === 0 ? <div className="mt-4 rounded-2xl border border-dashed border-white/15 p-8 text-center"><p className="font-medium">No apps connected yet.</p><p className="mt-2 text-sm text-white/50">Choose a platform to connect.</p></div> : <div className="mt-4 grid gap-3 md:grid-cols-2">{connected.map(item => <button key={item.id} onClick={() => setSelected(item.id)} className="flex w-full items-center gap-4 rounded-2xl border border-white/[.09] bg-white/[.035] p-4 text-left hover:border-violet-400/25"><span className="grid size-11 shrink-0 place-items-center rounded-xl bg-white/[.06]"><ConnectorIcon connector={item.connector}/></span><span className="min-w-0 flex-1"><span className="flex items-center gap-2 font-medium">{item.name}<Check size={14} className="text-emerald-300"/></span><span className="mt-1 block truncate text-xs text-white/55">{item.account}</span><span className="mt-1 block text-xs text-white/40">{item.capabilities}</span></span><ChevronRight size={17} className="text-white/35"/></button>)}</div>}</section>
 
-        {integration.gmail.connected && (
-          <div className="mt-8 rounded-2xl border border-white/[.12] bg-white/[0.04] p-6">
-            <h2 className="text-lg font-semibold">Send a test email</h2>
-            <p className="mt-1 text-sm text-white/55">Verify your Gmail connector is sending from {integration.gmail.email}.</p>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <input type="email" value={testEmail.to} onChange={e => setTestEmail(prev => ({ ...prev, to: e.target.value }))} className="field" placeholder="To" />
-              <input value={testEmail.subject} onChange={e => setTestEmail(prev => ({ ...prev, subject: e.target.value }))} className="field" placeholder="Subject" />
-            </div>
-            <textarea value={testEmail.text} onChange={e => setTestEmail(prev => ({ ...prev, text: e.target.value }))} className="field mt-3 h-28 py-3" placeholder="Message" />
-            <button onClick={() => void sendTest()} disabled={busy || !testEmail.to.trim()} className="mt-4 flex min-h-11 items-center gap-2 rounded-xl btn-alpha px-5 text-sm text-white disabled:opacity-50"><Mail size={16}/>{busy ? <LoaderCircle className="animate-spin" size={16}/> : 'Send test'}</button>
-          </div>
-        )}
-      </div>
-    </div>
-  )
+    {selectorOpen && <div className="fixed inset-0 z-50 flex items-end bg-black/60 p-0 sm:items-center sm:justify-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="platform-selector-title" onClick={() => setSelectorOpen(false)}><section className="max-h-[85dvh] w-full overflow-hidden rounded-t-3xl border border-white/10 bg-[#160923] sm:max-w-lg sm:rounded-3xl" onClick={event => event.stopPropagation()}><div className="flex items-center justify-between border-b border-white/[.08] p-5"><div><h2 id="platform-selector-title" className="font-semibold">Choose a platform</h2><p className="mt-1 text-xs text-white/45">Only available connections can be selected.</p></div><button onClick={() => setSelectorOpen(false)} className="grid size-10 place-items-center rounded-full hover:bg-white/[.06]" aria-label="Close platform selector"><X size={18}/></button></div><div className="p-4"><label className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[.04] px-3"><Search size={16} className="text-white/40"/><span className="sr-only">Search platforms</span><input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder="Search platforms" className="h-11 flex-1 bg-transparent text-sm outline-none"/></label><div className="mt-3 max-h-[55dvh] space-y-1 overflow-y-auto">{choices.map(item => <button key={item.id} onClick={() => choose(item.id, item.availability)} disabled={item.availability === 'Coming Soon'} className="flex w-full items-center gap-3 rounded-xl p-3 text-left hover:bg-white/[.05] disabled:opacity-50">{item.connector ? <span className="grid size-10 place-items-center rounded-xl bg-white/[.06]"><ConnectorIcon connector={item.connector}/></span> : <span className="grid size-10 place-items-center rounded-xl bg-white/[.04]"><Plug size={17}/></span>}<span className="min-w-0 flex-1"><span className="block text-sm font-medium">{item.name}</span><span className="block truncate text-xs text-white/45">{item.description}</span></span><span className="rounded-full border border-white/10 px-2 py-1 text-[10px]">{item.availability}</span></button>)}</div></div></section></div>}
+  </main>
 }
