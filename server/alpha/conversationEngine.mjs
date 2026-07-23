@@ -419,7 +419,7 @@ Do not return placeholder text. Use the words the user actually provided.`
 
     const capabilityPlan = buildCapabilityPlan(prompt, { email: conversation.userEmail })
     if (capabilityPlan) {
-      // Direct publishing to Facebook/Instagram is unsupported, but we can generate the content.
+      // Facebook Page and Instagram requests share the social-content planner.
       if (capabilityPlan.capabilityId === 'facebook-post' || capabilityPlan.capabilityId === 'instagram-post') {
         parsed.intent = 'social_content'
         parsed.platforms = capabilityPlan.capabilityId === 'facebook-post' ? ['facebook'] : ['instagram']

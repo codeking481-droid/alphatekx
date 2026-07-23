@@ -5,7 +5,7 @@ import { ConnectorIcon } from '../components/agents/ConnectorIcon'
 import { connectors, getConnector } from '../lib/agents/connectorRegistry'
 import type { Connector } from '../lib/agents/types'
 import { useAuth } from '../lib/auth'
-import { deleteIntegration, disconnectGoogle, getIntegrationStatus, saveConnector, startGmailConnection, startLinkedInAuth, testConnector, type IntegrationStatus } from '../lib/integrations'
+import { deleteIntegration, disconnectGoogle, getFacebookPages, getIntegrationStatus, saveConnector, selectFacebookPage, startFacebookAuth, startGmailConnection, startLinkedInAuth, testConnector, type IntegrationStatus } from '../lib/integrations'
 
 const googleIds = new Set(['gmail', 'google_sheets', 'google_calendar', 'google_drive', 'calendar'])
 const apiKeyAvailable = new Set(['telegram', 'slack', 'discord'])
@@ -38,6 +38,8 @@ export default function Connectors() {
   const [identifier, setIdentifier] = useState('')
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
+  const [facebookPages, setFacebookPages] = useState<{ id: string; name: string }[]>([])
+  const [facebookPageId, setFacebookPageId] = useState('')
   const returnTo = searchParams.get('returnTo') || ''
 
   const load = async () => {
@@ -48,9 +50,18 @@ export default function Connectors() {
   useEffect(() => {
     const connected = searchParams.get('connected')
     if (connected === 'linkedin') setNotice('LinkedIn connected successfully and is ready to publish.')
+    else if (connected === 'facebook') setNotice('Facebook connected successfully and is ready to publish to the selected Page.')
+    else if (connected === 'facebook_select') {
+      setSelected('facebook')
+      setNotice('Choose the Facebook Page AlphaTekx should manage.')
+      void getFacebookPages(session?.access_token).then(data => {
+        setFacebookPages(data.pages)
+        if (data.pages.length === 1) setFacebookPageId(data.pages[0].id)
+      }).catch(error => setNotice(error instanceof Error ? error.message : 'Could not load Facebook Pages.'))
+    }
     else if (connected === 'google' || connected === 'gmail') setNotice('Google connected successfully.')
     else if (connected === 'error') setNotice(searchParams.get('reason') || 'Connection was not completed.')
-    if (connected && returnTo && connected !== 'error') {
+    if (connected && returnTo && connected !== 'error' && connected !== 'facebook_select') {
       window.setTimeout(() => window.location.assign(returnTo), 700)
       return
     }
@@ -68,7 +79,7 @@ export default function Connectors() {
   }
 
   const choices = useMemo(() => {
-    const ids = ['linkedin', 'gmail', 'telegram', 'slack', 'discord']
+    const ids = ['linkedin', 'facebook', 'gmail', 'telegram', 'slack', 'discord']
     const available = ids.map(id => {
       const connector = getConnector(id)!
       return { id: id === 'gmail' ? 'google' : id, name: id === 'gmail' ? 'Google' : connector.name, description: id === 'gmail' ? 'Gmail, Calendar, Sheets and Drive.' : connector.description, connector, availability: service(id === 'gmail' ? 'google' : id).connected ? 'Connected' : 'Available' }
@@ -80,6 +91,8 @@ export default function Connectors() {
     const result: { id: string; name: string; connector: Connector; account: string; capabilities: string }[] = []
     const linkedIn = getConnector('linkedin')
     if (service('linkedin').connected && linkedIn) result.push({ id: 'linkedin', name: 'LinkedIn', connector: linkedIn, account: service('linkedin').email || service('linkedin').identifier || 'Personal profile', capabilities: 'Personal-profile text publishing' })
+    const facebook = getConnector('facebook')
+    if (service('facebook').connected && facebook) result.push({ id: 'facebook', name: 'Facebook', connector: facebook, account: service('facebook').email || service('facebook').identifier || 'Facebook Page', capabilities: 'Facebook Page text publishing' })
     const google = getConnector('gmail')
     if ((service('google').connected || service('gmail').connected) && google) result.push({ id: 'google', name: 'Google', connector: google, account: service('google').email || service('gmail').email || 'Google account', capabilities: 'Gmail, Calendar, Sheets and Drive' })
     for (const id of apiKeyAvailable) {
@@ -105,6 +118,18 @@ export default function Connectors() {
     try {
       const redirect = returnTo ? `/connected-apps?returnTo=${encodeURIComponent(returnTo)}` : '/connected-apps'
       if (selected === 'linkedin') return await startLinkedInAuth(session?.access_token, redirect)
+      if (selected === 'facebook') {
+        if (facebookPages.length) {
+          if (!facebookPageId) throw new Error('Select the Facebook Page AlphaTekx should manage.')
+          const result = await selectFacebookPage(facebookPageId, session?.access_token)
+          setFacebookPages([])
+          setFacebookPageId('')
+          await load()
+          setNotice(`${result.page.name} connected successfully.`)
+          return
+        }
+        return await startFacebookAuth(session?.access_token, redirect)
+      }
       if (selected === 'google') return await startGmailConnection(session?.access_token, redirect)
       if (!apiKeyAvailable.has(selected) || !key.trim()) throw new Error('Enter the required connection details.')
       await saveConnector(selected, session?.access_token, connectorTokens(selected, key.trim(), identifier.trim()), identifier.trim() || undefined)
@@ -148,6 +173,7 @@ export default function Connectors() {
     {selected && <section className="mt-5 rounded-2xl border border-violet-400/20 bg-violet-500/[.055] p-5">
       <div className="flex items-start justify-between gap-3"><div className="flex items-center gap-3">{selectedConnector && <span className="grid size-11 place-items-center rounded-xl bg-white/[.07]"><ConnectorIcon connector={selectedConnector}/></span>}<div><h2 className="font-semibold">{selected === 'google' ? 'Google' : selectedConnector?.name}</h2><p className="mt-1 text-xs text-white/50">{selectedConnected ? 'Connected' : 'Complete this connection to continue.'}</p></div></div><button onClick={() => setSelected(null)} aria-label="Close connection details"><X size={18}/></button></div>
       {!selectedConnected && apiKeyAvailable.has(selected) && config && <div className="mt-5 grid gap-3"><label className="text-xs text-white/55">{config.key}<input type="password" value={key} onChange={event => setKey(event.target.value)} placeholder={config.keyPlaceholder} className="field mt-1"/></label>{config.identifier && <label className="text-xs text-white/55">{config.identifier}<input value={identifier} onChange={event => setIdentifier(event.target.value)} className="field mt-1"/></label>}</div>}
+      {!selectedConnected && selected === 'facebook' && facebookPages.length > 0 && <fieldset className="mt-5 grid gap-2"><legend className="mb-2 text-xs text-white/55">Select one Facebook Page</legend>{facebookPages.map(page => <label key={page.id} className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 ${facebookPageId === page.id ? 'border-violet-400 bg-violet-500/10' : 'border-white/10'}`}><input type="radio" name="facebook-page" value={page.id} checked={facebookPageId === page.id} onChange={() => setFacebookPageId(page.id)}/><span className="text-sm">{page.name}</span></label>)}</fieldset>}
       <div className="mt-5 flex flex-wrap gap-2">{selectedConnected ? <><button onClick={() => void verify(selected)} disabled={busy} className="action">{busy ? <LoaderCircle className="animate-spin" size={16}/> : <CheckCircle2 size={16}/>}Verify</button><button onClick={() => void connect()} disabled={busy} className="action"><RefreshCw size={16}/>Reconnect</button><button onClick={() => void disconnect(selected)} disabled={busy} className="action text-rose-300"><Unplug size={16}/>Disconnect</button></> : <button onClick={() => void connect()} disabled={busy || (apiKeyAvailable.has(selected) && !key.trim())} className="flex min-h-11 items-center gap-2 rounded-xl btn-alpha px-5 text-sm disabled:opacity-40">{busy ? <LoaderCircle className="animate-spin" size={16}/> : <Plug size={16}/>}Connect {selected === 'google' ? 'Google' : selectedConnector?.name}</button>}</div>
     </section>}
 

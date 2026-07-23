@@ -92,9 +92,8 @@ const CAPABILITIES = [
     id: 'facebook-post',
     name: 'Post to Facebook',
     description: 'Publish a post to a Facebook page.',
-    supported: false,
-    reason: 'Facebook Page integration is not configured for this workspace yet.',
-    alternative: 'Try posting to Telegram, Slack, or sending an email instead.',
+    supported: true,
+    requiredConnectors: ['facebook'],
     patterns: [
       /post.*(?:to\s+)?facebook/i,
       /facebook\s*(?:post|publish)/i,
@@ -475,6 +474,39 @@ function buildLinkedInPlan(prompt, user, extracted) {
   }
 }
 
+function buildFacebookPlan(prompt, user, extracted) {
+  const topicMatch = String(prompt).match(/(?:about|on)\s+([^,.!?]+)/i)
+  const topic = topicMatch?.[1]?.trim() || ''
+  const audienceMatch = String(prompt).match(/(?:for|audience(?:\s+is)?[:=]?)\s+([^,.!?]+)/i)
+  const toneMatch = String(prompt).match(/(?:in a|with a|tone(?:\s+is)?[:=]?)\s+([^,.!?]+?)(?:\s+tone)?(?:[,.!?]|$)/i)
+  const missing = []
+  if (!topic) missing.push({ field: 'topic', step: 'Content', connector: 'facebook', reason: 'What should the Facebook Page post be about?' })
+  if (!audienceMatch?.[1]) missing.push({ field: 'audience', step: 'Content', connector: 'facebook', reason: 'Who should this post speak to?' })
+  if (!toneMatch?.[1]) missing.push({ field: 'tone', step: 'Content', connector: 'facebook', reason: 'What tone should the post use?' })
+  return {
+    id: null,
+    title: 'Facebook Page Post',
+    name: 'Facebook Page Post',
+    description: `Generate, review, and publish one Facebook Page text post${topic ? ` about ${topic}` : ''}.`,
+    originalRequest: prompt,
+    interpretedGoal: 'Publish one approved text post to a selected Facebook Page.',
+    trigger: { type: 'campaign', cron: 'campaign', nextRun: null },
+    schedule: { frequency: 'once', timezone: extracted.timezone || user?.timezone || 'UTC' },
+    timezone: extracted.timezone || user?.timezone || 'UTC',
+    integrations: ['Facebook'],
+    requiredPermissions: ['pages_show_list', 'pages_read_engagement', 'pages_manage_posts'],
+    actions: [{ connector: 'facebook', action: 'post', label: 'Publish approved Facebook Page post', requiresApproval: true, approvalStatus: 'pending', params: { text: '', topic, audience: audienceMatch?.[1]?.trim() || '', tone: toneMatch?.[1]?.trim() || '', generate: true, profileType: 'page', totalPosts: 1 } }],
+    status: missing.length ? 'awaiting_information' : 'awaiting_approval',
+    approved: false,
+    missing,
+    creditsNeeded: 3,
+    creditsPerRun: 3,
+    creditsPerStep: [{ step: 'Generate and publish Facebook Page post', cost: 3, reason: 'AI writing and confirmed Facebook Page publishing' }],
+    approvalPolicy: 'explicit',
+    retryPolicy: { maxRetries: 3, backoffMinutes: [1, 5, 15] },
+  }
+}
+
 export function buildCapabilityPlan(prompt, user = null, options = {}) {
   const text = String(prompt || '')
   const capability = detectCapability(text)
@@ -492,6 +524,7 @@ export function buildCapabilityPlan(prompt, user = null, options = {}) {
   if (!capability.supported) return unsupportedResponse(capability, prompt)
   switch (capability.id) {
     case 'linkedin-post': return buildLinkedInPlan(prompt, user, extracted)
+    case 'facebook-post': return buildFacebookPlan(prompt, user, extracted)
     case 'calendar-to-email': return buildCalendarToEmailPlan(prompt, user, extracted)
     case 'gmail-to-telegram': return buildGmailToTelegramPlan(prompt, user, extracted)
     case 'send-email': return buildSendEmailPlan(prompt, user, extracted)

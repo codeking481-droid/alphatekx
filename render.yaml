@@ -14,3 +14,5 @@ services:
         value: https://alphatekx.name.ng
       - key: GOOGLE_REDIRECT_URI
         value: https://alphatekx.name.ng/api/auth/gmail/callback
+      - key: META_REDIRECT_URI
+        value: https://alphatekx.name.ng/api/connectors/facebook/callback
