@@ -1408,7 +1408,7 @@ async function integrationsStatus(req, res) {
   for (const provider of providers) {
     const integration = await getUserIntegration(user.id, provider, config).catch(() => null)
     const token = integration?.tokens || {}
-    const connected = Boolean(token?.api_key || token?.access_token || token?.token || token?.webhook_url || token?.bot_token)
+    const connected = Boolean(token?.api_key || token?.access_token || token?.token || token?.webhook_url || token?.bot_token || (provider === 'telegram' && token?.isMaster && token?.chat_id))
     const ready = connected || connectorReady(provider)
     const identifier = token?.chat_id || token?.author_urn || token?.channel || token?.page_id || token?.pageId || token?.phone_number_id || token?.phoneNumberId || integration?.identifier || null
     const expiresAt = Number(token?.expiry || token?.expires_at || token?.expiry_date || 0)
@@ -1644,8 +1644,25 @@ async function saveConnectorHandler(req, res) {
   const platform = String(body.platform || body.provider || '')
   if (!platform) return json(res, 400, { error: 'Platform required' })
   const tokens = body.tokens || body.credentials || {}
-  if (!tokens.api_key && !tokens.access_token && !tokens.token && !tokens.webhook_url && !tokens.webhookUrl && !tokens.bot_token && !tokens.botToken) return json(res, 400, { error: 'Connector credentials required' })
-  tokens.hasOwnKey = true
+  const sharedTelegram = platform === 'telegram' && Boolean(tokens.chat_id || tokens.chatId)
+  if (!tokens.api_key && !tokens.access_token && !tokens.token && !tokens.webhook_url && !tokens.webhookUrl && !tokens.bot_token && !tokens.botToken && !sharedTelegram) return json(res, 400, { error: 'Connector credentials required' })
+  if (sharedTelegram) {
+    const master = masterCredentials('telegram')
+    if (!master?.botToken) return json(res, 503, { error: 'AlphaTekx Telegram bot is not configured on the server.' })
+    const chatId = String(tokens.chat_id || tokens.chatId || '').trim()
+    if (!/^-?\d+$/.test(chatId)) return json(res, 400, { error: 'Enter a valid numeric Telegram chat ID.' })
+    const verifyResponse = await fetch(`https://api.telegram.org/bot${master.botToken}/getChat?chat_id=${encodeURIComponent(chatId)}`)
+    const verifyData = await verifyResponse.json().catch(() => ({}))
+    if (!verifyResponse.ok || !verifyData.ok) {
+      return json(res, 400, { error: verifyData.description || 'The AlphaTekx bot cannot access that Telegram chat. Open the bot and send it a message first.' })
+    }
+    tokens.chat_id = chatId
+    tokens.isMaster = true
+    tokens.hasOwnKey = false
+    delete tokens.chatId
+  } else {
+    tokens.hasOwnKey = true
+  }
   const identifier = body.identifier || tokens.chat_id || tokens.chatId || tokens.author_urn || tokens.authorUrn || tokens.channel || tokens.page_id || tokens.pageId || tokens.phone_number_id || tokens.phoneNumberId || ''
   await saveUserIntegration(user.id, platform, { email: user.email, identifier, tokens, scopes: body.scopes || [] }, config)
   return json(res, 200, { saved: true, platform, hasOwnKey: true })
@@ -3973,6 +3990,99 @@ async function googleDriveUploadFile(userId, params) {
   return patchData
 }
 
+function gmailAttachmentParts(payload, result = []) {
+  if (!payload || typeof payload !== 'object') return result
+  if (payload.filename && payload.body?.attachmentId) {
+    result.push({
+      attachmentId: String(payload.body.attachmentId),
+      name: String(payload.filename),
+      mimeType: String(payload.mimeType || 'application/octet-stream'),
+    })
+  }
+  for (const part of payload.parts || []) gmailAttachmentParts(part, result)
+  return result
+}
+
+async function googleDriveFindGmailAttachment(accessToken, sourceKey) {
+  const url = new URL('https://www.googleapis.com/drive/v3/files')
+  url.searchParams.set('q', `trashed = false and appProperties has { key='alphatekxGmailAttachment' and value='${sourceKey}' }`)
+  url.searchParams.set('fields', 'files(id,name)')
+  url.searchParams.set('pageSize', '1')
+  const response = await fetch(url.toString(), { headers: { Authorization: `Bearer ${accessToken}` } })
+  const data = await response.json()
+  if (!response.ok) throw new Error(data.error?.message || 'Google Drive duplicate check failed')
+  return data.files?.[0] || null
+}
+
+async function googleDriveUploadGmailAttachment(accessToken, attachment) {
+  const boundary = `alphatekx_${randomUUID()}`
+  const metadata = {
+    name: attachment.name,
+    mimeType: attachment.mimeType,
+    appProperties: { alphatekxGmailAttachment: attachment.sourceKey },
+  }
+  const opening = Buffer.from(
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n` +
+    `--${boundary}\r\nContent-Type: ${attachment.mimeType}\r\n\r\n`,
+    'utf8',
+  )
+  const closing = Buffer.from(`\r\n--${boundary}--`, 'utf8')
+  const body = Buffer.concat([opening, attachment.content, closing])
+  const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': `multipart/related; boundary=${boundary}`,
+    },
+    body,
+  })
+  const data = await response.json()
+  if (!response.ok || !data.id) throw new Error(data.error?.message || 'Google Drive attachment upload failed')
+  return data
+}
+
+async function gmailSaveAttachmentsToDrive(userId, params = {}) {
+  const config = supabaseConfig()
+  const accessToken = await googleAccessToken(userId, config)
+  const maxMessages = Math.min(Math.max(Number(params.maxMessages || 20), 1), 50)
+  const query = String(params.q || 'has:attachment').trim()
+  const listUrl = new URL('https://gmail.googleapis.com/gmail/v1/users/me/messages')
+  listUrl.searchParams.set('q', query)
+  listUrl.searchParams.set('maxResults', String(maxMessages))
+  const listResponse = await fetch(listUrl.toString(), { headers: { Authorization: `Bearer ${accessToken}` } })
+  const listData = await listResponse.json()
+  if (!listResponse.ok) throw new Error(listData.error?.message || 'Gmail attachment search failed')
+
+  const saved = []
+  const skipped = []
+  for (const messageRef of listData.messages || []) {
+    const messageResponse = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(messageRef.id)}?format=full`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    )
+    const message = await messageResponse.json()
+    if (!messageResponse.ok) throw new Error(message.error?.message || 'Gmail message read failed')
+    for (const part of gmailAttachmentParts(message.payload)) {
+      const sourceKey = Buffer.from(`${messageRef.id}:${part.attachmentId}`, 'utf8').toString('base64url')
+      const existing = await googleDriveFindGmailAttachment(accessToken, sourceKey)
+      if (existing) {
+        skipped.push({ id: existing.id, name: existing.name || part.name, reason: 'already_saved' })
+        continue
+      }
+      const attachmentResponse = await fetch(
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(messageRef.id)}/attachments/${encodeURIComponent(part.attachmentId)}`,
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+      )
+      const attachmentData = await attachmentResponse.json()
+      if (!attachmentResponse.ok || !attachmentData.data) throw new Error(attachmentData.error?.message || `Could not download ${part.name}`)
+      const content = Buffer.from(String(attachmentData.data), 'base64url')
+      const uploaded = await googleDriveUploadGmailAttachment(accessToken, { ...part, sourceKey, content })
+      saved.push({ id: uploaded.id, name: uploaded.name || part.name, mimeType: uploaded.mimeType || part.mimeType })
+    }
+  }
+  return { query, messagesChecked: (listData.messages || []).length, saved, skipped }
+}
+
 async function connectorCredential(userId, provider, envName, field = 'api_key') {
   const config = supabaseConfig()
   const integration = await getUserIntegration(userId, provider, config)
@@ -4129,8 +4239,10 @@ async function getPostingCredentials(user, platform, params = {}) {
   }
   if (isMasterToken) {
     if (!skipFreeLimit && (full.freePostsUsed || 0) >= (full.freePostsLimit || 0)) throw new Error('FREE_LIMIT_REACHED')
-    if (!accessToken) throw new Error(`${platform} master token is missing`)
-    return { platform, isMaster: true, accessToken, webhookUrl: '', botToken: accessToken, chatId, channel, authorUrn, pageId, phoneNumberId, scopes, ...ownTokens }
+    const master = masterCredentials(platform)
+    const masterToken = accessToken || master?.botToken || master?.accessToken || ''
+    if (!masterToken) throw new Error(`${platform} master token is missing`)
+    return { ...master, platform, isMaster: true, accessToken: masterToken, webhookUrl: master?.webhookUrl || '', botToken: master?.botToken || masterToken, chatId: chatId || master?.chatId || '', channel: channel || master?.channel || '', authorUrn, pageId, phoneNumberId, scopes, ...ownTokens }
   }
   if (!skipFreeLimit && (full.freePostsUsed || 0) >= (full.freePostsLimit || 0)) throw new Error('FREE_LIMIT_REACHED')
   const master = masterCredentials(platform)
@@ -4450,6 +4562,18 @@ async function executeConnectorAction(user, action) {
           const body = String(params.body || params.text || params.message || '')
           const sendResult = await sendEmailWithGmail(user, { to, subject, html: String(params.html || `<p>${body}</p>`), text: body })
           result = { id: sendResult.messageId, to, subject }
+        }
+        if (action.action === 'save_attachments_to_drive') {
+          const transfer = await gmailSaveAttachmentsToDrive(user.id, params)
+          result = {
+            id: transfer.saved[0]?.id,
+            savedCount: transfer.saved.length,
+            skippedCount: transfer.skipped.length,
+            messagesChecked: transfer.messagesChecked,
+            files: transfer.saved,
+            skipped: transfer.skipped,
+            query: transfer.query,
+          }
         }
         break
       }

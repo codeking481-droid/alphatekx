@@ -42,6 +42,19 @@ const CAPABILITIES = [
     ],
   },
   {
+    id: 'gmail-attachments-to-drive',
+    name: 'Save Gmail Attachments to Google Drive',
+    description: 'Find matching Gmail attachments and save each one to Google Drive without creating duplicates.',
+    supported: true,
+    requiredConnectors: ['gmail', 'google_drive'],
+    patterns: [
+      /(?:save|copy|move|upload|archive|backup|back\s*up).*(?:email|gmail|inbox|invoice|receipt).*(?:attachments?|files?).*(?:google\s*)?drive/i,
+      /(?:email|gmail|inbox|invoice|receipt).*(?:attachments?|files?).*(?:to|in|into|on).*(?:google\s*)?drive/i,
+      /(?:google\s*)?drive.*(?:email|gmail|inbox|invoice|receipt).*(?:attachments?|files?)/i,
+      /(?:attachments?|attached\s+files?).*(?:from|in).*(?:email|gmail|inbox).*(?:to|in|into|on).*(?:google\s*)?drive/i,
+    ],
+  },
+  {
     id: 'send-email',
     name: 'Send Email',
     description: 'Send an email to a recipient.',
@@ -114,11 +127,13 @@ const CAPABILITIES = [
 ]
 
 function extractTime(text) {
-  const match = text.match(/\b(\d{1,2}):(\d{2})\s*(am|pm)?\b/i) || text.match(/\b(\d{1,2})\s*(am|pm)\b/i)
+  const clockMatch = text.match(/\b(\d{1,2}):(\d{2})\s*(am|pm)?\b/i)
+  const hourMatch = clockMatch ? null : text.match(/\b(\d{1,2})\s*(am|pm)\b/i)
+  const match = clockMatch || hourMatch
   if (match) {
     let hour = parseInt(match[1], 10)
-    const minute = parseInt(match[2] || '0', 10)
-    const period = (match[3] || '').toLowerCase()
+    const minute = clockMatch ? parseInt(match[2] || '0', 10) : 0
+    const period = (clockMatch ? match[3] : match[2] || '').toLowerCase()
     if (period === 'pm' && hour !== 12) hour += 12
     if (period === 'am' && hour === 12) hour = 0
     if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) return { hour, minute, display: `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}` }
@@ -474,6 +489,60 @@ function buildLinkedInPlan(prompt, user, extracted) {
   }
 }
 
+function buildGmailAttachmentsToDrivePlan(prompt) {
+  const invoiceOnly = /\binvoices?\b/i.test(prompt)
+  const receiptOnly = /\breceipts?\b/i.test(prompt)
+  const queryParts = ['has:attachment']
+  if (invoiceOnly && receiptOnly) queryParts.push('{invoice receipt}')
+  else if (invoiceOnly) queryParts.push('invoice')
+  else if (receiptOnly) queryParts.push('receipt')
+  const extension = String(prompt).match(/\b(pdf|csv|docx?|xlsx?|jpe?g|png|zip)\b/i)?.[1]?.toLowerCase()
+  if (extension) queryParts.push(`filename:${extension}`)
+  const sender = extractEmail(prompt)
+  if (sender && /\b(?:from|sent\s+by|sender)\b/i.test(prompt)) queryParts.push(`from:${sender}`)
+  if (/\bunread\b/i.test(prompt)) queryParts.push('is:unread')
+  const query = queryParts.join(' ')
+  const time = extractTime(prompt)
+  const hourly = /\b(?:every\s+hour|hourly)\b/i.test(prompt)
+  const daily = /\b(?:every\s+day|daily)\b/i.test(prompt)
+  const cron = hourly ? '0 * * * *' : daily || time ? buildCron(time, 8) : '*/15 * * * *'
+  const frequency = hourly ? 'hourly' : daily || time ? 'daily' : 'every_15_minutes'
+  const filterLabel = invoiceOnly && receiptOnly ? 'invoice and receipt ' : invoiceOnly ? 'invoice ' : receiptOnly ? 'receipt ' : ''
+  const name = invoiceOnly && !receiptOnly ? 'Save Invoice Attachments to Google Drive' : 'Save Gmail Attachments to Google Drive'
+  return {
+    id: null,
+    title: name,
+    name,
+    description: `Check Gmail ${hourly ? 'hourly' : daily || time ? `daily${time ? ` at ${time.display}` : ''}` : 'every 15 minutes'} and save ${filterLabel}${extension ? `${extension.toUpperCase()} ` : ''}attachments to My Drive. Files already saved by this automation are skipped.`,
+    originalRequest: prompt,
+    interpretedGoal: 'Save matching Gmail attachments to Google Drive.',
+    trigger: { type: 'schedule', cron, nextRun: null },
+    schedule: { frequency, cron, time: time?.display, timezone: 'UTC' },
+    integrations: ['Gmail', 'Google Drive'],
+    requiredPermissions: [
+      'https://www.googleapis.com/auth/gmail.readonly',
+      'https://www.googleapis.com/auth/drive',
+    ],
+    actions: [{
+      connector: 'gmail',
+      action: 'save_attachments_to_drive',
+      label: 'Save matching Gmail attachments to Google Drive',
+      params: { q: query, maxMessages: 20 },
+    }],
+    status: 'awaiting_approval',
+    approved: true,
+    missing: [],
+    creditsNeeded: 1,
+    creditsPerRun: 1,
+    creditsPerStep: [
+      { step: 'Save Gmail attachments to Drive', cost: 1, reason: 'Find, deduplicate, and upload matching attachments' },
+    ],
+    notificationSettings: { onSuccess: true, onFailure: true, onRetry: true, channels: ['email'] },
+    executionPolicy: 'run_until_end',
+    retryPolicy: { maxRetries: 2, backoffMinutes: [1, 5] },
+  }
+}
+
 function buildFacebookPlan(prompt, user, extracted) {
   const topicMatch = String(prompt).match(/(?:about|on)\s+([^,.!?]+)/i)
   const topic = topicMatch?.[1]?.trim() || ''
@@ -527,6 +596,7 @@ export function buildCapabilityPlan(prompt, user = null, options = {}) {
     case 'facebook-post': return buildFacebookPlan(prompt, user, extracted)
     case 'calendar-to-email': return buildCalendarToEmailPlan(prompt, user, extracted)
     case 'gmail-to-telegram': return buildGmailToTelegramPlan(prompt, user, extracted)
+    case 'gmail-attachments-to-drive': return buildGmailAttachmentsToDrivePlan(prompt)
     case 'send-email': return buildSendEmailPlan(prompt, user, extracted)
     case 'post-telegram': return buildTelegramPlan(prompt, user, extracted)
     case 'post-slack': return buildSlackPlan(prompt, user, extracted)
@@ -560,7 +630,7 @@ export function extractMissingFromAnswer(previousMissing, answer) {
 }
 
 export const SUPPORTED_CONNECTOR_ACTIONS = {
-  gmail: ['send_email'],
+  gmail: ['send_email', 'save_attachments_to_drive'],
   email: ['send_email'],
   google_sheets: ['append_row', 'read_rows'],
   google_calendar: ['create_event', 'read_events', 'email_summary'],

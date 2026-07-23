@@ -344,6 +344,17 @@ export function createConversationEngine(deps) {
     const capability = detectCapability(prompt)
 
     const fastHeuristic = heuristicParseRequest(prompt)
+    if (capability?.id === 'gmail-attachments-to-drive') {
+      const capabilityPlan = buildCapabilityPlan(prompt, { email: conversation.userEmail })
+      conversation.intent = 'gmail_attachments_to_drive'
+      conversation.confidence = 1
+      conversation.currentGoal = capabilityPlan.interpretedGoal || prompt
+      conversation.knownFields = extractKnownFieldsFromCapability(capabilityPlan)
+      conversation.missingFields = []
+      conversation.askedFields = conversation.askedFields || []
+      await moveToPlanningOrContent(conversation)
+      return
+    }
     if (SOCIAL_CONTENT_INTENTS.has(fastHeuristic.intent) && requiredMissingFields(fastHeuristic.intent, fastHeuristic.knownFields).length === 0) {
       conversation.intent = fastHeuristic.intent
       conversation.confidence = 0.9
@@ -383,7 +394,7 @@ export function createConversationEngine(deps) {
     const system = `${ALPHA_SYSTEM_IDENTITY}
 
 Analyze the user's request and return a JSON object with:
-- intent: one of social_content, send_email, telegram_message, slack_message, calendar_summary, sheets_append, unsupported, unknown
+- intent: one of social_content, send_email, gmail_attachments_to_drive, telegram_message, slack_message, calendar_summary, sheets_append, unsupported, unknown
 - goal: a short rewritten goal in plain English
 - confidence: 0 to 1
 - platforms: array of platform names mentioned (facebook, linkedin, x, instagram, telegram, slack, gmail, google_sheets, google_calendar)
@@ -496,6 +507,7 @@ Do not return placeholder text. Use the words the user actually provided.`
 
   function mapCapabilityToIntent(capabilityPlan, fallback) {
     if (capabilityPlan.actions?.some(a => a.connector === 'facebook' || a.connector === 'linkedin' || a.connector === 'x' || a.connector === 'instagram')) return 'social_content'
+    if (capabilityPlan.actions?.some(a => a.connector === 'gmail' && a.action === 'save_attachments_to_drive')) return 'gmail_attachments_to_drive'
     if (capabilityPlan.actions?.some(a => a.connector === 'gmail' || a.connector === 'email')) return 'send_email'
     if (capabilityPlan.actions?.some(a => a.connector === 'telegram')) return 'telegram_message'
     if (capabilityPlan.actions?.some(a => a.connector === 'slack')) return 'slack_message'
