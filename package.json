@@ -17,6 +17,7 @@
     "test:phase3": "node scripts/phase3-tests.mjs",
     "test:phase11": "node scripts/phase11-tests.mjs",
     "test:linkedin": "node scripts/linkedin-tests.mjs",
+    "test:simplicity": "node scripts/simplicity-tests.mjs",
     "test:e2e": "node scripts/full-test.mjs && node scripts/path-deploy-test.mjs && node scripts/render-smoke.mjs",
     "test:thorough": "node scripts/thorough-test.mjs"
   },
