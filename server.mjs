@@ -535,7 +535,10 @@ function localToUtc(localDate, timeZone) {
 }
 
 function computeNextRun(cron, from = new Date(), timeZone = 'UTC') {
-  const [minute, hour, day, month] = cron.split(' ').map(s => s.trim())
+  const cronParts = cron.split(/\s+/).map(s => s.trim()).filter(Boolean)
+  // Accept both standard five-field cron and the six-field (seconds first)
+  // form emitted by older AlphaTekx records.
+  const [minute, hour, day, month] = cronParts.length === 6 ? cronParts.slice(1) : cronParts
   const dailyAtTime = minute !== '*' && hour !== '*' && day === '*' && month === '*'
   if (dailyAtTime && timeZone && timeZone !== 'UTC') {
     const parts = getPartsInTimeZone(from, timeZone)
@@ -4699,9 +4702,27 @@ async function deleteServerAgent(id) {
     const config = supabaseConfig()
     try { await supabaseDeleteAgent(id); return } catch { /* fall through */ }
     try { if (await remoteAgentsDelete(id, config)) return } catch { /* fall through */ }
+    throw new Error('Durable agent persistence is unavailable; refusing to delete from ephemeral storage')
   }
   const agents = readAgents().filter(a => a.id !== id)
   writeAgents(agents)
+}
+
+function resumeAgentSchedule(agent, now = new Date()) {
+  const trigger = agent.trigger || {}
+  if (trigger.type === 'campaign' || trigger.cron === 'campaign') {
+    const posts = Array.isArray(agent.campaign?.posts) ? agent.campaign.posts : []
+    const pending = posts.filter(post => !['published', 'posted', 'completed'].includes(post.status))
+    const dated = pending.filter(post => Number.isFinite(new Date(post.scheduledAt).getTime()))
+    const earliest = dated.sort((a, b) => new Date(a.scheduledAt) - new Date(b.scheduledAt))[0]
+    if (earliest && new Date(earliest.scheduledAt) <= now) {
+      const delta = now.getTime() + 60_000 - new Date(earliest.scheduledAt).getTime()
+      for (const post of dated) post.scheduledAt = new Date(new Date(post.scheduledAt).getTime() + delta).toISOString()
+    }
+    return campaignNextRun(agent.campaign) || new Date(now.getTime() + 60_000).toISOString()
+  }
+  const timezone = agent.timezone || agent.schedule?.timezone || 'UTC'
+  return nextRunFromCronServer(trigger.cron || '0 0 8 * * *', now, timezone).toISOString()
 }
 
 async function addServerExecution(execution) {
@@ -5315,7 +5336,7 @@ const server = http.createServer(async (req, res) => {
       const config = supabaseConfig()
       const user = await currentOrLocalUser(req, config.url, config.anon)
       if (!user) return json(res, 401, { error: 'Authentication required' })
-      const agents = (await listServerAgents()).filter(agent => agent.userId === user.id)
+      const agents = (await listServerAgents()).filter(agent => agent.userId === user.id && agent.status !== 'deleted')
       const agentIds = new Set(agents.map(agent => agent.id))
       const executions = (await listServerExecutions()).filter(execution => agentIds.has(execution.agentId))
       return json(res, 200, { agents, executions })
@@ -5418,25 +5439,72 @@ const server = http.createServer(async (req, res) => {
   if (agentIdMatch) {
     const agentId = decodeURIComponent(agentIdMatch[1])
     const isRun = req.url.includes('/run')
+    const config = supabaseConfig()
+    const user = await currentOrLocalUser(req, config.url, config.anon).catch(() => null)
+    if (!user) return json(res, 401, { error: 'Authentication required' })
+    const existingAgent = await getServerAgent(agentId)
+    if (!existingAgent) return json(res, 404, { error: 'Automation not found' })
+    if (existingAgent.userId && existingAgent.userId !== user.id) return json(res, 403, { error: 'Not authorized to modify this automation' })
+    if (existingAgent.status === 'deleted') {
+      return json(res, req.method === 'DELETE' ? 409 : 404, { error: req.method === 'DELETE' ? 'Automation is already deleted' : 'Automation not found' })
+    }
     if (isRun && req.method === 'POST') {
-      const agent = await getServerAgent(agentId)
-      if (!agent) return json(res, 404, { error: 'Agent not found' })
-      try { const execution = await runAgent(agent, 'manual'); return json(res, 200, { executed: true, execution }) }
+      try { const execution = await runAgent(existingAgent, 'manual'); return json(res, 200, { executed: true, execution }) }
       catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Run failed' }) }
     }
     if (req.method === 'GET') {
-      const agent = await getServerAgent(agentId)
-      if (!agent) return json(res, 404, { error: 'Agent not found' })
       const executions = (await listServerExecutions()).filter(e => e.agentId === agentId)
-      return json(res, 200, { agent, executions })
+      return json(res, 200, { agent: existingAgent, executions })
+    }
+    if (req.method === 'PATCH') {
+      try {
+        const body = await readBody(req)
+        const action = String(body.action || '')
+        if (!['pause', 'resume', 'archive'].includes(action)) return json(res, 400, { error: 'Action must be pause, resume, or archive' })
+        if (existingAgent.campaign?.posts?.some(post => post.status === 'publishing')) {
+          return json(res, 409, { error: 'Automation cannot change state while a post is publishing' })
+        }
+        const agent = structuredClone(existingAgent)
+        if (action === 'pause') {
+          agent.status = 'paused'
+          if (agent.campaign) agent.campaign.status = 'paused'
+        } else if (action === 'resume') {
+          agent.status = 'running'
+          if (agent.campaign) agent.campaign.status = 'running'
+          const nextRun = resumeAgentSchedule(agent)
+          agent.trigger = { ...(agent.trigger || {}), nextRun }
+          agent.nextRunAt = nextRun
+        } else {
+          agent.status = 'deleted'
+          agent.deletedAt = new Date().toISOString()
+          agent.trigger = { ...(agent.trigger || {}), nextRun: null }
+          agent.nextRunAt = null
+          if (agent.campaign) agent.campaign.status = 'archived'
+        }
+        const saved = await saveServerAgent(agent)
+        return json(res, 200, { agent: saved })
+      } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Could not update automation' }) }
     }
     if (req.method === 'POST') {
       try { const body = await readBody(req); const existing = await getServerAgent(agentId) || {}; const agent = await saveServerAgent({ ...existing, ...body.agent, id: agentId }); return json(res, 200, { agent }) }
       catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : 'Could not update agent' }) }
     }
     if (req.method === 'DELETE') {
-      await deleteServerAgent(agentId)
-      return json(res, 200, { deleted: true })
+      try {
+        if (existingAgent.campaign?.posts?.some(post => post.status === 'publishing')) {
+          return json(res, 409, { error: 'Automation cannot be deleted while a post is publishing' })
+        }
+        const agent = {
+          ...existingAgent,
+          status: 'deleted',
+          deletedAt: new Date().toISOString(),
+          nextRunAt: null,
+          trigger: { ...(existingAgent.trigger || {}), nextRun: null },
+          campaign: existingAgent.campaign ? { ...existingAgent.campaign, status: 'archived' } : undefined,
+        }
+        await saveServerAgent(agent)
+        return json(res, 200, { deleted: true, agent })
+      } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Could not delete automation' }) }
     }
     return json(res, 405, { error: 'Method not allowed' })
   }

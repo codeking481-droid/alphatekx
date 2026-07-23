@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { AlertCircle, CalendarClock, CheckCircle2, Copy, History, Pause, Play, Plus, Trash2 } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { deleteAgent, saveAgent, useAgents } from '../lib/agents/agentStore'
+import { deleteAgent, saveAgent, setAgentLifecycle, useAgents } from '../lib/agents/agentStore'
 import type { Agent, AgentStatus } from '../lib/agents/types'
 
 const filters = ['All', 'Running', 'Waiting', 'Paused', 'Needs Attention', 'Completed'] as const
@@ -45,7 +45,7 @@ export default function ActiveAutomations() {
 
   const changeStatus = async (agent: Agent, status: AgentStatus) => {
     try {
-      await saveAgent({ ...agent, status, campaign: agent.campaign ? { ...agent.campaign, status: status === 'paused' ? 'paused' : 'running' } : undefined })
+      await setAgentLifecycle(agent.id, status === 'paused' ? 'pause' : 'resume')
       setNotice(status === 'paused' ? 'Automation paused. No future run will start until you resume it.' : 'Automation resumed.')
     } catch (error) { setNotice(error instanceof Error ? error.message : 'Could not update automation.') }
   }

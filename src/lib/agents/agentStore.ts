@@ -76,8 +76,26 @@ export async function saveAgent(agent: Agent) {
 
 export async function deleteAgent(id: string) {
   const response = await fetch(`/api/agents/${encodeURIComponent(id)}`, { method: 'DELETE', headers: await authHeaders() })
-  if (!response.ok) throw new Error('Could not delete automation from the server')
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}))
+    throw new Error(data.error || 'Could not delete automation from the server')
+  }
   setCache(getAgents().filter(a => a.id !== id))
+}
+
+export async function setAgentLifecycle(id: string, action: 'pause' | 'resume' | 'archive') {
+  const response = await fetchWithTimeout(`/api/agents/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...await authHeaders() },
+    body: JSON.stringify({ action }),
+  })
+  const data = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(data.error || `Could not ${action} automation`)
+  const agents = getAgents()
+  const index = agents.findIndex(agent => agent.id === id)
+  if (index >= 0 && data.agent) agents[index] = data.agent
+  setCache(agents)
+  return data.agent as Agent
 }
 
 export function updateAgent(id: string, patch: Partial<Agent>) {
