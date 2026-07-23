@@ -7,6 +7,9 @@ const db = globalThis.__B44_DB__ || { auth:{ isAuthenticated: async()=>false, me
 This is a Base44 app repository. Treat it as user-owned application code, keep changes focused on the user's request, and preserve existing project conventions.
 
 Start with `README.md` for local setup, environment variables, and publish workflow.
+Read `docs/PRODUCT_PHILOSOPHY.md` before product or feature work. Treat it as
+the permanent product-architecture source of truth: AlphaTekx is an AI
+Employee, and implementation should reinforce that identity.
 
 ## Base44 References
 
