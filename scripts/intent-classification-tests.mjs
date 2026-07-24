@@ -6,6 +6,7 @@ import { createConversationEngine } from '../server/alpha/conversationEngine.mjs
 const conversational = [
   'Hi', 'Hello', 'Good morning', 'How are you?', 'Who are you?',
   'What is your name?', 'Thank you', 'Tell me a joke', 'What can you do?',
+  'Explain AlphaTekx', 'I am tired', 'I need advice', 'I want to think about my life',
 ]
 const automations = [
   'Post on LinkedIn every morning.',
@@ -22,6 +23,7 @@ for (const prompt of automations) {
   assert.ok(result.confidence >= 0.8, prompt)
 }
 assert.equal(classifyIntent('How do I connect LinkedIn?').category, INTENT_CATEGORIES.help)
+assert.equal(classifyIntent('Help me connect LinkedIn').category, INTENT_CATEGORIES.help)
 assert.equal(classifyIntent('How do credits work?').category, INTENT_CATEGORIES.help)
 assert.equal(classifyIntent('Post for me.').category, INTENT_CATEGORIES.clarification)
 assert.equal(classifyIntent('Blue clouds maybe').category, INTENT_CATEGORIES.unknown)
@@ -62,5 +64,18 @@ for (const relative of [
   const source = fs.readFileSync(new URL(relative, import.meta.url), 'utf8')
   assert.doesNotMatch(source, /Get Automation Brain Name|Create Automation Node/)
 }
+
+const engineSource = fs.readFileSync(new URL('../server/alpha/conversationEngine.mjs', import.meta.url), 'utf8')
+assert.match(engineSource, /supportedActions\.length !== actions\.length/)
+assert.match(engineSource, /conversation\.automationDraft = null[\s\S]*conversation\.conversationStage = 'unsupported'/)
+
+const agentStoreSource = fs.readFileSync(new URL('../src/lib/agents/agentStore.ts', import.meta.url), 'utf8')
+assert.match(agentStoreSource, /localStorage\.removeItem\(STORAGE_KEY\)/)
+assert.match(agentStoreSource, /supabase\?\.auth\.refreshSession\(\)/)
+
+const workspaceSource = fs.readFileSync(new URL('../src/pages/Agents.tsx', import.meta.url), 'utf8')
+assert.match(workspaceSource, /PLANNING_OWNER_KEY/)
+assert.match(workspaceSource, /\/api\/alpha\/conversation\/\$\{encodeURIComponent\(conversation\.id\)\}\/create/)
+assert.doesNotMatch(workspaceSource, /await saveAgent\(agent\)/)
 
 console.log('INTENT_CLASSIFICATION_TESTS_OK')

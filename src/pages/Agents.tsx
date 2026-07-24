@@ -3,7 +3,7 @@ import { ArrowRight, CheckCircle2, LoaderCircle, Send, Sparkles, X } from 'lucid
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import CampaignPreview from '../components/agents/CampaignPreview'
 import WorkflowPlan from '../components/agents/WorkflowPlan'
-import { getAgents, saveAgent, setCache, useAgents } from '../lib/agents/agentStore'
+import { getAgents, setCache, useAgents } from '../lib/agents/agentStore'
 import type { Agent } from '../lib/agents/types'
 import { useAuth } from '../lib/auth'
 import { getCredits } from '../lib/creditStore'
@@ -25,6 +25,7 @@ const CONVERSATION_KEY = 'alphatekx:planning-conversation:v2'
 const PROMPT_KEY = 'alphatekx:planning-prompt:v2'
 const SUCCESS_KEY = 'alphatekx:creation-success:v2'
 const PENDING_KEY = 'alphatekx:pending-agent:v2'
+const PLANNING_OWNER_KEY = 'alphatekx:planning-owner:v2'
 const examples = [
   'Post useful Python content on LinkedIn every Monday.',
   'Send me my calendar every morning.',
@@ -70,6 +71,15 @@ export default function Agents() {
   }
 
   useEffect(() => { void refreshConnections() }, [session?.access_token])
+  useEffect(() => {
+    if (!user?.id) return
+    const owner = sessionStorage.getItem(PLANNING_OWNER_KEY)
+    if (owner && owner !== user.id) {
+      clearPlanning()
+      setSuccess(null)
+    }
+    sessionStorage.setItem(PLANNING_OWNER_KEY, user.id)
+  }, [user?.id])
   useEffect(() => {
     for (const key of ['alphatekx:planning-conversation', 'alphatekx:planning-prompt', 'alphatekx:creation-success', 'alphatekx:pending-agent']) sessionStorage.removeItem(key)
   }, [])
@@ -153,8 +163,25 @@ export default function Agents() {
   }
 
   const approveGeneral = async (agent: Agent) => {
-    await saveAgent(agent)
-    created(agent)
+    if (!conversation?.id || creating) return
+    setCreating(true)
+    setNotice('')
+    try {
+      const response = await fetchWithTimeout(`/api/alpha/conversation/${encodeURIComponent(conversation.id)}/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({}),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok || !data.agent) throw new Error(data.error || 'We could not create this automation. Please try again. Your credits were not charged.')
+      const saved = data.agent as Agent
+      setCache([saved, ...getAgents().filter(item => item.id !== saved.id)])
+      created(saved)
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'We could not create this automation. Please try again. Your credits were not charged.')
+    } finally {
+      setCreating(false)
+    }
   }
 
   const needsConnection = conversation?.pendingConnections?.[0] || pendingAgent?.missing?.find(item => item.field === 'connection')?.connector

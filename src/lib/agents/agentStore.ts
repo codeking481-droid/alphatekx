@@ -7,13 +7,14 @@ const STORAGE_KEY = 'alphatekx_agents:v2'
 function loadAgents(): Agent[] {
   try {
     localStorage.removeItem('alphatekx_agents')
-    const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? (JSON.parse(raw) as Agent[]) : []
+    localStorage.removeItem(STORAGE_KEY)
   } catch { return [] }
+  return []
 }
 
 function saveAgents(agents: Agent[]) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(agents)) } catch {}
+  void agents
+  try { localStorage.removeItem(STORAGE_KEY) } catch {}
 }
 
 const listeners = new Set<() => void>()
@@ -51,7 +52,10 @@ function localUserHeaders() {
 async function authHeaders() {
   const headers: Record<string, string> = {}
   try {
-    const session = (await supabase?.auth.getSession())?.data?.session
+    let session = (await supabase?.auth.getSession())?.data?.session
+    if (session?.expires_at && session.expires_at * 1000 < Date.now() + 60_000) {
+      session = (await supabase?.auth.refreshSession())?.data?.session || null
+    }
     if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
     else Object.assign(headers, localUserHeaders())
   } catch {}
