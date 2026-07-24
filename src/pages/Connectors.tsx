@@ -10,10 +10,11 @@ import { deleteIntegration, disconnectGoogle, getFacebookPages, getIntegrationSt
 const googleIds = new Set(['gmail', 'google_sheets', 'google_calendar', 'google_drive', 'calendar'])
 const apiKeyAvailable = new Set(['slack', 'discord'])
 const manualConnectionAvailable = new Set(['telegram', 'slack', 'discord'])
-const comingSoon = [
+const futurePlatforms = [
+  { id: 'facebook', name: 'Facebook', description: 'Facebook publishing is being tested.' },
   { id: 'instagram', name: 'Instagram', description: 'Social publishing is coming soon.' },
-  { id: 'threads', name: 'Threads', description: 'Social publishing is coming soon.' },
-  { id: 'youtube', name: 'YouTube', description: 'Video automation is coming later.' },
+  { id: 'whatsapp', name: 'WhatsApp', description: 'Messaging automation is being tested.' },
+  { id: 'x', name: 'X', description: 'Social publishing is being tested.' },
 ]
 
 function fieldConfig(id: string) {
@@ -31,9 +32,10 @@ function connectorTokens(id: string, key: string, identifier: string) {
 export default function Connectors() {
   const { session } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
+  const requestedPlatform = searchParams.get('platform')
   const [status, setStatus] = useState<IntegrationStatus>({})
   const [selectorOpen, setSelectorOpen] = useState(false)
-  const [selected, setSelected] = useState<string | null>(searchParams.get('platform'))
+  const [selected, setSelected] = useState<string | null>(requestedPlatform === 'linkedin' ? 'linkedin' : null)
   const [query, setQuery] = useState('')
   const [key, setKey] = useState('')
   const [identifier, setIdentifier] = useState('')
@@ -76,17 +78,40 @@ export default function Connectors() {
 
   const service = (id: string) => {
     if (id === 'google') return status.google || status.gmail || { connected: false }
-    return status[id] || { connected: false }
+    const state = status[id]
+    return state && 'connected' in state ? state : { connected: false }
   }
+  const feature = (id: string) => status._access?.connectors?.[id] || { enabled: id === 'linkedin', publicEnabled: id === 'linkedin', availability: id === 'linkedin' ? 'available' : 'coming_soon' }
+  const isAdminTester = status._access?.admin === true
+  useEffect(() => {
+    if (!selected && requestedPlatform && status._access && feature(requestedPlatform === 'google' ? 'gmail' : requestedPlatform).enabled) {
+      setSelected(requestedPlatform)
+      return
+    }
+    if (selected && status._access && !feature(selected === 'google' ? 'gmail' : selected).enabled) {
+      setSelected(null)
+      setFacebookPages([])
+      setNotice('Coming soon. We are testing this integration before releasing it publicly.')
+    }
+  }, [requestedPlatform, selected, status._access])
 
   const choices = useMemo(() => {
-    const ids = ['linkedin', 'facebook', 'gmail', 'telegram', 'slack', 'discord']
-    const available = ids.map(id => {
+    const available = ['linkedin'].map(id => {
       const connector = getConnector(id)!
-      const state = service(id === 'gmail' ? 'google' : id)
-      return { id: id === 'gmail' ? 'google' : id, name: id === 'gmail' ? 'Google' : connector.name, description: id === 'gmail' ? 'Gmail, Calendar, Sheets and Drive.' : connector.description, connector, availability: state.connected && state.ready ? 'Connected' : 'Available' }
+      const state = service(id)
+      return { id, name: connector.name, description: connector.description, connector, availability: state.connected && state.ready ? 'Connected' : 'Available' }
     })
-    return [...available, ...comingSoon.map(item => ({ ...item, connector: null, availability: 'Coming Soon' }))].filter(item => `${item.name} ${item.description}`.toLowerCase().includes(query.toLowerCase()))
+    const future = futurePlatforms.map(item => {
+      const state = service(item.id)
+      const access = feature(item.id)
+      return { ...item, connector: getConnector(item.id) || null, availability: access.enabled ? (state.connected && state.ready ? 'Connected · Testing' : 'Internal Beta') : 'Coming Soon' }
+    })
+    const internal = isAdminTester ? ['google', 'telegram', 'slack', 'discord'].map(id => {
+      const connector = getConnector(id === 'google' ? 'gmail' : id)!
+      const state = service(id)
+      return { id, name: id === 'google' ? 'Google' : connector.name, description: id === 'google' ? 'Gmail, Calendar, Sheets and Drive.' : connector.description, connector, availability: state.connected && state.ready ? 'Connected · Testing' : 'Internal Beta' }
+    }) : []
+    return [...available, ...future, ...internal].filter(item => `${item.name} ${item.description}`.toLowerCase().includes(query.toLowerCase()))
   }, [query, status])
 
   const connected = useMemo(() => {
@@ -94,18 +119,22 @@ export default function Connectors() {
     const linkedIn = getConnector('linkedin')
     if (service('linkedin').connected && service('linkedin').ready && linkedIn) result.push({ id: 'linkedin', name: 'LinkedIn', connector: linkedIn, account: service('linkedin').email || service('linkedin').identifier || 'Personal profile', capabilities: 'Personal-profile text publishing' })
     const facebook = getConnector('facebook')
-    if (service('facebook').connected && service('facebook').ready && facebook) result.push({ id: 'facebook', name: 'Facebook', connector: facebook, account: service('facebook').email || service('facebook').identifier || 'Facebook Page', capabilities: 'Facebook Page text publishing' })
+    if (feature('facebook').enabled && service('facebook').connected && service('facebook').ready && facebook) result.push({ id: 'facebook', name: 'Facebook · Testing', connector: facebook, account: service('facebook').email || service('facebook').identifier || 'Facebook Page', capabilities: 'Internal Beta — Facebook Page text publishing' })
     const google = getConnector('gmail')
-    if ((service('google').connected && service('google').ready || service('gmail').connected && service('gmail').ready) && google) result.push({ id: 'google', name: 'Google', connector: google, account: service('google').email || service('gmail').email || 'Google account', capabilities: 'Gmail, Calendar, Sheets and Drive' })
+    if (feature('gmail').enabled && (service('google').connected && service('google').ready || service('gmail').connected && service('gmail').ready) && google) result.push({ id: 'google', name: 'Google · Testing', connector: google, account: service('google').email || service('gmail').email || 'Google account', capabilities: 'Internal Beta — Gmail, Calendar, Sheets and Drive' })
     for (const id of manualConnectionAvailable) {
       const connector = getConnector(id)
-      if (connector && service(id).connected && service(id).ready) result.push({ id, name: connector.name, connector, account: service(id).email || service(id).identifier || 'Connected', capabilities: connector.actions.map(action => action.label).join(', ') })
+      if (feature(id).enabled && connector && service(id).connected && service(id).ready) result.push({ id, name: `${connector.name} · Testing`, connector, account: service(id).email || service(id).identifier || 'Connected', capabilities: `Internal Beta — ${connector.actions.map(action => action.label).join(', ')}` })
     }
     return result
   }, [status])
 
   const choose = (id: string, availability: string) => {
-    if (availability === 'Coming Soon') return
+    if (availability === 'Coming Soon') {
+      setSelectorOpen(false)
+      setNotice('Coming soon. We are testing this integration before releasing it publicly.')
+      return
+    }
     setSelected(id)
     setSelectorOpen(false)
     setNotice('')
@@ -183,6 +212,6 @@ export default function Connectors() {
 
     <section className="mt-10"><h2 className="text-sm font-medium text-white/70">Your connected apps</h2>{connected.length === 0 ? <div className="mt-4 rounded-2xl border border-dashed border-white/15 p-8 text-center"><p className="font-medium">No apps connected yet.</p><p className="mt-2 text-sm text-white/50">Choose a platform to connect.</p></div> : <div className="mt-4 grid gap-3 md:grid-cols-2">{connected.map(item => <button key={item.id} onClick={() => setSelected(item.id)} className="flex w-full items-center gap-4 rounded-2xl border border-white/[.09] bg-white/[.035] p-4 text-left hover:border-violet-400/25"><span className="grid size-11 shrink-0 place-items-center rounded-xl bg-white/[.06]"><ConnectorIcon connector={item.connector}/></span><span className="min-w-0 flex-1"><span className="flex items-center gap-2 font-medium">{item.name}<Check size={14} className="text-emerald-300"/></span><span className="mt-1 block truncate text-xs text-white/55">{item.account}</span><span className="mt-1 block text-xs text-white/40">{item.capabilities}</span></span><ChevronRight size={17} className="text-white/35"/></button>)}</div>}</section>
 
-    {selectorOpen && <div className="fixed inset-0 z-50 flex items-end bg-black/60 p-0 sm:items-center sm:justify-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="platform-selector-title" onClick={() => setSelectorOpen(false)}><section className="max-h-[85dvh] w-full overflow-hidden rounded-t-3xl border border-white/10 bg-[#160923] sm:max-w-lg sm:rounded-3xl" onClick={event => event.stopPropagation()}><div className="flex items-center justify-between border-b border-white/[.08] p-5"><div><h2 id="platform-selector-title" className="font-semibold">Choose a platform</h2><p className="mt-1 text-xs text-white/45">Only available connections can be selected.</p></div><button onClick={() => setSelectorOpen(false)} className="grid size-10 place-items-center rounded-full hover:bg-white/[.06]" aria-label="Close platform selector"><X size={18}/></button></div><div className="p-4"><label className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[.04] px-3"><Search size={16} className="text-white/40"/><span className="sr-only">Search platforms</span><input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder="Search platforms" className="h-11 flex-1 bg-transparent text-sm outline-none"/></label><div className="mt-3 max-h-[55dvh] space-y-1 overflow-y-auto">{choices.map(item => <button key={item.id} onClick={() => choose(item.id, item.availability)} disabled={item.availability === 'Coming Soon'} className="flex w-full items-center gap-3 rounded-xl p-3 text-left hover:bg-white/[.05] disabled:opacity-50">{item.connector ? <span className="grid size-10 place-items-center rounded-xl bg-white/[.06]"><ConnectorIcon connector={item.connector}/></span> : <span className="grid size-10 place-items-center rounded-xl bg-white/[.04]"><Plug size={17}/></span>}<span className="min-w-0 flex-1"><span className="block text-sm font-medium">{item.name}</span><span className="block truncate text-xs text-white/45">{item.description}</span></span><span className="rounded-full border border-white/10 px-2 py-1 text-[10px]">{item.availability}</span></button>)}</div></div></section></div>}
+    {selectorOpen && <div className="fixed inset-0 z-50 flex items-end bg-black/60 p-0 sm:items-center sm:justify-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="platform-selector-title" onClick={() => setSelectorOpen(false)}><section className="max-h-[85dvh] w-full overflow-hidden rounded-t-3xl border border-white/10 bg-[#160923] sm:max-w-lg sm:rounded-3xl" onClick={event => event.stopPropagation()}><div className="flex items-center justify-between border-b border-white/[.08] p-5"><div><h2 id="platform-selector-title" className="font-semibold">Choose a platform</h2><p className="mt-1 text-xs text-white/45">Only available connections can be selected.</p></div><button onClick={() => setSelectorOpen(false)} className="grid size-10 place-items-center rounded-full hover:bg-white/[.06]" aria-label="Close platform selector"><X size={18}/></button></div><div className="p-4"><label className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[.04] px-3"><Search size={16} className="text-white/40"/><span className="sr-only">Search platforms</span><input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder="Search platforms" className="h-11 flex-1 bg-transparent text-sm outline-none"/></label><div className="mt-3 max-h-[55dvh] space-y-1 overflow-y-auto">{choices.map(item => <button key={item.id} onClick={() => choose(item.id, item.availability)} className={`flex w-full items-center gap-3 rounded-xl p-3 text-left hover:bg-white/[.05] ${item.availability === 'Coming Soon' ? 'opacity-60' : ''}`}>{item.connector ? <span className="grid size-10 place-items-center rounded-xl bg-white/[.06]"><ConnectorIcon connector={item.connector}/></span> : <span className="grid size-10 place-items-center rounded-xl bg-white/[.04]"><Plug size={17}/></span>}<span className="min-w-0 flex-1"><span className="block text-sm font-medium">{item.name}</span><span className="block truncate text-xs text-white/45">{item.description}</span></span><span className="rounded-full border border-white/10 px-2 py-1 text-[10px]">{item.availability}</span></button>)}</div></div></section></div>}
   </main>
 }

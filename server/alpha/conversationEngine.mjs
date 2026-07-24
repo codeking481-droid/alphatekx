@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { buildCapabilityPlan, detectCapability, isSupportedAction } from '../automation/capabilityRegistry.mjs'
 import { calendarHasDuplicates } from '../automation/contentMemory.mjs'
 import { listImageProviders } from '../automation/imageGateway.mjs'
+import { connectorFeatureAccess, unavailableConnectorMessage, unavailablePromptConnector } from '../featureAccess.mjs'
 
 const STAGES = [
   'understanding',
@@ -50,9 +51,18 @@ function automationIdFor(conversation) {
   return conversation.automationId
 }
 
-function isGreetingOnly(text) {
+function conversationalReply(text) {
   const normalized = String(text || '').trim().toLowerCase().replace(/[!?.]+$/g, '').trim()
-  return /^(?:hi|hello|hey|good\s+(?:morning|afternoon|evening)|how\s+are\s+you|how(?:'s|\s+is)\s+it\s+going)$/.test(normalized)
+  if (/^(?:hi|hello|hey|good\s+(?:morning|afternoon|evening)|how\s+are\s+you|how(?:'s|\s+is)\s+it\s+going)$/.test(normalized)) {
+    return 'Hi! What would you like me to automate today?'
+  }
+  if (/^(?:thanks|thank\s+you|thank\s+you\s+alpha|thanks\s+alpha)$/.test(normalized)) {
+    return 'You’re welcome! What would you like me to automate today?'
+  }
+  if (/^(?:what\s+can\s+(?:alphatekx|alpha)\s+do|what\s+do\s+you\s+do)$/.test(normalized)) {
+    return 'AlphaTekx can plan and run approved work for you. LinkedIn publishing is available now. What would you like me to automate today?'
+  }
+  return ''
 }
 
 function addDays(date, days) {
@@ -351,7 +361,8 @@ export function createConversationEngine(deps) {
 
   async function understandRequest(conversation, promptOverride = '') {
     const prompt = promptOverride || conversation.originalRequest
-    if (isGreetingOnly(prompt)) {
+    const normalReply = conversationalReply(prompt)
+    if (normalReply) {
       conversation.intent = 'conversation'
       conversation.confidence = 1
       conversation.currentGoal = ''
@@ -359,7 +370,19 @@ export function createConversationEngine(deps) {
       conversation.missingFields = []
       conversation.automationDraft = null
       conversation.conversationStage = 'chatting'
-      addMessage(conversation, 'alpha', 'Hi! What would you like me to automate today?')
+      addMessage(conversation, 'alpha', normalReply)
+      return
+    }
+    const unavailable = unavailablePromptConnector({ email: conversation.userEmail }, prompt, true)
+    if (unavailable) {
+      conversation.intent = 'unavailable_capability'
+      conversation.confidence = 1
+      conversation.currentGoal = ''
+      conversation.knownFields = {}
+      conversation.missingFields = []
+      conversation.automationDraft = null
+      conversation.conversationStage = 'chatting'
+      addMessage(conversation, 'alpha', unavailableConnectorMessage(unavailable))
       return
     }
     const capability = detectCapability(prompt)
@@ -1294,6 +1317,13 @@ Return JSON: { "text": "..." }`
   async function createAutomation(conversation, user) {
     const draft = conversation.automationDraft
     if (!draft) throw new Error('No automation draft to create')
+    const draftConnectors = new Set([
+      ...(draft.actions || []).map(action => action.connector),
+      ...(draft.campaign?.meta?.platforms || []),
+      ...(draft.campaign?.posts || []).flatMap(post => post.platforms || []),
+    ])
+    const blockedConnector = [...draftConnectors].find(connector => !connectorFeatureAccess(user, connector, true).enabled)
+    if (blockedConnector) throw new Error(unavailableConnectorMessage(blockedConnector))
 
     draft.status = 'running'
     draft.approved = true

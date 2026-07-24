@@ -84,7 +84,7 @@ for (let attempt = 0; attempt < 60; attempt++) {
 }
 
 const userId = `facebook-oauth-${randomUUID()}`
-const headers = { 'content-type': 'application/json', 'x-local-user-id': userId, 'x-local-user-email': `${userId}@test.local` }
+const headers = { 'content-type': 'application/json', 'x-local-user-id': userId, 'x-local-user-email': 'iamdan4live@gmail.com' }
 let state = ''
 
 try {
@@ -137,7 +137,7 @@ try {
     assert.match(destination.searchParams.get('reason'), /denied/i)
   })
 
-  await test('Approved one-post Publish Now confirms an ID, charges once, writes history, and does not duplicate', async () => {
+  await test('Admin beta Publish Now confirms an ID, preserves unlimited credits, writes history, and does not duplicate', async () => {
     const agentId = `facebook-agent-${randomUUID()}`
     const scheduledAt = new Date(Date.now() + 60_000).toISOString()
     const agent = {
@@ -170,7 +170,7 @@ try {
     assert.equal(result.agent.executionHistory[0].status, 'success')
     assert.equal(result.agent.executionHistory[0].steps[0].content, 'Edited and explicitly approved Facebook Page post.')
     const after = (await (await fetch(`http://127.0.0.1:${appPort}/api/credits/balance`, { headers })).json()).credits
-    assert.equal(before - after, 3)
+    assert.equal(before - after, 0, 'the admin testing account has unlimited credits')
     const callsAfterSuccess = publishCalls
     await fetch(`http://127.0.0.1:${appPort}/api/agents/campaign/${agentId}/activate`, { method: 'POST', headers, body: JSON.stringify({ autoPublish: true, postingOption: 'now', timezone: 'UTC' }) })
     assert.equal(publishCalls, callsAfterSuccess)

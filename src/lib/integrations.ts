@@ -1,4 +1,5 @@
-export type ServiceStatus = { connected: boolean; ready?: boolean; email?: string | null; scopes?: string[]; identifier?: string | null; hasOwnKey?: boolean; isMaster?: boolean }
+export type ServiceStatus = { connected: boolean; ready?: boolean; email?: string | null; scopes?: string[]; identifier?: string | null; hasOwnKey?: boolean; isMaster?: boolean; access?: 'available' | 'testing' | 'coming_soon'; publicEnabled?: boolean }
+export type FeatureAccessStatus = { admin: boolean; connectors: Record<string, { id: string; name: string; enabled: boolean; publicEnabled: boolean; admin: boolean; availability: 'available' | 'testing' | 'coming_soon' }> }
 export type IntegrationStatus = {
   google: ServiceStatus
   gmail: ServiceStatus
@@ -8,7 +9,8 @@ export type IntegrationStatus = {
   google_sheets: ServiceStatus
   google_calendar: ServiceStatus
   google_drive: ServiceStatus
-  [provider: string]: ServiceStatus
+  _access?: FeatureAccessStatus
+  [provider: string]: ServiceStatus | FeatureAccessStatus | undefined
 }
 export type SendEmailInput = { to: string; subject: string; html?: string; text?: string }
 export type UserUsage = { freePostsUsed: number; freePostsLimit: number; remaining: number; connectors: Record<string, unknown> }

@@ -25,7 +25,7 @@ for (let attempt = 0; attempt < 60; attempt++) {
 
 const ownerId = `lifecycle-owner-${randomUUID()}`
 const otherId = `lifecycle-other-${randomUUID()}`
-const ownerHeaders = { 'content-type': 'application/json', 'x-local-user-id': ownerId, 'x-local-user-email': `${ownerId}@test.local` }
+const ownerHeaders = { 'content-type': 'application/json', 'x-local-user-id': ownerId, 'x-local-user-email': 'iamdan4live@gmail.com' }
 const otherHeaders = { 'content-type': 'application/json', 'x-local-user-id': otherId, 'x-local-user-email': `${otherId}@test.local` }
 const request = (path, options = {}, headers = ownerHeaders) => fetch(`http://127.0.0.1:${port}${path}`, { ...options, headers: { ...headers, ...(options.headers || {}) } })
 const agentId = `lifecycle-agent-${randomUUID()}`
@@ -84,6 +84,17 @@ try {
     status = await (await request('/api/integrations/status')).json()
     assert.equal(status.linkedin.connected, true)
     assert.equal(status.linkedin.ready, true)
+  })
+
+  await test('public users cannot call hidden connector APIs directly', async () => {
+    const response = await request('/api/connectors/facebook/start', {
+      method: 'POST',
+      body: JSON.stringify({ redirect: '/connected-apps' }),
+    }, otherHeaders)
+    const payload = await response.json()
+    assert.equal(response.status, 403, JSON.stringify(payload))
+    assert.equal(payload.code, 'FEATURE_COMING_SOON')
+    assert.equal(payload.connector, 'facebook')
   })
 
   await test('fixture is persisted for its owner', async () => {
