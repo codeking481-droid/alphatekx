@@ -3,6 +3,7 @@ import { buildCapabilityPlan, detectCapability, isSupportedAction } from '../aut
 import { calendarHasDuplicates } from '../automation/contentMemory.mjs'
 import { listImageProviders } from '../automation/imageGateway.mjs'
 import { connectorFeatureAccess, unavailableConnectorMessage, unavailablePromptConnector } from '../featureAccess.mjs'
+import { classifyIntent, clarificationResponse, conversationalResponse, helpResponse, INTENT_CATEGORIES } from './intentClassifier.mjs'
 
 const STAGES = [
   'understanding',
@@ -54,13 +55,13 @@ function automationIdFor(conversation) {
 function conversationalReply(text) {
   const normalized = String(text || '').trim().toLowerCase().replace(/[!?.]+$/g, '').trim()
   if (/^(?:hi|hello|hey|good\s+(?:morning|afternoon|evening)|how\s+are\s+you|how(?:'s|\s+is)\s+it\s+going)$/.test(normalized)) {
-    return 'Hi! What would you like me to automate today?'
+    return conversationalResponse(text)
   }
   if (/^(?:thanks|thank\s+you|thank\s+you\s+alpha|thanks\s+alpha)$/.test(normalized)) {
     return 'You’re welcome! What would you like me to automate today?'
   }
   if (/^(?:what\s+can\s+(?:alphatekx|alpha)\s+do|what\s+do\s+you\s+do)$/.test(normalized)) {
-    return 'AlphaTekx can plan and run approved work for you. LinkedIn publishing is available now. What would you like me to automate today?'
+    return conversationalResponse(text)
   }
   return ''
 }
@@ -361,18 +362,39 @@ export function createConversationEngine(deps) {
 
   async function understandRequest(conversation, promptOverride = '') {
     const prompt = promptOverride || conversation.originalRequest
-    const normalReply = conversationalReply(prompt)
-    if (normalReply) {
-      conversation.intent = 'conversation'
-      conversation.confidence = 1
+    const classification = classifyIntent(prompt)
+    conversation.intentClassification = classification
+    conversation.intent = classification.category
+    conversation.confidence = classification.confidence
+
+    if (classification.category === INTENT_CATEGORIES.conversation || classification.category === INTENT_CATEGORIES.help) {
       conversation.currentGoal = ''
       conversation.knownFields = {}
       conversation.missingFields = []
       conversation.automationDraft = null
       conversation.conversationStage = 'chatting'
-      addMessage(conversation, 'alpha', normalReply)
+      addMessage(conversation, 'alpha', classification.category === INTENT_CATEGORIES.help ? helpResponse(prompt) : (conversationalResponse(prompt) || conversationalReply(prompt)))
       return
     }
+    if (classification.category === INTENT_CATEGORIES.clarification) {
+      conversation.currentGoal = prompt
+      conversation.knownFields = {}
+      conversation.missingFields = []
+      conversation.automationDraft = null
+      conversation.conversationStage = 'clarification'
+      addMessage(conversation, 'alpha', clarificationResponse(prompt))
+      return
+    }
+    if (classification.category !== INTENT_CATEGORIES.automation || classification.confidence < 0.8) {
+      conversation.currentGoal = ''
+      conversation.knownFields = {}
+      conversation.missingFields = []
+      conversation.automationDraft = null
+      conversation.conversationStage = 'chatting'
+      addMessage(conversation, 'alpha', 'I want to make sure I understand. Are you asking me to automate something, or would you like to ask a question?')
+      return
+    }
+    addMessage(conversation, 'alpha', "Got it. I'll help you automate that. First, I need to check a few details.")
     const unavailable = unavailablePromptConnector({ email: conversation.userEmail }, prompt, true)
     if (unavailable) {
       conversation.intent = 'unavailable_capability'
@@ -1390,6 +1412,19 @@ Return JSON: { "text": "..." }`
   async function continueConversation(id, user, text) {
     const conversation = await loadConversation(id, user)
     addMessage(conversation, 'user', text)
+    const hasPlanningContext = !['chatting', 'created', 'blocked', 'unsupported'].includes(conversation.conversationStage)
+    const classification = classifyIntent(text, { hasPlanningContext })
+    conversation.intentClassification = classification
+    if (classification.category === INTENT_CATEGORIES.conversation || classification.category === INTENT_CATEGORIES.help) {
+      addMessage(conversation, 'alpha', classification.category === INTENT_CATEGORIES.help ? helpResponse(text) : (conversationalResponse(text) || conversationalReply(text)))
+      await saveConversation(conversation)
+      return conversation
+    }
+    if (hasPlanningContext && classification.category === INTENT_CATEGORIES.unknown) {
+      addMessage(conversation, 'alpha', 'I’m not certain how that relates to this automation. Could you rephrase it?')
+      await saveConversation(conversation)
+      return conversation
+    }
 
     if (conversation.conversationStage === 'chatting') {
       conversation.originalRequest = text
