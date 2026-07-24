@@ -3,7 +3,7 @@ import { ArrowRight, CheckCircle2, LoaderCircle, Send, Sparkles, X } from 'lucid
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import CampaignPreview from '../components/agents/CampaignPreview'
 import WorkflowPlan from '../components/agents/WorkflowPlan'
-import { getAgents, saveAgent, setCache, useAgents } from '../lib/agents/agentStore'
+import { getAgents, setCache, useAgents } from '../lib/agents/agentStore'
 import type { Agent } from '../lib/agents/types'
 import { useAuth } from '../lib/auth'
 import { getCredits } from '../lib/creditStore'
@@ -19,12 +19,13 @@ type AlphaConversation = {
   pendingConnections: string[]
   automationDraft: Agent | null
 }
-type CreationSuccess = { id: string; name: string }
+type CreationSuccess = { id: string; name: string; message?: string }
 
 const CONVERSATION_KEY = 'alphatekx:planning-conversation:v2'
 const PROMPT_KEY = 'alphatekx:planning-prompt:v2'
 const SUCCESS_KEY = 'alphatekx:creation-success:v2'
 const PENDING_KEY = 'alphatekx:pending-agent:v2'
+const PLANNING_OWNER_KEY = 'alphatekx:planning-owner:v2'
 const examples = [
   'Post useful Python content on LinkedIn every Monday.',
   'Send me my calendar every morning.',
@@ -82,6 +83,15 @@ export default function Agents() {
       document.removeEventListener('visibilitychange', visible)
     }
   }, [session?.access_token])
+  useEffect(() => {
+    if (!user?.id) return
+    const owner = sessionStorage.getItem(PLANNING_OWNER_KEY)
+    if (owner && owner !== user.id) {
+      clearPlanning()
+      setSuccess(null)
+    }
+    sessionStorage.setItem(PLANNING_OWNER_KEY, user.id)
+  }, [user?.id])
   useEffect(() => {
     for (const key of ['alphatekx:planning-conversation', 'alphatekx:planning-prompt', 'alphatekx:creation-success', 'alphatekx:pending-agent']) sessionStorage.removeItem(key)
   }, [])
@@ -165,8 +175,38 @@ export default function Agents() {
   }
 
   const approveGeneral = async (agent: Agent) => {
-    await saveAgent(agent)
-    created(agent)
+    if (!conversation?.id || creating) return
+    setCreating(true)
+    setNotice('')
+    try {
+      const whatsappAction = agent.actions.find(action => action.connector === 'whatsapp' && action.action === 'send_message')
+      if (whatsappAction) {
+        const response = await fetchWithTimeout('/api/connectors/whatsapp/test-message', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders() },
+          body: JSON.stringify({ recipient: whatsappAction.params.to || whatsappAction.params.phone, approved: true, idempotencyKey: `${conversation.id}:whatsapp-first-message` }),
+        })
+        const data = await response.json().catch(() => ({}))
+        if (!response.ok || !data.ok) throw new Error(data.message || data.error || 'WhatsApp could not send this test message. Your credits were not charged.')
+        clearPlanning()
+        setSuccess({ id: '', name: 'WhatsApp first message', message: 'Message accepted by WhatsApp.' })
+        return
+      }
+      const response = await fetchWithTimeout(`/api/alpha/conversation/${encodeURIComponent(conversation.id)}/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({}),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok || !data.agent) throw new Error(data.error || 'We could not create this automation. Please try again. Your credits were not charged.')
+      const saved = data.agent as Agent
+      setCache([saved, ...getAgents().filter(item => item.id !== saved.id)])
+      created(saved)
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'We could not create this automation. Please try again. Your credits were not charged.')
+    } finally {
+      setCreating(false)
+    }
   }
 
   const needsConnection = conversation?.pendingConnections?.[0] || pendingAgent?.missing?.find(item => item.field === 'connection')?.connector
@@ -181,8 +221,8 @@ export default function Agents() {
 
       {success && !conversation ? <section className="my-auto rounded-3xl border border-emerald-400/20 bg-emerald-500/[.08] p-7 text-center sm:p-10" aria-live="polite">
         <CheckCircle2 className="mx-auto text-emerald-300" size={34}/>
-        <h2 className="mt-4 text-xl font-semibold">Automation created successfully.</h2>
-        <button onClick={() => navigate(`/active-automations/${success.id}`)} className="mx-auto mt-6 flex min-h-12 items-center justify-center gap-2 rounded-xl btn-alpha px-5 text-sm">Visit Automation<ArrowRight size={16}/></button>
+        <h2 className="mt-4 text-xl font-semibold">{success.message || 'Automation created successfully.'}</h2>
+        {success.id && <button onClick={() => navigate(`/active-automations/${success.id}`)} className="mx-auto mt-6 flex min-h-12 items-center justify-center gap-2 rounded-xl btn-alpha px-5 text-sm">Visit Automation<ArrowRight size={16}/></button>}
       </section> : <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[1.75rem] border border-white/[.09] bg-white/[.035] shadow-2xl shadow-violet-950/20">
         <div className="flex items-center justify-between border-b border-white/[.07] px-4 py-3 sm:px-6"><div className="flex items-center gap-2 text-sm font-medium"><span className="grid size-8 place-items-center rounded-full bg-violet-500/15"><Sparkles size={16} className="text-violet-300"/></span>Plan with Alpha</div>{conversation && <button onClick={startNew} className="rounded-lg px-3 py-2 text-xs text-white/50 hover:bg-white/[.05]">New automation</button>}</div>
         <div className="min-h-[260px] flex-1 overflow-y-auto px-4 py-6 sm:px-7" aria-live="polite">

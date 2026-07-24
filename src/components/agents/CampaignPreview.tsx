@@ -70,7 +70,12 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
     }
     return fallback || ''
   })
-  const [postingOption, setPostingOption] = useState<'now' | 'later' | 'recurring'>(() => agent.campaign?.meta?.postingOption === 'now' || agent.campaign?.meta?.postingOption === 'recurring' ? agent.campaign.meta.postingOption : (agent.campaign?.meta?.frequency && agent.campaign.meta.frequency !== 'once' ? 'recurring' : 'later'))
+  const [postingOption, setPostingOption] = useState<'now' | 'later' | 'recurring'>(() => {
+    if (agent.campaign?.meta?.postingOption === 'now' || agent.campaign?.meta?.postingOption === 'recurring') return agent.campaign.meta.postingOption
+    if (agent.campaign?.meta?.publishingMode === 'once_now') return 'now'
+    if (agent.campaign?.meta?.publishingMode === 'recurring' || (agent.campaign?.meta?.frequency && agent.campaign.meta.frequency !== 'once')) return 'recurring'
+    return 'later'
+  })
   const [scheduleDate, setScheduleDate] = useState(() => (startAt || toDatetimeLocal(defaultStartAt())).slice(0, 10))
   const [scheduleTime, setScheduleTime] = useState(() => (startAt || toDatetimeLocal(defaultStartAt())).slice(11, 16))
   const [timezone, setTimezone] = useState(() => agent.campaign?.meta?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC')
@@ -243,7 +248,7 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
         <div className="liquid-glass rounded-xl p-4">
           <div className="text-xs text-white/55">Posts</div>
           <div className="mt-1 text-2xl font-semibold">{campaign.meta.totalPosts}</div>
-          <div className="text-xs text-white/40">{campaign.meta.postsPerDay} per day for {campaign.meta.durationDays} days</div>
+          <div className="text-xs text-white/40">{campaign.meta.publishingMode === 'once_now' ? 'Publish once now' : campaign.meta.publishingMode === 'once_later' ? 'Schedule once' : `${campaign.meta.frequencyText}`}</div>
         </div>
         <div className="liquid-glass rounded-xl p-4">
           <div className="text-xs text-white/55">Platforms</div>
@@ -267,6 +272,10 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
       </div>
 
       {tab === 'calendar' && <div className="mt-4 space-y-4">
+        <div className="grid gap-3 rounded-2xl border border-white/[.08] bg-white/[.03] p-4 sm:grid-cols-2">
+          <div><p className="text-xs text-white/45">Publishing mode</p><p className="mt-1 text-sm font-medium">{postingOption === 'now' ? 'Once now' : postingOption === 'later' ? 'Once later' : 'Recurring'}</p></div>
+          {postingOption === 'recurring' && <><div><p className="text-xs text-white/45">Frequency</p><p className="mt-1 text-sm font-medium">{campaign.meta.frequencyText}</p></div><div><p className="text-xs text-white/45">Timezone</p><p className="mt-1 text-sm font-medium">{campaign.meta.timezone}</p></div><div><p className="text-xs text-white/45">End condition</p><p className="mt-1 text-sm font-medium">{campaign.meta.endDate || `${campaign.meta.totalPosts} posts`}</p></div><div><p className="text-xs text-white/45">Estimated executions</p><p className="mt-1 text-sm font-medium">{campaign.meta.totalPosts}</p></div></>}
+        </div>
         <div className="rounded-2xl border border-white/[.08] bg-white/[.03] p-4">
           <label className="flex items-center gap-2 text-sm font-medium text-white/80"><CalendarClock size={16} className="text-indigo-400"/> Posting option</label>
           <div className="mt-3 grid gap-2 sm:grid-cols-3">

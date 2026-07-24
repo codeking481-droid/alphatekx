@@ -73,7 +73,9 @@ function addDays(date, days) {
 }
 
 function parseTime(text) {
-  const match = String(text).match(/\b(\d{1,2}):(\d{2})?\s*(am|pm)?\b/i) || String(text).match(/\b(\d{1,2})\s*(am|pm)\b/i)
+  const colonMatch = String(text).match(/\b(\d{1,2}):(\d{2})\s*(am|pm)?\b/i)
+  const hourMatch = String(text).match(/\b(\d{1,2})\s*(am|pm)\b/i)
+  const match = colonMatch || (hourMatch ? [hourMatch[0], hourMatch[1], '0', hourMatch[2]] : null)
   if (match) {
     let hour = parseInt(match[1], 10)
     const minute = parseInt(match[2] || '0', 10)
@@ -160,10 +162,19 @@ function requestsSinglePost(prompt) {
     /\bdo not schedule (?:a )?recurring campaign\b/i.test(prompt)
 }
 
+function publishingModeFromPrompt(prompt) {
+  const text = String(prompt || '').toLowerCase()
+  const rejectsRecurring = /\b(?:do\s+not|don't|not)\s+(?:schedule\s+(?:a\s+)?)?recurring\b/.test(text)
+  if (!rejectsRecurring && (/\b(?:every|each|daily|weekly|monthly|weekdays?|recurring|repeat)\b/.test(text) || /\bfor\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:days?|weeks?|months?)\b/.test(text))) return 'recurring'
+  if (/\b(?:now|immediately|right\s+now|publish\s+now)\b/.test(text)) return 'once_now'
+  if (/\b(?:today|tomorrow|tonight|schedule\s+(?:it\s+)?for|on\s+\d{4}-\d{2}-\d{2})\b/.test(text)) return 'once_later'
+  return ''
+}
+
 function heuristicParseRequest(prompt) {
   const lower = String(prompt || '').toLowerCase()
   const result = { intent: 'unknown', knownFields: {} }
-  const hasPost = /\b(post|article|content)\b/.test(lower)
+  const hasPost = /\b(posts?|articles?|content)\b/.test(lower)
   const platformList = [
     { id: 'linkedin', test: /\blinkedin\b/ },
     { id: 'medium', test: /\bmedium\b/ },
@@ -225,13 +236,27 @@ function heuristicParseRequest(prompt) {
     prompt.match(/\b(?:only|exactly)\s+(one|\d+)\s+posts?\b/i)
   if (explicitPostCount) result.knownFields.totalPosts = explicitPostCount[1].toLowerCase() === 'one' ? 1 : Number(explicitPostCount[1])
   const isSinglePost = requestsSinglePost(prompt)
-  if (isSinglePost || result.knownFields.totalPosts === 1 || /\bdo not schedule (?:a )?recurring campaign\b/i.test(prompt)) {
+  const publishingMode = publishingModeFromPrompt(prompt)
+  if (publishingMode) {
+    result.knownFields.publishingMode = publishingMode
+    result.knownFields.scheduleSource = 'user_explicit'
+  }
+  if ((isSinglePost && /\b(?:one|single|only|exactly|do not schedule)\b/i.test(prompt)) || result.knownFields.totalPosts === 1 || publishingMode === 'once_now' || publishingMode === 'once_later') {
     result.knownFields.totalPosts = 1
     result.knownFields.durationDays = 1
-    result.knownFields.frequency = 'once'
+    result.knownFields.durationSource = publishingMode ? 'user_confirmed' : 'user_explicit'
+    if (publishingMode === 'once_now' || publishingMode === 'once_later') result.knownFields.frequency = 'once'
   }
   const duration = /\b(?:days?|weeks?|months?)\b/i.test(prompt) ? extractDurationFromText(prompt) : null
-  if (duration) result.knownFields.durationDays = duration
+  if (duration) {
+    result.knownFields.durationDays = duration
+    result.knownFields.durationSource = 'user_explicit'
+  }
+  if (publishingMode === 'once_later') {
+    const date = new Date()
+    if (/\btomorrow\b/i.test(prompt)) date.setDate(date.getDate() + 1)
+    if (/\b(?:today|tomorrow)\b/i.test(prompt)) result.knownFields.startDate = date.toISOString().split('T')[0]
+  }
 
   if (/\b(do not publish|until i approve|manual approval|review before publishing|approve it)\b/i.test(lower)) result.knownFields.approvalPreference = 'manual'
   else if (/\b(auto publish|publish automatically|auto approval)\b/i.test(lower)) result.knownFields.approvalPreference = 'auto'
@@ -278,17 +303,21 @@ function requiredMissingFields(intent, knownFields) {
   const missing = []
   if (SOCIAL_CONTENT_INTENTS.has(intent)) {
     const linkedinOnly = Array.isArray(knownFields.platforms) && knownFields.platforms.length === 1 && knownFields.platforms[0] === 'linkedin'
-    const recurring = linkedinOnly && ((knownFields.frequency && knownFields.frequency !== 'once') || (knownFields.daysOfWeek || []).length > 0)
+    const mode = knownFields.publishingMode || ''
+    const recurring = linkedinOnly && mode === 'recurring'
+    if (linkedinOnly && !mode) missing.push({ field: 'publishingMode', question: 'Would you like to publish it once now, schedule it for later, or make it recurring?', reason: 'I need you to choose the publishing mode before I create a schedule.', required: true })
+    if (recurring && !knownFields.endDate && !knownFields.totalPosts && !knownFields.total_posts && !knownFields.durationDays && !knownFields.endCondition) missing.push({ field: 'endCondition', question: 'How long should this continue? Choose an end date, number of weeks, number of posts, or continue until paused.', reason: 'Recurring publishing needs a user-confirmed end condition.', required: true })
+    if (recurring && !knownFields.frequency) missing.push({ field: 'frequency', question: 'How often should Alpha publish?', reason: 'Recurring publishing needs a user-confirmed frequency.', required: true })
+    if ((recurring || mode === 'once_later') && !knownFields.time) missing.push({ field: 'time', question: 'What exact time should the post go out?', reason: 'Scheduled publishing needs a user-confirmed time.', required: true })
+    if (recurring && !knownFields.timezone) missing.push({ field: 'timezone', question: 'Which timezone should I use? (for example Africa/Lagos)', reason: 'The server needs an exact timezone for reliable scheduling.', required: true })
+    if (recurring && !knownFields.startDate) missing.push({ field: 'startDate', question: 'When should this LinkedIn schedule start?', reason: 'I need the first eligible publishing date.', required: true })
+    if (mode === 'once_later' && !knownFields.timezone) missing.push({ field: 'timezone', question: 'Which timezone should I use for that scheduled time?', reason: 'The server needs an exact timezone for reliable scheduling.', required: true })
+    if (mode === 'once_later' && !knownFields.startDate) missing.push({ field: 'startDate', question: 'What date should it be published?', reason: 'A one-time scheduled post needs an exact date.', required: true })
     if (!knownFields.business) missing.push({ field: 'business', question: 'What does your business offer, or what is it about?', reason: 'I need this to generate relevant, original posts.', required: true })
     if (!knownFields.audience) missing.push({ field: 'audience', question: 'Who is your target customer or audience?', reason: 'I need this to make the posts persuasive.', required: true })
     if (!knownFields.tone) missing.push({ field: 'tone', question: 'What tone should the posts use? (e.g. professional, friendly, playful, bold, persuasive)', reason: 'This determines how the content sounds.', required: true })
-    if ((!linkedinOnly || recurring) && !knownFields.time) missing.push({ field: 'time', question: 'What time should the posts go out? (e.g. 9:00 AM, morning, 6 PM)', reason: 'I need a schedule time.', required: true })
-    if (recurring && !knownFields.timezone) missing.push({ field: 'timezone', question: 'Which timezone should I use? (for example Africa/Lagos)', reason: 'The server needs an exact timezone for reliable scheduling.', required: true })
-    if (recurring && !knownFields.startDate) missing.push({ field: 'startDate', question: 'When should this LinkedIn schedule start?', reason: 'I need the first eligible publishing date.', required: true })
-    if (recurring && !knownFields.endDate && !knownFields.totalPosts && !knownFields.total_posts) missing.push({ field: 'endCondition', question: 'When should it stop: on a date, or after how many posts?', reason: 'Recurring publishing needs a clear stopping condition.', required: true })
     if (!linkedinOnly && !knownFields.durationDays && !knownFields.duration_days && !knownFields.totalPosts && !knownFields.total_posts) missing.push({ field: 'durationDays', question: 'For how many days should I create posts?', reason: 'This determines how many posts to generate.', required: true })
     if (!knownFields.platforms || !knownFields.platforms.length) missing.push({ field: 'platforms', question: 'Which platform(s) should the posts be for? (Facebook, LinkedIn, X, Instagram, etc.)', reason: 'Each platform has a different style.', required: true })
-    if (knownFields.approvalPreference === undefined || knownFields.approvalPreference === null) missing.push({ field: 'approvalPreference', question: 'Should I publish automatically after you approve each post, or do you want to review every post first?', reason: 'This controls the approval flow.', required: false })
     return missing
   }
 
@@ -296,6 +325,12 @@ function requiredMissingFields(intent, knownFields) {
     if (!knownFields.to) missing.push({ field: 'to', question: 'What email address should receive this?', reason: 'An email recipient is required.', required: true })
     if (!knownFields.subject && !knownFields.topic) missing.push({ field: 'subject', question: 'What is the email about or what should the subject be?', reason: 'I need this to write the email.', required: true })
     if (!knownFields.time) missing.push({ field: 'time', question: 'When should the email be sent? (one-time, daily, weekly, or a specific time)', reason: 'I need a schedule.', required: false })
+    return missing
+  }
+
+  if (intent === 'whatsapp_message') {
+    if (!knownFields.to) missing.push({ field: 'to', question: 'Which approved test number should receive “Hi from AlphaTekx.”?', reason: 'The WhatsApp test needs one allowlisted recipient.', required: true })
+    if (!knownFields.message) missing.push({ field: 'message', question: 'Confirm the message “Hi from AlphaTekx.”', reason: 'The first test supports only this exact reviewed message.', required: true })
     return missing
   }
 
@@ -421,6 +456,22 @@ export function createConversationEngine(deps) {
       await moveToPlanningOrContent(conversation)
       return
     }
+    if (capability?.id === 'whatsapp-first-message') {
+      const capabilityPlan = buildCapabilityPlan(prompt, { email: conversation.userEmail })
+      conversation.intent = 'whatsapp_message'
+      conversation.confidence = 1
+      conversation.currentGoal = capabilityPlan.interpretedGoal || prompt
+      conversation.knownFields = extractKnownFieldsFromCapability(capabilityPlan)
+      conversation.missingFields = requiredMissingFields(conversation.intent, conversation.knownFields)
+      conversation.askedFields = conversation.askedFields || []
+      if (conversation.missingFields.length) {
+        conversation.conversationStage = 'gathering_information'
+        await askNextQuestion(conversation)
+      } else {
+        await moveToPlanningOrContent(conversation)
+      }
+      return
+    }
     if (SOCIAL_CONTENT_INTENTS.has(fastHeuristic.intent) && requiredMissingFields(fastHeuristic.intent, fastHeuristic.knownFields).length === 0) {
       conversation.intent = fastHeuristic.intent
       conversation.confidence = 0.9
@@ -460,7 +511,7 @@ export function createConversationEngine(deps) {
     const system = `${ALPHA_SYSTEM_IDENTITY}
 
 Analyze the user's request and return a JSON object with:
-- intent: one of social_content, send_email, gmail_attachments_to_drive, telegram_message, slack_message, calendar_summary, sheets_append, unsupported, unknown
+- intent: one of social_content, send_email, gmail_attachments_to_drive, telegram_message, slack_message, whatsapp_message, calendar_summary, sheets_append, unsupported, unknown
 - goal: a short rewritten goal in plain English
 - confidence: 0 to 1
 - platforms: array of platform names mentioned (facebook, linkedin, x, instagram, telegram, slack, gmail, google_sheets, google_calendar)
@@ -522,6 +573,16 @@ Do not return placeholder text. Use the words the user actually provided.`
     conversation.currentGoal = parsed.goal || conversation.originalRequest
     conversation.knownFields = normalizeKnownFields(parsed.knownFields || {}, prompt)
     conversation.knownFields.platforms = conversation.knownFields.platforms || parsed.platforms || []
+    if (SOCIAL_CONTENT_INTENTS.has(conversation.intent)) {
+      const explicitSchedule = heuristic.knownFields || {}
+      for (const field of ['publishingMode', 'durationDays', 'totalPosts', 'frequency', 'daysOfWeek', 'time', 'timezone', 'startDate', 'endDate', 'endCondition', 'durationSource', 'scheduleSource']) {
+        if (explicitSchedule[field] !== undefined) conversation.knownFields[field] = explicitSchedule[field]
+        else delete conversation.knownFields[field]
+      }
+      conversation.knownFields.durationSource = explicitSchedule.durationSource || 'unresolved'
+      conversation.knownFields.scheduleSource = explicitSchedule.scheduleSource || 'unresolved'
+      conversation.knownFields.approvalPreference = 'manual'
+    }
 
     if (!conversation.knownFields.time) {
       const extractedTime = extractTimeFromText(prompt)
@@ -577,6 +638,7 @@ Do not return placeholder text. Use the words the user actually provided.`
     if (capabilityPlan.actions?.some(a => a.connector === 'gmail' || a.connector === 'email')) return 'send_email'
     if (capabilityPlan.actions?.some(a => a.connector === 'telegram')) return 'telegram_message'
     if (capabilityPlan.actions?.some(a => a.connector === 'slack')) return 'slack_message'
+    if (capabilityPlan.actions?.some(a => a.connector === 'whatsapp')) return 'whatsapp_message'
     if (capabilityPlan.actions?.some(a => a.connector === 'google_sheets')) return 'sheets_append'
     if (capabilityPlan.actions?.some(a => a.connector === 'google_calendar' || a.connector === 'calendar')) return 'calendar_summary'
     return fallback
@@ -628,7 +690,8 @@ Do not return placeholder text. Use the words the user actually provided.`
     if (known.posts_per_day) known.postsPerDay = known.posts_per_day
     if (known.dontPost && !Array.isArray(known.dontPost)) known.dontPost = String(known.dontPost).split(',').map(s => s.trim()).filter(Boolean)
     if (known.business) known.business = cleanBusiness(known.business)
-    if (!known.approvalPreference) known.approvalPreference = 'manual'
+    if (!known.durationSource) known.durationSource = 'unresolved'
+    if (!known.scheduleSource) known.scheduleSource = 'unresolved'
     return known
   }
 
@@ -709,6 +772,21 @@ Return JSON:
         if (simple) extracted.time = simple
       }
     }
+    if (field === 'publishingMode') {
+      const lower = text.toLowerCase()
+      if (/\b(?:now|immediately|publish once now)\b/.test(lower)) extracted.publishingMode = 'once_now'
+      else if (/\b(?:later|schedule once|schedule it)\b/.test(lower)) extracted.publishingMode = 'once_later'
+      else if (/\b(?:recurring|repeat|campaign)\b/.test(lower)) extracted.publishingMode = 'recurring'
+      if (extracted.publishingMode) {
+        extracted.scheduleSource = 'user_confirmed'
+        if (extracted.publishingMode !== 'recurring') {
+          extracted.frequency = 'once'
+          extracted.totalPosts = 1
+          extracted.durationDays = 1
+          extracted.durationSource = 'user_confirmed'
+        }
+      }
+    }
     if (field === 'durationDays' || field === 'duration_days') {
       const d = extractDurationFromText(text)
       if (d) extracted[field] = d
@@ -732,8 +810,11 @@ Return JSON:
     if (field === 'endCondition') {
       const count = text.match(/\b(\d+)\s*(?:posts?|runs?)\b/i)
       const date = text.match(/\b(\d{4}-\d{2}-\d{2})\b/)
+      const duration = extractDurationFromText(text)
       if (count) extracted.totalPosts = Number(count[1])
       if (date) extracted.endDate = date[1]
+      if (duration) extracted.durationDays = duration
+      if (duration || count || date || /\buntil\s+paused\b/i.test(text)) extracted.durationSource = 'user_confirmed'
       extracted.endCondition = text.trim()
     }
 
@@ -750,10 +831,11 @@ Return JSON:
       if (value === undefined || value === null || String(value).trim() === '') return
       conversation.knownFields[key] = value
     })
+    if (['time', 'timezone', 'startDate', 'frequency'].includes(field)) conversation.knownFields.scheduleSource = 'user_confirmed'
 
     conversation.knownFields = normalizeKnownFields(conversation.knownFields, text)
 
-    conversation.missingFields = conversation.missingFields.filter(m => {
+    conversation.missingFields = requiredMissingFields(conversation.intent, conversation.knownFields).filter(m => {
       const value = conversation.knownFields[m.field]
       if (Array.isArray(value)) return value.length === 0
       if (typeof value === 'boolean') return false
@@ -807,6 +889,14 @@ Return JSON:
 
     conversation.conversationStage = 'planning'
     const draft = await buildAutomationDraft(conversation)
+    if (draft.status === 'awaiting_information' || !Array.isArray(draft.actions) || draft.actions.length === 0) {
+      conversation.automationDraft = null
+      conversation.requiredIntegrations = []
+      conversation.approvalRequired = false
+      conversation.conversationStage = 'unsupported'
+      addMessage(conversation, 'alpha', "I can't create a reliable automation for that request yet. Try a supported LinkedIn publishing automation, or describe a different outcome.")
+      return
+    }
     conversation.automationDraft = draft
     conversation.requiredIntegrations = draft.integrations || []
     conversation.conversationStage = 'awaiting_approval'
@@ -839,19 +929,35 @@ Return JSON:
 
   async function generateContent(conversation) {
     const known = conversation.knownFields || {}
-    const isSinglePost = requestsSinglePost(conversation.originalRequest || '')
-    if (isSinglePost && !known.totalPosts && !known.total_posts && !known.durationDays && !known.duration_days) {
-      known.totalPosts = 1
-      known.durationDays = 1
+    const publishingMode = known.publishingMode
+    if (!['once_now', 'once_later', 'recurring'].includes(publishingMode) || known.scheduleSource === 'unresolved') {
+      conversation.conversationStage = 'gathering_information'
+      conversation.missingFields = requiredMissingFields(conversation.intent, known)
+      conversation.askedFields = (conversation.askedFields || []).filter(field => field !== 'publishingMode')
+      await askNextQuestion(conversation)
+      return
     }
+    const isSinglePost = publishingMode === 'once_now' || publishingMode === 'once_later'
     const platforms = Array.isArray(known.platforms) && known.platforms.length ? known.platforms : ['facebook']
     const businessName = known.business || known.businessName || ''
     const businessType = known.businessType || known.description || known.business || 'your business'
     const audience = known.audience || 'your audience'
     const tone = known.tone || 'friendly and professional'
-    const time = known.time || '08:00'
-    const durationDays = Number(known.durationDays || known.duration_days || 7)
-    const totalPosts = Number(known.totalPosts || known.total_posts || (durationDays * 1))
+    const time = known.time || ''
+    const durationDays = isSinglePost ? 1 : Number(known.durationDays || known.duration_days || 0)
+    let totalPosts = isSinglePost ? 1 : Number(known.totalPosts || known.total_posts || 0)
+    if (!totalPosts && durationDays > 0) {
+      const days = Array.isArray(known.daysOfWeek) ? known.daysOfWeek.length : 0
+      if (known.frequency === 'weekly') totalPosts = Math.max(1, Math.ceil(durationDays / 7) * Math.max(1, days))
+      else if (known.frequency === 'weekdays') totalPosts = Math.max(1, Math.floor(durationDays / 7) * 5 + Math.min(durationDays % 7, 5))
+      else totalPosts = durationDays
+    }
+    if (!durationDays || !totalPosts || (!isSinglePost && (known.durationSource === 'unresolved' || !known.frequency || !known.time || !known.timezone || !known.startDate))) {
+      conversation.conversationStage = 'gathering_information'
+      conversation.missingFields = requiredMissingFields(conversation.intent, known)
+      await askNextQuestion(conversation)
+      return
+    }
     const postsPerDay = Math.max(1, Math.ceil(totalPosts / durationDays))
     const dontPost = Array.isArray(known.dontPost) ? known.dontPost : []
     const imageRequested = Boolean(known.includeImages || known.include_images)
@@ -859,10 +965,10 @@ Return JSON:
 
     const business = businessName || businessType
     const brand = { business, businessType, audience, tone, website: known.website || '', dontPost }
-    const startDate = known.startDate || new Date().toISOString().split('T')[0]
-    const endDate = known.endDate || addDays(new Date(startDate), durationDays)
-    const timezone = known.timezone === 'WAT' ? 'Africa/Lagos' : (known.timezone || 'UTC')
-    const baseHour = parseTime(time)?.hour || 8
+    const startDate = known.startDate || (isSinglePost ? new Date().toISOString().split('T')[0] : '')
+    const endDate = known.endDate || (durationDays ? addDays(new Date(startDate), durationDays) : '')
+    const timezone = known.timezone === 'WAT' ? 'Africa/Lagos' : (known.timezone || '')
+    const baseHour = parseTime(time)?.hour ?? 0
     const scheduleSlots = []
     for (let i = 0; i < postsPerDay; i++) {
       const hour = (baseHour + i) % 24
@@ -883,6 +989,9 @@ Return JSON:
       frequency: known.frequency || (isSinglePost ? 'once' : 'daily'),
       daysOfWeek: known.daysOfWeek || [],
       frequencyText: isSinglePost ? 'One time' : `${known.frequency || 'daily'} for ${totalPosts} post(s)`,
+      publishingMode,
+      durationSource: known.durationSource,
+      scheduleSource: known.scheduleSource,
     }
 
     const system = `You are Alpha, a creative social media copywriter.
@@ -994,7 +1103,7 @@ Total posts: ${totalPosts}.`
       type: 'campaign',
       userId: conversation.userId,
       userEmail: conversation.userEmail,
-      name: `Social Content - ${durationDays} days`,
+      name: isSinglePost ? 'LinkedIn post' : `LinkedIn recurring content - ${totalPosts} posts`,
       description: `Generate and schedule ${totalPosts} posts for ${platforms.map(p => PLATFORM_NAMES[p] || p).join(', ')} for ${business}.`,
       originalRequest: conversation.originalRequest,
       interpretedGoal: conversation.currentGoal,
@@ -1005,7 +1114,7 @@ Total posts: ${totalPosts}.`
       brandProfile: brand,
       knowledge: { business, businessType, website: known.website || '', approvedClaims: known.approvedClaims || [], prohibitedClaims: dontPost },
       contentMemory: [],
-      approvalPolicy: known.approvalPreference === 'auto' ? 'implicit' : 'explicit',
+      approvalPolicy: 'explicit',
       trigger: { type: 'campaign', cron: 'campaign', nextRun: posts[0]?.scheduledAt },
       actions: [],
       status: 'awaiting_approval',
@@ -1021,7 +1130,7 @@ Total posts: ${totalPosts}.`
       executionsTotal: totalPosts,
       generationMode,
       campaign: {
-        name: `Social Content - ${durationDays} days`,
+        name: isSinglePost ? 'LinkedIn post' : `LinkedIn recurring content - ${totalPosts} posts`,
         description: conversation.originalRequest,
         brand,
         meta,
@@ -1069,7 +1178,9 @@ Total posts: ${totalPosts}.`
         id: p.id || randomUUID(),
         day,
         slot: p.slot || slot.label,
-        scheduledAt: platforms.length === 1 && platforms[0] === 'linkedin'
+        scheduledAt: meta.publishingMode === 'once_now'
+          ? nowIso()
+          : platforms.length === 1 && platforms[0] === 'linkedin'
           ? scheduleOccurrence(i, startDate, p.slot ? { label: p.slot, hour: parseTime(p.slot)?.hour || slot.hour, minute: parseTime(p.slot)?.minute || slot.minute } : slot, meta.frequency, meta.daysOfWeek, timezone)
           : (p.scheduledAt || scheduleDate(day, p.slot ? { label: p.slot, hour: parseTime(p.slot)?.hour || slot.hour, minute: parseTime(p.slot)?.minute || slot.minute } : slot, startDate, timezone)),
         platforms: postPlatforms,
@@ -1222,6 +1333,21 @@ Turn the user's goal into an automation plan. Return JSON:
 
     const actions = Array.isArray(plan.actions) ? plan.actions : []
     const supportedActions = actions.filter(a => isSupportedAction(a.connector, a.action))
+    if (actions.length === 0 || supportedActions.length !== actions.length) {
+      return {
+        id: automationIdFor(conversation),
+        name: 'Request needs a supported capability',
+        description: conversation.originalRequest,
+        originalRequest: conversation.originalRequest,
+        interpretedGoal: conversation.currentGoal,
+        trigger: { type: 'schedule', cron: '0 0 8 * *' },
+        actions: [],
+        status: 'awaiting_information',
+        missing: [{ field: 'unsupported', step: 'Plan', connector: 'system', reason: 'Alpha cannot reliably perform every requested action yet.' }],
+        creditsNeeded: 0,
+        creditsPerRun: 0,
+      }
+    }
     return {
       id: automationIdFor(conversation),
       name: plan.name || conversation.currentGoal,
@@ -1339,6 +1465,12 @@ Return JSON: { "text": "..." }`
   async function createAutomation(conversation, user) {
     const draft = conversation.automationDraft
     if (!draft) throw new Error('No automation draft to create')
+    if (draft.campaign) {
+      const meta = draft.campaign.meta || {}
+      if (!['once_now', 'once_later', 'recurring'].includes(meta.publishingMode) || meta.scheduleSource === 'unresolved' || meta.durationSource === 'unresolved') {
+        throw new Error('Choose and confirm the publishing schedule before approving this automation.')
+      }
+    }
     const draftConnectors = new Set([
       ...(draft.actions || []).map(action => action.connector),
       ...(draft.campaign?.meta?.platforms || []),

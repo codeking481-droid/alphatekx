@@ -17,6 +17,7 @@ import { createConversationEngine } from './server/alpha/conversationEngine.mjs'
 import * as providerHealth from './server/alpha/providerHealth.mjs'
 import * as billing from './server/billing.mjs'
 import { normalizeLinkedInScopes, publishLinkedInTextPost } from './server/linkedin.mjs'
+import { allowedWhatsAppRecipients, applyWhatsAppStatusEvent, executeApprovedWhatsAppMessage, sendWhatsAppText, verifyWhatsAppPhoneRegistration, verifyWhatsAppWebhookSignature, whatsappCredentials, whatsappWebhookEvents } from './server/whatsapp.mjs'
 import { connectorFeatureAccess, featureManagementSnapshot, featureStatusForUser, refreshFeatureConfig, setBetaUser, unavailableConnectorMessage, unavailablePromptConnector, updateFeature } from './server/featureAccess.mjs'
 
 function loadEnv() {
@@ -1434,6 +1435,8 @@ async function integrationsStatus(req, res) {
   }
   if (!status.paystack.connected && process.env.PAYSTACK_SECRET_KEY) status.paystack = { connected: true, ready: true, email: 'AlphaTekX backend' }
   if (!status.supabase.connected && config.url && config.service) status.supabase = { connected: true, ready: true, email: 'AlphaTekX backend' }
+  const whatsappServer = whatsappCredentials()
+  if (whatsappServer.configured) status.whatsapp = { connected: true, ready: true, email: 'AlphaTekx WhatsApp test environment' }
   const features = featureStatusForUser(user, trustedFeatureIdentity(req))
   status._access = features
   for (const [provider, access] of Object.entries(features.connectors)) {
@@ -4505,18 +4508,17 @@ async function postToFacebook(creds, params) {
 }
 
 async function postToWhatsApp(creds, params) {
+  void creds
   const text = String(params.text || params.message || '')
   if (!text) throw new Error('WhatsApp message requires text')
-  const token = creds.accessToken || creds.token || creds.botToken
-  const phoneNumberId = creds.phoneNumberId || creds.phone_number_id || creds.identifier
   const to = String(params.to || params.phone || params.phoneNumber || '')
-  if (!token || !phoneNumberId) throw new Error('WhatsApp token and Phone Number ID are missing. Add them in Connectors.')
   if (!to) throw new Error('WhatsApp message requires a recipient phone number in `to` or `phone`.')
-  const url = `https://graph.facebook.com/v18.0/${encodeURIComponent(phoneNumberId)}/messages`
-  const response = await fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to, type: 'text', text: { body: text } }) })
-  const data = await response.json()
-  if (!response.ok || data.error) throw new Error(data.error?.message || 'WhatsApp message failed')
-  return { id: data.messages?.[0]?.id, data }
+  const credentials = whatsappCredentials()
+  if (!credentials.configured) throw new Error('WhatsApp setup is incomplete on the server.')
+  if (!allowedWhatsAppRecipients().has(String(to).replace(/\D/g, ''))) throw new Error('This number is not approved for the current WhatsApp test.')
+  await verifyWhatsAppPhoneRegistration(credentials)
+  const sent = await sendWhatsAppText(credentials, { recipient: to, text })
+  return { id: sent.providerMessageId, ok: true }
 }
 
 async function postToSocial(platform, user, params) {
@@ -4613,18 +4615,16 @@ async function notionAppendBlock(userId, params) {
 }
 
 async function sendWhatsAppMessage(userId, params) {
-  const config = supabaseConfig()
-  const integration = await getUserIntegration(userId, 'whatsapp', config)
-  const token = integration?.tokens?.api_key || process.env.WHATSAPP_TOKEN || ''
-  const phoneNumberId = integration?.tokens?.phone_number_id || process.env.WHATSAPP_PHONE_NUMBER_ID || ''
-  if (!token || !phoneNumberId) throw new Error('WhatsApp requires token and phone_number_id. Add them in Connectors or set WHATSAPP_TOKEN and WHATSAPP_PHONE_NUMBER_ID.')
-  const to = String(params.to || '')
+  void userId
+  const credentials = whatsappCredentials()
+  if (!credentials.configured) throw new Error('WhatsApp setup is incomplete on the server.')
+  const to = String(params.to || params.phone || '')
   const message = String(params.message || params.text || '')
   if (!to || !message) throw new Error('WhatsApp requires to and message')
-  const response = await fetch(`https://graph.facebook.com/v18.0/${encodeURIComponent(phoneNumberId)}/messages`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to, type: 'text', text: { body: message } }) })
-  const data = await response.json()
-  if (!response.ok) throw new Error(data.error?.message || 'WhatsApp message failed')
-  return data
+  if (!allowedWhatsAppRecipients().has(String(to).replace(/\D/g, ''))) throw new Error('This number is not approved for the current WhatsApp test.')
+  await verifyWhatsAppPhoneRegistration(credentials)
+  const sent = await sendWhatsAppText(credentials, { recipient: to, text: message })
+  return { messages: [{ id: sent.providerMessageId }] }
 }
 
 async function paystackSecret(userId) {
@@ -5405,6 +5405,69 @@ function isMissingTable(errorText) {
   return t.includes('schema cache') || t.includes('could not find the table') || t.includes('relation') || t.includes('does not exist')
 }
 
+async function whatsappFirstMessageHandler(req, res) {
+  const config = supabaseConfig()
+  const user = await currentOrLocalUser(req, config.url, config.anon)
+  if (!user) return json(res, 401, { error: 'Authentication required.' })
+  const access = featureAccessForRequest(req, user, 'whatsapp')
+  if (!access.enabled) return json(res, 403, { error: unavailableConnectorMessage('whatsapp'), code: 'FEATURE_COMING_SOON' })
+  const body = await readBody(req)
+  const credentials = whatsappCredentials()
+  const result = await executeApprovedWhatsAppMessage({
+    user,
+    recipient: body.recipient,
+    approved: body.approved === true,
+    idempotencyKey: String(body.idempotencyKey || ''),
+  }, {
+    featureEnabled: access.enabled && (access.admin || access.beta),
+    credentials,
+    allowedRecipients: allowedWhatsAppRecipients(),
+    isAdmin: access.admin,
+    getCredits: () => getUserCredits(user),
+    claim: claimServerExecution,
+    getExecution: getServerExecution,
+    save: saveServerExecution,
+    spendCredits: (amount, metadata) => spendUserCredits(user, amount, metadata),
+    verifyRegistration: verifyWhatsAppPhoneRegistration,
+    send: sendWhatsAppText,
+  })
+  const statusCode = result.ok ? 200 : result.status === 'awaiting_approval' ? 200 : result.status === 'setup_required' ? 503 : result.status === 'waiting_for_credits' ? 402 : 400
+  return json(res, statusCode, result)
+}
+
+async function whatsappWebhookHandler(req, res) {
+  const credentials = whatsappCredentials()
+  if (req.method === 'GET') {
+    const url = new URL(req.url || '/', publicAppUrl())
+    const valid = url.searchParams.get('hub.mode') === 'subscribe' &&
+      credentials.verifyToken &&
+      url.searchParams.get('hub.verify_token') === credentials.verifyToken
+    if (!valid) return json(res, 403, { error: 'Webhook verification failed.' })
+    res.writeHead(200, { 'Content-Type': 'text/plain' })
+    return res.end(String(url.searchParams.get('hub.challenge') || ''))
+  }
+  const raw = await readRawBody(req)
+  if (!verifyWhatsAppWebhookSignature(raw, req.headers['x-hub-signature-256'], credentials.appSecret)) return json(res, 401, { error: 'Invalid webhook signature.' })
+  let payload
+  try { payload = JSON.parse(raw.toString('utf8') || '{}') } catch { return json(res, 400, { error: 'Invalid webhook payload.' }) }
+  const events = whatsappWebhookEvents(payload)
+  const executions = await listServerExecutions()
+  for (const event of events) {
+    if (event.type === 'status') {
+      const execution = executions.find(item => item.providerMessageId === event.providerMessageId)
+      if (!execution) continue
+      const applied = applyWhatsAppStatusEvent(execution, event)
+      if (applied.changed) await saveServerExecution(applied.execution)
+    } else {
+      const owner = executions.find(item => item.provider === 'whatsapp' && item.userId)
+      if (!owner) continue
+      const id = `whatsapp-webhook:${createHash('sha256').update(event.providerMessageId).digest('hex').slice(0, 40)}`
+      await claimServerExecution({ id, agentId: 'whatsapp-incoming-test', userId: owner.userId, userEmail: owner.userEmail || '', at: new Date().toISOString(), status: 'received', provider: 'whatsapp', providerMessageId: event.providerMessageId, credits_used: 0, history: [{ status: 'received', at: new Date().toISOString() }] })
+    }
+  }
+  return json(res, 200, { received: true })
+}
+
 async function localPublishCreation(body, baseUrl) {
   const creationId = String(body.creationId || '')
   const slug = String(body.slug || '').toLowerCase().trim()
@@ -5690,6 +5753,12 @@ const server = http.createServer(async (req, res) => {
   if (isRateLimited(req)) return json(res, 429, { error: 'Too many requests. Please slow down.' })
   if (req.method === 'OPTIONS') return json(res, 204, {})
   if (String(req.url || '').startsWith('/api/')) await refreshFeatureConfig(supabaseConfig()).catch(() => {})
+  if ((req.method === 'GET' || req.method === 'POST') && String(req.url || '').startsWith('/api/connectors/whatsapp/webhook')) {
+    try { return await whatsappWebhookHandler(req, res) } catch { return json(res, 500, { error: 'WhatsApp could not process this webhook.' }) }
+  }
+  if (req.method === 'POST' && req.url === '/api/connectors/whatsapp/test-message') {
+    try { return await whatsappFirstMessageHandler(req, res) } catch { return json(res, 500, { error: 'WhatsApp could not process this test message. No credits were charged.' }) }
+  }
   if (req.method === 'GET' && (req.url?.startsWith('/auth/google/callback') || req.url?.startsWith('/api/auth/gmail/callback'))) return googleCallback(req, res)
   if (req.method === 'GET' && (req.url?.startsWith('/auth/google?') || req.url?.startsWith('/auth/google?state='))) {
     try { return await beginGoogleOAuth(req, res) } catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : 'Google connection failed' }) }

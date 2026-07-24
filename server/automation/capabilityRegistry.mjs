@@ -68,6 +68,17 @@ const CAPABILITIES = [
     ],
   },
   {
+    id: 'whatsapp-first-message',
+    name: 'Send WhatsApp Test Message',
+    description: 'Send the single approved AlphaTekx test message to one allowed WhatsApp recipient.',
+    supported: true,
+    requiredConnectors: ['whatsapp'],
+    patterns: [
+      /send.*(?:hi from alphatekx|test message).*whatsapp/i,
+      /whatsapp.*(?:hi from alphatekx|first message|test message)/i,
+    ],
+  },
+  {
     id: 'post-telegram',
     name: 'Send Telegram Message',
     description: 'Send a message to a Telegram chat.',
@@ -391,6 +402,30 @@ function buildTelegramPlan(prompt, user, extracted) {
   }
 }
 
+function buildWhatsAppFirstMessagePlan(prompt) {
+  const recipient = String(prompt).match(/\+?\d[\d\s()-]{7,}\d/)?.[0]?.replace(/\D/g, '') || ''
+  const missing = []
+  if (!recipient) missing.push({ field: 'to', step: 'Recipient', connector: 'whatsapp', reason: 'Which approved test number should receive the message?' })
+  return {
+    id: null,
+    title: 'WhatsApp First Message',
+    name: 'WhatsApp First Message',
+    description: 'Send “Hi from AlphaTekx.” to one approved WhatsApp test recipient.',
+    originalRequest: prompt,
+    interpretedGoal: 'Send the approved first WhatsApp test message.',
+    trigger: { type: 'manual', cron: '', nextRun: null },
+    actions: [{ connector: 'whatsapp', action: 'send_message', label: 'Send approved WhatsApp test message', requiresApproval: true, approvalStatus: 'pending', params: { to: recipient, message: 'Hi from AlphaTekx.', generate: false } }],
+    status: missing.length ? 'awaiting_information' : 'awaiting_approval',
+    approved: false,
+    missing,
+    creditsNeeded: 2,
+    creditsPerRun: 2,
+    creditsPerStep: [{ step: 'Send accepted WhatsApp message', cost: 2, reason: 'Charge only after WhatsApp returns a message ID' }],
+    approvalPolicy: 'explicit',
+    executionPolicy: 'run_once',
+  }
+}
+
 function buildSlackPlan(prompt, user, extracted) {
   const channel = extracted.channel || ''
   const missing = []
@@ -598,6 +633,7 @@ export function buildCapabilityPlan(prompt, user = null, options = {}) {
     case 'gmail-to-telegram': return buildGmailToTelegramPlan(prompt, user, extracted)
     case 'gmail-attachments-to-drive': return buildGmailAttachmentsToDrivePlan(prompt)
     case 'send-email': return buildSendEmailPlan(prompt, user, extracted)
+    case 'whatsapp-first-message': return buildWhatsAppFirstMessagePlan(prompt)
     case 'post-telegram': return buildTelegramPlan(prompt, user, extracted)
     case 'post-slack': return buildSlackPlan(prompt, user, extracted)
     case 'append-sheets': return buildSheetsPlan(prompt, user, extracted)
