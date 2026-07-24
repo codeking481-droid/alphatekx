@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../supabase'
 import type { Agent, AgentExecution } from './types'
 
-const STORAGE_KEY = 'alphatekx_agents'
+const STORAGE_KEY = 'alphatekx_agents:v2'
 
 function loadAgents(): Agent[] {
   try {
+    localStorage.removeItem('alphatekx_agents')
     const raw = localStorage.getItem(STORAGE_KEY)
     return raw ? (JSON.parse(raw) as Agent[]) : []
   } catch { return [] }
@@ -48,11 +49,13 @@ function localUserHeaders() {
 }
 
 async function authHeaders() {
-  const headers: Record<string, string> = { ...localUserHeaders() }
+  const headers: Record<string, string> = {}
   try {
     const session = (await supabase?.auth.getSession())?.data?.session
     if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
+    else Object.assign(headers, localUserHeaders())
   } catch {}
+  if (!headers.Authorization) Object.assign(headers, localUserHeaders())
   return headers
 }
 

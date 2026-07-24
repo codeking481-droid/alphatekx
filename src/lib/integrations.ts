@@ -31,21 +31,37 @@ import { supabase } from './supabase'
 
 async function sessionToken(): Promise<string | undefined> {
   try {
-    const s = await supabase?.auth.getSession()
-    return s?.data?.session?.access_token || undefined
+    const result = await supabase?.auth.getSession()
+    const session = result?.data?.session
+    if (!session) return undefined
+    if (session.expires_at && session.expires_at * 1000 < Date.now() + 60_000) {
+      const refreshed = await supabase?.auth.refreshSession()
+      return refreshed?.data?.session?.access_token || undefined
+    }
+    return session.access_token
   } catch { return undefined }
 }
 
 async function request<T>(url: string, token?: string, options: RequestInit = {}): Promise<T> {
   const authToken = token || await sessionToken()
-  const headers: Record<string, string> = { 'Content-Type': 'application/json', ...getLocalUserHeader() }
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', ...(!authToken ? getLocalUserHeader() : {}) }
   if (authToken) headers.Authorization = `Bearer ${authToken}`
   if (options.headers) {
     Object.entries(options.headers).forEach(([k, v]) => { if (v != null) headers[k] = String(v) })
   }
-  const response = await fetch(url, { ...options, headers })
-  const payload = await response.json().catch(() => ({})) as T & { error?: string }
-  if (!response.ok) throw new Error(payload.error || 'Integration request failed.')
+  let response = await fetch(url, { ...options, headers })
+  if (response.status === 401 && supabase) {
+    const refreshed = await supabase.auth.refreshSession().catch(() => null)
+    const freshToken = refreshed?.data?.session?.access_token
+    if (freshToken) {
+      headers.Authorization = `Bearer ${freshToken}`
+      response = await fetch(url, { ...options, headers })
+    }
+  }
+  const raw = await response.text()
+  let payload = {} as T & { error?: string }
+  try { payload = raw ? JSON.parse(raw) as T & { error?: string } : payload } catch {}
+  if (!response.ok) throw new Error(payload.error || raw || `Integration request failed (${response.status}). Please sign in again if this continues.`)
   return payload
 }
 

@@ -17,7 +17,7 @@ import { createConversationEngine } from './server/alpha/conversationEngine.mjs'
 import * as providerHealth from './server/alpha/providerHealth.mjs'
 import * as billing from './server/billing.mjs'
 import { normalizeLinkedInScopes, publishLinkedInTextPost } from './server/linkedin.mjs'
-import { connectorFeatureAccess, featureStatusForUser, unavailableConnectorMessage, unavailablePromptConnector } from './server/featureAccess.mjs'
+import { connectorFeatureAccess, featureManagementSnapshot, featureStatusForUser, refreshFeatureConfig, setBetaUser, unavailableConnectorMessage, unavailablePromptConnector, updateFeature } from './server/featureAccess.mjs'
 
 function loadEnv() {
   for (const filename of ['.env.local', '.env']) {
@@ -1444,6 +1444,55 @@ async function integrationsStatus(req, res) {
   return json(res, 200, status)
 }
 
+async function authenticatedAdmin(req) {
+  const config = supabaseConfig()
+  const tokenUser = await authenticatedUser(req, config.url, config.anon).catch(() => null)
+  if (tokenUser?.email?.toLowerCase() === adminEmail) return { user: tokenUser, config }
+  if (process.env.NODE_ENV !== 'production') {
+    const local = localUserFromRequest(req)
+    if (local?.email?.toLowerCase() === adminEmail) return { user: local, config }
+  }
+  return null
+}
+
+async function adminFeaturesHandler(req, res) {
+  const auth = await authenticatedAdmin(req)
+  if (!auth) return json(res, 403, { error: 'Authenticated admin access required' })
+  await refreshFeatureConfig(auth.config, true)
+  return json(res, 200, featureManagementSnapshot())
+}
+
+async function updateAdminFeatureHandler(req, res, featureId) {
+  const auth = await authenticatedAdmin(req)
+  if (!auth) return json(res, 403, { error: 'Authenticated admin access required' })
+  const body = await readBody(req)
+  await refreshFeatureConfig(auth.config, true)
+  const feature = await updateFeature(auth.config, featureId, body, auth.user)
+  if ((feature.state === 'disabled' || feature.state === 'maintenance') && feature.stop_existing) {
+    const agents = await listServerAgents()
+    for (const agent of agents) {
+      const connectors = new Set([...(agent.actions || []).map(action => action.connector), ...(agent.campaign?.meta?.platforms || []), ...(agent.campaign?.posts || []).flatMap(post => post.platforms || [])])
+      if (connectors.has(feature.id) && ['running', 'active', 'warning'].includes(agent.status)) {
+        agent.status = 'paused'
+        agent.approved = false
+        agent.featurePause = { featureId: feature.id, state: feature.state, at: new Date().toISOString(), by: auth.user.email }
+        agent.trigger = { ...(agent.trigger || {}), pausedNextRun: agent.trigger?.nextRun || null, nextRun: null }
+        agent.nextRunAt = null
+        await saveServerAgent(agent)
+      }
+    }
+  }
+  return json(res, 200, { feature })
+}
+
+async function adminBetaUserHandler(req, res) {
+  const auth = await authenticatedAdmin(req)
+  if (!auth) return json(res, 403, { error: 'Authenticated admin access required' })
+  const body = await readBody(req)
+  const betaUsers = await setBetaUser(auth.config, body.email, body.enabled !== false, auth.user)
+  return json(res, 200, { betaUsers })
+}
+
 async function liveTestIntegrations(req, res) {
   const config = supabaseConfig()
   const user = await currentOrLocalUser(req, config.url, config.anon)
@@ -2586,7 +2635,10 @@ function campaignNextRun(campaign) {
 
 async function runCampaignAgent(existing, trigger, executionId, user, admin) {
   const blockedPlatform = [...new Set([...(existing.campaign?.meta?.platforms || []), ...(existing.campaign?.posts || []).flatMap(post => post.platforms || [])])]
-    .find(platform => !connectorFeatureAccess(user, platform, true).enabled)
+    .find(platform => {
+      const access = connectorFeatureAccess(user, platform, true)
+      return !access.enabled && access.stopExisting
+    })
   if (blockedPlatform) throw new Error(unavailableConnectorMessage(blockedPlatform))
   const startTime = Date.now()
   const now = new Date()
@@ -3621,6 +3673,7 @@ function currentOrLocalUser(req, supabaseUrl, anonKey) {
     if (req.alphaUser) return resolve(req.alphaUser)
     const fromToken = await authenticatedUser(req, supabaseUrl, anonKey).catch(() => null)
     if (fromToken) { req.alphaUser = fromToken; req.alphaAuthSource = 'token'; return resolve(fromToken) }
+    if (String(req.headers.authorization || '').startsWith('Bearer ')) return resolve(null)
     const local = localUserFromRequest(req)
     if (local) { req.alphaUser = local; req.alphaAuthSource = 'local' }
     resolve(local)
@@ -4609,7 +4662,7 @@ async function sendEmailViaResend(userId, params) {
 
 async function executeConnectorAction(user, action) {
   const feature = connectorFeatureAccess(user, action?.connector, true)
-  if (!feature.enabled) throw new Error(unavailableConnectorMessage(feature.id))
+  if (!feature.enabled && feature.stopExisting) throw new Error(unavailableConnectorMessage(feature.id))
   const start = Date.now()
   const baseLog = `[${action.connector}] ${action.action}`
   const params = action.params || {}
@@ -5614,6 +5667,7 @@ const server = http.createServer(async (req, res) => {
   addSecurityHeaders(res)
   if (isRateLimited(req)) return json(res, 429, { error: 'Too many requests. Please slow down.' })
   if (req.method === 'OPTIONS') return json(res, 204, {})
+  if (String(req.url || '').startsWith('/api/')) await refreshFeatureConfig(supabaseConfig()).catch(() => {})
   if (req.method === 'GET' && (req.url?.startsWith('/auth/google/callback') || req.url?.startsWith('/api/auth/gmail/callback'))) return googleCallback(req, res)
   if (req.method === 'GET' && (req.url?.startsWith('/auth/google?') || req.url?.startsWith('/auth/google?state='))) {
     try { return await beginGoogleOAuth(req, res) } catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : 'Google connection failed' }) }
@@ -6027,6 +6081,10 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && req.url === '/api/credits/spend') return creditSpend(req, res)
   if (req.method === 'POST' && req.url === '/api/activity/ping') return activityPing(req, res)
   if (req.method === 'GET' && req.url === '/api/admin/stats') return adminStats(req, res)
+  if (req.method === 'GET' && req.url === '/api/admin/features') return adminFeaturesHandler(req, res)
+  const adminFeatureMatch = req.url?.match(/^\/api\/admin\/features\/([^/]+)$/)
+  if (req.method === 'PUT' && adminFeatureMatch) return updateAdminFeatureHandler(req, res, decodeURIComponent(adminFeatureMatch[1]))
+  if (req.method === 'POST' && req.url === '/api/admin/features/beta-users') return adminBetaUserHandler(req, res)
   if (req.method === 'GET' && req.url === '/api/admin/providers') return adminProviderDiagnostics(req, res)
   if (req.method === 'POST' && req.url === '/api/admin/providers/health') return adminProviderHealthCheck(req, res)
   if (['GET', 'POST'].includes(req.method || '') && req.url === '/api/settings/api-keys') {

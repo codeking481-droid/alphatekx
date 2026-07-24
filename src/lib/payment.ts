@@ -15,11 +15,13 @@ async function responsePayload(response: Response) {
 }
 
 async function authHeaders(): Promise<Record<string, string>> {
-  const headers: Record<string, string> = { ...localUserHeaders() }
+  const headers: Record<string, string> = {}
   try {
     const session = (await supabase?.auth.getSession())?.data?.session
     if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
+    else Object.assign(headers, localUserHeaders())
   } catch {}
+  if (!headers.Authorization) Object.assign(headers, localUserHeaders())
   return headers
 }
 

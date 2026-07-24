@@ -53,8 +53,23 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   useEffect(() => {
     if (!supabase) { setLoading(false); return }
-    supabase.auth.getSession().then(({ data }) => { setSession(data.session); setLoading(false); if (data.session) void refreshProfile() })
-    const { data } = supabase.auth.onAuthStateChange((_event, next) => { setSession(next); if (next) void refreshProfile(); else setProfile(null) })
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session)
+      setLoading(false)
+      if (data.session) {
+        localStorage.removeItem(LOCAL_USER_KEY)
+        setLocalUser(null)
+        void refreshProfile()
+      }
+    })
+    const { data } = supabase.auth.onAuthStateChange((_event, next) => {
+      setSession(next)
+      if (next) {
+        localStorage.removeItem(LOCAL_USER_KEY)
+        setLocalUser(null)
+        void refreshProfile()
+      } else setProfile(null)
+    })
     return () => data.subscription.unsubscribe()
   }, [])
 

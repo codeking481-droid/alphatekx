@@ -97,6 +97,32 @@ try {
     assert.equal(payload.connector, 'facebook')
   })
 
+  await test('admin feature changes apply immediately while public writes are rejected', async () => {
+    const denied = await request('/api/admin/features/facebook', {
+      method: 'PUT',
+      body: JSON.stringify({ state: 'public', stopExisting: true }),
+    }, otherHeaders)
+    assert.equal(denied.status, 403, await denied.text())
+
+    const changed = await request('/api/admin/features/facebook', {
+      method: 'PUT',
+      body: JSON.stringify({ state: 'maintenance', stopExisting: true }),
+    })
+    const changedPayload = await changed.json()
+    assert.equal(changed.status, 200, JSON.stringify(changedPayload))
+    assert.equal(changedPayload.feature.state, 'maintenance')
+
+    const publicStatus = await (await request('/api/integrations/status', {}, otherHeaders)).json()
+    assert.equal(publicStatus.facebook.access, 'maintenance')
+    assert.equal(publicStatus.facebook.ready, false)
+
+    const restored = await request('/api/admin/features/facebook', {
+      method: 'PUT',
+      body: JSON.stringify({ state: 'beta', stopExisting: true }),
+    })
+    assert.equal(restored.status, 200, await restored.text())
+  })
+
   await test('fixture is persisted for its owner', async () => {
     const response = await request('/api/agents', { method: 'POST', body: JSON.stringify({ agent: fixture }) })
     assert.equal(response.status, 200, await response.text())

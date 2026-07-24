@@ -12,8 +12,14 @@ import { supabase } from './supabase'
 
 async function authToken(): Promise<string | undefined> {
   try {
-    const session = await supabase?.auth.getSession()
-    return session?.data?.session?.access_token || undefined
+    const result = await supabase?.auth.getSession()
+    const session = result?.data?.session
+    if (!session) return undefined
+    if (session.expires_at && session.expires_at * 1000 < Date.now() + 60_000) {
+      const refreshed = await supabase?.auth.refreshSession()
+      return refreshed?.data?.session?.access_token || undefined
+    }
+    return session.access_token
   } catch {}
   return undefined
 }
@@ -28,7 +34,7 @@ async function requestJson<T>(url: string, init: RequestInit, options: { token?:
       ...init,
       headers: {
         'Content-Type': 'application/json',
-        ...localUserHeaders(),
+        ...(!token ? localUserHeaders() : {}),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...init.headers,
       },

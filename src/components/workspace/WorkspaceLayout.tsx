@@ -1,5 +1,5 @@
 import { useEffect, useState, type PropsWithChildren } from 'react'
-import { Bot, HelpCircle, History, ListChecks, LogOut, Menu, Plug, Settings, Sparkles, X } from 'lucide-react'
+import { Bot, HelpCircle, History, ListChecks, LogOut, Menu, Plug, Settings, ShieldCheck, Sparkles, X } from 'lucide-react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { getCredits, hydrateCredits, subscribeCredits } from '../../lib/creditStore'
 import { useAuth } from '../../lib/auth'
@@ -87,6 +87,7 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
         <div className="my-3 border-t border-white/[0.08]" />
         {secondary.map(([label, to, Icon]) => <NavLink key={label} to={to} title={label} onClick={() => setOpen(false)} className={({ isActive }) => `flex min-h-12 items-center gap-3 rounded-lg px-4 text-sm ${isActive ? 'bg-white/[.08] font-medium text-white' : 'text-white/70 hover:bg-white/[.04]'}`}><Icon size={18}/>{label}</NavLink>)}
         <div className="my-3 border-t border-white/[0.08]" />
+        {isAdmin && <NavLink to="/admin/features" onClick={() => setOpen(false)} className={({ isActive }) => `flex min-h-12 items-center gap-3 rounded-lg px-4 text-sm ${isActive ? 'bg-white/[.08] font-medium text-white' : 'text-violet-200 hover:bg-white/[.04]'}`}><ShieldCheck size={18}/>Feature Management</NavLink>}
         <button onClick={() => void signOut()} className="flex min-h-12 w-full items-center gap-3 rounded-lg px-4 text-sm text-white/70 hover:bg-white/[.04]"><LogOut size={18}/>Logout</button>
       </nav>
       <div className="border-t border-white/[.12] p-4">

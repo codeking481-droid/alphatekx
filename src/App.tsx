@@ -15,6 +15,7 @@ const Settings = lazy(() => import('./pages/Settings'))
 const Admin = lazy(() => import('./pages/Admin'))
 const AdminAgents = lazy(() => import('./pages/AdminAgents'))
 const AdminWithdrawals = lazy(() => import('./pages/AdminWithdrawals'))
+const AdminFeatures = lazy(() => import('./pages/AdminFeatures'))
 const Privacy = lazy(() => import('./pages/Privacy'))
 const Terms = lazy(() => import('./pages/Terms'))
 const ContentPage = lazy(() => import('./pages/ContentPage'))
@@ -50,6 +51,7 @@ export default function App() {
       <Route path="/admin" element={protectedPage(<Admin />)} />
       <Route path="/admin/agents" element={protectedPage(<AdminAgents />)} />
       <Route path="/admin/withdrawals" element={protectedPage(<AdminWithdrawals />)} />
+      <Route path="/admin/features" element={protectedPage(<AdminFeatures />)} />
 
       {/* Public */}
       <Route path="/privacy" element={<Privacy />} />
