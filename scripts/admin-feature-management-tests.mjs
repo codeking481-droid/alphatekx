@@ -60,10 +60,20 @@ await test('admin API and UI are authenticated and server enforced', () => {
   assert.match(server, /authenticatedUser\(req, config\.url, config\.anon\)/)
   assert.match(server, /\/api\/admin\/features/)
   assert.match(server, /stop_existing/)
+  assert.match(server, /featurePause\?\.featureId/)
+  assert.match(server, /previousStatus/)
   assert.match(app, /\/admin\/features/)
   assert.match(page, /Feature Management/)
   assert.match(page, /Beta testers/)
   assert.match(page, /Audit log/)
+  assert.match(page, /setInterval\(refresh, 5_000\)/)
+})
+
+await test('database writes use verified upserts rather than unchecked filtered updates', () => {
+  const source = fs.readFileSync(new URL('../server/featureAccess.mjs', import.meta.url), 'utf8')
+  assert.match(source, /features\?on_conflict=id/)
+  assert.match(source, /resolution=merge-duplicates,return=representation/)
+  assert.match(source, /saved\[0\]\?\.state !== state/)
 })
 
 await test('database migration defines flags, beta users, audit log, and RLS', () => {

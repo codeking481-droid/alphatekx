@@ -49,7 +49,19 @@ export default function Connectors() {
     try { setStatus(await getIntegrationStatus(session?.access_token)) }
     catch (error) { setNotice(error instanceof Error ? error.message : 'Could not load connected apps.') }
   }
-  useEffect(() => { void load() }, [session?.access_token])
+  useEffect(() => {
+    void load()
+    const refresh = () => void load()
+    const timer = window.setInterval(refresh, 5_000)
+    window.addEventListener('focus', refresh)
+    const visible = () => { if (document.visibilityState === 'visible') refresh() }
+    document.addEventListener('visibilitychange', visible)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', visible)
+    }
+  }, [session?.access_token])
   useEffect(() => {
     const connected = searchParams.get('connected')
     if (connected === 'linkedin') setNotice('LinkedIn connected successfully and is ready to publish.')
