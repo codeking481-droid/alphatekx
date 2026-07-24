@@ -13,6 +13,7 @@ function normalize(message) {
 
 const HELP_PATTERNS = [
   /\bhow\s+(?:do|can)\s+i\s+connect\b/i,
+  /^(?:please\s+)?help\s+me\s+connect\b/i,
   /\bhow\s+do\s+credits?\s+work\b/i,
   /\bwhere\s+(?:do|can)\s+i\s+(?:buy|get|purchase)\s+credits?\b/i,
   /\bhow\s+do\s+automations?\s+work\b/i,
@@ -28,6 +29,10 @@ const CONVERSATION_PATTERNS = [
   /^(?:nice|awesome|great|cool|okay|ok)[!?.]*$/i,
   /^tell\s+me\s+(?:a\s+)?joke[!?.]*$/i,
   /^(?:what\s+can\s+(?:you|alpha|alphatekx)\s+do|tell\s+me\s+about\s+(?:alpha|alphatekx))[?!.]*$/i,
+  /^(?:please\s+)?explain\s+(?:alpha|alphatekx)(?:\s+to\s+me)?[?!.]*$/i,
+  /^(?:i\s+am|i'm)\s+tired[?!.]*$/i,
+  /^i\s+(?:need|would\s+like)\s+(?:some\s+)?advice[?!.]*$/i,
+  /^i\s+want\s+to\s+think\s+about\s+my\s+life[?!.]*$/i,
 ]
 
 const ACTION_PATTERN = /\b(?:automate|automation|post|publish|schedule|send|email|mail|remind|notify|reply|respond|save|copy|move|upload|monitor|summarize|generate|create|append|share)\b/i
@@ -80,8 +85,11 @@ export function conversationalResponse(message) {
     return 'Alpha was created by the AlphaTekx team to help people turn repetitive work into reliable automations.'
   }
   if (/^(?:thank\s+you|thanks|thank\s+you\s+alpha|thanks\s+alpha)$/.test(text)) return "You're welcome!"
+  if (/^(?:i\s+am|i'm)\s+tired$/.test(text)) return "That sounds exhausting. If you tell me what's taking your time, I can help you decide whether any of it can be automated."
+  if (/^i\s+(?:need|would\s+like)\s+(?:some\s+)?advice$/.test(text)) return 'Of course. What would you like advice about?'
+  if (/^i\s+want\s+to\s+think\s+about\s+my\s+life$/.test(text)) return "I'm here to listen. What part of life would you like to think through?"
   if (/^tell\s+me\s+(?:a\s+)?joke$/.test(text)) return 'Why did the automation take a break? It needed time to process. 🙂'
-  if (/^(?:what\s+can\s+(?:you|alpha|alphatekx)\s+do|tell\s+me\s+about\s+(?:alpha|alphatekx))$/.test(text)) {
+  if (/^(?:what\s+can\s+(?:you|alpha|alphatekx)\s+do|tell\s+me\s+about\s+(?:alpha|alphatekx)|(?:please\s+)?explain\s+(?:alpha|alphatekx)(?:\s+to\s+me)?)$/.test(text)) {
     return 'I can help you plan and run approved automations, including LinkedIn publishing, scheduled work, and connected-app tasks. Tell me the result you want.'
   }
   return 'Glad to hear from you. What would you like me to automate today?'

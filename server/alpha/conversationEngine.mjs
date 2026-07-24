@@ -807,6 +807,14 @@ Return JSON:
 
     conversation.conversationStage = 'planning'
     const draft = await buildAutomationDraft(conversation)
+    if (draft.status === 'awaiting_information' || !Array.isArray(draft.actions) || draft.actions.length === 0) {
+      conversation.automationDraft = null
+      conversation.requiredIntegrations = []
+      conversation.approvalRequired = false
+      conversation.conversationStage = 'unsupported'
+      addMessage(conversation, 'alpha', "I can't create a reliable automation for that request yet. Try a supported LinkedIn publishing automation, or describe a different outcome.")
+      return
+    }
     conversation.automationDraft = draft
     conversation.requiredIntegrations = draft.integrations || []
     conversation.conversationStage = 'awaiting_approval'
@@ -1222,6 +1230,21 @@ Turn the user's goal into an automation plan. Return JSON:
 
     const actions = Array.isArray(plan.actions) ? plan.actions : []
     const supportedActions = actions.filter(a => isSupportedAction(a.connector, a.action))
+    if (actions.length === 0 || supportedActions.length !== actions.length) {
+      return {
+        id: automationIdFor(conversation),
+        name: 'Request needs a supported capability',
+        description: conversation.originalRequest,
+        originalRequest: conversation.originalRequest,
+        interpretedGoal: conversation.currentGoal,
+        trigger: { type: 'schedule', cron: '0 0 8 * *' },
+        actions: [],
+        status: 'awaiting_information',
+        missing: [{ field: 'unsupported', step: 'Plan', connector: 'system', reason: 'Alpha cannot reliably perform every requested action yet.' }],
+        creditsNeeded: 0,
+        creditsPerRun: 0,
+      }
+    }
     return {
       id: automationIdFor(conversation),
       name: plan.name || conversation.currentGoal,

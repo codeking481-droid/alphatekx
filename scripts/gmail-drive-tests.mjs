@@ -74,7 +74,7 @@ await test('bypasses LLM classification for Gmail attachment variants', async ()
     },
   })
   const conversation = await engine.start(
-    { id: 'gmail-drive-user', email: 'owner@example.com' },
+    { id: 'gmail-drive-user', email: 'iamdan4live@gmail.com' },
     'Copy unread PDF attachments from Gmail into Google Drive every hour.',
   )
   assert.equal(modelCalls, 0)
