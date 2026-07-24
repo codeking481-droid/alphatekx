@@ -60,6 +60,19 @@ User-supplied provider keys are encrypted server-side with AES-256-GCM. The brow
 
 OAuth access and refresh tokens are encrypted with the same server-side AES-256-GCM vault as user API keys. OAuth state is signed and expires after ten minutes. The callback never sends tokens to the browser, and disconnecting removes the stored integration after attempting Google token revocation.
 
+## WhatsApp first-message beta
+
+WhatsApp remains an admin/beta-only test capability. Configure
+`WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`,
+`WHATSAPP_BUSINESS_ACCOUNT_ID`, `WHATSAPP_VERIFY_TOKEN`,
+`WHATSAPP_APP_SECRET`, `WHATSAPP_API_VERSION`, and the comma-separated
+`WHATSAPP_ALLOWED_RECIPIENTS` allowlist on the server. The webhook URL is
+`https://alphatekx.name.ng/api/connectors/whatsapp/webhook`.
+
+This foundation sends only the exact reviewed text `Hi from AlphaTekx.` to one
+allowlisted test recipient after explicit approval. It does not support bulk
+messaging, campaigns, autonomous replies, or public access.
+
 ## Optional Vercel deployment
 
 1. Import the GitHub repository in Vercel.

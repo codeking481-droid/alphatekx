@@ -17,6 +17,7 @@
     "test:phase3": "node scripts/phase3-tests.mjs",
     "test:phase11": "node scripts/phase11-tests.mjs",
     "test:linkedin": "node scripts/linkedin-tests.mjs",
+    "test:whatsapp": "node scripts/whatsapp-tests.mjs",
     "test:facebook": "node scripts/facebook-oauth-tests.mjs",
     "test:gmail-drive": "node scripts/gmail-drive-tests.mjs",
     "test:lifecycle": "node scripts/automation-lifecycle-tests.mjs",

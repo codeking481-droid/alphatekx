@@ -299,6 +299,12 @@ function requiredMissingFields(intent, knownFields) {
     return missing
   }
 
+  if (intent === 'whatsapp_message') {
+    if (!knownFields.to) missing.push({ field: 'to', question: 'Which approved test number should receive “Hi from AlphaTekx.”?', reason: 'The WhatsApp test needs one allowlisted recipient.', required: true })
+    if (!knownFields.message) missing.push({ field: 'message', question: 'Confirm the message “Hi from AlphaTekx.”', reason: 'The first test supports only this exact reviewed message.', required: true })
+    return missing
+  }
+
   if (intent === 'telegram_message' || intent === 'slack_message') {
     if (!knownFields.to && !knownFields.chat_id && !knownFields.channel) missing.push({ field: 'to', question: 'Where should the message go? (chat ID, channel, or phone number)', reason: 'I need a destination.', required: true })
     if (!knownFields.message && !knownFields.topic) missing.push({ field: 'message', question: 'What should the message say?', reason: 'I need the message content.', required: true })
@@ -421,6 +427,22 @@ export function createConversationEngine(deps) {
       await moveToPlanningOrContent(conversation)
       return
     }
+    if (capability?.id === 'whatsapp-first-message') {
+      const capabilityPlan = buildCapabilityPlan(prompt, { email: conversation.userEmail })
+      conversation.intent = 'whatsapp_message'
+      conversation.confidence = 1
+      conversation.currentGoal = capabilityPlan.interpretedGoal || prompt
+      conversation.knownFields = extractKnownFieldsFromCapability(capabilityPlan)
+      conversation.missingFields = requiredMissingFields(conversation.intent, conversation.knownFields)
+      conversation.askedFields = conversation.askedFields || []
+      if (conversation.missingFields.length) {
+        conversation.conversationStage = 'gathering_information'
+        await askNextQuestion(conversation)
+      } else {
+        await moveToPlanningOrContent(conversation)
+      }
+      return
+    }
     if (SOCIAL_CONTENT_INTENTS.has(fastHeuristic.intent) && requiredMissingFields(fastHeuristic.intent, fastHeuristic.knownFields).length === 0) {
       conversation.intent = fastHeuristic.intent
       conversation.confidence = 0.9
@@ -460,7 +482,7 @@ export function createConversationEngine(deps) {
     const system = `${ALPHA_SYSTEM_IDENTITY}
 
 Analyze the user's request and return a JSON object with:
-- intent: one of social_content, send_email, gmail_attachments_to_drive, telegram_message, slack_message, calendar_summary, sheets_append, unsupported, unknown
+- intent: one of social_content, send_email, gmail_attachments_to_drive, telegram_message, slack_message, whatsapp_message, calendar_summary, sheets_append, unsupported, unknown
 - goal: a short rewritten goal in plain English
 - confidence: 0 to 1
 - platforms: array of platform names mentioned (facebook, linkedin, x, instagram, telegram, slack, gmail, google_sheets, google_calendar)
@@ -577,6 +599,7 @@ Do not return placeholder text. Use the words the user actually provided.`
     if (capabilityPlan.actions?.some(a => a.connector === 'gmail' || a.connector === 'email')) return 'send_email'
     if (capabilityPlan.actions?.some(a => a.connector === 'telegram')) return 'telegram_message'
     if (capabilityPlan.actions?.some(a => a.connector === 'slack')) return 'slack_message'
+    if (capabilityPlan.actions?.some(a => a.connector === 'whatsapp')) return 'whatsapp_message'
     if (capabilityPlan.actions?.some(a => a.connector === 'google_sheets')) return 'sheets_append'
     if (capabilityPlan.actions?.some(a => a.connector === 'google_calendar' || a.connector === 'calendar')) return 'calendar_summary'
     return fallback
