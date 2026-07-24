@@ -1,5 +1,5 @@
 export type ServiceStatus = { connected: boolean; ready?: boolean; email?: string | null; scopes?: string[]; identifier?: string | null; hasOwnKey?: boolean; isMaster?: boolean; access?: 'available' | 'testing' | 'coming_soon'; publicEnabled?: boolean }
-export type FeatureAccessStatus = { admin: boolean; connectors: Record<string, { id: string; name: string; enabled: boolean; publicEnabled: boolean; admin: boolean; availability: 'available' | 'testing' | 'coming_soon' }> }
+export type FeatureAccessStatus = { admin: boolean; beta?: boolean; revision?: number; connectors: Record<string, { id: string; name: string; enabled: boolean; publicEnabled: boolean; admin: boolean; availability: 'available' | 'testing' | 'coming_soon' | 'maintenance' }> }
 export type IntegrationStatus = {
   google: ServiceStatus
   gmail: ServiceStatus

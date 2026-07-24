@@ -123,6 +123,48 @@ try {
     assert.equal(restored.status, 200, await restored.text())
   })
 
+  await test('disabling and re-enabling LinkedIn pauses and resumes feature-stopped automations', async () => {
+    const toggleId = `linkedin-toggle-${randomUUID()}`
+    const created = await request('/api/agents', {
+      method: 'POST',
+      body: JSON.stringify({ agent: {
+        id: toggleId,
+        name: 'LinkedIn toggle regression',
+        status: 'running',
+        approved: true,
+        trigger: { type: 'schedule', cron: '0 9 * * *', nextRun: new Date(Date.now() + 86_400_000).toISOString() },
+        actions: [{ connector: 'linkedin', action: 'post', params: { text: 'Approved test content' } }],
+      } }),
+    })
+    assert.equal(created.status, 200, await created.text())
+
+    const disabled = await request('/api/admin/features/linkedin', {
+      method: 'PUT',
+      body: JSON.stringify({ state: 'disabled', stopExisting: true }),
+    })
+    assert.equal(disabled.status, 200, await disabled.text())
+    let listed = (await (await request('/api/agents')).json()).agents
+    let toggled = listed.find(item => item.id === toggleId)
+    assert.equal(toggled.status, 'paused')
+    assert.equal(toggled.trigger.nextRun, null)
+    assert.equal(toggled.featurePause.featureId, 'linkedin')
+
+    const enabled = await request('/api/admin/features/linkedin', {
+      method: 'PUT',
+      body: JSON.stringify({ state: 'public', stopExisting: true }),
+    })
+    assert.equal(enabled.status, 200, await enabled.text())
+    listed = (await (await request('/api/agents')).json()).agents
+    toggled = listed.find(item => item.id === toggleId)
+    assert.equal(toggled.status, 'running')
+    assert.equal(toggled.approved, true)
+    assert.ok(toggled.trigger.nextRun)
+    assert.equal(toggled.featurePause, undefined)
+
+    const removed = await request(`/api/agents/${toggleId}`, { method: 'DELETE' })
+    assert.equal(removed.status, 200, await removed.text())
+  })
+
   await test('fixture is persisted for its owner', async () => {
     const response = await request('/api/agents', { method: 'POST', body: JSON.stringify({ agent: fixture }) })
     assert.equal(response.status, 200, await response.text())

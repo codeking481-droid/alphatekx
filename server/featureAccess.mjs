@@ -32,6 +32,8 @@ let featureCache = new Map(DEFAULT_FEATURES.map(feature => [feature.id, feature]
 let betaUsers = new Set()
 let auditCache = []
 let loadedAt = 0
+let storageMode = 'defaults'
+let lastStorageError = ''
 
 function readLocal() {
   try {
@@ -75,14 +77,18 @@ export async function refreshFeatureConfig(config, force = false) {
         if (Array.isArray(records) && records.length) featureCache = new Map(records.map(record => [record.id, record]))
         betaUsers = new Set(betaResponse.ok ? (await betaResponse.json()).map(record => String(record.email).toLowerCase()) : [])
         auditCache = auditResponse.ok ? await auditResponse.json() : []
+        storageMode = 'database'
+        lastStorageError = ''
         return
       }
-    } catch {}
+      lastStorageError = `Feature database returned HTTP ${featuresResponse.status}`
+    } catch (error) { lastStorageError = error instanceof Error ? error.message : String(error) }
   }
   const local = readLocal()
   featureCache = new Map(local.features.map(feature => [feature.id, feature]))
   betaUsers = new Set(local.betaUsers.map(email => String(email).toLowerCase()))
   auditCache = local.audit
+  storageMode = 'local_fallback'
 }
 
 export function isAdminTestUser(user, trustedIdentity = true) {
@@ -138,11 +144,22 @@ export function unavailablePromptConnector(user, prompt, trustedIdentity = true)
 export function featureStatusForUser(user, trustedIdentity = true) {
   const connectors = {}
   for (const feature of featureCache.values()) connectors[feature.id] = connectorFeatureAccess(user, feature.id, trustedIdentity)
-  return { admin: isAdminTestUser(user, trustedIdentity), beta: betaUsers.has(String(user?.email || '').toLowerCase()), connectors }
+  return {
+    admin: isAdminTestUser(user, trustedIdentity),
+    beta: betaUsers.has(String(user?.email || '').toLowerCase()),
+    connectors,
+    revision: Math.max(0, ...[...featureCache.values()].map(feature => Date.parse(feature.updated_at || '') || 0)),
+  }
 }
 
 export function featureManagementSnapshot() {
-  return { features: [...featureCache.values()].sort((a, b) => String(a.name).localeCompare(String(b.name))), betaUsers: [...betaUsers].sort(), audit: auditCache }
+  return {
+    features: [...featureCache.values()].sort((a, b) => String(a.name).localeCompare(String(b.name))),
+    betaUsers: [...betaUsers].sort(),
+    audit: auditCache,
+    storage: { mode: storageMode, error: lastStorageError || null },
+    revision: Math.max(0, ...[...featureCache.values()].map(feature => Date.parse(feature.updated_at || '') || 0)),
+  }
 }
 
 export async function updateFeature(config, id, changes, actor) {
@@ -153,17 +170,34 @@ export async function updateFeature(config, id, changes, actor) {
   if (!FEATURE_STATES.has(state)) throw new Error('Invalid feature state')
   const updated = { ...previous, state, stop_existing: changes.stopExisting !== false, updated_at: new Date().toISOString(), updated_by: actor.email }
   const audit = { id: crypto.randomUUID(), feature_id: featureId, old_state: previous.state, new_state: state, stop_existing: updated.stop_existing, changed_at: updated.updated_at, changed_by: actor.email }
+  let persisted = false
+  let persistenceWarning = ''
   if (config?.url && config?.service) {
-    const featureResponse = await fetch(`${config.url}/rest/v1/features?id=eq.${encodeURIComponent(featureId)}`, { method: 'PATCH', headers: serviceHeaders(config, { Prefer: 'return=representation' }), body: JSON.stringify(updated) })
-    if (!featureResponse.ok) throw new Error((await featureResponse.json().catch(() => ({}))).message || 'Feature database update failed')
-    const auditResponse = await fetch(`${config.url}/rest/v1/feature_audit_log`, { method: 'POST', headers: serviceHeaders(config), body: JSON.stringify(audit) })
-    if (!auditResponse.ok) throw new Error((await auditResponse.json().catch(() => ({}))).message || 'Feature audit write failed')
+    try {
+      const featureResponse = await fetch(`${config.url}/rest/v1/features?on_conflict=id`, {
+        method: 'POST',
+        headers: serviceHeaders(config, { Prefer: 'resolution=merge-duplicates,return=representation' }),
+        body: JSON.stringify(updated),
+      })
+      const saved = await featureResponse.json().catch(() => [])
+      if (!featureResponse.ok || !Array.isArray(saved) || saved[0]?.state !== state) {
+        throw new Error(saved?.message || `Feature database verification failed (${featureResponse.status})`)
+      }
+      persisted = true
+      storageMode = 'database'
+      const auditResponse = await fetch(`${config.url}/rest/v1/feature_audit_log`, { method: 'POST', headers: serviceHeaders(config), body: JSON.stringify(audit) })
+      if (!auditResponse.ok) persistenceWarning = (await auditResponse.json().catch(() => ({}))).message || 'Feature changed, but the audit entry could not be stored.'
+    } catch (error) {
+      persistenceWarning = error instanceof Error ? error.message : String(error)
+      storageMode = 'local_fallback'
+      lastStorageError = persistenceWarning
+    }
   }
   featureCache.set(featureId, updated)
   auditCache = [audit, ...auditCache].slice(0, 100)
   writeLocal()
   loadedAt = Date.now()
-  return updated
+  return { feature: updated, persisted, warning: persistenceWarning || null, revision: Date.parse(updated.updated_at) }
 }
 
 export async function setBetaUser(config, email, enabled, actor) {

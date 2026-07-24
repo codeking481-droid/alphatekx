@@ -69,7 +69,19 @@ export default function Agents() {
     try { setIntegrationStatus(await getIntegrationStatus(session?.access_token)) } catch {}
   }
 
-  useEffect(() => { void refreshConnections() }, [session?.access_token])
+  useEffect(() => {
+    void refreshConnections()
+    const refresh = () => void refreshConnections()
+    const timer = window.setInterval(refresh, 5_000)
+    window.addEventListener('focus', refresh)
+    const visible = () => { if (document.visibilityState === 'visible') refresh() }
+    document.addEventListener('visibilitychange', visible)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', visible)
+    }
+  }, [session?.access_token])
   useEffect(() => {
     for (const key of ['alphatekx:planning-conversation', 'alphatekx:planning-prompt', 'alphatekx:creation-success', 'alphatekx:pending-agent']) sessionStorage.removeItem(key)
   }, [])

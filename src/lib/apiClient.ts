@@ -29,8 +29,8 @@ async function requestJson<T>(url: string, init: RequestInit, options: { token?:
   if (options.signal) { options.signal.addEventListener('abort', () => controller.abort(), { once: true }) }
   const timeout = globalThis.setTimeout(() => controller.abort(), options.timeoutMs ?? 90_000)
   try {
-    const token = options.token || await authToken()
-    const response = await fetch(url, {
+    let token = options.token || await authToken()
+    const makeRequest = () => fetch(url, {
       ...init,
       headers: {
         'Content-Type': 'application/json',
@@ -40,6 +40,12 @@ async function requestJson<T>(url: string, init: RequestInit, options: { token?:
       },
       signal: controller.signal,
     })
+    let response = await makeRequest()
+    if (response.status === 401 && supabase) {
+      const refreshed = await supabase.auth.refreshSession().catch(() => null)
+      token = refreshed?.data?.session?.access_token || ''
+      if (token) response = await makeRequest()
+    }
     const raw = await response.text()
     let payload: Record<string, unknown> = {}
     try { payload = raw ? JSON.parse(raw) as Record<string, unknown> : {} } catch {}
