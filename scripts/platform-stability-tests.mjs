@@ -37,7 +37,7 @@ for (const greeting of ['Hi', 'Hello', 'Good morning', 'How are you?']) {
 
 await test('a genuine request after a greeting enters deterministic planning', async () => {
   const fixture = testEngine()
-  const user = { id: 'follow-up-user', email: 'owner@example.com' }
+  const user = { id: 'follow-up-user', email: 'iamdan4live@gmail.com' }
   let conversation = await fixture.engine.start(user, 'Hello')
   conversation = await fixture.engine.continue(conversation.id, user, 'Save invoice attachments to Google Drive')
   assert.equal(conversation.conversationStage, 'awaiting_approval')
@@ -47,7 +47,7 @@ await test('a genuine request after a greeting enters deterministic planning', a
 
 await test('approval persists a separate active automation without charging credits', async () => {
   const fixture = testEngine()
-  const user = { id: 'creation-user', email: 'owner@example.com' }
+  const user = { id: 'creation-user', email: 'iamdan4live@gmail.com' }
   let conversation = await fixture.engine.start(user, 'Save invoice attachments to Google Drive')
   conversation = await fixture.engine.continue(conversation.id, user, 'approve')
   const automation = conversation.automationDraft

@@ -17,6 +17,7 @@ import { createConversationEngine } from './server/alpha/conversationEngine.mjs'
 import * as providerHealth from './server/alpha/providerHealth.mjs'
 import * as billing from './server/billing.mjs'
 import { normalizeLinkedInScopes, publishLinkedInTextPost } from './server/linkedin.mjs'
+import { connectorFeatureAccess, featureManagementSnapshot, featureStatusForUser, refreshFeatureConfig, setBetaUser, unavailableConnectorMessage, unavailablePromptConnector, updateFeature } from './server/featureAccess.mjs'
 
 function loadEnv() {
   for (const filename of ['.env.local', '.env']) {
@@ -76,12 +77,15 @@ function addSecurityHeaders(res) {
   for (const [k, v] of Object.entries(securityHeaders)) res.setHeader(k, v)
 }
 const json = (res, status, body, headers = {}) => { res.writeHead(status, { 'Content-Type': 'application/json', ...headers }); res.end(JSON.stringify(body)) }
-const readBody = (req) => new Promise((resolve, reject) => {
+const readBody = (req) => {
+  if (req.alphaBody !== undefined) return Promise.resolve(req.alphaBody)
+  return new Promise((resolve, reject) => {
   let raw = ''
   req.on('data', chunk => { raw += chunk; if (raw.length > 1_000_000) reject(new Error('Request too large')) })
-  req.on('end', () => { try { resolve(JSON.parse(raw || '{}')) } catch { reject(new Error('Invalid JSON')) } })
+  req.on('end', () => { try { req.alphaBody = JSON.parse(raw || '{}'); resolve(req.alphaBody) } catch { reject(new Error('Invalid JSON')) } })
   req.on('error', reject)
-})
+  })
+}
 const readRawBody = (req) => new Promise((resolve, reject) => {
   const chunks = []
   req.on('data', chunk => { chunks.push(chunk); if (chunks.reduce((s, c) => s + c.length, 0) > 5_000_000) reject(new Error('Request too large')) })
@@ -1430,7 +1434,63 @@ async function integrationsStatus(req, res) {
   }
   if (!status.paystack.connected && process.env.PAYSTACK_SECRET_KEY) status.paystack = { connected: true, ready: true, email: 'AlphaTekX backend' }
   if (!status.supabase.connected && config.url && config.service) status.supabase = { connected: true, ready: true, email: 'AlphaTekX backend' }
+  const features = featureStatusForUser(user, trustedFeatureIdentity(req))
+  status._access = features
+  for (const [provider, access] of Object.entries(features.connectors)) {
+    if (!status[provider]) status[provider] = { connected: false, ready: false }
+    status[provider] = { ...status[provider], access: access.availability, publicEnabled: access.publicEnabled }
+    if (!access.enabled) status[provider] = { ...status[provider], connected: false, ready: false }
+  }
   return json(res, 200, status)
+}
+
+async function authenticatedAdmin(req) {
+  const config = supabaseConfig()
+  const tokenUser = await authenticatedUser(req, config.url, config.anon).catch(() => null)
+  if (tokenUser?.email?.toLowerCase() === adminEmail) return { user: tokenUser, config }
+  if (process.env.NODE_ENV !== 'production') {
+    const local = localUserFromRequest(req)
+    if (local?.email?.toLowerCase() === adminEmail) return { user: local, config }
+  }
+  return null
+}
+
+async function adminFeaturesHandler(req, res) {
+  const auth = await authenticatedAdmin(req)
+  if (!auth) return json(res, 403, { error: 'Authenticated admin access required' })
+  await refreshFeatureConfig(auth.config, true)
+  return json(res, 200, featureManagementSnapshot())
+}
+
+async function updateAdminFeatureHandler(req, res, featureId) {
+  const auth = await authenticatedAdmin(req)
+  if (!auth) return json(res, 403, { error: 'Authenticated admin access required' })
+  const body = await readBody(req)
+  await refreshFeatureConfig(auth.config, true)
+  const feature = await updateFeature(auth.config, featureId, body, auth.user)
+  if ((feature.state === 'disabled' || feature.state === 'maintenance') && feature.stop_existing) {
+    const agents = await listServerAgents()
+    for (const agent of agents) {
+      const connectors = new Set([...(agent.actions || []).map(action => action.connector), ...(agent.campaign?.meta?.platforms || []), ...(agent.campaign?.posts || []).flatMap(post => post.platforms || [])])
+      if (connectors.has(feature.id) && ['running', 'active', 'warning'].includes(agent.status)) {
+        agent.status = 'paused'
+        agent.approved = false
+        agent.featurePause = { featureId: feature.id, state: feature.state, at: new Date().toISOString(), by: auth.user.email }
+        agent.trigger = { ...(agent.trigger || {}), pausedNextRun: agent.trigger?.nextRun || null, nextRun: null }
+        agent.nextRunAt = null
+        await saveServerAgent(agent)
+      }
+    }
+  }
+  return json(res, 200, { feature })
+}
+
+async function adminBetaUserHandler(req, res) {
+  const auth = await authenticatedAdmin(req)
+  if (!auth) return json(res, 403, { error: 'Authenticated admin access required' })
+  const body = await readBody(req)
+  const betaUsers = await setBetaUser(auth.config, body.email, body.enabled !== false, auth.user)
+  return json(res, 200, { betaUsers })
 }
 
 async function liveTestIntegrations(req, res) {
@@ -1592,6 +1652,7 @@ async function saveIntegrationHandler(req, res) {
   const match = String(req.url || '').match(/^\/api\/integrations\/([^/]+)\/?$/)
   const provider = match ? match[1] : ''
   if (!provider) return json(res, 400, { error: 'Provider required' })
+  if (!requireConnectorFeature(req, res, user, provider)) return
   const body = await readBody(req)
   const tokens = body.tokens || {}
   if (!tokens.api_key && !tokens.access_token && !tokens.token && !tokens.webhook_url) return json(res, 400, { error: 'Integration credentials required' })
@@ -1685,6 +1746,7 @@ async function testConnectorHandler(req, res) {
   if (!user) return json(res, 401, { error: 'Authentication required' })
   const body = await readBody(req)
   const platform = String(body.platform || body.provider || '')
+  if (!requireConnectorFeature(req, res, user, platform)) return
   const text = String(body.text || body.message || 'AlphaTekX connector test')
   const imageUrl = String(body.imageUrl || '')
   const to = String(body.to || body.phone || body.phoneNumber || '')
@@ -1825,6 +1887,7 @@ async function facebookCallback(req, res) {
     const state = url.searchParams.get('state')
     if (!code || !state) throw new Error('Missing Facebook authorization code or state')
     const parsed = verifyOAuthState(state, config)
+    if (!connectorFeatureAccess({ email: parsed.email }, 'facebook', true).enabled) throw new Error(unavailableConnectorMessage('facebook'))
     const safeRedirect = String(parsed.redirect || '').startsWith('/') && !String(parsed.redirect || '').startsWith('//') ? String(parsed.redirect) : '/connected-apps'
     destination = new URL(safeRedirect, publicAppUrl())
     destination.searchParams.set('connected', 'facebook')
@@ -2068,6 +2131,7 @@ async function activateCampaignHandler(req, res) {
 
   const platforms = Array.from(new Set((agent.campaign.posts || []).flatMap(post => post.platforms || [])))
   if (platforms.length !== 1 || !['linkedin', 'facebook'].includes(platforms[0])) return json(res, 400, { error: 'This release supports one publishing platform per automation: LinkedIn or Facebook Pages.' })
+  if (!requireConnectorFeature(req, res, user, platforms[0])) return
   if (platforms[0] === 'facebook' && ((agent.campaign.posts || []).length !== 1 || postingOption === 'recurring')) {
     return json(res, 400, { error: 'This release supports one Facebook Page text post only. Recurring Facebook campaigns are not available yet.' })
   }
@@ -2570,6 +2634,12 @@ function campaignNextRun(campaign) {
 }
 
 async function runCampaignAgent(existing, trigger, executionId, user, admin) {
+  const blockedPlatform = [...new Set([...(existing.campaign?.meta?.platforms || []), ...(existing.campaign?.posts || []).flatMap(post => post.platforms || [])])]
+    .find(platform => {
+      const access = connectorFeatureAccess(user, platform, true)
+      return !access.enabled && access.stopExisting
+    })
+  if (blockedPlatform) throw new Error(unavailableConnectorMessage(blockedPlatform))
   const startTime = Date.now()
   const now = new Date()
   const config = supabaseConfig()
@@ -3602,11 +3672,27 @@ function currentOrLocalUser(req, supabaseUrl, anonKey) {
   return new Promise(async resolve => {
     if (req.alphaUser) return resolve(req.alphaUser)
     const fromToken = await authenticatedUser(req, supabaseUrl, anonKey).catch(() => null)
-    if (fromToken) { req.alphaUser = fromToken; return resolve(fromToken) }
+    if (fromToken) { req.alphaUser = fromToken; req.alphaAuthSource = 'token'; return resolve(fromToken) }
+    if (String(req.headers.authorization || '').startsWith('Bearer ')) return resolve(null)
     const local = localUserFromRequest(req)
-    if (local) req.alphaUser = local
+    if (local) { req.alphaUser = local; req.alphaAuthSource = 'local' }
     resolve(local)
   })
+}
+
+function trustedFeatureIdentity(req) {
+  return req.alphaAuthSource === 'token' || process.env.NODE_ENV !== 'production'
+}
+
+function featureAccessForRequest(req, user, connector) {
+  return connectorFeatureAccess(user, connector, trustedFeatureIdentity(req))
+}
+
+function requireConnectorFeature(req, res, user, connector) {
+  const access = featureAccessForRequest(req, user, connector)
+  if (access.enabled) return true
+  json(res, 403, { error: unavailableConnectorMessage(access.id), code: 'FEATURE_COMING_SOON', connector: access.id })
+  return false
 }
 
 async function appDataHandler(req, res) {
@@ -4575,6 +4661,8 @@ async function sendEmailViaResend(userId, params) {
 }
 
 async function executeConnectorAction(user, action) {
+  const feature = connectorFeatureAccess(user, action?.connector, true)
+  if (!feature.enabled && feature.stopExisting) throw new Error(unavailableConnectorMessage(feature.id))
   const start = Date.now()
   const baseLog = `[${action.connector}] ${action.action}`
   const params = action.params || {}
@@ -5579,6 +5667,7 @@ const server = http.createServer(async (req, res) => {
   addSecurityHeaders(res)
   if (isRateLimited(req)) return json(res, 429, { error: 'Too many requests. Please slow down.' })
   if (req.method === 'OPTIONS') return json(res, 204, {})
+  if (String(req.url || '').startsWith('/api/')) await refreshFeatureConfig(supabaseConfig()).catch(() => {})
   if (req.method === 'GET' && (req.url?.startsWith('/auth/google/callback') || req.url?.startsWith('/api/auth/gmail/callback'))) return googleCallback(req, res)
   if (req.method === 'GET' && (req.url?.startsWith('/auth/google?') || req.url?.startsWith('/auth/google?state='))) {
     try { return await beginGoogleOAuth(req, res) } catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : 'Google connection failed' }) }
@@ -5611,7 +5700,16 @@ const server = http.createServer(async (req, res) => {
     try { return await saveBrandProfileHandler(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Could not save brand profile' }) }
   }
   if (req.method === 'POST' && req.url === '/api/connectors/save') {
-    try { return await saveConnectorHandler(req, res) } catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : 'Could not save connector' }) }
+    try {
+      const config = supabaseConfig()
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      if (!user) return json(res, 401, { error: 'Authentication required' })
+      const body = await readBody(req)
+      const connector = String(body.platform || body.provider || body.connector || '')
+      if (!requireConnectorFeature(req, res, user, connector)) return
+      req.alphaBody = body
+      return await saveConnectorHandler(req, res)
+    } catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : 'Could not save connector' }) }
   }
   if (req.method === 'POST' && req.url === '/api/connectors/test') {
     try { return await testConnectorHandler(req, res) } catch (error) { return json(res, 502, { error: error instanceof Error ? error.message : 'Connector test failed' }) }
@@ -5626,16 +5724,34 @@ const server = http.createServer(async (req, res) => {
     try { return await linkedinCallback(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'LinkedIn callback failed' }) }
   }
   if (req.method === 'POST' && req.url === '/api/connectors/facebook/start') {
-    try { return await startFacebookConnection(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Facebook auth failed' }) }
+    try {
+      const config = supabaseConfig()
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      if (!user) return json(res, 401, { error: 'Authentication required' })
+      if (!requireConnectorFeature(req, res, user, 'facebook')) return
+      return await startFacebookConnection(req, res)
+    } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Facebook auth failed' }) }
   }
   if (req.method === 'GET' && req.url?.startsWith('/api/connectors/facebook/callback')) {
     try { return await facebookCallback(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Facebook callback failed' }) }
   }
   if (req.method === 'GET' && req.url === '/api/connectors/facebook/pages') {
-    try { return await listFacebookPages(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Could not load Facebook Pages' }) }
+    try {
+      const config = supabaseConfig()
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      if (!user) return json(res, 401, { error: 'Authentication required' })
+      if (!requireConnectorFeature(req, res, user, 'facebook')) return
+      return await listFacebookPages(req, res)
+    } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Could not load Facebook Pages' }) }
   }
   if (req.method === 'POST' && req.url === '/api/connectors/facebook/select-page') {
-    try { return await selectFacebookPage(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Could not select Facebook Page' }) }
+    try {
+      const config = supabaseConfig()
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      if (!user) return json(res, 401, { error: 'Authentication required' })
+      if (!requireConnectorFeature(req, res, user, 'facebook')) return
+      return await selectFacebookPage(req, res)
+    } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Could not select Facebook Page' }) }
   }
   if (req.method === 'POST' && (req.url === '/api/gmail/send' || req.url === '/api/send-email')) {
     try { return await sendGmail(req, res) } catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : 'Email could not be sent' }) }
@@ -5647,6 +5763,8 @@ const server = http.createServer(async (req, res) => {
       if (!user) return json(res, 401, { error: 'Authentication required' })
       const body = await readBody(req)
       const prompt = String(body.prompt || '')
+      const unavailable = unavailablePromptConnector(user, prompt, trustedFeatureIdentity(req))
+      if (unavailable) return json(res, 200, { conversation: { id: randomUUID(), type: 'conversation', conversationStage: 'chatting', status: 'chatting', messages: [{ role: 'assistant', content: unavailableConnectorMessage(unavailable) }], automationDraft: null }, agent: null })
       const conversation = await getConversationEngine().start(user, prompt)
       return json(res, 200, { conversation, agent: conversation.automationDraft })
     } catch (error) { return json(res, error instanceof Error && error.message.includes('No AI provider') ? 503 : 400, { error: error instanceof Error ? error.message : 'Conversation failed' }) }
@@ -5705,6 +5823,8 @@ const server = http.createServer(async (req, res) => {
       if (!user) return json(res, 401, { error: 'Authentication required' })
       const body = await readBody(req)
       const prompt = String(body.prompt || '')
+      const unavailable = unavailablePromptConnector(user, prompt, trustedFeatureIdentity(req))
+      if (unavailable) return json(res, 403, { error: unavailableConnectorMessage(unavailable), code: 'FEATURE_COMING_SOON', connector: unavailable })
       const agent = await parseAgentFromNL(prompt, user)
       return json(res, 200, { agent })
     } catch (error) { return json(res, error instanceof Error && error.message.includes('No AI provider') ? 503 : 400, { error: error instanceof Error ? error.message : 'Parse failed' }) }
@@ -5728,6 +5848,13 @@ const server = http.createServer(async (req, res) => {
       if (!user) return json(res, 401, { error: 'Authentication required' })
       const body = await readBody(req)
       const incoming = body.agent || body
+      const incomingConnectors = new Set([
+        ...(incoming.actions || []).map(action => action.connector),
+        ...(incoming.campaign?.meta?.platforms || []),
+        ...(incoming.campaign?.posts || []).flatMap(post => post.platforms || []),
+      ])
+      const blockedConnector = [...incomingConnectors].find(connector => !featureAccessForRequest(req, user, connector).enabled)
+      if (blockedConnector) return json(res, 403, { error: unavailableConnectorMessage(blockedConnector), code: 'FEATURE_COMING_SOON', connector: blockedConnector })
       const agentId = incoming.id || randomUUID()
       const existing = await getServerAgent(agentId, user.id) || {}
       const merged = { ...existing, ...incoming, id: agentId, userId: user.id, userEmail: user.email }
@@ -5954,6 +6081,10 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && req.url === '/api/credits/spend') return creditSpend(req, res)
   if (req.method === 'POST' && req.url === '/api/activity/ping') return activityPing(req, res)
   if (req.method === 'GET' && req.url === '/api/admin/stats') return adminStats(req, res)
+  if (req.method === 'GET' && req.url === '/api/admin/features') return adminFeaturesHandler(req, res)
+  const adminFeatureMatch = req.url?.match(/^\/api\/admin\/features\/([^/]+)$/)
+  if (req.method === 'PUT' && adminFeatureMatch) return updateAdminFeatureHandler(req, res, decodeURIComponent(adminFeatureMatch[1]))
+  if (req.method === 'POST' && req.url === '/api/admin/features/beta-users') return adminBetaUserHandler(req, res)
   if (req.method === 'GET' && req.url === '/api/admin/providers') return adminProviderDiagnostics(req, res)
   if (req.method === 'POST' && req.url === '/api/admin/providers/health') return adminProviderHealthCheck(req, res)
   if (['GET', 'POST'].includes(req.method || '') && req.url === '/api/settings/api-keys') {

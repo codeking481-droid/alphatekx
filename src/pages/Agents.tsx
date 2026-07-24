@@ -21,9 +21,10 @@ type AlphaConversation = {
 }
 type CreationSuccess = { id: string; name: string }
 
-const CONVERSATION_KEY = 'alphatekx:planning-conversation'
-const PROMPT_KEY = 'alphatekx:planning-prompt'
-const SUCCESS_KEY = 'alphatekx:creation-success'
+const CONVERSATION_KEY = 'alphatekx:planning-conversation:v2'
+const PROMPT_KEY = 'alphatekx:planning-prompt:v2'
+const SUCCESS_KEY = 'alphatekx:creation-success:v2'
+const PENDING_KEY = 'alphatekx:pending-agent:v2'
 const examples = [
   'Post useful Python content on LinkedIn every Monday.',
   'Send me my calendar every morning.',
@@ -48,7 +49,7 @@ export default function Agents() {
   const [searchParams] = useSearchParams()
   const [input, setInput] = useState(() => sessionStorage.getItem(PROMPT_KEY) || '')
   const [conversation, setConversation] = useState<AlphaConversation | null>(() => readStored(CONVERSATION_KEY))
-  const [pendingAgent, setPendingAgent] = useState<Agent | null>(() => readStored('alphatekx:pending-agent'))
+  const [pendingAgent, setPendingAgent] = useState<Agent | null>(() => readStored(PENDING_KEY))
   const [success, setSuccess] = useState<CreationSuccess | null>(() => readStored(SUCCESS_KEY))
   const [integrationStatus, setIntegrationStatus] = useState<IntegrationStatus>({})
   const [creating, setCreating] = useState(false)
@@ -60,7 +61,7 @@ export default function Agents() {
     const headers: Record<string, string> = {}
     if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
     const local = getLocalUser()
-    if (local) { headers['x-local-user-id'] = local.id; headers['x-local-user-email'] = local.email }
+    if (!session?.access_token && local) { headers['x-local-user-id'] = local.id; headers['x-local-user-email'] = local.email }
     return headers
   }
 
@@ -70,12 +71,15 @@ export default function Agents() {
 
   useEffect(() => { void refreshConnections() }, [session?.access_token])
   useEffect(() => {
+    for (const key of ['alphatekx:planning-conversation', 'alphatekx:planning-prompt', 'alphatekx:creation-success', 'alphatekx:pending-agent']) sessionStorage.removeItem(key)
+  }, [])
+  useEffect(() => {
     if (conversation) sessionStorage.setItem(CONVERSATION_KEY, JSON.stringify(conversation))
     else sessionStorage.removeItem(CONVERSATION_KEY)
   }, [conversation])
   useEffect(() => {
-    if (pendingAgent) sessionStorage.setItem('alphatekx:pending-agent', JSON.stringify(pendingAgent))
-    else sessionStorage.removeItem('alphatekx:pending-agent')
+    if (pendingAgent) sessionStorage.setItem(PENDING_KEY, JSON.stringify(pendingAgent))
+    else sessionStorage.removeItem(PENDING_KEY)
   }, [pendingAgent])
   useEffect(() => {
     if (success) sessionStorage.setItem(SUCCESS_KEY, JSON.stringify(success))
@@ -98,7 +102,7 @@ export default function Agents() {
     setPendingAgent(null)
     setInput('')
     sessionStorage.removeItem(CONVERSATION_KEY)
-    sessionStorage.removeItem('alphatekx:pending-agent')
+    sessionStorage.removeItem(PENDING_KEY)
     sessionStorage.removeItem(PROMPT_KEY)
   }
 

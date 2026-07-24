@@ -1,0 +1,66 @@
+import { useEffect, useState } from 'react'
+import { LoaderCircle, Save, ShieldCheck, UserPlus, X } from 'lucide-react'
+import { Navigate } from 'react-router-dom'
+import { useAuth } from '../lib/auth'
+
+type FeatureState = 'disabled' | 'beta' | 'public' | 'maintenance'
+type Feature = { id: string; name: string; state: FeatureState; category: string; stop_existing: boolean; updated_at: string; updated_by: string }
+type Audit = { id: string; feature_id: string; old_state: string; new_state: string; changed_at: string; changed_by: string }
+type Snapshot = { features: Feature[]; betaUsers: string[]; audit: Audit[] }
+const states: FeatureState[] = ['disabled', 'beta', 'public', 'maintenance']
+
+export default function AdminFeatures() {
+  const { user, session } = useAuth()
+  const isAdmin = user?.email?.toLowerCase() === 'iamdan4live@gmail.com'
+  const [data, setData] = useState<Snapshot>({ features: [], betaUsers: [], audit: [] })
+  const [busy, setBusy] = useState('')
+  const [notice, setNotice] = useState('')
+  const [betaEmail, setBetaEmail] = useState('')
+
+  const request = async (url: string, init: RequestInit = {}) => {
+    const response = await fetch(url, { ...init, headers: { 'Content-Type': 'application/json', ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}), ...init.headers } })
+    const raw = await response.text()
+    let payload: Record<string, unknown> = {}
+    try { payload = raw ? JSON.parse(raw) : {} } catch {}
+    if (!response.ok) throw new Error(String(payload.error || raw || `Request failed (${response.status})`))
+    return payload
+  }
+  const load = async () => {
+    try { setData(await request('/api/admin/features') as Snapshot) }
+    catch (error) { setNotice(error instanceof Error ? error.message : 'Could not load feature management.') }
+  }
+  useEffect(() => { if (isAdmin) void load() }, [isAdmin, session?.access_token])
+
+  const save = async (feature: Feature) => {
+    setBusy(feature.id); setNotice('')
+    try {
+      const result = await request(`/api/admin/features/${encodeURIComponent(feature.id)}`, { method: 'PUT', body: JSON.stringify({ state: feature.state, stopExisting: feature.stop_existing }) })
+      setData(current => ({ ...current, features: current.features.map(item => item.id === feature.id ? result.feature as Feature : item) }))
+      setNotice(`${feature.name} updated. The new policy is active now.`)
+      await load()
+    } catch (error) { setNotice(error instanceof Error ? error.message : 'Feature update failed.') }
+    finally { setBusy('') }
+  }
+  const setBeta = async (email: string, enabled: boolean) => {
+    setBusy(`beta:${email}`)
+    try {
+      const result = await request('/api/admin/features/beta-users', { method: 'POST', body: JSON.stringify({ email, enabled }) })
+      setData(current => ({ ...current, betaUsers: result.betaUsers as string[] }))
+      setBetaEmail('')
+    } catch (error) { setNotice(error instanceof Error ? error.message : 'Beta tester update failed.') }
+    finally { setBusy('') }
+  }
+
+  if (!isAdmin) return <Navigate to="/dashboard" replace />
+  return <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
+    <header className="flex items-center gap-3"><ShieldCheck className="text-violet-300"/><div><h1 className="text-2xl font-semibold">Feature Management</h1><p className="mt-1 text-sm text-white/55">Control feature access without redeploying.</p></div></header>
+    {notice && <p role="status" className="mt-5 rounded-xl border border-violet-400/20 bg-violet-500/10 p-3 text-sm">{notice}</p>}
+    <section className="mt-7 grid gap-3">{data.features.map(feature => <article key={feature.id} className="rounded-2xl border border-white/10 bg-white/[.035] p-5">
+      <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="font-medium">{feature.name}</h2><p className="mt-1 text-xs text-white/45">{feature.category} · Modified {new Date(feature.updated_at).toLocaleString()} by {feature.updated_by}</p></div><select aria-label={`${feature.name} status`} value={feature.state} onChange={event => setData(current => ({ ...current, features: current.features.map(item => item.id === feature.id ? { ...item, state: event.target.value as FeatureState } : item) }))} className="field w-40 capitalize">{states.map(state => <option key={state} value={state}>{state}</option>)}</select></div>
+      {(feature.state === 'disabled' || feature.state === 'maintenance') && <label className="mt-4 flex items-center gap-2 text-sm text-white/65"><input type="checkbox" checked={feature.stop_existing} onChange={event => setData(current => ({ ...current, features: current.features.map(item => item.id === feature.id ? { ...item, stop_existing: event.target.checked } : item) }))}/>Stop existing automations immediately</label>}
+      <button onClick={() => void save(feature)} disabled={Boolean(busy)} className="action mt-4">{busy === feature.id ? <LoaderCircle size={16} className="animate-spin"/> : <Save size={16}/>}Save</button>
+    </article>)}</section>
+    <section className="mt-10 rounded-2xl border border-white/10 bg-white/[.035] p-5"><h2 className="font-semibold">Beta testers</h2><div className="mt-4 flex gap-2"><input value={betaEmail} onChange={event => setBetaEmail(event.target.value)} placeholder="beta@example.com" className="field"/><button onClick={() => void setBeta(betaEmail, true)} disabled={!betaEmail.trim() || Boolean(busy)} className="action"><UserPlus size={16}/>Add</button></div><div className="mt-4 flex flex-wrap gap-2">{data.betaUsers.map(email => <span key={email} className="flex items-center gap-2 rounded-full border border-white/10 px-3 py-2 text-xs">{email}<button onClick={() => void setBeta(email, false)} aria-label={`Remove ${email}`}><X size={13}/></button></span>)}</div></section>
+    <section className="mt-10"><h2 className="font-semibold">Audit log</h2><div className="mt-4 space-y-2">{data.audit.map(item => <div key={item.id} className="rounded-xl border border-white/10 p-3 text-sm"><span className="font-medium">{item.feature_id}</span> <span className="text-white/55">{item.old_state} → {item.new_state}</span><span className="mt-1 block text-xs text-white/40">{new Date(item.changed_at).toLocaleString()} · {item.changed_by}</span></div>)}</div></section>
+  </main>
+}
