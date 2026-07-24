@@ -44,6 +44,8 @@ await test('Missing-field questioning, model generation, review and explicit app
   const user = { id: 'conversation-user', email: 'conversation@test.local' }
   let conversation = await engine.start(user, 'Create a LinkedIn post about AlphaTekx')
   assert.equal(conversation.conversationStage, 'gathering_information')
+  assert.equal(conversation.lastQuestion, 'publishingMode')
+  conversation = await engine.continue(conversation.id, user, 'Publish once now')
   assert.equal(conversation.lastQuestion, 'audience')
   conversation = await engine.continue(conversation.id, user, 'Founders and creators')
   assert.equal(conversation.lastQuestion, 'tone')
@@ -56,6 +58,50 @@ await test('Missing-field questioning, model generation, review and explicit app
   await engine.approveContent(conversation)
   assert.equal(conversation.conversationStage, 'awaiting_approval')
   assert.equal(conversation.automationDraft.approved, false)
+})
+
+await test('LinkedIn scheduling is explicit and never silently becomes seven days', async () => {
+  const records = new Map()
+  const engine = createConversationEngine({
+    saveServerAgent: async record => { records.set(record.id, structuredClone(record)); return record },
+    getServerAgent: async id => structuredClone(records.get(id)),
+    getUserCredits: async () => 30,
+    spendUserCredits: async () => true,
+    getIntegrationStatus: async () => ({ connected: true, ready: true, scopes: ['w_member_social'] }),
+    callLLMForRole: async () => ({ result: {}, provider: 'test', model: 'test' }),
+  })
+  const user = { id: 'explicit-schedule-user', email: 'schedule@test.local' }
+
+  const undecided = await engine.start(user, 'Create a LinkedIn post about Python.')
+  assert.equal(undecided.lastQuestion, 'publishingMode')
+  assert.equal(undecided.knownFields.durationDays, undefined)
+  assert.equal(undecided.knownFields.frequency, undefined)
+  assert.equal(undecided.knownFields.durationSource, 'unresolved')
+  await assert.rejects(() => engine.approveAndCreate(undecided.id, user), /No automation draft/)
+
+  const now = await engine.start({ ...user, id: 'explicit-now-user' }, 'Create a LinkedIn post about Python now.')
+  assert.equal(now.knownFields.publishingMode, 'once_now')
+  assert.equal(now.knownFields.totalPosts, 1)
+  assert.equal(now.knownFields.durationDays, 1)
+  assert.equal(now.knownFields.frequency, 'once')
+
+  const later = await engine.start({ ...user, id: 'explicit-later-user' }, 'Create a LinkedIn post about Python tomorrow at 9 AM.')
+  assert.equal(later.knownFields.publishingMode, 'once_later')
+  assert.equal(later.knownFields.time, '09:00')
+  assert.match(later.knownFields.startDate, /^\d{4}-\d{2}-\d{2}$/)
+  assert.equal(later.lastQuestion, 'timezone')
+
+  const weekly = await engine.start({ ...user, id: 'explicit-weekly-user' }, 'Create a LinkedIn post about Python every Monday.')
+  assert.equal(weekly.knownFields.publishingMode, 'recurring')
+  assert.equal(weekly.knownFields.frequency, 'weekly')
+  assert.equal(weekly.lastQuestion, 'endCondition')
+  assert.equal(weekly.knownFields.durationDays, undefined)
+
+  const sevenDays = await engine.start({ ...user, id: 'explicit-seven-user' }, 'Create LinkedIn posts about Python for seven days.')
+  assert.equal(sevenDays.knownFields.publishingMode, 'recurring')
+  assert.equal(sevenDays.knownFields.durationDays, 7)
+  assert.equal(sevenDays.knownFields.durationSource, 'user_explicit')
+  assert.equal(sevenDays.lastQuestion, 'frequency')
 })
 
 await test('Expired token and missing permission are rejected', () => {
@@ -295,8 +341,10 @@ Use no more than five relevant hashtags.
 Create only one post.
 Do not schedule a recurring campaign.
 Show me the post for review before publishing.`
-  const conversation = await engine.start({ id: 'exact-prompt-user', email: 'exact@test.local' }, prompt)
-  assert.deepEqual(calls, ['content'], JSON.stringify({ calls, knownFields: conversation.knownFields, missingFields: conversation.missingFields, askedFields: conversation.askedFields }))
+  let conversation = await engine.start({ id: 'exact-prompt-user', email: 'exact@test.local' }, prompt)
+  assert.equal(conversation.lastQuestion, 'publishingMode')
+  conversation = await engine.continue(conversation.id, { id: 'exact-prompt-user', email: 'exact@test.local' }, 'Publish once now')
+  assert.deepEqual(calls, ['fast', 'fast', 'fast', 'content'], JSON.stringify({ calls, knownFields: conversation.knownFields, missingFields: conversation.missingFields, askedFields: conversation.askedFields }))
   assert.equal(conversation.conversationStage, 'awaiting_content_review')
   assert.equal(conversation.generatedContent.length, 1)
   assert.equal(conversation.automationDraft.campaign.meta.totalPosts, 1)
