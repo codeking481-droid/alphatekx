@@ -25,6 +25,7 @@
     "test:stability": "node scripts/platform-stability-tests.mjs",
     "test:launch-freeze": "node scripts/linkedin-public-launch-tests.mjs",
     "test:feature-management": "node scripts/admin-feature-management-tests.mjs",
+    "test:intent": "node scripts/intent-classification-tests.mjs",
     "test:e2e": "node scripts/full-test.mjs && node scripts/path-deploy-test.mjs && node scripts/render-smoke.mjs",
     "test:thorough": "node scripts/thorough-test.mjs"
   },
