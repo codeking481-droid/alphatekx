@@ -27,6 +27,8 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, tim
 }
 
 let cache: Agent[] | null = null
+let serverRevision = 0
+let refreshPromise: Promise<Agent[]> | null = null
 export function getAgents(): Agent[] {
   if (!cache) cache = loadAgents()
   return cache
@@ -55,6 +57,7 @@ async function authHeaders() {
 }
 
 export async function saveAgent(agent: Agent) {
+  serverRevision += 1
   const record = { ...agent, updatedAt: new Date().toISOString() }
   const res = await fetchWithTimeout('/api/agents', { method: 'POST', headers: { 'Content-Type': 'application/json', ...await authHeaders() }, body: JSON.stringify({ agent: record }) })
   if (!res.ok) {
@@ -75,7 +78,16 @@ export async function saveAgent(agent: Agent) {
 }
 
 export async function deleteAgent(id: string) {
-  const response = await fetch(`/api/agents/${encodeURIComponent(id)}`, { method: 'DELETE', headers: await authHeaders() })
+  const previous = getAgents()
+  serverRevision += 1
+  setCache(previous.filter(agent => agent.id !== id))
+  let response: Response
+  try {
+    response = await fetchWithTimeout(`/api/agents/${encodeURIComponent(id)}`, { method: 'DELETE', headers: await authHeaders() })
+  } catch (error) {
+    setCache(previous)
+    throw error
+  }
   if (response.status === 404) {
     // A stale browser cache may reference a legacy/ephemeral automation that
     // no longer exists durably. Removing that local ghost is idempotent.
@@ -84,24 +96,50 @@ export async function deleteAgent(id: string) {
   }
   if (!response.ok) {
     const data = await response.json().catch(() => ({}))
+    setCache(previous)
     throw new Error(data.error || 'Could not delete automation from the server')
   }
-  setCache(getAgents().filter(a => a.id !== id))
 }
 
 export async function setAgentLifecycle(id: string, action: 'pause' | 'resume' | 'archive') {
-  const response = await fetchWithTimeout(`/api/agents/${encodeURIComponent(id)}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...await authHeaders() },
-    body: JSON.stringify({ action }),
-  })
+  const previous = getAgents()
+  serverRevision += 1
+  if (action === 'pause') {
+    setCache(previous.map(agent => agent.id === id ? { ...agent, status: 'paused', nextRunAt: undefined, trigger: { ...agent.trigger, nextRun: undefined } } : agent))
+  }
+  let response: Response
+  try {
+    response = await fetchWithTimeout(`/api/agents/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...await authHeaders() },
+      body: JSON.stringify({ action }),
+    })
+  } catch (error) {
+    setCache(previous)
+    throw error
+  }
   const data = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(data.error || `Could not ${action} automation`)
-  const agents = getAgents()
-  const index = agents.findIndex(agent => agent.id === id)
-  if (index >= 0 && data.agent) agents[index] = data.agent
-  setCache(agents)
+  if (!response.ok) {
+    setCache(previous)
+    throw new Error(data.error || `Could not ${action} automation`)
+  }
+  setCache(getAgents().map(agent => agent.id === id && data.agent ? data.agent : agent))
   return data.agent as Agent
+}
+
+export async function refreshAgents() {
+  if (refreshPromise) return refreshPromise
+  const revisionAtStart = serverRevision
+  refreshPromise = (async () => {
+    const res = await fetchWithTimeout('/api/agents', { headers: await authHeaders() })
+    if (!res.ok) throw new Error(`Could not load automations (${res.status})`)
+    const data = await res.json()
+    const agents = Array.isArray(data.agents) ? data.agents as Agent[] : []
+    if (revisionAtStart === serverRevision) setCache(agents)
+    return agents
+  })()
+  try { return await refreshPromise }
+  finally { refreshPromise = null }
 }
 
 export function updateAgent(id: string, patch: Partial<Agent>) {
@@ -129,21 +167,17 @@ export function useAgents() {
   const [agents, setAgents] = useState(getAgents)
   useEffect(() => subscribeAgents(() => setAgents(getAgents())), [])
   useEffect(() => {
-    async function load() {
-      try {
-        const res = await fetch('/api/agents', { headers: await authHeaders() })
-        if (!res.ok) return
-        const data = await res.json()
-        if (Array.isArray(data.agents)) {
-          cache = data.agents
-          saveAgents(data.agents)
-          notify()
-        }
-      } catch {}
-    }
+    const load = () => { void refreshAgents().catch(() => {}) }
+    const onVisible = () => { if (document.visibilityState === 'visible') load() }
     load()
-    const interval = window.setInterval(load, 15_000)
-    return () => window.clearInterval(interval)
+    window.addEventListener('focus', load)
+    document.addEventListener('visibilitychange', onVisible)
+    const interval = window.setInterval(load, 10_000)
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener('focus', load)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [])
   return agents
 }

@@ -83,7 +83,8 @@ export default function Connectors() {
     const ids = ['linkedin', 'facebook', 'gmail', 'telegram', 'slack', 'discord']
     const available = ids.map(id => {
       const connector = getConnector(id)!
-      return { id: id === 'gmail' ? 'google' : id, name: id === 'gmail' ? 'Google' : connector.name, description: id === 'gmail' ? 'Gmail, Calendar, Sheets and Drive.' : connector.description, connector, availability: service(id === 'gmail' ? 'google' : id).connected ? 'Connected' : 'Available' }
+      const state = service(id === 'gmail' ? 'google' : id)
+      return { id: id === 'gmail' ? 'google' : id, name: id === 'gmail' ? 'Google' : connector.name, description: id === 'gmail' ? 'Gmail, Calendar, Sheets and Drive.' : connector.description, connector, availability: state.connected && state.ready ? 'Connected' : 'Available' }
     })
     return [...available, ...comingSoon.map(item => ({ ...item, connector: null, availability: 'Coming Soon' }))].filter(item => `${item.name} ${item.description}`.toLowerCase().includes(query.toLowerCase()))
   }, [query, status])
@@ -91,14 +92,14 @@ export default function Connectors() {
   const connected = useMemo(() => {
     const result: { id: string; name: string; connector: Connector; account: string; capabilities: string }[] = []
     const linkedIn = getConnector('linkedin')
-    if (service('linkedin').connected && linkedIn) result.push({ id: 'linkedin', name: 'LinkedIn', connector: linkedIn, account: service('linkedin').email || service('linkedin').identifier || 'Personal profile', capabilities: 'Personal-profile text publishing' })
+    if (service('linkedin').connected && service('linkedin').ready && linkedIn) result.push({ id: 'linkedin', name: 'LinkedIn', connector: linkedIn, account: service('linkedin').email || service('linkedin').identifier || 'Personal profile', capabilities: 'Personal-profile text publishing' })
     const facebook = getConnector('facebook')
-    if (service('facebook').connected && facebook) result.push({ id: 'facebook', name: 'Facebook', connector: facebook, account: service('facebook').email || service('facebook').identifier || 'Facebook Page', capabilities: 'Facebook Page text publishing' })
+    if (service('facebook').connected && service('facebook').ready && facebook) result.push({ id: 'facebook', name: 'Facebook', connector: facebook, account: service('facebook').email || service('facebook').identifier || 'Facebook Page', capabilities: 'Facebook Page text publishing' })
     const google = getConnector('gmail')
-    if ((service('google').connected || service('gmail').connected) && google) result.push({ id: 'google', name: 'Google', connector: google, account: service('google').email || service('gmail').email || 'Google account', capabilities: 'Gmail, Calendar, Sheets and Drive' })
-    for (const id of apiKeyAvailable) {
+    if ((service('google').connected && service('google').ready || service('gmail').connected && service('gmail').ready) && google) result.push({ id: 'google', name: 'Google', connector: google, account: service('google').email || service('gmail').email || 'Google account', capabilities: 'Gmail, Calendar, Sheets and Drive' })
+    for (const id of manualConnectionAvailable) {
       const connector = getConnector(id)
-      if (connector && service(id).connected) result.push({ id, name: connector.name, connector, account: service(id).email || service(id).identifier || 'Connected', capabilities: connector.actions.map(action => action.label).join(', ') })
+      if (connector && service(id).connected && service(id).ready) result.push({ id, name: connector.name, connector, account: service(id).email || service(id).identifier || 'Connected', capabilities: connector.actions.map(action => action.label).join(', ') })
     }
     return result
   }, [status])
@@ -165,7 +166,7 @@ export default function Connectors() {
   }
 
   const selectedConnector = selected && selected !== 'google' ? getConnector(selected) : selected === 'google' ? getConnector('gmail') : null
-  const selectedConnected = selected ? Boolean(service(selected).connected || (selected === 'google' && service('gmail').connected)) : false
+  const selectedConnected = selected ? Boolean((service(selected).connected && service(selected).ready) || (selected === 'google' && service('gmail').connected && service('gmail').ready)) : false
   const config = selected ? fieldConfig(selected) : null
 
   return <main className="mx-auto min-h-[calc(100dvh-8rem)] w-full max-w-4xl px-4 py-10 sm:px-6">

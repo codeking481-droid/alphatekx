@@ -22,6 +22,7 @@
     "test:lifecycle": "node scripts/automation-lifecycle-tests.mjs",
     "test:core-flows": "node scripts/production-core-flow-tests.mjs",
     "test:simplicity": "node scripts/simplicity-tests.mjs",
+    "test:stability": "node scripts/platform-stability-tests.mjs",
     "test:e2e": "node scripts/full-test.mjs && node scripts/path-deploy-test.mjs && node scripts/render-smoke.mjs",
     "test:thorough": "node scripts/thorough-test.mjs"
   },

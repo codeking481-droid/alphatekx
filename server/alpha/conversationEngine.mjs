@@ -14,6 +14,7 @@ const STAGES = [
   'awaiting_approval',
   'ready_to_create',
   'created',
+  'chatting',
   'blocked',
   'unsupported',
 ]
@@ -44,6 +45,15 @@ const SOCIAL_CONTENT_INTENTS = new Set([
 ])
 
 function nowIso() { return new Date().toISOString() }
+function automationIdFor(conversation) {
+  if (!conversation.automationId) conversation.automationId = randomUUID()
+  return conversation.automationId
+}
+
+function isGreetingOnly(text) {
+  const normalized = String(text || '').trim().toLowerCase().replace(/[!?.]+$/g, '').trim()
+  return /^(?:hi|hello|hey|good\s+(?:morning|afternoon|evening)|how\s+are\s+you|how(?:'s|\s+is)\s+it\s+going)$/.test(normalized)
+}
 
 function addDays(date, days) {
   const next = new Date(date)
@@ -341,6 +351,17 @@ export function createConversationEngine(deps) {
 
   async function understandRequest(conversation, promptOverride = '') {
     const prompt = promptOverride || conversation.originalRequest
+    if (isGreetingOnly(prompt)) {
+      conversation.intent = 'conversation'
+      conversation.confidence = 1
+      conversation.currentGoal = ''
+      conversation.knownFields = {}
+      conversation.missingFields = []
+      conversation.automationDraft = null
+      conversation.conversationStage = 'chatting'
+      addMessage(conversation, 'alpha', 'Hi! What would you like me to automate today?')
+      return
+    }
     const capability = detectCapability(prompt)
 
     const fastHeuristic = heuristicParseRequest(prompt)
@@ -924,7 +945,7 @@ Total posts: ${totalPosts}.`
       calendar: contentPillars.slice(0, 6).map((theme, index) => ({ week: index + 1, theme })),
     }
     conversation.automationDraft = {
-      id: conversation.id,
+      id: automationIdFor(conversation),
       type: 'campaign',
       userId: conversation.userId,
       userEmail: conversation.userEmail,
@@ -1140,7 +1161,7 @@ Turn the user's goal into an automation plan. Return JSON:
 
     if (plan.unsupported) {
       return {
-        id: conversation.id,
+        id: automationIdFor(conversation),
         name: 'Unsupported request',
         description: conversation.originalRequest,
         originalRequest: conversation.originalRequest,
@@ -1157,7 +1178,7 @@ Turn the user's goal into an automation plan. Return JSON:
     const actions = Array.isArray(plan.actions) ? plan.actions : []
     const supportedActions = actions.filter(a => isSupportedAction(a.connector, a.action))
     return {
-      id: conversation.id,
+      id: automationIdFor(conversation),
       name: plan.name || conversation.currentGoal,
       description: plan.description || conversation.currentGoal,
       originalRequest: conversation.originalRequest,
@@ -1182,7 +1203,7 @@ Turn the user's goal into an automation plan. Return JSON:
 
   function finalizeAgentFromCapability(conversation, plan) {
     const agent = {
-      id: conversation.id,
+      id: automationIdFor(conversation),
       name: plan.name || plan.title,
       description: plan.description,
       originalRequest: conversation.originalRequest,
@@ -1274,40 +1295,23 @@ Return JSON: { "text": "..." }`
     const draft = conversation.automationDraft
     if (!draft) throw new Error('No automation draft to create')
 
-    const adminEmail = 'iamdan4live@gmail.com'
-    const isAdmin = String(user.email || '').toLowerCase() === adminEmail
-    const cost = draft.creditsNeeded || draft.creditsPerRun || draft.campaign?.totalCredits || 0
-    const providerLog = conversation.providerLog || {}
-    if (cost > 0 && !isAdmin) {
-      const balance = await getUserCredits(user)
-      if (balance < cost) throw new Error(`Insufficient credits. Need ${cost}, have ${balance}.`)
-      const metadata = {
-        conversationId: conversation.id,
-        generationMode: draft.generationMode || conversation.generationMode || 'unknown',
-        provider: providerLog.provider || '',
-        model: providerLog.model || '',
-        role: 'content',
-        usage: providerLog.usage || {},
-      }
-      const ok = await spendUserCredits(user, cost, metadata)
-      if (!ok) throw new Error('Could not charge credits')
-      conversation.credits = conversation.credits || { estimated: 0, spent: 0 }
-      conversation.credits.spent += cost
-      if (draft.campaign) draft.campaign.charged = true
-    }
-
     draft.status = 'running'
     draft.approved = true
+    draft.userId = user.id
+    draft.userEmail = user.email
     if (draft.campaign) {
       draft.campaign.approved = true
       draft.campaign.status = 'running'
+      draft.campaign.charged = false
       draft.campaign.posts.forEach(p => { if (p.status === 'pending_approval') p.status = 'scheduled' })
     }
     draft.updatedAt = nowIso()
 
     conversation.conversationStage = 'created'
-    addMessage(conversation, 'alpha', `Automation **${draft.name}** is active. ${draft.campaign ? 'I cannot publish directly, so copy each post when it is due or connect the platform later.' : ''}`)
+    conversation.status = 'completed'
+    addMessage(conversation, 'alpha', `Automation **${draft.name}** is active.`)
 
+    await saveServerAgent(draft)
     await saveConversation(conversation)
     return draft
   }
@@ -1357,7 +1361,11 @@ Return JSON: { "text": "..." }`
     const conversation = await loadConversation(id, user)
     addMessage(conversation, 'user', text)
 
-    if (conversation.conversationStage === 'clarification') {
+    if (conversation.conversationStage === 'chatting') {
+      conversation.originalRequest = text
+      conversation.currentGoal = text
+      await understandRequest(conversation, text)
+    } else if (conversation.conversationStage === 'clarification') {
       const combined = `${conversation.originalRequest} ${text}`
       await understandRequest(conversation, combined)
     } else if (conversation.conversationStage === 'understanding' || conversation.conversationStage === 'gathering_information') {
