@@ -21,7 +21,8 @@ await test('Creation success persists and View Automation targets the exact reco
   const source = read('src/pages/Agents.tsx')
   assert.match(source, /Automation created successfully/)
   assert.match(source, /active-automations\/\$\{success\.id\}/)
-  assert.match(source, /Start another automation/)
+  assert.match(source, /Visit Automation/)
+  assert.doesNotMatch(source, /Start another automation/)
 })
 
 await test('Official Active Automations routes and retired aliases are registered', () => {

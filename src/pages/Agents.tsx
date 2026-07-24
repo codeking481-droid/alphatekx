@@ -3,7 +3,7 @@ import { ArrowRight, CheckCircle2, LoaderCircle, Send, Sparkles, X } from 'lucid
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import CampaignPreview from '../components/agents/CampaignPreview'
 import WorkflowPlan from '../components/agents/WorkflowPlan'
-import { saveAgent, useAgents } from '../lib/agents/agentStore'
+import { getAgents, saveAgent, setCache, useAgents } from '../lib/agents/agentStore'
 import type { Agent } from '../lib/agents/types'
 import { useAuth } from '../lib/auth'
 import { getCredits } from '../lib/creditStore'
@@ -127,7 +127,14 @@ export default function Agents() {
       const response = await fetchWithTimeout(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify(body) })
       const data = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(data.error || 'Alpha could not continue the plan.')
-      acceptConversation(data)
+      const next = (data.conversation || data) as AlphaConversation
+      if (next.conversationStage === 'created' && next.automationDraft) {
+        const agent = next.automationDraft
+        setCache([agent, ...getAgents().filter(item => item.id !== agent.id)])
+        created(agent)
+      } else {
+        acceptConversation(data)
+      }
     } catch (error) {
       setInput(message)
       setNotice(error instanceof DOMException && error.name === 'AbortError' ? 'Alpha took too long to respond. Your message is saved—please retry.' : error instanceof Error ? error.message : 'Could not reach Alpha.')
@@ -159,8 +166,7 @@ export default function Agents() {
       {success && !conversation ? <section className="my-auto rounded-3xl border border-emerald-400/20 bg-emerald-500/[.08] p-7 text-center sm:p-10" aria-live="polite">
         <CheckCircle2 className="mx-auto text-emerald-300" size={34}/>
         <h2 className="mt-4 text-xl font-semibold">Automation created successfully.</h2>
-        <p className="mt-2 text-sm text-white/60">Your automation is now available in Active Automations.</p>
-        <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row"><button onClick={() => navigate(`/active-automations/${success.id}`)} className="flex min-h-12 items-center justify-center gap-2 rounded-xl btn-alpha px-5 text-sm">View Automation<ArrowRight size={16}/></button><button onClick={startNew} className="min-h-12 rounded-xl border border-white/10 px-5 text-sm hover:bg-white/[.05]">Start another automation</button></div>
+        <button onClick={() => navigate(`/active-automations/${success.id}`)} className="mx-auto mt-6 flex min-h-12 items-center justify-center gap-2 rounded-xl btn-alpha px-5 text-sm">Visit Automation<ArrowRight size={16}/></button>
       </section> : <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[1.75rem] border border-white/[.09] bg-white/[.035] shadow-2xl shadow-violet-950/20">
         <div className="flex items-center justify-between border-b border-white/[.07] px-4 py-3 sm:px-6"><div className="flex items-center gap-2 text-sm font-medium"><span className="grid size-8 place-items-center rounded-full bg-violet-500/15"><Sparkles size={16} className="text-violet-300"/></span>Plan with Alpha</div>{conversation && <button onClick={startNew} className="rounded-lg px-3 py-2 text-xs text-white/50 hover:bg-white/[.05]">New automation</button>}</div>
         <div className="min-h-[260px] flex-1 overflow-y-auto px-4 py-6 sm:px-7" aria-live="polite">

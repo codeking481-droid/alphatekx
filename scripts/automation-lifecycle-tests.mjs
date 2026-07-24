@@ -39,6 +39,53 @@ const fixture = {
 }
 
 try {
+  await test('greetings remain conversational and never appear as active automations', async () => {
+    const response = await request('/api/alpha/conversation', { method: 'POST', body: JSON.stringify({ prompt: 'Hello' }) })
+    const payload = await response.json()
+    assert.equal(response.status, 200, JSON.stringify(payload))
+    assert.equal(payload.conversation.conversationStage, 'chatting')
+    assert.equal(payload.conversation.automationDraft, null)
+    const listed = (await (await request('/api/agents')).json()).agents
+    assert.equal(listed.some(item => item.id === payload.conversation.id), false)
+  })
+
+  await test('approval creates a separately persisted automation and charges zero credits', async () => {
+    const before = (await (await request('/api/credits/balance')).json()).credits
+    const started = await request('/api/alpha/conversation', { method: 'POST', body: JSON.stringify({ prompt: 'Save invoice attachments to Google Drive' }) })
+    const startPayload = await started.json()
+    assert.equal(started.status, 200, JSON.stringify(startPayload))
+    const continued = await request(`/api/alpha/conversation/${startPayload.conversation.id}`, { method: 'POST', body: JSON.stringify({ message: 'approve' }) })
+    const payload = await continued.json()
+    assert.equal(continued.status, 200, JSON.stringify(payload))
+    assert.equal(payload.conversation.conversationStage, 'created')
+    assert.notEqual(payload.conversation.id, payload.agent.id)
+    const listed = (await (await request('/api/agents')).json()).agents
+    assert.ok(listed.some(item => item.id === payload.agent.id && item.status === 'running'))
+    assert.equal(listed.some(item => item.id === payload.conversation.id), false)
+    const after = (await (await request('/api/credits/balance')).json()).credits
+    assert.equal(after, before)
+  })
+
+  await test('Connected Apps reports readiness instead of token presence', async () => {
+    const invalid = await request('/api/connectors/save', {
+      method: 'POST',
+      body: JSON.stringify({ platform: 'linkedin', tokens: { access_token: 'token-without-profile' }, scopes: [] }),
+    })
+    assert.equal(invalid.status, 200, await invalid.text())
+    let status = await (await request('/api/integrations/status')).json()
+    assert.equal(status.linkedin.connected, false)
+    assert.equal(status.linkedin.ready, false)
+
+    const valid = await request('/api/connectors/save', {
+      method: 'POST',
+      body: JSON.stringify({ platform: 'linkedin', tokens: { access_token: 'test-token', author_urn: 'urn:li:person:test-user' }, scopes: ['w_member_social'] }),
+    })
+    assert.equal(valid.status, 200, await valid.text())
+    status = await (await request('/api/integrations/status')).json()
+    assert.equal(status.linkedin.connected, true)
+    assert.equal(status.linkedin.ready, true)
+  })
+
   await test('fixture is persisted for its owner', async () => {
     const response = await request('/api/agents', { method: 'POST', body: JSON.stringify({ agent: fixture }) })
     assert.equal(response.status, 200, await response.text())
@@ -68,25 +115,26 @@ try {
     const { agent } = await response.json()
     assert.equal(response.status, 200)
     assert.equal(agent.status, 'paused')
+    assert.equal(agent.trigger.nextRun, null)
+    assert.equal(agent.nextRunAt, null)
     const listed = (await (await request('/api/agents')).json()).agents.find(item => item.id === agentId)
     assert.equal(listed.status, 'paused')
+    assert.equal(listed.trigger.nextRun, null)
   })
 
-  await test('delete archives without losing history or altering credit evidence', async () => {
+  await test('delete removes the durable automation and survives a fresh client read', async () => {
     const response = await request(`/api/agents/${agentId}`, { method: 'DELETE' })
     const payload = await response.json()
     assert.equal(response.status, 200, JSON.stringify(payload))
-    const { agent } = payload
-    assert.equal(agent.status, 'deleted')
-    assert.equal(agent.executionHistory.length, 1)
-    assert.equal(agent.executionHistory[0].credits_used, 3)
-    assert.equal(agent.trigger.nextRun, null)
+    assert.equal(payload.deleted, true)
+    assert.equal(payload.id, agentId)
     const visible = (await (await request('/api/agents')).json()).agents
     assert.equal(visible.some(item => item.id === agentId), false)
+    assert.equal((await request(`/api/agents/${agentId}`)).status, 404)
   })
 
-  await test('duplicate delete and missing automation return honest conflicts', async () => {
-    assert.equal((await request(`/api/agents/${agentId}`, { method: 'DELETE' })).status, 409)
+  await test('duplicate delete and missing automation return honest not-found responses', async () => {
+    assert.equal((await request(`/api/agents/${agentId}`, { method: 'DELETE' })).status, 404)
     assert.equal((await request(`/api/agents/missing-${randomUUID()}`, { method: 'DELETE' })).status, 404)
   })
 } finally {

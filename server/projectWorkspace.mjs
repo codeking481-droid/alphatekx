@@ -133,13 +133,22 @@ export function runCommand(workspaceDir, command, args = [], options = {}) {
       resolve({ ok, log, code, label, killed: child.killed })
     }
 
+    const terminate = () => {
+      if (process.platform === 'win32' && child.pid) {
+        const killer = spawn('taskkill.exe', ['/pid', String(child.pid), '/t', '/f'], { stdio: 'ignore', windowsHide: true })
+        killer.on('error', () => { try { child.kill('SIGKILL') } catch {} })
+      } else {
+        try { child.kill('SIGKILL') } catch {}
+      }
+    }
+
     const timer = setTimeout(() => {
-      child.kill('SIGTERM')
+      terminate()
       push(`\n[${label}] Timed out after ${timeoutMs}ms`)
     }, timeoutMs)
 
     const abortHandler = () => {
-      child.kill('SIGKILL')
+      terminate()
       push(`\n[${label}] Cancelled`)
     }
     if (signal) {

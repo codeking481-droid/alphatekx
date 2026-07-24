@@ -48,7 +48,7 @@ function defaultStartAt() {
 
 function connectorConnected(id: string, status: IntegrationStatus) {
   const s = status[id] || status[(id === 'x' ? 'twitter' : id)] || { connected: false, ready: false }
-  return id === 'linkedin' ? Boolean(s.ready) : Boolean(s.connected || s.ready)
+  return Boolean(s.connected && s.ready)
 }
 
 export default function CampaignPreview({ agent, integrationStatus, credits, isAdmin, authHeaders, onClose, onActivated }: Props) {

@@ -1391,16 +1391,20 @@ async function integrationsStatus(req, res) {
   const user = await currentOrLocalUser(req, config.url, config.anon)
   if (!user) return json(res, 401, { error: 'Authentication required' })
   const google = await getGoogleIntegration(user.id, config)
-  const googleConnected = Boolean(google)
+  const googleCredential = Boolean(google?.access_token || google?.refresh_token || google?.tokens?.access_token || google?.tokens?.refresh_token)
   const email = google?.email || null
   const scopes = google?.scopes || []
   const status = {}
-  const googleReady = connectorReady('gmail')
-  status.google = { connected: googleConnected, ready: googleReady || googleConnected, email, scopes }
-  status.gmail = { connected: googleConnected, ready: googleReady || googleConnected, email }
-  status.sheets = { connected: googleConnected && scopes.some(s => s.includes('spreadsheets')), ready: googleReady || googleConnected, email }
-  status.calendar = { connected: googleConnected && scopes.some(s => s.includes('calendar')), ready: googleReady || googleConnected, email }
-  status.drive = { connected: googleConnected && scopes.some(s => s.includes('drive')), ready: googleReady || googleConnected, email }
+  const gmailReady = googleCredential && scopes.some(scope => scope.includes('gmail.'))
+  const sheetsReady = googleCredential && scopes.some(scope => scope.includes('spreadsheets'))
+  const calendarReady = googleCredential && scopes.some(scope => scope.includes('calendar'))
+  const driveReady = googleCredential && scopes.some(scope => scope.includes('drive'))
+  const googleConnected = gmailReady || sheetsReady || calendarReady || driveReady
+  status.google = { connected: googleConnected, ready: googleConnected, email, scopes }
+  status.gmail = { connected: gmailReady, ready: gmailReady, email, scopes }
+  status.sheets = { connected: sheetsReady, ready: sheetsReady, email, scopes }
+  status.calendar = { connected: calendarReady, ready: calendarReady, email, scopes }
+  status.drive = { connected: driveReady, ready: driveReady, email, scopes }
   status.google_sheets = status.sheets
   status.google_calendar = status.calendar
   status.google_drive = status.drive
@@ -1408,14 +1412,21 @@ async function integrationsStatus(req, res) {
   for (const provider of providers) {
     const integration = await getUserIntegration(user.id, provider, config).catch(() => null)
     const token = integration?.tokens || {}
-    const connected = Boolean(token?.api_key || token?.access_token || token?.token || token?.webhook_url || token?.bot_token || (provider === 'telegram' && token?.isMaster && token?.chat_id))
-    const ready = connected || connectorReady(provider)
     const identifier = token?.chat_id || token?.author_urn || token?.channel || token?.page_id || token?.pageId || token?.phone_number_id || token?.phoneNumberId || integration?.identifier || null
     const expiresAt = Number(token?.expiry || token?.expires_at || token?.expiry_date || 0)
     const expired = expiresAt > 0 && expiresAt <= Date.now()
     const integrationScopes = provider === 'linkedin' ? normalizeLinkedInScopes(integration?.scopes) : (integration?.scopes || [])
-    const requiredScopeReady = provider !== 'linkedin' || integrationScopes.includes('w_member_social')
-    status[provider] = { connected, ready: ready && !expired && requiredScopeReady, expired, scopes: integrationScopes, hasOwnKey: token?.hasOwnKey === true || token?.hasOwnKey === 'true', isMaster: token?.isMaster === true || token?.isMaster === 'true', identifier, email: integration?.email || integration?.identifier || null }
+    const accessToken = token?.api_key || token?.access_token || token?.token || token?.bot_token || ''
+    const webhookUrl = token?.webhook_url || token?.webhookUrl || ''
+    let credentialReady = Boolean(accessToken || webhookUrl)
+    if (provider === 'linkedin') credentialReady = Boolean(accessToken && String(token?.author_urn || token?.authorUrn || '').startsWith('urn:li:person:') && integrationScopes.includes('w_member_social'))
+    if (provider === 'facebook') credentialReady = Boolean(accessToken && (token?.page_id || token?.pageId))
+    if (provider === 'telegram') credentialReady = Boolean(identifier && (accessToken || token?.isMaster === true || token?.isMaster === 'true'))
+    if (provider === 'slack') credentialReady = Boolean(webhookUrl || (accessToken && identifier))
+    if (provider === 'discord') credentialReady = Boolean(webhookUrl)
+    if (provider === 'whatsapp') credentialReady = Boolean(accessToken && (token?.phone_number_id || token?.phoneNumberId))
+    const connected = Boolean(integration && credentialReady && !expired)
+    status[provider] = { connected, ready: connected, expired, scopes: integrationScopes, hasOwnKey: token?.hasOwnKey === true || token?.hasOwnKey === 'true', isMaster: token?.isMaster === true || token?.isMaster === 'true', identifier, email: integration?.email || integration?.identifier || null }
   }
   if (!status.paystack.connected && process.env.PAYSTACK_SECRET_KEY) status.paystack = { connected: true, ready: true, email: 'AlphaTekX backend' }
   if (!status.supabase.connected && config.url && config.service) status.supabase = { connected: true, ready: true, email: 'AlphaTekX backend' }
@@ -2818,6 +2829,7 @@ async function runAgent(agent, trigger = 'schedule') {
   const budget = { used: 0, max: maxCredits, estimated: estimatedCredits }
   const retryCount = existing.retryCount || 0
   const isRetry = trigger === 'schedule' && retryCount > 0
+  const chargeRootId = existing.retryRootExecutionId || executionId
 
   if (userId && !isRetry && !admin) {
     const balance = await getUserCredits({ id: userId, email: userEmail })
@@ -2866,7 +2878,7 @@ async function runAgent(agent, trigger = 'schedule') {
 
   const results = []
   let hardStop = false
-  for (const action of generatedActions) {
+  for (const [actionIndex, action] of generatedActions.entries()) {
     if (hardStop) break
     const stepLabel = action.label || `${action.action} ${action.connector}`
     const stepCost = getStepCost(action, existing)
@@ -2907,8 +2919,13 @@ async function runAgent(agent, trigger = 'schedule') {
     results.push({ ...stepResult, step: stepLabel })
 
     // Charge per successful step (admins bypass)
-    if (stepResult.status === 'success' && userId && !isRetry && !admin) {
-      const charge = await spendUserCredits({ id: userId, email: userEmail }, used, { automationId: existing.id, reason: `${action.connector}/${action.action}`, step: stepLabel })
+    if (stepResult.status === 'success' && userId && !admin) {
+      const charge = await spendUserCredits({ id: userId, email: userEmail }, used, {
+        automationId: existing.id,
+        reason: `${action.connector}/${action.action}`,
+        step: stepLabel,
+        idempotencyKey: `${chargeRootId}:${actionIndex}`,
+      })
       if (!charge) {
         results.push({ connector: action.connector, action: action.action, status: 'paused', output: null, error_code: 'INSUFFICIENT_CREDITS', credits_used: 0, log: 'Not enough credits to continue this automation. Top up to resume.', duration: 0, step: stepLabel })
         hardStop = true
@@ -2974,7 +2991,18 @@ async function runAgent(agent, trigger = 'schedule') {
   const successes = newHistory.filter(e => e.status === 'success').length
   const successRate = newHistory.length ? Math.round((successes / newHistory.length) * 100) : 0
 
-  const record = { ...existing, executionHistory: newHistory, lastRun: execution.at, status, updated_at: now.toISOString(), executionsDone, retryCount: nextRetryCount, successRate }
+  const record = {
+    ...existing,
+    executionHistory: newHistory,
+    lastRun: execution.at,
+    lastRunAt: execution.at,
+    status,
+    updated_at: now.toISOString(),
+    executionsDone,
+    retryCount: nextRetryCount,
+    retryRootExecutionId: failed.length && !allSkipped ? chargeRootId : undefined,
+    successRate,
+  }
   if (existing.trigger?.type === 'schedule' || existing.trigger?.type === 'monitor') record.trigger = { ...existing.trigger, nextRun }
   await saveServerAgent(record)
   return execution
@@ -4793,6 +4821,12 @@ async function supabaseAddExecution(execution) {
   return execution
 }
 
+async function supabaseDeleteAgentExecutions(agentId) {
+  const c = supabaseConfig()
+  const res = await fetch(`${c.url}/rest/v1/agent_executions?agent_id=eq.${encodeURIComponent(agentId)}`, { method: 'DELETE', headers: serviceHeaders(c.service) })
+  if (!res.ok) throw new Error('Could not delete agent executions from Supabase')
+}
+
 async function supabaseClaimExecution(execution) {
   const c = supabaseConfig()
   const body = JSON.stringify({ id: execution.id, agent_id: execution.agentId, data: execution, created_at: new Date().toISOString() })
@@ -4900,6 +4934,20 @@ async function remoteAgentsDelete(agentId, config) {
   }
   return false
 }
+
+async function remoteAgentDeleteForUser(agentId, userId, email, config) {
+  const agents = await remoteAgentsForUser(userId, config)
+  if (!agents.some(agent => agent.id === agentId)) return false
+  await remoteAgentsSaveForUser(userId, email, agents.filter(agent => agent.id !== agentId), config)
+  return true
+}
+
+async function remoteAgentExecutionsDeleteForUser(agentId, userId, email, config) {
+  const executions = await remoteExecutionsForUser(userId, config)
+  if (!executions.some(execution => execution.agentId === agentId)) return false
+  await remoteExecutionsSaveForUser(userId, email, executions.filter(execution => execution.agentId !== agentId), config)
+  return true
+}
 function readAgentExecutions() { return readJsonFile(agentExecutionsFile, []) }
 function writeAgentExecutions(executions) { writeJsonFile(agentExecutionsFile, executions.slice(0, 2000)) }
 function readAgentLogs() { return readJsonFile(agentLogsFile, []) }
@@ -4978,15 +5026,32 @@ async function listServerAgents() {
   return readAgents()
 }
 
-async function deleteServerAgent(id) {
+async function deleteServerAgent(id, userId = '', userEmail = '') {
   if (useSupabaseAgentDb()) {
     const config = supabaseConfig()
-    try { await supabaseDeleteAgent(id); return } catch { /* fall through */ }
-    try { if (await remoteAgentsDelete(id, config)) return } catch { /* fall through */ }
-    throw new Error('Durable agent persistence is unavailable; refusing to delete from ephemeral storage')
+    let primaryDeleted = false
+    let fallbackDeleted = false
+    try {
+      await supabaseDeleteAgentExecutions(id)
+      await supabaseDeleteAgent(id)
+      primaryDeleted = true
+    } catch { /* try the durable owner-scoped fallback */ }
+    try {
+      if (userId) {
+        await remoteAgentExecutionsDeleteForUser(id, userId, userEmail, config)
+        fallbackDeleted = await remoteAgentDeleteForUser(id, userId, userEmail, config)
+      } else {
+        fallbackDeleted = await remoteAgentsDelete(id, config)
+      }
+    } catch {
+      if (!primaryDeleted) throw new Error('Durable agent persistence is unavailable; automation was not deleted')
+    }
+    if (primaryDeleted || fallbackDeleted) return
+    throw new Error('Automation was not found in durable storage')
   }
   const agents = readAgents().filter(a => a.id !== id)
   writeAgents(agents)
+  writeAgentExecutions(readAgentExecutions().filter(execution => execution.agentId !== id))
 }
 
 async function listServerAgentsForUser(userId) {
@@ -5649,7 +5714,7 @@ const server = http.createServer(async (req, res) => {
       const config = supabaseConfig()
       const user = await currentOrLocalUser(req, config.url, config.anon)
       if (!user) return json(res, 401, { error: 'Authentication required' })
-      const agents = (await listServerAgentsForUser(user.id)).filter(agent => agent.status !== 'deleted')
+      const agents = (await listServerAgentsForUser(user.id)).filter(agent => agent.status !== 'deleted' && agent.type !== 'conversation')
       const agentIds = new Set(agents.map(agent => agent.id))
       const executions = (await listServerExecutions()).filter(execution => agentIds.has(execution.agentId))
       return json(res, 200, { agents, executions })
@@ -5783,12 +5848,16 @@ const server = http.createServer(async (req, res) => {
         if (action === 'pause') {
           agent.status = 'paused'
           if (agent.campaign) agent.campaign.status = 'paused'
+          agent.pausedNextRunAt = agent.trigger?.nextRun || agent.nextRunAt || null
+          agent.trigger = { ...(agent.trigger || {}), nextRun: null }
+          agent.nextRunAt = null
         } else if (action === 'resume') {
           agent.status = 'running'
           if (agent.campaign) agent.campaign.status = 'running'
           const nextRun = resumeAgentSchedule(agent)
           agent.trigger = { ...(agent.trigger || {}), nextRun }
           agent.nextRunAt = nextRun
+          delete agent.pausedNextRunAt
         } else {
           agent.status = 'deleted'
           agent.deletedAt = new Date().toISOString()
@@ -5809,16 +5878,8 @@ const server = http.createServer(async (req, res) => {
         if (existingAgent.campaign?.posts?.some(post => post.status === 'publishing')) {
           return json(res, 409, { error: 'Automation cannot be deleted while a post is publishing' })
         }
-        const agent = {
-          ...existingAgent,
-          status: 'deleted',
-          deletedAt: new Date().toISOString(),
-          nextRunAt: null,
-          trigger: { ...(existingAgent.trigger || {}), nextRun: null },
-          campaign: existingAgent.campaign ? { ...existingAgent.campaign, status: 'archived' } : undefined,
-        }
-        await saveServerAgent(agent)
-        return json(res, 200, { deleted: true, agent })
+        await deleteServerAgent(agentId, user.id, user.email || '')
+        return json(res, 200, { deleted: true, id: agentId })
       } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Could not delete automation' }) }
     }
     return json(res, 405, { error: 'Method not allowed' })

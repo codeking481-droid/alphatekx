@@ -24,7 +24,7 @@ function providerForConnectorId(id: string) {
 function connectorStatus(id: string, status: IntegrationStatus) {
   const key = providerForConnectorId(id)
   const s = status[key] || { connected: false, ready: false }
-  return { connected: Boolean(s.connected), ready: Boolean(s.connected || s.ready) }
+  return { connected: Boolean(s.connected && s.ready), ready: Boolean(s.ready) }
 }
 
 function TriggerIcon({ type }: { type: string }) {
