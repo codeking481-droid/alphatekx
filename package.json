@@ -28,12 +28,14 @@
     "test:feature-management": "node scripts/admin-feature-management-tests.mjs",
     "test:intent": "node scripts/intent-classification-tests.mjs",
     "test:e2e": "node scripts/full-test.mjs && node scripts/path-deploy-test.mjs && node scripts/render-smoke.mjs",
-    "test:thorough": "node scripts/thorough-test.mjs"
+    "test:thorough": "node scripts/thorough-test.mjs",
+    "test:composio": "node scripts/composio-connector-tests.mjs"
   },
   "engines": {
     "node": ">=22.0.0"
   },
   "dependencies": {
+    "@composio/core": "^0.14.0",
     "@hello-pangea/dnd": "^17.0.0",
     "@hookform/resolvers": "^4.1.2",
     "@radix-ui/react-accordion": "^1.2.3",
