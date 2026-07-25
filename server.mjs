@@ -19,6 +19,7 @@ import * as billing from './server/billing.mjs'
 import { normalizeLinkedInScopes, publishLinkedInTextPost } from './server/linkedin.mjs'
 import { allowedWhatsAppRecipients, applyWhatsAppStatusEvent, executeApprovedWhatsAppMessage, sendWhatsAppText, verifyWhatsAppPhoneRegistration, verifyWhatsAppWebhookSignature, whatsappCredentials, whatsappWebhookEvents } from './server/whatsapp.mjs'
 import { connectorFeatureAccess, featureManagementSnapshot, featureStatusForUser, refreshFeatureConfig, setBetaUser, unavailableConnectorMessage, unavailablePromptConnector, updateFeature } from './server/featureAccess.mjs'
+import * as alphaConnector from './server/composioConnectorService.mjs'
 
 function loadEnv() {
   for (const filename of ['.env.local', '.env']) {
@@ -5843,6 +5844,96 @@ const server = http.createServer(async (req, res) => {
       if (!requireConnectorFeature(req, res, user, 'facebook')) return
       return await selectFacebookPage(req, res)
     } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Could not select Facebook Page' }) }
+  }
+  if (req.url === '/api/connected-apps' && req.method === 'GET') {
+    try {
+      const config = supabaseConfig()
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      if (!user) return json(res, 401, { error: 'Authentication required' })
+      return json(res, 200, await alphaConnector.getConnectedApps(user))
+    } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Failed to list connected apps' }) }
+  }
+  if (req.url?.startsWith('/api/connect/') && req.method === 'POST') {
+    const match = new URL(req.url, 'http://localhost').pathname.match(/^\/api\/connect\/([^/]+)\/?$/)
+    if (match) {
+      try {
+        const config = supabaseConfig()
+        const user = await currentOrLocalUser(req, config.url, config.anon)
+        if (!user) return json(res, 401, { error: 'Authentication required' })
+        const body = await readBody(req)
+        const callbackUrl = body.callbackUrl || `${getRequestOrigin(req)}/api/connect/callback`
+        return json(res, 200, await alphaConnector.startConnection(user, match[1], callbackUrl))
+      } catch (error) { return json(res, 502, { error: error instanceof Error ? error.message : 'Connection failed' }) }
+    }
+  }
+  if (req.url?.startsWith('/api/connect/') && req.method === 'GET') {
+    const match = new URL(req.url, 'http://localhost').pathname.match(/^\/api\/connect\/([^/]+)\/status\/?$/)
+    if (match) {
+      try {
+        const config = supabaseConfig()
+        const user = await currentOrLocalUser(req, config.url, config.anon)
+        if (!user) return json(res, 401, { error: 'Authentication required' })
+        return json(res, 200, await alphaConnector.getConnectionStatus(user, match[1]))
+      } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Status check failed' }) }
+    }
+  }
+  if (req.url?.startsWith('/api/connect/callback') && req.method === 'GET') {
+    const url = new URL(req.url || '/', publicAppUrl())
+    const provider = url.searchParams.get('provider') || ''
+    const error = url.searchParams.get('error') || ''
+    const redirectUrl = new URL('/connected-apps', publicAppUrl())
+    redirectUrl.searchParams.set('connected', error ? 'error' : provider || 'success')
+    if (provider) redirectUrl.searchParams.set('provider', provider)
+    if (error) redirectUrl.searchParams.set('error', error.slice(0, 200))
+    res.writeHead(302, { Location: redirectUrl.toString(), 'Cache-Control': 'no-store' })
+    return res.end()
+  }
+  if (req.url?.startsWith('/api/reconnect/') && req.method === 'POST') {
+    const match = new URL(req.url, 'http://localhost').pathname.match(/^\/api\/reconnect\/([^/]+)\/?$/)
+    if (match) {
+      try {
+        const config = supabaseConfig()
+        const user = await currentOrLocalUser(req, config.url, config.anon)
+        if (!user) return json(res, 401, { error: 'Authentication required' })
+        const body = await readBody(req)
+        const callbackUrl = body.callbackUrl || `${getRequestOrigin(req)}/api/connect/callback`
+        return json(res, 200, await alphaConnector.reconnectProvider(user, match[1], callbackUrl))
+      } catch (error) { return json(res, 502, { error: error instanceof Error ? error.message : 'Reconnect failed' }) }
+    }
+  }
+  if (req.url?.startsWith('/api/disconnect/') && req.method === 'DELETE') {
+    const match = new URL(req.url, 'http://localhost').pathname.match(/^\/api\/disconnect\/([^/]+)\/?$/)
+    if (match) {
+      try {
+        const config = supabaseConfig()
+        const user = await currentOrLocalUser(req, config.url, config.anon)
+        if (!user) return json(res, 401, { error: 'Authentication required' })
+        return json(res, 200, await alphaConnector.disconnectProvider(user, match[1]))
+      } catch (error) { return json(res, 502, { error: error instanceof Error ? error.message : 'Disconnect failed' }) }
+    }
+  }
+  if (req.url?.startsWith('/api/execute/') && req.method === 'POST') {
+    const match = new URL(req.url, 'http://localhost').pathname.match(/^\/api\/execute\/([^/]+)\/([^/]+)\/?$/)
+    if (match) {
+      try {
+        const config = supabaseConfig()
+        const user = await currentOrLocalUser(req, config.url, config.anon)
+        if (!user) return json(res, 401, { error: 'Authentication required' })
+        const body = await readBody(req)
+        return json(res, 200, await alphaConnector.executeProviderAction(user, match[1], match[2], body.params || {}))
+      } catch (error) { return json(res, 502, { error: error instanceof Error ? error.message : 'Execution failed' }) }
+    }
+  }
+  if (req.url?.startsWith('/api/connected-apps/executions/') && req.method === 'GET') {
+    const match = new URL(req.url, 'http://localhost').pathname.match(/^\/api\/connected-apps\/executions\/([^/]+)\/?$/)
+    if (match) {
+      try {
+        const config = supabaseConfig()
+        const user = await currentOrLocalUser(req, config.url, config.anon)
+        if (!user) return json(res, 401, { error: 'Authentication required' })
+        return json(res, 200, await alphaConnector.getExecutionHistory(user, match[1]))
+      } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Failed to load execution history' }) }
+    }
   }
   if (req.method === 'POST' && (req.url === '/api/gmail/send' || req.url === '/api/send-email')) {
     try { return await sendGmail(req, res) } catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : 'Email could not be sent' }) }
