@@ -1,0 +1,1009 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="A complete single-file learning platform with courses, quizzes, notes, progress tracking, certificates, and local storage." />
+  <title>AlphaLearn Academy</title>
+  <script>
+    (function(){
+      const p = new URLSearchParams(location.search);
+      const t = p.get('t');
+      const s = p.get('s');
+      if (t) document.title = t;
+      const brand = p.get('brand');
+      if (brand) try { localStorage.setItem('alpha-learn-brand', brand); } catch(e){}
+    })();
+  </script>
+  <style>
+    :root{
+      --bg:#f4f7fb;
+      --panel:#ffffff;
+      --panel-2:#eef3ff;
+      --text:#13213c;
+      --muted:#6b7894;
+      --primary:#5b5cf0;
+      --primary-2:#7c3aed;
+      --success:#18a875;
+      --danger:#e74c5b;
+      --warning:#f59e0b;
+      --border:#dfe6f2;
+      --shadow:0 18px 45px rgba(36,53,88,.12);
+      --radius:22px;
+    }
+
+    body.dark{
+      --bg:#0b1020;
+      --panel:#121a2f;
+      --panel-2:#18223c;
+      --text:#f5f7ff;
+      --muted:#9aa8c7;
+      --border:#273453;
+      --shadow:0 18px 45px rgba(0,0,0,.35);
+    }
+
+    *{box-sizing:border-box}
+    html{scroll-behavior:smooth}
+    body{
+      margin:0;
+      font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      background:var(--bg);
+      color:var(--text);
+      transition:.25s;
+    }
+
+    button,input,textarea,select{font:inherit}
+    button{cursor:pointer}
+    a{text-decoration:none;color:inherit}
+    img{max-width:100%;display:block}
+
+    .app{display:grid;grid-template-columns:280px 1fr;min-height:100vh}
+
+    .sidebar{
+      background:linear-gradient(180deg,#151b4a,#272c75 55%,#372e8b);
+      color:#fff;
+      padding:24px 18px;
+      position:sticky;
+      top:0;
+      height:100vh;
+      overflow:auto;
+      z-index:30;
+    }
+
+    .brand{
+      display:flex;
+      align-items:center;
+      gap:12px;
+      padding:4px 8px 28px;
+    }
+
+    .logo{
+      width:46px;height:46px;border-radius:15px;
+      display:grid;place-items:center;
+      background:linear-gradient(135deg,#7c3aed,#4f8cff);
+      font-size:24px;font-weight:900;
+      box-shadow:0 10px 30px rgba(84,91,255,.35);
+    }
+
+    .brand h1{font-size:20px;margin:0}
+    .brand small{opacity:.72}
+
+    .nav-title{
+      text-transform:uppercase;
+      font-size:11px;
+      letter-spacing:.14em;
+      opacity:.55;
+      margin:18px 12px 8px;
+    }
+
+    .nav-btn{
+      width:100%;
+      border:0;
+      color:#dce3ff;
+      background:transparent;
+      padding:13px 14px;
+      margin:4px 0;
+      display:flex;
+      align-items:center;
+      gap:12px;
+      border-radius:14px;
+      text-align:left;
+      transition:.2s;
+    }
+
+    .nav-btn:hover,.nav-btn.active{
+      background:rgba(255,255,255,.13);
+      color:#fff;
+      transform:translateX(3px);
+    }
+
+    .nav-btn .icon{font-size:19px;width:24px;text-align:center}
+
+    .sidebar-card{
+      margin-top:24px;
+      padding:18px;
+      border-radius:18px;
+      background:rgba(255,255,255,.11);
+      border:1px solid rgba(255,255,255,.12);
+    }
+
+    .sidebar-card p{font-size:13px;line-height:1.6;opacity:.8}
+    .sidebar-card button{
+      width:100%;border:0;padding:11px;border-radius:12px;
+      background:#fff;color:#242a71;font-weight:800;
+    }
+
+    .main{min-width:0}
+    .topbar{
+      position:sticky;top:0;z-index:20;
+      display:flex;align-items:center;gap:16px;
+      padding:18px 28px;
+      background:color-mix(in srgb,var(--bg) 86%,transparent);
+      backdrop-filter:blur(18px);
+      border-bottom:1px solid var(--border);
+    }
+
+    .menu-btn{
+      display:none;border:0;background:var(--panel);
+      color:var(--text);width:42px;height:42px;border-radius:13px;
+      box-shadow:var(--shadow);
+    }
+
+    .search{
+      flex:1;display:flex;align-items:center;gap:10px;
+      background:var(--panel);border:1px solid var(--border);
+      border-radius:15px;padding:0 14px;
+    }
+
+    .search input{
+      width:100%;border:0;outline:0;padding:13px 0;
+      background:transparent;color:var(--text);
+    }
+
+    .top-actions{display:flex;align-items:center;gap:10px}
+    .icon-btn{
+      border:1px solid var(--border);
+      background:var(--panel);color:var(--text);
+      width:44px;height:44px;border-radius:14px;
+    }
+
+    .avatar{
+      width:44px;height:44px;border-radius:50%;
+      background:linear-gradient(135deg,#4f46e5,#8b5cf6);
+      color:#fff;display:grid;place-items:center;font-weight:900;
+    }
+
+    .content{padding:28px;max-width:1600px;margin:auto}
+    .view{display:none}
+    .view.active{display:block;animation:fade .25s ease}
+    @keyframes fade{from{opacity:.2;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+    .hero{
+      padding:36px;
+      min-height:280px;
+      border-radius:28px;
+      color:#fff;
+      background:
+        radial-gradient(circle at 80% 20%,rgba(255,255,255,.24),transparent 25%),
+        linear-gradient(135deg,#4f46e5,#7c3aed 55%,#2563eb);
+      display:grid;
+      grid-template-columns:1.4fr .8fr;
+      align-items:center;
+      overflow:hidden;
+      box-shadow:var(--shadow);
+    }
+
+    .hero h2{font-size:clamp(32px,5vw,58px);line-height:1.05;margin:0 0 14px}
+    .hero p{font-size:17px;line-height:1.7;max-width:700px;opacity:.88}
+    .hero-actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:24px}
+
+    .btn{
+      border:0;padding:13px 18px;border-radius:14px;
+      font-weight:800;transition:.2s;
+    }
+    .btn:hover{transform:translateY(-2px)}
+    .btn-light{background:#fff;color:#4037a4}
+    .btn-glass{background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.25)}
+    .btn-primary{background:linear-gradient(135deg,var(--primary),var(--primary-2));color:#fff}
+    .btn-success{background:var(--success);color:#fff}
+    .btn-danger{background:var(--danger);color:#fff}
+    .btn-soft{background:var(--panel-2);color:var(--primary)}
+
+    .hero-visual{
+      display:grid;place-items:center;
+      font-size:140px;
+      filter:drop-shadow(0 20px 30px rgba(0,0,0,.25));
+      animation:float 4s ease-in-out infinite;
+    }
+    @keyframes float{50%{transform:translateY(-10px) rotate(2deg)}}
+
+    .section-head{
+      display:flex;justify-content:space-between;align-items:end;
+      gap:16px;margin:32px 0 18px;
+    }
+    .section-head h3{font-size:25px;margin:0}
+    .section-head p{margin:6px 0 0;color:var(--muted)}
+    .link-btn{border:0;background:transparent;color:var(--primary);font-weight:800}
+
+    .stats{
+      display:grid;grid-template-columns:repeat(4,1fr);
+      gap:16px;margin-top:22px;
+    }
+    .stat{
+      background:var(--panel);border:1px solid var(--border);
+      border-radius:20px;padding:20px;box-shadow:var(--shadow);
+    }
+    .stat-top{display:flex;justify-content:space-between;align-items:center}
+    .stat-icon{
+      width:48px;height:48px;border-radius:15px;
+      background:var(--panel-2);display:grid;place-items:center;font-size:24px;
+    }
+    .stat strong{font-size:30px;display:block;margin-top:14px}
+    .stat span{color:var(--muted);font-size:13px}
+
+    .grid{display:grid;gap:18px}
+    .course-grid{grid-template-columns:repeat(3,1fr)}
+    .course-card{
+      background:var(--panel);border:1px solid var(--border);
+      border-radius:22px;overflow:hidden;box-shadow:var(--shadow);
+      transition:.22s;
+    }
+    .course-card:hover{transform:translateY(-6px)}
+    .course-cover{
+      height:150px;padding:22px;color:#fff;
+      display:flex;justify-content:space-between;align-items:flex-end;
+    }
+    .course-cover span{font-size:58px}
+    .course-cover small{
+      background:rgba(255,255,255,.2);
+      border:1px solid rgba(255,255,255,.3);
+      padding:7px 10px;border-radius:999px;
+    }
+    .course-body{padding:20px}
+    .course-body h4{margin:0 0 8px;font-size:20px}
+    .course-body p{margin:0;color:var(--muted);font-size:14px;line-height:1.6}
+    .meta{display:flex;gap:14px;flex-wrap:wrap;margin:15px 0;color:var(--muted);font-size:12px}
+    .progress{
+      height:9px;background:var(--panel-2);border-radius:999px;overflow:hidden;
+    }
+    .progress > div{
+      height:100%;background:linear-gradient(90deg,var(--primary),var(--primary-2));
+      border-radius:999px;
+    }
+    .card-actions{display:flex;gap:10px;margin-top:16px}
+    .card-actions button{flex:1}
+
+    .two-col{display:grid;grid-template-columns:1.6fr .9fr;gap:18px}
+    .panel{
+      background:var(--panel);border:1px solid var(--border);
+      border-radius:22px;padding:22px;box-shadow:var(--shadow);
+    }
+
+    .activity{
+      display:flex;gap:14px;padding:15px 0;
+      border-bottom:1px solid var(--border);
+    }
+    .activity:last-child{border-bottom:0}
+    .activity-icon{
+      width:42px;height:42px;border-radius:13px;flex:0 0 auto;
+      display:grid;place-items:center;background:var(--panel-2)
+    }
+    .activity h5{margin:0 0 4px}
+    .activity p{margin:0;color:var(--muted);font-size:13px}
+
+    .lesson-layout{display:grid;grid-template-columns:300px 1fr;gap:18px}
+    .lesson-menu{
+      background:var(--panel);border:1px solid var(--border);
+      border-radius:22px;padding:18px;box-shadow:var(--shadow);
+      height:fit-content;
+    }
+    .lesson-menu button{
+      width:100%;border:0;background:transparent;color:var(--text);
+      text-align:left;padding:13px;border-radius:13px;margin:4px 0;
+    }
+    .lesson-menu button:hover,.lesson-menu button.active{background:var(--panel-2);color:var(--primary)}
+    .lesson-content{
+      background:var(--panel);border:1px solid var(--border);
+      border-radius:22px;padding:28px;box-shadow:var(--shadow);
+    }
+    .lesson-content h2{font-size:34px;margin-top:0}
+    .lesson-content p,.lesson-content li{line-height:1.8;color:var(--muted)}
+    .lesson-content code{
+      display:block;background:#0f172a;color:#e2e8f0;
+      padding:18px;border-radius:15px;overflow:auto;margin:18px 0;
+    }
+    .lesson-footer{display:flex;justify-content:space-between;gap:12px;margin-top:28px}
+
+    .quiz-wrap{max-width:900px;margin:auto}
+    .quiz-question{font-size:27px;margin:8px 0 24px}
+    .answer{
+      display:block;width:100%;text-align:left;
+      border:1px solid var(--border);background:var(--panel);
+      color:var(--text);padding:16px;border-radius:15px;margin:11px 0;
+      transition:.2s;
+    }
+    .answer:hover{border-color:var(--primary);transform:translateX(4px)}
+    .answer.selected{background:var(--panel-2);border-color:var(--primary)}
+    .answer.correct{background:rgba(24,168,117,.12);border-color:var(--success)}
+    .answer.wrong{background:rgba(231,76,91,.12);border-color:var(--danger)}
+
+    .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    .field{display:flex;flex-direction:column;gap:8px}
+    .field label{font-weight:700}
+    .field input,.field textarea,.field select{
+      border:1px solid var(--border);
+      background:var(--bg);color:var(--text);
+      padding:13px;border-radius:13px;outline:0;
+    }
+    .field textarea{min-height:140px;resize:vertical}
+    .full{grid-column:1/-1}
+
+    .note-card{
+      background:var(--panel);border:1px solid var(--border);
+      border-left:5px solid var(--warning);
+      border-radius:17px;padding:18px;position:relative;
+    }
+    .note-card h4{margin:0 36px 8px 0}
+    .note-card p{color:var(--muted);white-space:pre-wrap}
+    .note-card button{
+      position:absolute;right:12px;top:12px;border:0;background:transparent;color:var(--danger)
+    }
+
+    .certificate{
+      max-width:900px;margin:auto;padding:55px;
+      background:linear-gradient(135deg,#fff,#eef2ff);
+      color:#17213f;border:14px double #5b5cf0;
+      text-align:center;box-shadow:var(--shadow);
+    }
+    .certificate h1{font-family:Georgia,serif;font-size:48px;margin:10px}
+    .certificate .name{font-size:40px;color:#5b5cf0;font-weight:900;border-bottom:2px solid #5b5cf0;display:inline-block;padding:0 40px 8px}
+    .certificate p{font-size:17px;line-height:1.7}
+    .signatures{display:flex;justify-content:space-between;margin-top:50px;gap:30px}
+    .signature{width:220px;border-top:1px solid #444;padding-top:8px}
+
+    .toast{
+      position:fixed;right:24px;bottom:24px;z-index:100;
+      background:#10182e;color:#fff;padding:14px 18px;border-radius:14px;
+      box-shadow:var(--shadow);opacity:0;transform:translateY(20px);
+      pointer-events:none;transition:.25s;
+    }
+    .toast.show{opacity:1;transform:none}
+
+    .modal{
+      position:fixed;inset:0;z-index:80;
+      background:rgba(2,6,23,.65);
+      display:none;place-items:center;padding:20px;
+    }
+    .modal.show{display:grid}
+    .modal-card{
+      width:min(560px,100%);background:var(--panel);
+      border-radius:22px;padding:24px;box-shadow:var(--shadow);
+    }
+
+    .empty{text-align:center;padding:50px;color:var(--muted)}
+    .empty .emoji{font-size:64px}
+    .badge{
+      display:inline-flex;padding:6px 10px;border-radius:999px;
+      font-size:12px;font-weight:800;background:var(--panel-2);color:var(--primary);
+    }
+
+    @media(max-width:1100px){
+      .course-grid{grid-template-columns:repeat(2,1fr)}
+      .stats{grid-template-columns:repeat(2,1fr)}
+      .two-col{grid-template-columns:1fr}
+      .hero{grid-template-columns:1fr}
+      .hero-visual{display:none}
+    }
+
+    @media(max-width:820px){
+      .app{grid-template-columns:1fr}
+      .sidebar{
+        position:fixed;left:-290px;width:280px;transition:.25s;
+      }
+      .sidebar.open{left:0}
+      .menu-btn{display:block}
+      .content{padding:18px}
+      .topbar{padding:14px 18px}
+      .lesson-layout{grid-template-columns:1fr}
+      .lesson-menu{position:static}
+    }
+
+    @media(max-width:620px){
+      .course-grid,.stats,.form-grid{grid-template-columns:1fr}
+      .hero{padding:25px}
+      .hero h2{font-size:38px}
+      .top-actions .avatar{display:none}
+      .certificate{padding:25px 16px}
+      .certificate h1{font-size:34px}
+      .certificate .name{font-size:29px;padding:0 10px 7px}
+      .signatures{flex-direction:column;align-items:center}
+    }
+
+    @media print{
+      .sidebar,.topbar,.no-print{display:none!important}
+      .app{display:block}
+      .content{padding:0}
+      body{background:#fff}
+      .certificate{box-shadow:none}
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="logo">A</div>
+      <div>
+        <h1>AlphaLearn</h1>
+        <small>Learn. Grow. Win.</small>
+      </div>
+    </div>
+
+    <div class="nav-title">Main Menu</div>
+    <button class="nav-btn active" data-view="dashboard"><span class="icon">🏠</span>Dashboard</button>
+    <button class="nav-btn" data-view="courses"><span class="icon">📚</span>All Courses</button>
+    <button class="nav-btn" data-view="lesson"><span class="icon">🎓</span>Lesson Player</button>
+    <button class="nav-btn" data-view="quiz"><span class="icon">🧠</span>Quiz Center</button>
+
+    <div class="nav-title">Personal</div>
+    <button class="nav-btn" data-view="notes"><span class="icon">📝</span>My Notes</button>
+    <button class="nav-btn" data-view="progress"><span class="icon">📈</span>Progress</button>
+    <button class="nav-btn" data-view="certificate"><span class="icon">🏆</span>Certificate</button>
+    <button class="nav-btn" data-view="profile"><span class="icon">👤</span>Profile</button>
+
+    <div class="sidebar-card">
+      <strong>🔥 Daily Goal</strong>
+      <p>Complete one lesson and one quiz every day to build your streak.</p>
+      <button onclick="navigate('courses')">Continue Learning</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <button class="menu-btn" id="menuBtn">☰</button>
+      <div class="search">
+        <span>🔎</span>
+        <input id="globalSearch" placeholder="Search courses, topics, lessons..." />
+      </div>
+      <div class="top-actions">
+        <button class="icon-btn" id="themeBtn" title="Toggle theme">🌙</button>
+        <button class="icon-btn" onclick="showToast('No new notifications')">🔔</button>
+        <div class="avatar" id="avatar">ST</div>
+      </div>
+    </header>
+
+    <div class="content">
+      <section class="view active" id="dashboard">
+        <div class="hero">
+          <div>
+            <span class="badge" style="background:rgba(255,255,255,.18);color:#fff">🚀 Your learning journey</span>
+            <h2>Build skills that can change your future.</h2>
+            <p>Learn mathematics, English, science, coding, business, and design with structured lessons, practical quizzes, notes, progress tracking, and certificates.</p>
+            <div class="hero-actions">
+              <button class="btn btn-light" onclick="navigate('courses')">Explore Courses</button>
+              <button class="btn btn-glass" onclick="continueLearning()">Continue Lesson</button>
+            </div>
+          </div>
+          <div class="hero-visual">🚀</div>
+        </div>
+
+        <div class="stats">
+          <div class="stat"><div class="stat-top"><span>Courses</span><div class="stat-icon">📚</div></div><strong id="courseCount">6</strong><span>Available to study</span></div>
+          <div class="stat"><div class="stat-top"><span>Completed</span><div class="stat-icon">✅</div></div><strong id="completedCount">0</strong><span>Lessons finished</span></div>
+          <div class="stat"><div class="stat-top"><span>Quiz Score</span><div class="stat-icon">🧠</div></div><strong id="scoreStat">0%</strong><span>Your latest result</span></div>
+          <div class="stat"><div class="stat-top"><span>Study Streak</span><div class="stat-icon">🔥</div></div><strong id="streakStat">1</strong><span>Day streak</span></div>
+        </div>
+
+        <div class="section-head">
+          <div><h3>Popular Courses</h3><p>Start with one of these powerful learning paths.</p></div>
+          <button class="link-btn" onclick="navigate('courses')">View all →</button>
+        </div>
+        <div class="grid course-grid" id="dashboardCourses"></div>
+
+        <div class="section-head"><div><h3>Your Learning Overview</h3><p>Keep track of what you have done.</p></div></div>
+        <div class="two-col">
+          <div class="panel">
+            <h3>Recent Activity</h3>
+            <div id="activityList"></div>
+          </div>
+          <div class="panel">
+            <h3>Weekly Goal</h3>
+            <p style="color:var(--muted)">Complete 5 lessons this week.</p>
+            <div class="progress"><div id="weeklyProgress" style="width:0%"></div></div>
+            <h2 id="weeklyText">0 / 5 lessons</h2>
+            <button class="btn btn-primary" onclick="navigate('lesson')">Study Now</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="view" id="courses">
+        <div class="section-head">
+          <div><h3>Course Library</h3><p>Choose a subject and begin learning immediately.</p></div>
+          <select id="categoryFilter" class="btn btn-soft">
+            <option value="all">All Categories</option>
+            <option value="Academic">Academic</option>
+            <option value="Technology">Technology</option>
+            <option value="Creative">Creative</option>
+            <option value="Business">Business</option>
+          </select>
+        </div>
+        <div class="grid course-grid" id="allCourses"></div>
+      </section>
+
+      <section class="view" id="lesson">
+        <div class="lesson-layout">
+          <aside class="lesson-menu">
+            <h3 id="lessonCourseTitle">Mathematics Mastery</h3>
+            <div id="lessonMenu"></div>
+          </aside>
+          <article class="lesson-content">
+            <span class="badge" id="lessonBadge">Lesson 1</span>
+            <h2 id="lessonTitle">Introduction</h2>
+            <div id="lessonBody"></div>
+            <div class="lesson-footer">
+              <button class="btn btn-soft" onclick="previousLesson()">← Previous</button>
+              <button class="btn btn-success" onclick="completeCurrentLesson()">Mark Complete ✓</button>
+              <button class="btn btn-primary" onclick="nextLesson()">Next →</button>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="view" id="quiz">
+        <div class="quiz-wrap panel">
+          <div id="quizIntro">
+            <span class="badge">Knowledge Check</span>
+            <h2 style="font-size:38px">Ready to test yourself?</h2>
+            <p style="color:var(--muted);line-height:1.7">This quiz contains 8 questions from Mathematics, English, Science, Coding, Business, and Design. Your result will be saved on this device.</p>
+            <button class="btn btn-primary" onclick="startQuiz()">Start Quiz</button>
+          </div>
+          <div id="quizGame" style="display:none">
+            <div style="display:flex;justify-content:space-between;gap:15px">
+              <span class="badge" id="quizCounter">Question 1 of 8</span>
+              <span class="badge" id="quizScoreLive">Score: 0</span>
+            </div>
+            <div class="progress" style="margin:18px 0"><div id="quizProgress" style="width:12.5%"></div></div>
+            <h3 class="quiz-question" id="quizQuestion"></h3>
+            <div id="quizAnswers"></div>
+            <button class="btn btn-primary" id="nextQuestionBtn" onclick="nextQuestion()" style="margin-top:18px;display:none">Next Question</button>
+          </div>
+          <div id="quizResult" style="display:none;text-align:center;padding:25px">
+            <div style="font-size:80px">🏆</div>
+            <h2 id="resultTitle">Excellent Work!</h2>
+            <p id="resultText" style="font-size:18px;color:var(--muted)"></p>
+            <button class="btn btn-primary" onclick="startQuiz()">Try Again</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="view" id="notes">
+        <div class="section-head"><div><h3>My Study Notes</h3><p>Save useful ideas and reminders. Notes remain on your device.</p></div></div>
+        <div class="panel">
+          <div class="form-grid">
+            <div class="field"><label>Note title</label><input id="noteTitle" placeholder="Example: Algebra formula" /></div>
+            <div class="field"><label>Subject</label><select id="noteSubject"><option>Mathematics</option><option>English</option><option>Science</option><option>Coding</option><option>Business</option><option>Design</option></select></div>
+            <div class="field full"><label>Your note</label><textarea id="noteBody" placeholder="Write your note here..."></textarea></div>
+          </div>
+          <button class="btn btn-primary" onclick="saveNote()">Save Note</button>
+        </div>
+        <div class="section-head"><div><h3>Saved Notes</h3></div></div>
+        <div class="grid course-grid" id="notesList"></div>
+      </section>
+
+      <section class="view" id="progress">
+        <div class="section-head"><div><h3>Learning Progress</h3><p>Your performance across every course.</p></div></div>
+        <div class="stats">
+          <div class="stat"><span>Total Lessons</span><strong id="pTotalLessons">0</strong></div>
+          <div class="stat"><span>Lessons Completed</span><strong id="pCompleted">0</strong></div>
+          <div class="stat"><span>Quiz Attempts</span><strong id="pAttempts">0</strong></div>
+          <div class="stat"><span>Best Quiz Score</span><strong id="pBestScore">0%</strong></div>
+        </div>
+        <div class="section-head"><div><h3>Course Breakdown</h3></div></div>
+        <div class="panel" id="progressBreakdown"></div>
+      </section>
+
+      <section class="view" id="certificate">
+        <div class="certificate" id="certificatePaper">
+          <div style="font-size:60px">🏅</div>
+          <h1>Certificate of Achievement</h1>
+          <p>This certificate is proudly presented to</p>
+          <div class="name" id="certificateName">Student Name</div>
+          <p>for showing commitment to learning and successfully completing lessons on the AlphaLearn Academy platform.</p>
+          <h2>AlphaLearn Academy</h2>
+          <p id="certificateDate"></p>
+          <div class="signatures">
+            <div class="signature">Lead Instructor</div>
+            <div class="signature">Academy Director</div>
+          </div>
+        </div>
+        <div style="text-align:center;margin-top:22px" class="no-print">
+          <button class="btn btn-primary" onclick="window.print()">Print Certificate</button>
+        </div>
+      </section>
+
+      <section class="view" id="profile">
+        <div class="section-head"><div><h3>Student Profile</h3><p>Personalize your learning experience.</p></div></div>
+        <div class="panel">
+          <div class="form-grid">
+            <div class="field"><label>Full name</label><input id="profileName" value="Student Name" /></div>
+            <div class="field"><label>Email</label><input id="profileEmail" type="email" placeholder="student@example.com" /></div>
+            <div class="field"><label>Learning goal</label><select id="profileGoal"><option>Pass my exams</option><option>Learn coding</option><option>Build a business</option><option>Improve my skills</option></select></div>
+            <div class="field"><label>Daily study target</label><select id="profileTarget"><option>15 minutes</option><option>30 minutes</option><option>1 hour</option><option>2 hours</option></select></div>
+            <div class="field full"><label>Short bio</label><textarea id="profileBio" placeholder="Tell us about your learning journey..."></textarea></div>
+          </div>
+          <button class="btn btn-primary" onclick="saveProfile()">Save Profile</button>
+          <button class="btn btn-danger" onclick="resetPlatform()">Reset All Data</button>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="modal" id="courseModal">
+  <div class="modal-card">
+    <button class="icon-btn" style="float:right" onclick="closeModal()">✕</button>
+    <div id="modalContent"></div>
+  </div>
+</div>
+
+<script>
+const courses = [
+  {
+    id:"math", title:"Mathematics Mastery", category:"Academic", icon:"➗",
+    colors:["#2563eb","#7c3aed"], level:"Beginner", duration:"4 hours",
+    description:"Build confidence in arithmetic, algebra, equations, percentages, and problem solving.",
+    lessons:[
+      {title:"Numbers and Operations",body:`<p>Numbers are the foundation of mathematics. The four basic operations are addition, subtraction, multiplication, and division.</p><h3>Examples</h3><ul><li>12 + 8 = 20</li><li>20 - 7 = 13</li><li>6 × 4 = 24</li><li>30 ÷ 5 = 6</li></ul><p>Always follow BODMAS when solving expressions: Brackets, Orders, Division, Multiplication, Addition, and Subtraction.</p>`},
+      {title:"Fractions and Percentages",body:`<p>A fraction represents part of a whole. A percentage means a number out of 100.</p><code>25% of 200 = 25/100 × 200 = 50</code><p>To convert a fraction to a percentage, multiply it by 100.</p>`},
+      {title:"Introduction to Algebra",body:`<p>Algebra uses letters to represent unknown values. These letters are called variables.</p><code>2x + 3 = 11\n2x = 8\nx = 4</code><p>The goal is to isolate the variable while keeping both sides balanced.</p>`},
+      {title:"Quadratic Equations",body:`<p>A quadratic equation has the general form ax² + bx + c = 0.</p><code>x = (-b ± √(b² - 4ac)) / 2a</code><p>This is called the quadratic formula. The expression b² - 4ac is the discriminant.</p>`}
+    ]
+  },
+  {
+    id:"english", title:"English Excellence", category:"Academic", icon:"📖",
+    colors:["#e11d48","#f97316"], level:"Beginner", duration:"3 hours",
+    description:"Improve grammar, vocabulary, comprehension, writing, and confident communication.",
+    lessons:[
+      {title:"Parts of Speech",body:`<p>The main parts of speech include nouns, pronouns, verbs, adjectives, adverbs, prepositions, conjunctions, and interjections.</p><ul><li><b>Noun:</b> person, place, animal, or thing</li><li><b>Verb:</b> action or state</li><li><b>Adjective:</b> describes a noun</li></ul>`},
+      {title:"Sentence Structure",body:`<p>A complete sentence usually contains a subject and a predicate.</p><code>Daniel builds websites.</code><p>Daniel is the subject. Builds websites is the predicate.</p>`},
+      {title:"Vocabulary Building",body:`<p>Read often, learn words in context, use a dictionary, and practice using new words in sentences.</p><p>Example: <b>Innovative</b> means introducing new ideas or methods.</p>`},
+      {title:"Essay Writing",body:`<p>A strong essay has an introduction, body paragraphs, and a conclusion. Each paragraph should focus on one main idea.</p>`}
+    ]
+  },
+  {
+    id:"science", title:"Science Explorer", category:"Academic", icon:"🔬",
+    colors:["#059669","#22c55e"], level:"Beginner", duration:"4.5 hours",
+    description:"Understand matter, energy, forces, living things, and the natural world.",
+    lessons:[
+      {title:"Matter",body:`<p>Matter is anything that has mass and occupies space. The common states are solid, liquid, and gas.</p>`},
+      {title:"Energy",body:`<p>Energy is the ability to do work. Forms include heat, light, sound, electrical, chemical, and kinetic energy.</p>`},
+      {title:"Force and Motion",body:`<p>A force is a push or pull. Motion is a change in position over time.</p><code>Speed = Distance ÷ Time</code>`},
+      {title:"Living Things",body:`<p>Living things grow, reproduce, respire, feed, move, excrete, and respond to stimuli.</p>`}
+    ]
+  },
+  {
+    id:"coding", title:"Web Coding Bootcamp", category:"Technology", icon:"💻",
+    colors:["#111827","#4f46e5"], level:"Beginner", duration:"6 hours",
+    description:"Learn HTML, CSS, JavaScript, and how websites work from the ground up.",
+    lessons:[
+      {title:"HTML Foundations",body:`<p>HTML creates the structure of a webpage using elements and tags.</p><code>&lt;h1&gt;Hello World&lt;/h1&gt;\n&lt;p&gt;My first website&lt;/p&gt;</code>`},
+      {title:"CSS Styling",body:`<p>CSS controls colors, spacing, fonts, layout, and responsiveness.</p><code>body {\n  background: #f4f7fb;\n  color: #111827;\n}</code>`},
+      {title:"JavaScript Basics",body:`<p>JavaScript adds behavior and interactivity to webpages.</p><code>function greet() {\n  alert("Welcome!");\n}</code>`},
+      {title:"Build a Project",body:`<p>Combine HTML, CSS, and JavaScript to create a functional project. Start small, test often, and improve step by step.</p>`}
+    ]
+  },
+  {
+    id:"business", title:"Young Entrepreneur", category:"Business", icon:"💼",
+    colors:["#b45309","#f59e0b"], level:"Beginner", duration:"3 hours",
+    description:"Learn how to identify problems, create value, find customers, price products, and grow.",
+    lessons:[
+      {title:"Finding Problems",body:`<p>Strong businesses solve painful problems for specific people. Observe what wastes time, money, or energy.</p>`},
+      {title:"Creating Value",body:`<p>Value is the useful result customers receive. A great product should make something easier, faster, safer, or better.</p>`},
+      {title:"Pricing",body:`<p>Your price should consider costs, customer value, competitors, and profit. Do not price only from emotion.</p>`},
+      {title:"Marketing",body:`<p>Marketing communicates the value of your offer. Focus on the customer's problem, desired result, and proof.</p>`}
+    ]
+  },
+  {
+    id:"design", title:"Creative Design", category:"Creative", icon:"🎨",
+    colors:["#db2777","#7c3aed"], level:"Beginner", duration:"3.5 hours",
+    description:"Learn visual hierarchy, color, spacing, typography, layout, and user-friendly design.",
+    lessons:[
+      {title:"Design Principles",body:`<p>Good design uses contrast, alignment, repetition, proximity, balance, and hierarchy.</p>`},
+      {title:"Color Theory",body:`<p>Colors influence emotion and attention. Use a small, consistent palette and ensure readable contrast.</p>`},
+      {title:"Typography",body:`<p>Typography affects readability and personality. Limit font families and create clear heading levels.</p>`},
+      {title:"User Experience",body:`<p>User experience design makes products easy, useful, and pleasant. Reduce confusion and guide users toward clear actions.</p>`}
+    ]
+  }
+];
+
+const quizQuestions = [
+  {q:"What is 25% of 200?",a:["25","40","50","75"],correct:2},
+  {q:"Which word is a verb?",a:["Beautiful","Run","School","Quickly"],correct:1},
+  {q:"Which state of matter has a fixed shape?",a:["Gas","Liquid","Solid","Plasma"],correct:2},
+  {q:"What does HTML mainly create?",a:["Website structure","Database security","Internet speed","Computer hardware"],correct:0},
+  {q:"A strong business should primarily do what?",a:["Copy everyone","Solve a real problem","Avoid customers","Spend all its money"],correct:1},
+  {q:"Which design principle helps important items stand out?",a:["Hierarchy","Confusion","Randomness","Clutter"],correct:0},
+  {q:"Solve: 2x + 3 = 11",a:["2","3","4","5"],correct:2},
+  {q:"Which language adds interactivity to websites?",a:["HTML","CSS","JavaScript","JPEG"],correct:2}
+];
+
+let state = JSON.parse(localStorage.getItem("alphaLearnState")) || {
+  completed:[],
+  notes:[],
+  quizAttempts:0,
+  bestScore:0,
+  latestScore:0,
+  currentCourse:"math",
+  currentLesson:0,
+  activity:["Welcome to AlphaLearn Academy!"],
+  profile:{name:"Student Name",email:"",goal:"Pass my exams",target:"30 minutes",bio:""},
+  streak:1,
+  theme:"light"
+};
+
+let quizIndex=0, quizScore=0, answered=false;
+
+function saveState(){
+  localStorage.setItem("alphaLearnState",JSON.stringify(state));
+  updateDashboard();
+}
+
+function navigate(viewId){
+  document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
+  document.getElementById(viewId).classList.add("active");
+  document.querySelectorAll(".nav-btn").forEach(b=>b.classList.toggle("active",b.dataset.view===viewId));
+  document.getElementById("sidebar").classList.remove("open");
+  window.scrollTo({top:0,behavior:"smooth"});
+  if(viewId==="lesson") renderLesson();
+  if(viewId==="notes") renderNotes();
+  if(viewId==="progress") renderProgress();
+  if(viewId==="certificate") renderCertificate();
+}
+
+document.querySelectorAll(".nav-btn").forEach(btn=>btn.addEventListener("click",()=>navigate(btn.dataset.view)));
+document.getElementById("menuBtn").onclick=()=>document.getElementById("sidebar").classList.toggle("open");
+
+function courseProgress(course){
+  const done=course.lessons.filter((_,i)=>state.completed.includes(`${course.id}-${i}`)).length;
+  return Math.round(done/course.lessons.length*100);
+}
+
+function courseCard(course){
+  const p=courseProgress(course);
+  return `<article class="course-card" data-title="${course.title.toLowerCase()} ${course.description.toLowerCase()}">
+    <div class="course-cover" style="background:linear-gradient(135deg,${course.colors[0]},${course.colors[1]})">
+      <small>${course.category}</small><span>${course.icon}</span>
+    </div>
+    <div class="course-body">
+      <h4>${course.title}</h4>
+      <p>${course.description}</p>
+      <div class="meta"><span>📘 ${course.lessons.length} lessons</span><span>⏱ ${course.duration}</span><span>🎯 ${course.level}</span></div>
+      <div class="progress"><div style="width:${p}%"></div></div>
+      <div class="meta"><span>${p}% complete</span></div>
+      <div class="card-actions">
+        <button class="btn btn-primary" onclick="openCourse('${course.id}')">${p ? "Continue" : "Start Course"}</button>
+        <button class="btn btn-soft" onclick="showCourseInfo('${course.id}')">Details</button>
+      </div>
+    </div>
+  </article>`;
+}
+
+function renderCourses(){
+  document.getElementById("dashboardCourses").innerHTML=courses.slice(0,3).map(courseCard).join("");
+  filterCourses();
+}
+function filterCourses(){
+  const category=document.getElementById("categoryFilter").value;
+  const search=document.getElementById("globalSearch").value.toLowerCase().trim();
+  const filtered=courses.filter(c=>(category==="all"||c.category===category)&&(`${c.title} ${c.description} ${c.category}`.toLowerCase().includes(search)));
+  document.getElementById("allCourses").innerHTML=filtered.length?filtered.map(courseCard).join(""):`<div class="empty"><div class="emoji">🔍</div><h3>No courses found</h3></div>`;
+}
+document.getElementById("categoryFilter").onchange=filterCourses;
+document.getElementById("globalSearch").oninput=()=>{
+  filterCourses();
+  if(document.getElementById("globalSearch").value.trim()) navigate("courses");
+};
+
+function openCourse(id){
+  state.currentCourse=id;
+  state.currentLesson=0;
+  state.activity.unshift(`Started ${courses.find(c=>c.id===id).title}`);
+  state.activity=state.activity.slice(0,8);
+  saveState();
+  navigate("lesson");
+}
+
+function renderLesson(){
+  const course=courses.find(c=>c.id===state.currentCourse)||courses[0];
+  if(state.currentLesson>=course.lessons.length) state.currentLesson=0;
+  const lesson=course.lessons[state.currentLesson];
+  document.getElementById("lessonCourseTitle").textContent=course.title;
+  document.getElementById("lessonBadge").textContent=`Lesson ${state.currentLesson+1} of ${course.lessons.length}`;
+  document.getElementById("lessonTitle").textContent=lesson.title;
+  document.getElementById("lessonBody").innerHTML=lesson.body;
+  document.getElementById("lessonMenu").innerHTML=course.lessons.map((l,i)=>{
+    const done=state.completed.includes(`${course.id}-${i}`);
+    return `<button class="${i===state.currentLesson?"active":""}" onclick="selectLesson(${i})">${done?"✅":"📖"} ${i+1}. ${l.title}</button>`;
+  }).join("");
+}
+
+function selectLesson(i){state.currentLesson=i;saveState();renderLesson()}
+function nextLesson(){
+  const course=courses.find(c=>c.id===state.currentCourse);
+  if(state.currentLesson<course.lessons.length-1){state.currentLesson++;saveState();renderLesson()}else showToast("You reached the final lesson!");
+}
+function previousLesson(){if(state.currentLesson>0){state.currentLesson--;saveState();renderLesson()}else showToast("This is the first lesson.");}
+function completeCurrentLesson(){
+  const course=courses.find(c=>c.id===state.currentCourse);
+  const key=`${course.id}-${state.currentLesson}`;
+  if(!state.completed.includes(key)){
+    state.completed.push(key);
+    state.activity.unshift(`Completed: ${course.lessons[state.currentLesson].title}`);
+    state.activity=state.activity.slice(0,8);
+    saveState();
+    showToast("Lesson completed! Great work.");
+  }else showToast("This lesson is already completed.");
+  renderLesson();
+}
+function continueLearning(){navigate("lesson")}
+
+function showCourseInfo(id){
+  const c=courses.find(x=>x.id===id);
+  document.getElementById("modalContent").innerHTML=`<div style="font-size:64px">${c.icon}</div><span class="badge">${c.category}</span><h2>${c.title}</h2><p style="color:var(--muted);line-height:1.7">${c.description}</p><p><b>${c.lessons.length}</b> lessons · <b>${c.duration}</b> · <b>${c.level}</b></p><button class="btn btn-primary" onclick="closeModal();openCourse('${c.id}')">Start Learning</button>`;
+  document.getElementById("courseModal").classList.add("show");
+}
+function closeModal(){document.getElementById("courseModal").classList.remove("show")}
+
+function startQuiz(){
+  quizIndex=0;quizScore=0;answered=false;
+  document.getElementById("quizIntro").style.display="none";
+  document.getElementById("quizResult").style.display="none";
+  document.getElementById("quizGame").style.display="block";
+  renderQuestion();
+}
+function renderQuestion(){
+  answered=false;
+  const q=quizQuestions[quizIndex];
+  document.getElementById("quizCounter").textContent=`Question ${quizIndex+1} of ${quizQuestions.length}`;
+  document.getElementById("quizScoreLive").textContent=`Score: ${quizScore}`;
+  document.getElementById("quizProgress").style.width=`${(quizIndex+1)/quizQuestions.length*100}%`;
+  document.getElementById("quizQuestion").textContent=q.q;
+  document.getElementById("quizAnswers").innerHTML=q.a.map((a,i)=>`<button class="answer" onclick="chooseAnswer(${i},this)">${String.fromCharCode(65+i)}. ${a}</button>`).join("");
+  document.getElementById("nextQuestionBtn").style.display="none";
+}
+function chooseAnswer(i,el){
+  if(answered)return;
+  answered=true;
+  const q=quizQuestions[quizIndex];
+  const buttons=[...document.querySelectorAll(".answer")];
+  buttons[q.correct].classList.add("correct");
+  if(i===q.correct){quizScore++;showToast("Correct answer!")}else{el.classList.add("wrong");showToast("Not quite. Review the correct answer.");}
+  document.getElementById("quizScoreLive").textContent=`Score: ${quizScore}`;
+  document.getElementById("nextQuestionBtn").style.display="inline-block";
+}
+function nextQuestion(){
+  quizIndex++;
+  if(quizIndex<quizQuestions.length)renderQuestion();else finishQuiz();
+}
+function finishQuiz(){
+  const percent=Math.round(quizScore/quizQuestions.length*100);
+  state.quizAttempts++;
+  state.latestScore=percent;
+  state.bestScore=Math.max(state.bestScore,percent);
+  state.activity.unshift(`Scored ${percent}% in the general quiz`);
+  state.activity=state.activity.slice(0,8);
+  saveState();
+  document.getElementById("quizGame").style.display="none";
+  document.getElementById("quizResult").style.display="block";
+  document.getElementById("resultTitle").textContent=percent>=75?"Excellent Work!":percent>=50?"Good Effort!":"Keep Practising!";
+  document.getElementById("resultText").textContent=`You scored ${quizScore} out of ${quizQuestions.length}, which is ${percent}%.`;
+}
+
+function saveNote(){
+  const title=document.getElementById("noteTitle").value.trim();
+  const body=document.getElementById("noteBody").value.trim();
+  const subject=document.getElementById("noteSubject").value;
+  if(!title||!body)return showToast("Please enter a title and note.");
+  state.notes.unshift({id:Date.now(),title,body,subject,date:new Date().toLocaleDateString()});
+  document.getElementById("noteTitle").value="";
+  document.getElementById("noteBody").value="";
+  saveState();renderNotes();showToast("Note saved successfully.");
+}
+function deleteNote(id){
+  state.notes=state.notes.filter(n=>n.id!==id);
+  saveState();renderNotes();showToast("Note deleted.");
+}
+function renderNotes(){
+  document.getElementById("notesList").innerHTML=state.notes.length?state.notes.map(n=>`<article class="note-card"><button onclick="deleteNote(${n.id})">🗑</button><span class="badge">${n.subject}</span><h4>${escapeHtml(n.title)}</h4><p>${escapeHtml(n.body)}</p><small style="color:var(--muted)">${n.date}</small></article>`).join(""):`<div class="empty"><div class="emoji">📝</div><h3>No notes yet</h3><p>Create your first study note above.</p></div>`;
+}
+
+function renderProgress(){
+  const total=courses.reduce((s,c)=>s+c.lessons.length,0);
+  document.getElementById("pTotalLessons").textContent=total;
+  document.getElementById("pCompleted").textContent=state.completed.length;
+  document.getElementById("pAttempts").textContent=state.quizAttempts;
+  document.getElementById("pBestScore").textContent=state.bestScore+"%";
+  document.getElementById("progressBreakdown").innerHTML=courses.map(c=>{
+    const p=courseProgress(c);
+    return `<div style="margin:18px 0"><div style="display:flex;justify-content:space-between"><b>${c.icon} ${c.title}</b><span>${p}%</span></div><div class="progress" style="margin-top:9px"><div style="width:${p}%"></div></div></div>`;
+  }).join("");
+}
+
+function saveProfile(){
+  state.profile={
+    name:document.getElementById("profileName").value.trim()||"Student Name",
+    email:document.getElementById("profileEmail").value.trim(),
+    goal:document.getElementById("profileGoal").value,
+    target:document.getElementById("profileTarget").value,
+    bio:document.getElementById("profileBio").value.trim()
+  };
+  saveState();loadProfile();showToast("Profile saved.");
+}
+function loadProfile(){
+  document.getElementById("profileName").value=state.profile.name;
+  document.getElementById("profileEmail").value=state.profile.email;
+  document.getElementById("profileGoal").value=state.profile.goal;
+  document.getElementById("profileTarget").value=state.profile.target;
+  document.getElementById("profileBio").value=state.profile.bio;
+  document.getElementById("avatar").textContent=state.profile.name.split(" ").map(x=>x[0]).join("").slice(0,2).toUpperCase();
+}
+function renderCertificate(){
+  document.getElementById("certificateName").textContent=state.profile.name||"Student Name";
+  document.getElementById("certificateDate").textContent=`Issued on ${new Date().toLocaleDateString(undefined,{year:"numeric",month:"long",day:"numeric"})}`;
+}
+
+function updateDashboard(){
+  document.getElementById("completedCount").textContent=state.completed.length;
+  document.getElementById("scoreStat").textContent=state.latestScore+"%";
+  document.getElementById("streakStat").textContent=state.streak;
+  const weekly=Math.min(state.completed.length,5);
+  document.getElementById("weeklyProgress").style.width=`${weekly/5*100}%`;
+  document.getElementById("weeklyText").textContent=`${weekly} / 5 lessons`;
+  const activity=state.activity.length?state.activity:["No activity yet. Start your first course!"];
+  document.getElementById("activityList").innerHTML=activity.slice(0,5).map((a,i)=>`<div class="activity"><div class="activity-icon">${i===0?"⚡":"📌"}</div><div><h5>${escapeHtml(a)}</h5><p>Saved on this device</p></div></div>`).join("");
+  renderCourses();
+}
+
+function resetPlatform(){
+  if(confirm("Are you sure you want to erase all progress, notes, scores, and profile data?")){
+    localStorage.removeItem("alphaLearnState");
+    location.reload();
+  }
+}
+
+function toggleTheme(){
+  document.body.classList.toggle("dark");
+  state.theme=document.body.classList.contains("dark")?"dark":"light";
+  document.getElementById("themeBtn").textContent=state.theme==="dark"?"☀️":"🌙";
+  saveState();
+}
+document.getElementById("themeBtn").onclick=toggleTheme;
+
+function showToast(message){
+  const t=document.getElementById("toast");
+  t.textContent=message;t.classList.add("show");
+  clearTimeout(window.toastTimer);
+  window.toastTimer=setTimeout(()=>t.classList.remove("show"),2300);
+}
+
+function escapeHtml(text){
+  const div=document.createElement("div");div.textContent=text;return div.innerHTML;
+}
+
+if(state.theme==="dark"){
+  document.body.classList.add("dark");
+  document.getElementById("themeBtn").textContent="☀️";
+}
+
+renderCourses();
+renderLesson();
+renderNotes();
+renderProgress();
+loadProfile();
+renderCertificate();
+updateDashboard();
+</script>
+</body>
+</html>
