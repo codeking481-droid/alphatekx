@@ -92,6 +92,7 @@ async function api(method, path, body = null, user = null) {
 
 async function runTests() {
   const serviceSource = fs.readFileSync('server/composioConnectorService.mjs', 'utf8')
+  const connectorPageSource = fs.readFileSync('src/pages/Connectors.tsx', 'utf8')
   const migrationSource = fs.readFileSync('supabase/composio-connected-apps.sql', 'utf8')
   assert(serviceSource.includes('`alphatekx:${alphaUserId}`'), 'Composio external user ID is deterministic and namespaced')
   assert(!serviceSource.includes('dangerouslySkipVersionCheck'), 'Tool execution does not bypass SDK version safety')
@@ -100,6 +101,12 @@ async function runTests() {
   assert(migrationSource.includes('UNIQUE(user_id, idempotency_key)'), 'Database enforces per-user execution idempotency')
   assert(migrationSource.includes("connection_backend = 'native'"), 'Migration preserves existing native connections')
   assert(!migrationSource.toLowerCase().includes('access_token'), 'Composio migration stores no provider token')
+  for (const provider of ['whatsapp', 'facebook', 'instagram', 'twitter', 'youtube']) {
+    assert(serviceSource.includes(`id: '${provider}'`), `${provider} is registered in the server-side Composio catalog`)
+  }
+  assert(serviceSource.includes('composioClient.authConfigs.list'), 'Missing environment IDs are discovered from enabled Composio Auth Configs')
+  assert(connectorPageSource.includes("new Set(['whatsapp', 'facebook', 'instagram', 'x', 'youtube'])"), 'Connected Apps routes all five requested platforms through Composio')
+  assert(!connectorPageSource.includes("selected === 'facebook'"), 'Facebook no longer falls back to the old native connection branch')
   process.stdout.write('\n🧪 Composio Connector Tests\n')
   process.stdout.write('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n')
 
@@ -120,20 +127,20 @@ async function runTests() {
     assert(res.status === 401, '2. Unauthenticated GET /api/connected-apps returns 401')
   }
   {
-    const res = await api('POST', '/api/connect/notion')
-    assert(res.status === 401, '3. Unauthenticated POST /api/connect/notion returns 401')
+    const res = await api('POST', '/api/connect/instagram')
+    assert(res.status === 401, '3. Unauthenticated POST /api/connect/instagram returns 401')
   }
   {
-    const res = await api('POST', '/api/connectors/notion/connect')
+    const res = await api('POST', '/api/connectors/instagram/connect')
     assert(res.status === 401, 'Canonical connector connect route requires authentication')
   }
   {
-    const res = await api('DELETE', '/api/disconnect/notion')
-    assert(res.status === 401, '4. Unauthenticated DELETE /api/disconnect/notion returns 401')
+    const res = await api('DELETE', '/api/disconnect/instagram')
+    assert(res.status === 401, '4. Unauthenticated DELETE /api/disconnect/instagram returns 401')
   }
   {
-    const res = await api('POST', '/api/execute/notion/create_page')
-    assert(res.status === 401, '5. Unauthenticated POST /api/execute/notion/create_page returns 401')
+    const res = await api('POST', '/api/execute/instagram/create_media_post')
+    assert(res.status === 401, '5. Unauthenticated POST /api/execute/instagram/create_media_post returns 401')
   }
 
   // 3. User isolation — user A cannot see user B's connections
@@ -161,27 +168,27 @@ async function runTests() {
 
   // 5. OAuth redirect URL is returned safely
   {
-    const res = await api('POST', '/api/connect/notion', {}, { id: 'user4', email: 'user4@test.com' })
+    const res = await api('POST', '/api/connect/instagram', {}, { id: 'user4', email: 'user4@test.com' })
     // If composio is configured, authUrl should be a URL. If not, should get a clean error.
     if (res.ok && res.data?.authUrl) {
       assert(
         res.data.authUrl.startsWith('http'),
-        '11. /api/connect/notion returns authUrl starting with http'
+        '11. /api/connect/instagram returns authUrl starting with http'
       )
     } else {
       assert(
         res.data?.error?.includes('COMPOSIO_API_KEY') || res.status !== 500,
-        '11. /api/connect/notion returns structured error (not 500) when composio not configured'
+        '11. /api/connect/instagram returns structured error (not 500) when composio not configured'
       )
     }
   }
 
   // 6. Connection status endpoint works
   {
-    const res = await api('GET', '/api/connect/notion/status', null, { id: 'user5', email: 'user5@test.com' })
+    const res = await api('GET', '/api/connect/instagram/status', null, { id: 'user5', email: 'user5@test.com' })
     assert(
       res.status !== 500,
-      '12. GET /api/connect/notion/status does not crash with 500'
+      '12. GET /api/connect/instagram/status does not crash with 500'
     )
     if (res.ok) {
       assert(
@@ -193,17 +200,17 @@ async function runTests() {
 
   // 7. Execution requires active connection
   {
-    const res = await api('POST', '/api/execute/notion/create_page', { params: { title: 'Test' } }, { id: 'user6', email: 'user6@test.com' })
+    const res = await api('POST', '/api/execute/instagram/create_media_post', { params: { caption: 'Test' } }, { id: 'user6', email: 'user6@test.com' })
     // Should either succeed (if connected) or fail with "not connected" error
     assert(
       res.status !== 500,
-      '14. POST /api/execute/notion/create_page does not crash with 500'
+      '14. POST /api/execute/instagram/create_media_post does not crash with 500'
     )
   }
 
   // 8. Unsupported actions are rejected
   {
-    const res = await api('POST', '/api/execute/notion/nonexistent_action', { params: {} }, { id: 'user7', email: 'user7@test.com' })
+    const res = await api('POST', '/api/execute/instagram/nonexistent_action', { params: {} }, { id: 'user7', email: 'user7@test.com' })
     assert(
       res.status === 502 || (res.data?.error && (res.data.error.toLowerCase().includes('not supported') || res.data.error.toLowerCase().includes('unknown'))),
       '15. Unsupported action "nonexistent_action" is rejected with clear error'
@@ -212,7 +219,7 @@ async function runTests() {
 
   // 9. Failed execution never reports success
   {
-    const res = await api('POST', '/api/execute/notion/create_page', { params: { title: '' } }, { id: 'user8', email: 'user8@test.com' })
+    const res = await api('POST', '/api/execute/instagram/create_media_post', { params: { caption: '' } }, { id: 'user8', email: 'user8@test.com' })
     // If composio not configured, should get error. If configured but no connection, should get error.
     // In either case, should NOT report success: true
     if (res.ok && res.data) {
@@ -225,19 +232,19 @@ async function runTests() {
 
   // 10. Disconnect is user-scoped
   {
-    const res = await api('DELETE', '/api/disconnect/notion', null, { id: 'user10', email: 'user10@test.com' })
+    const res = await api('DELETE', '/api/disconnect/instagram', null, { id: 'user10', email: 'user10@test.com' })
     assert(
       res.status !== 500,
-      '17. DELETE /api/disconnect/notion does not crash with 500'
+      '17. DELETE /api/disconnect/instagram does not crash with 500'
     )
   }
 
   // 11. Execution history is user-scoped
   {
-    const res = await api('GET', '/api/connected-apps/executions/notion', null, { id: 'user11', email: 'user11@test.com' })
+    const res = await api('GET', '/api/connected-apps/executions/instagram', null, { id: 'user11', email: 'user11@test.com' })
     assert(
       res.status !== 500,
-      '18. GET /api/connected-apps/executions/notion does not crash with 500'
+      '18. GET /api/connected-apps/executions/instagram does not crash with 500'
     )
     if (res.ok) {
       assert(
@@ -268,10 +275,10 @@ async function runTests() {
 
   // 14. Reconnection endpoint works
   {
-    const res = await api('POST', '/api/reconnect/notion', {}, { id: 'user14', email: 'user14@test.com' })
+    const res = await api('POST', '/api/reconnect/instagram', {}, { id: 'user14', email: 'user14@test.com' })
     assert(
       res.status !== 500,
-      '22. POST /api/reconnect/notion does not crash with 500'
+      '22. POST /api/reconnect/instagram does not crash with 500'
     )
   }
 

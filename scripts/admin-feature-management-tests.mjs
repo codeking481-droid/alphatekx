@@ -23,7 +23,7 @@ await test('verified admin account regains admin authority', () => {
 })
 
 await test('released native tools remain public', () => {
-  for (const platform of ['linkedin', 'google', 'gmail', 'google_drive', 'youtube', 'telegram', 'discord']) {
+  for (const platform of ['linkedin', 'google', 'gmail', 'google_drive', 'telegram', 'discord']) {
     const access = connectorFeatureAccess(publicUser, platform)
     assert.equal(access.enabled, true, `${platform} should be enabled`)
     assert.equal(access.availability, 'available', `${platform} should be available`)
@@ -31,7 +31,7 @@ await test('released native tools remain public', () => {
 })
 
 await test('Composio and Meta beta tools are limited to trusted testers', () => {
-  for (const platform of ['notion', 'slack', 'airtable', 'shopify', 'facebook', 'instagram', 'whatsapp', 'x']) {
+  for (const platform of ['facebook', 'instagram', 'whatsapp', 'x', 'youtube']) {
     assert.equal(connectorFeatureAccess(publicUser, platform).enabled, false, `${platform} should not be public`)
     assert.equal(connectorFeatureAccess(admin, platform).enabled, true, `${platform} should be available to admin beta testing`)
   }

@@ -6,13 +6,13 @@ import { getConnector } from '../lib/agents/connectorRegistry'
 import type { Connector } from '../lib/agents/types'
 import { useAuth } from '../lib/auth'
 import { connectProvider, disconnectProvider, getConnectedApps, reconnectProvider, type ConnectedAppStatus } from '../lib/connectors/connectorApi'
-import { deleteIntegration, disconnectGoogle, getFacebookPages, getIntegrationStatus, saveConnector, selectFacebookPage, startFacebookAuth, startGmailConnection, startLinkedInAuth, testConnector, type IntegrationStatus } from '../lib/integrations'
+import { deleteIntegration, disconnectGoogle, getIntegrationStatus, saveConnector, startGmailConnection, startLinkedInAuth, testConnector, type IntegrationStatus } from '../lib/integrations'
 
 const apiKeyAvailable = new Set(['discord'])
 const manualConnectionAvailable = new Set(['telegram', 'discord'])
-const composioOAuthProviders = new Set(['notion', 'slack', 'airtable', 'shopify'])
-const nativeOAuthProviders = new Set(['linkedin', 'facebook', 'google'])
-const serverManagedProviders = new Set(['whatsapp'])
+const composioOAuthProviders = new Set(['whatsapp', 'facebook', 'instagram', 'x', 'youtube'])
+const nativeOAuthProviders = new Set(['linkedin', 'google'])
+const serverManagedProviders = new Set<string>()
 const publicConnectorIds = new Set(['linkedin', 'facebook', 'instagram', 'whatsapp', 'x', 'google', 'gmail', 'google_sheets', 'google_calendar', 'google_drive', 'notion', 'youtube', 'telegram', 'slack', 'airtable', 'shopify', 'discord'])
 const BUILD_ID = String(import.meta.env.VITE_BUILD_ID || 'dev')
 const releasedPlatforms = [
@@ -21,12 +21,8 @@ const releasedPlatforms = [
   { id: 'whatsapp', name: 'WhatsApp', description: 'WhatsApp messaging.' },
   { id: 'x', name: 'X', description: 'X posts and threads.' },
   { id: 'google', name: 'Google', description: 'Gmail, Calendar, Sheets and Drive.' },
-  { id: 'notion', name: 'Notion', description: 'Create pages and notes.' },
-  { id: 'airtable', name: 'Airtable', description: 'Work with Airtable records.' },
-  { id: 'shopify', name: 'Shopify', description: 'Work with Shopify commerce data.' },
   { id: 'youtube', name: 'YouTube', description: 'YouTube workflow foundation.' },
   { id: 'telegram', name: 'Telegram', description: 'Send Telegram messages.' },
-  { id: 'slack', name: 'Slack', description: 'Send Slack messages.' },
   { id: 'discord', name: 'Discord', description: 'Send Discord messages.' },
 ]
 
@@ -70,8 +66,6 @@ export default function Connectors() {
   const [identifier, setIdentifier] = useState('')
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
-  const [facebookPages, setFacebookPages] = useState<{ id: string; name: string }[]>([])
-  const [facebookPageId, setFacebookPageId] = useState('')
   const returnTo = searchParams.get('returnTo') || ''
 
   const load = async () => {
@@ -116,16 +110,9 @@ export default function Connectors() {
     const connected = searchParams.get('connected')
     if (connected === 'linkedin') setNotice('LinkedIn connected successfully and is ready to publish.')
     else if (connected === 'facebook') setNotice('Facebook connected successfully and is ready to publish to the selected Page.')
-    else if (connected === 'facebook_select') {
-      setSelected('facebook')
-      setNotice('Choose the Facebook Page AlphaTekx should manage.')
-      void getFacebookPages(session?.access_token).then(data => {
-        setFacebookPages(data.pages)
-        if (data.pages.length === 1) setFacebookPageId(data.pages[0].id)
-      }).catch(error => setNotice(error instanceof Error ? error.message : 'Could not load Facebook Pages.'))
-    } else if (connected === 'google' || connected === 'gmail') setNotice('Google connected successfully.')
+    else if (connected === 'google' || connected === 'gmail') setNotice('Google connected successfully.')
     else if (connected === 'error') setNotice(searchParams.get('reason') || searchParams.get('error') || 'Connection was not completed.')
-    if (connected && returnTo && connected !== 'error' && connected !== 'facebook_select') {
+    if (connected && returnTo && connected !== 'error') {
       window.setTimeout(() => window.location.assign(returnTo), 700)
       return
     }
@@ -155,7 +142,6 @@ export default function Connectors() {
     }
     if (selected && status._access && !feature(selected === 'google' ? 'gmail' : selected).enabled) {
       setSelected(null)
-      setFacebookPages([])
       setNotice('Coming soon. We are testing this integration before releasing it publicly.')
     }
   }, [requestedPlatform, selected, status._access])
@@ -219,18 +205,6 @@ export default function Connectors() {
     try {
       const redirect = returnTo ? `/connected-apps?returnTo=${encodeURIComponent(returnTo)}` : '/connected-apps'
       if (selected === 'linkedin') return await startLinkedInAuth(session?.access_token, redirect)
-      if (selected === 'facebook') {
-        if (facebookPages.length) {
-          if (!facebookPageId) throw new Error('Select the Facebook Page AlphaTekx should manage.')
-          const result = await selectFacebookPage(facebookPageId, session?.access_token)
-          setFacebookPages([])
-          setFacebookPageId('')
-          await load()
-          setNotice(`${result.page.name} connected successfully.`)
-          return
-        }
-        return await startFacebookAuth(session?.access_token, redirect)
-      }
       if (selected === 'google') return await startGmailConnection(session?.access_token, redirect)
       if (serverManagedProviders.has(selected)) throw new Error('WhatsApp uses the protected server credentials. Add every WHATSAPP_* variable on Render and redeploy; no user bot token is required.')
       if (composioOAuthProviders.has(selected)) {
@@ -291,7 +265,6 @@ export default function Connectors() {
     {selected && <section className="mt-5 rounded-xl border border-violet-400/20 bg-violet-500/[.055] p-5">
       <div className="flex items-start justify-between gap-3"><div className="flex items-center gap-3">{selectedConnector && <span className="grid size-11 place-items-center rounded-lg bg-white/[.07]"><ConnectorIcon connector={selectedConnector}/></span>}<div><h2 className="font-semibold">{selected === 'google' ? 'Google' : selectedConnector?.name}</h2><p className="mt-1 text-xs text-white/50">{selectedConnected ? 'Connected and verified by backend status.' : 'Complete this connection to continue.'}</p></div></div><button onClick={() => setSelected(null)} aria-label="Close connection details"><X size={18}/></button></div>
       {!selectedConnected && manualConnectionAvailable.has(selected) && config && <div className="mt-5 grid gap-3">{config.key && <label className="text-xs text-white/55">{config.key}<input type="password" value={key} onChange={event => setKey(event.target.value)} placeholder={config.keyPlaceholder} className="field mt-1"/></label>}{selected === 'telegram' && <p className="text-sm text-white/60">Send a message to the AlphaTekx Telegram bot first, then enter that chat ID. AlphaTekx protects the bot token.</p>}{config.identifier && <label className="text-xs text-white/55">{config.identifier}<input value={identifier} onChange={event => setIdentifier(event.target.value)} placeholder={selected === 'telegram' ? 'For example: 123456789' : undefined} className="field mt-1"/></label>}</div>}
-      {!selectedConnected && selected === 'facebook' && facebookPages.length > 0 && <fieldset className="mt-5 grid gap-2"><legend className="mb-2 text-xs text-white/55">Select one Facebook Page</legend>{facebookPages.map(page => <label key={page.id} className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 ${facebookPageId === page.id ? 'border-violet-400 bg-violet-500/10' : 'border-white/10'}`}><input type="radio" name="facebook-page" value={page.id} checked={facebookPageId === page.id} onChange={() => setFacebookPageId(page.id)}/><span className="text-sm">{page.name}</span></label>)}</fieldset>}
       <div className="mt-5 flex flex-wrap gap-2">{selectedConnected ? <><button onClick={() => void verify(selected)} disabled={busy} className="action">{busy ? <LoaderCircle className="animate-spin" size={16}/> : <CheckCircle2 size={16}/>}Verify</button><button onClick={() => void connect()} disabled={busy} className="action"><RefreshCw size={16}/>Reconnect</button><button onClick={() => void disconnect(selected)} disabled={busy} className="action text-rose-300"><Unplug size={16}/>Disconnect</button></> : <button onClick={() => void connect()} disabled={busy || (apiKeyAvailable.has(selected) && !key.trim()) || (selected === 'telegram' && !identifier.trim())} className="flex min-h-11 items-center gap-2 rounded-xl btn-alpha px-5 text-sm disabled:opacity-40">{busy ? <LoaderCircle className="animate-spin" size={16}/> : <Plug size={16}/>}Connect {selected === 'google' ? 'Google' : selectedConnector?.name}</button>}</div>
     </section>}
 

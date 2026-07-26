@@ -5875,13 +5875,21 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, await alphaConnector.getConnectedApps(user))
     } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Failed to list connected apps' }) }
   }
-  if (req.url?.startsWith('/api/connectors/') && !req.url.startsWith('/api/connectors/facebook')) {
+  if (req.url?.startsWith('/api/connectors/')) {
     const url = new URL(req.url, 'http://localhost')
     const match = url.pathname.match(/^\/api\/connectors\/([^/]+)\/(connect|status|callback|test)\/?$/)
     const deleteMatch = url.pathname.match(/^\/api\/connectors\/([^/]+)\/?$/)
     if (match || (deleteMatch && req.method === 'DELETE')) {
       const toolkit = (match || deleteMatch)[1]
       try {
+        const operation = match?.[2]
+        if (operation === 'callback' && req.method === 'GET') {
+          const redirectUrl = new URL('/connected-apps', publicAppUrl())
+          redirectUrl.searchParams.set('provider', toolkit)
+          redirectUrl.searchParams.set('connected', 'checking')
+          res.writeHead(302, { Location: redirectUrl.toString(), 'Cache-Control': 'no-store' })
+          return res.end()
+        }
         const config = supabaseConfig()
         const user = await currentOrLocalUser(req, config.url, config.anon)
         if (!user) return json(res, 401, { error: 'Authentication required' })
@@ -5889,24 +5897,17 @@ const server = http.createServer(async (req, res) => {
         if (deleteMatch && req.method === 'DELETE') {
           return json(res, 200, await alphaConnector.disconnectProvider(user, toolkit))
         }
-        const operation = match[2]
         if (operation === 'connect' && req.method === 'POST') {
-          const callbackUrl = `${getRequestOrigin(req)}/api/connectors/${encodeURIComponent(toolkit)}/callback`
-          return json(res, 200, await alphaConnector.startConnection(user, toolkit, callbackUrl))
+          const callbackUrl = new URL('/connected-apps', publicAppUrl())
+          callbackUrl.searchParams.set('provider', toolkit)
+          callbackUrl.searchParams.set('connected', 'checking')
+          return json(res, 200, await alphaConnector.startConnection(user, toolkit, callbackUrl.toString()))
         }
         if (operation === 'status' && req.method === 'GET') {
           return json(res, 200, await alphaConnector.getConnectionStatus(user, toolkit))
         }
         if (operation === 'test' && req.method === 'POST') {
           return json(res, 200, await alphaConnector.testConnection(user, toolkit))
-        }
-        if (operation === 'callback' && req.method === 'GET') {
-          const status = await alphaConnector.getConnectionStatus(user, toolkit)
-          const redirectUrl = new URL('/connected-apps', publicAppUrl())
-          redirectUrl.searchParams.set('provider', toolkit)
-          redirectUrl.searchParams.set('connected', status.connected ? 'success' : 'error')
-          res.writeHead(302, { Location: redirectUrl.toString(), 'Cache-Control': 'no-store' })
-          return res.end()
         }
         return json(res, 405, { error: 'Method not allowed' })
       } catch (error) {
