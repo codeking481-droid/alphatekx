@@ -98,6 +98,8 @@ await test('Connected Apps is server-driven and labels internal access', () => {
   assert.match(source, /status\._access\?\.connectors/)
   assert.match(source, /Coming soon\. We are testing this integration before releasing it publicly\./)
   assert.match(source, /Internal Beta/)
+  assert.match(source, /Needs server config/)
+  assert.match(source, /getConnectedApps/)
   assert.doesNotMatch(source, /localStorage.*admin/i)
 })
 

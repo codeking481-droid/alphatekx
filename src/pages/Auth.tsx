@@ -28,9 +28,15 @@ export default function Auth() {
   const emailSignIn = async () => {
     if (!supabase || !email.trim() || !password) return
     setPending(true); setNotice('')
-    const result = await supabase.auth.signInWithPassword({ email: email.trim(), password })
-    if (result.error) { setNotice(result.error.message); setPending(false) }
-    else navigate(destination)
+    try {
+      const result = await supabase.auth.signInWithPassword({ email: email.trim(), password })
+      if (result.error) setNotice(result.error.message)
+      else navigate(destination)
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Sign in failed. Please try again.')
+    } finally {
+      setPending(false)
+    }
   }
 
   const submitLocal = async () => {

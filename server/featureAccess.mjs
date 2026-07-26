@@ -19,6 +19,8 @@ const DEFAULT_FEATURES = [
   ['google_sheets', 'Google Sheets', 'beta', 'connector'],
   ['google_calendar', 'Google Calendar', 'beta', 'connector'],
   ['google_drive', 'Google Drive', 'beta', 'connector'],
+  ['notion', 'Notion', 'beta', 'connector'],
+  ['youtube', 'YouTube', 'beta', 'connector'],
   ['telegram', 'Telegram', 'beta', 'connector'],
   ['slack', 'Slack', 'beta', 'connector'],
   ['discord', 'Discord', 'beta', 'connector'],
@@ -28,6 +30,7 @@ const DEFAULT_FEATURES = [
 ].map(([id, name, state, category]) => ({ id, name, state, category, stop_existing: true, updated_at: new Date(0).toISOString(), updated_by: 'system' }))
 
 const PLATFORM_ALIASES = Object.freeze({ twitter: 'x', sheets: 'google_sheets', calendar: 'google_calendar', drive: 'google_drive' })
+const DEFAULT_FEATURE_MAP = new Map(DEFAULT_FEATURES.map(feature => [feature.id, feature]))
 let featureCache = new Map(DEFAULT_FEATURES.map(feature => [feature.id, feature]))
 let betaUsers = new Set()
 let auditCache = []
@@ -97,7 +100,7 @@ export function isAdminTestUser(user, trustedIdentity = true) {
 
 export function connectorFeatureAccess(user, connector, trustedIdentity = true) {
   const id = normalizeFeatureId(connector)
-  const feature = featureCache.get(id) || { id, name: id, state: 'disabled', stop_existing: true }
+  const feature = featureCache.get(id) || DEFAULT_FEATURE_MAP.get(id) || { id, name: id, state: 'disabled', stop_existing: true }
   const email = String(user?.email || '').trim().toLowerCase()
   const admin = isAdminTestUser(user, trustedIdentity)
   const beta = trustedIdentity && betaUsers.has(email)
@@ -118,7 +121,7 @@ export function connectorFeatureAccess(user, connector, trustedIdentity = true) 
 
 export function unavailableConnectorMessage(connector) {
   const id = normalizeFeatureId(connector)
-  const feature = featureCache.get(id) || { name: id, state: 'disabled' }
+  const feature = featureCache.get(id) || DEFAULT_FEATURE_MAP.get(id) || { name: id, state: 'disabled' }
   if (feature.state === 'maintenance') return `${feature.name} is temporarily under maintenance.`
   return `${feature.name} integration is coming soon. LinkedIn is available now.`
 }
