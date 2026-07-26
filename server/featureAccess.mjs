@@ -104,7 +104,8 @@ export function connectorFeatureAccess(user, connector, trustedIdentity = true) 
   const email = String(user?.email || '').trim().toLowerCase()
   const admin = isAdminTestUser(user, trustedIdentity)
   const beta = trustedIdentity && betaUsers.has(email)
-  const enabled = feature.state === 'public' || (feature.state === 'beta' && (admin || beta))
+  const signedIn = Boolean(user?.id || email)
+  const enabled = feature.state === 'public' || (feature.state === 'beta' && signedIn)
   return {
     id,
     name: feature.name || id,
@@ -115,7 +116,7 @@ export function connectorFeatureAccess(user, connector, trustedIdentity = true) 
     admin,
     beta,
     enabled,
-    availability: feature.state === 'public' ? 'available' : feature.state === 'maintenance' ? 'maintenance' : feature.state === 'beta' && (admin || beta) ? 'testing' : 'coming_soon',
+    availability: feature.state === 'public' ? 'available' : feature.state === 'maintenance' ? 'maintenance' : feature.state === 'beta' && signedIn ? 'testing' : 'coming_soon',
   }
 }
 
