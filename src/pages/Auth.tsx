@@ -4,6 +4,23 @@ import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { supabase } from '../lib/supabase'
 
+function authRedirectUrl() {
+  const configured = String(import.meta.env.VITE_PUBLIC_APP_URL || '').trim().replace(/\/+$/, '')
+  const origin = configured || window.location.origin
+  try {
+    const url = new URL(origin)
+    if (url.protocol !== 'https:' && url.hostname !== 'localhost' && url.hostname !== '127.0.0.1') {
+      url.protocol = 'https:'
+    }
+    url.pathname = '/auth'
+    url.search = ''
+    url.hash = ''
+    return url.toString()
+  } catch {
+    return 'https://alphatekx.name.ng/auth'
+  }
+}
+
 export default function Auth() {
   const { user, configured, localSignIn } = useAuth()
   const [dev, setDev] = useState(false)
@@ -21,8 +38,15 @@ export default function Auth() {
   const google = async () => {
     if (!supabase) return
     setPending(true); setNotice('')
-    const { error } = await supabase.auth.signInWithOAuth({ provider:'google', options:{ redirectTo:`${window.location.origin}/auth` } })
-    if (error) { setNotice(error.message); setPending(false) }
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({ provider:'google', options:{ redirectTo: authRedirectUrl() } })
+      if (error) setNotice(error.message.includes('site url') ? 'Google sign-in is blocked by the Supabase Auth site URL setting. Use email sign-in now, then update Supabase Site URL to https://alphatekx.name.ng.' : error.message)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Google sign-in failed.'
+      setNotice(message.includes('site url') ? 'Google sign-in is blocked by the Supabase Auth site URL setting. Use email sign-in now, then update Supabase Site URL to https://alphatekx.name.ng.' : message)
+    } finally {
+      setPending(false)
+    }
   }
 
   const emailSignIn = async () => {

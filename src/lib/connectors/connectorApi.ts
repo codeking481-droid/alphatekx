@@ -10,6 +10,8 @@ export type ConnectedAppStatus = {
   connected: boolean
   connectionId?: string
   status: string
+  enabled?: boolean
+  error?: string | null
   connectedAt?: string
   lastSyncedAt?: string
   metadata?: Record<string, unknown>
