@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { isAdminUser } from '../lib/adminAccess'
 import { ArrowUp, Bot, Check, CheckCircle2, ChevronDown, Code2, Copy, Download, ExternalLink, Eye, FileCode, FileText, Folder, Globe, LayoutGrid, Library, LoaderCircle, Maximize, MessageCircle, Monitor, Plus, RefreshCw, Redo2, Rocket, RotateCcw, ShoppingBag, Smartphone, Square, Tablet, Terminal, Undo2, UploadCloud, Wallet } from 'lucide-react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { buildFromMission, buildFromPlan, planMission, refineFromMission } from '../lib/alphaBuilder'
@@ -75,7 +76,7 @@ export default function Builder() {
   const previewIframeRef = useRef<HTMLIFrameElement | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
   const { user } = useAuth()
-  const isAdmin = user?.email?.toLowerCase() === 'iamdan4live@gmail.com'
+  const isAdmin = isAdminUser(user)
   const [aiInput, setAiInput] = useState('')
   const [aiDraft, setAiDraft] = useState<Agent | null>(null)
   const [aiBusy, setAiBusy] = useState(false)
@@ -844,5 +845,6 @@ function PlanPanel({ mission, building, onBuild }: { mission: Mission; building:
     </div>
   )
 }
+
 
 

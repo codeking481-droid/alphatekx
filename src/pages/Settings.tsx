@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { isAdminUser } from '../lib/adminAccess'
 import { Check, CreditCard, Globe, LoaderCircle, LogOut, Moon, Palette, Receipt, Shield, Sparkles, Trash2, User, Wallet, WalletCards, Zap } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
@@ -10,7 +11,7 @@ export default function Settings() {
   const { user, session, signOut, refreshProfile } = useAuth()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const isAdmin = user?.email?.toLowerCase() === 'iamdan4live@gmail.com'
+  const isAdmin = isAdminUser(user)
   const [credits, setCredits] = useState(getCredits())
   const [billing, setBilling] = useState<BillingSummary | null>(null)
   const [loadingBilling, setLoadingBilling] = useState(false)
@@ -288,3 +289,4 @@ function Stat({ label, value, sub }: { label: string; value: React.ReactNode; su
     <p className="mt-1 text-lg font-semibold">{value}</p>
   </div>
 }
+

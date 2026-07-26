@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import { isAdminUser } from '../lib/adminAccess'
 import { Check, CreditCard, LoaderCircle, LogOut, ShieldCheck, Trash2, WalletCards, Zap } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
@@ -9,7 +10,7 @@ import { getCurrentPlan, initiatePaystackPack, PACKS, type PaymentPack } from '.
 export default function Account() {
   const { user, profile, signOut } = useAuth()
   const navigate = useNavigate()
-  const isAdmin = user?.email?.toLowerCase() === 'iamdan4live@gmail.com'
+  const isAdmin = isAdminUser(user)
   const [credits, setCredits] = useState(getCredits())
   const [plan, setPlan] = useState(getCurrentPlan())
   const [selectedPack, setSelectedPack] = useState<PaymentPack | null>(null)
@@ -102,3 +103,4 @@ function Stat({ label, value, icon }: { label: string; value: string; icon: Reac
     <dd className="mt-2 text-2xl font-semibold capitalize">{value}</dd>
   </div>
 }
+

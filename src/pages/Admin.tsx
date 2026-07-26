@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { isAdminUser } from '../lib/adminAccess'
 import { Activity, Calendar, LoaderCircle, RefreshCw, ShieldCheck, UserPlus, Users } from 'lucide-react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
@@ -11,7 +12,7 @@ export default function Admin() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
-  const isAdmin = user?.email?.toLowerCase() === 'iamdan4live@gmail.com'
+  const isAdmin = isAdminUser(user)
   const load = useCallback(async () => {
     if (!isAdmin) return
     setLoading(true); setError('')
@@ -32,3 +33,4 @@ export default function Admin() {
 }
 
 function Stat({ icon: Icon, label, value }: { icon: typeof Users; label: string; value: number }) { return <article className="rounded-xl border border-white/[.12] liquid-glass p-5"><Icon size={18} /><p className="mt-5 text-3xl font-semibold">{value}</p><p className="mt-1 text-sm text-white/55">{label}</p></article> }
+

@@ -78,10 +78,13 @@ await test('connected-app rendering requires backend connected and ready state',
 
 await test('admin auth profile refresh is bounded and recoverable', () => {
   const auth = fs.readFileSync(new URL('../src/lib/auth.tsx', import.meta.url), 'utf8')
+  const adminAccess = fs.readFileSync(new URL('../src/lib/adminAccess.ts', import.meta.url), 'utf8')
   assert.match(auth, /PROFILE_TIMEOUT_MS/)
   assert.match(auth, /withTimeout/)
   assert.match(auth, /profile refresh failed/)
-  assert.match(auth, /iamdan4live@gmail.com/)
+  assert.match(auth, /isAdminUser/)
+  assert.match(adminAccess, /iamdan4live@gmail.com/)
+  assert.match(adminAccess, /identity_data/)
 })
 
 await test('auth page supports signup and canonical redirects', () => {

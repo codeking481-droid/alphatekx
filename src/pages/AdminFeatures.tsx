@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { isAdminUser } from '../lib/adminAccess'
 import { LoaderCircle, Save, ShieldCheck, UserPlus, X } from 'lucide-react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
@@ -12,7 +13,7 @@ const states: FeatureState[] = ['disabled', 'beta', 'public', 'maintenance']
 
 export default function AdminFeatures() {
   const { user, session } = useAuth()
-  const isAdmin = user?.email?.toLowerCase() === 'iamdan4live@gmail.com'
+  const isAdmin = isAdminUser(user)
   const [data, setData] = useState<Snapshot>({ features: [], betaUsers: [], audit: [] })
   const [busy, setBusy] = useState('')
   const [notice, setNotice] = useState('')
@@ -65,3 +66,4 @@ export default function AdminFeatures() {
     <section className="mt-10"><h2 className="font-semibold">Audit log</h2><div className="mt-4 space-y-2">{data.audit.map(item => <div key={item.id} className="rounded-xl border border-white/10 p-3 text-sm"><span className="font-medium">{item.feature_id}</span> <span className="text-white/55">{item.old_state} → {item.new_state}</span><span className="mt-1 block text-xs text-white/40">{new Date(item.changed_at).toLocaleString()} · {item.changed_by}</span></div>)}</div></section>
   </main>
 }
+
