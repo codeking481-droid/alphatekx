@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { isAdminUser } from '../lib/adminAccess'
 import { CheckCircle2, LoaderCircle, Pause, Play, RefreshCw, ShieldCheck, X } from 'lucide-react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
@@ -8,7 +9,7 @@ type AgentLog = { id: string; agentId: string; connectorType: string; content?: 
 
 export default function AdminAgents() {
   const { session, user } = useAuth()
-  const isAdmin = user?.email?.toLowerCase() === 'iamdan4live@gmail.com'
+  const isAdmin = isAdminUser(user)
   const [agents, setAgents] = useState<Agent[]>([])
   const [logs, setLogs] = useState<AgentLog[]>([])
   const [health, setHealth] = useState<{ activeAgents?: number; lastRun?: string; nextRun?: string; dueAgents?: number } | null>(null)
@@ -67,3 +68,4 @@ export default function AdminAgents() {
     </>}
   </div>
 }
+

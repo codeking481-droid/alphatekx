@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { isAdminUser } from '../lib/adminAccess'
 import { ArrowRight, CheckCircle2, LoaderCircle, Send, Sparkles, X } from 'lucide-react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import CampaignPreview from '../components/agents/CampaignPreview'
@@ -56,7 +57,7 @@ export default function Agents() {
   const [creating, setCreating] = useState(false)
   const [notice, setNotice] = useState('')
   const composer = useRef<HTMLTextAreaElement>(null)
-  const isAdmin = user?.email?.toLowerCase() === 'iamdan4live@gmail.com'
+  const isAdmin = isAdminUser(user)
 
   const authHeaders = (): Record<string, string> => {
     const headers: Record<string, string> = {}
@@ -238,3 +239,4 @@ export default function Agents() {
     {pendingAgent && pendingAgent.type !== 'campaign' && <WorkflowPlan agent={pendingAgent} integrationStatus={integrationStatus} credits={getCredits()} isAdmin={isAdmin} onClose={() => setPendingAgent(null)} onApprove={approveGeneral}/>}
   </main>
 }
+

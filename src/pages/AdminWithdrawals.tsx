@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { isAdminUser } from '../lib/adminAccess'
 import { CheckCircle, LoaderCircle, RefreshCw, ShieldCheck } from 'lucide-react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
@@ -7,7 +8,7 @@ import type { Withdrawal } from '../lib/types'
 
 export default function AdminWithdrawals() {
   const { user } = useAuth()
-  const isAdmin = user?.email?.toLowerCase() === 'iamdan4live@gmail.com'
+  const isAdmin = isAdminUser(user)
   const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -83,3 +84,4 @@ export default function AdminWithdrawals() {
     </div>
   )
 }
+

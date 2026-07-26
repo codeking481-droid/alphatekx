@@ -1,4 +1,5 @@
 import { useEffect, useState, type PropsWithChildren } from 'react'
+import { isAdminUser } from '../../lib/adminAccess'
 import { Bot, HelpCircle, History, ListChecks, LogOut, Menu, Plug, Settings, ShieldCheck, Sparkles, X } from 'lucide-react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { getCredits, hydrateCredits, subscribeCredits } from '../../lib/creditStore'
@@ -48,7 +49,7 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
   const [plan, setPlan] = useState('free')
   const [running, setRunning] = useState(runningAgentsCount())
   const { session, user, profile, signOut } = useAuth()
-  const isAdmin = user?.email?.toLowerCase() === 'iamdan4live@gmail.com'
+  const isAdmin = isAdminUser(user)
   const navigate = useNavigate()
   const location = useLocation()
   const { show, dismiss } = useShowOnboarding()
@@ -131,3 +132,4 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
     </nav>
   </div>
 }
+

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { isAdminUser } from '../lib/adminAccess'
 import { useSearchParams } from 'react-router-dom'
 import { Link } from 'react-router-dom'
 import { Search, Star, ShoppingBag, LayoutGrid, TrendingUp, Sparkles, LoaderCircle, Trash2 } from 'lucide-react'
@@ -72,7 +73,7 @@ export default function Marketplace() {
   const isProductOwner = (product: MarketplaceProduct) => {
     if (!user) return false
     const userEmail = String((user as { email?: string }).email || '').toLowerCase()
-    const isAdmin = userEmail === 'iamdan4live@gmail.com'
+    const isAdmin = isAdminUser(user)
     return isAdmin || product.userId === (user as { id: string }).id || (userEmail && product.sellerEmail?.toLowerCase() === userEmail)
   }
 
@@ -188,3 +189,4 @@ export default function Marketplace() {
     </div>
   )
 }
+

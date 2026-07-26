@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { isAdminUser } from '../lib/adminAccess'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { ArrowLeft, ShoppingBag, Share2, Star, CheckCircle, ExternalLink, LoaderCircle, Trash2 } from 'lucide-react'
 import { fetchProduct, deleteProduct, startMarketplaceCheckout, type MarketplaceProduct } from '../lib/marketplace'
@@ -45,7 +46,7 @@ export default function MarketplaceDetail() {
   const isOwner = () => {
     if (!product || !user) return false
     const userEmail = String((user as { email?: string }).email || '').toLowerCase()
-    const isAdmin = userEmail === 'iamdan4live@gmail.com'
+    const isAdmin = isAdminUser(user)
     return isAdmin || product.userId === (user as { id: string }).id || (userEmail && product.sellerEmail?.toLowerCase() === userEmail)
   }
 
@@ -132,3 +133,4 @@ export default function MarketplaceDetail() {
     </div>
   )
 }
+
