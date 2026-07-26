@@ -49,18 +49,19 @@ async function request<T>(url: string, token?: string, options: RequestInit = {}
   if (options.headers) {
     Object.entries(options.headers).forEach(([k, v]) => { if (v != null) headers[k] = String(v) })
   }
-  let response = await fetch(url, { ...options, headers })
+  let response = await fetch(url, { ...options, credentials: 'omit', headers })
   if (response.status === 401 && supabase) {
     const refreshed = await supabase.auth.refreshSession().catch(() => null)
     const freshToken = refreshed?.data?.session?.access_token
     if (freshToken) {
       headers.Authorization = `Bearer ${freshToken}`
-      response = await fetch(url, { ...options, headers })
+      response = await fetch(url, { ...options, credentials: 'omit', headers })
     }
   }
   const raw = await response.text()
   let payload = {} as T & { error?: string }
   try { payload = raw ? JSON.parse(raw) as T & { error?: string } : payload } catch {}
+  if (response.status === 431) throw new Error('Alpha could not load integrations because the browser sent oversized saved headers. Refresh once; if it continues, clear AlphaTekx site data and sign in again.')
   if (!response.ok) throw new Error(payload.error || raw || `Integration request failed (${response.status}). Please sign in again if this continues.`)
   return payload
 }

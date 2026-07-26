@@ -103,6 +103,15 @@ await test('connected apps accepts service links and shows Composio beta connect
   assert.match(connectors, /Admin beta access active/)
 })
 
+await test('api clients omit browser cookies to avoid oversized header failures', () => {
+  const apiClient = fs.readFileSync(new URL('../src/lib/apiClient.ts', import.meta.url), 'utf8')
+  const integrations = fs.readFileSync(new URL('../src/lib/integrations.ts', import.meta.url), 'utf8')
+  assert.match(apiClient, /credentials: 'omit'/)
+  assert.match(integrations, /credentials: 'omit'/)
+  assert.match(apiClient, /response\.status === 431/)
+  assert.match(integrations, /response\.status === 431/)
+})
+
 await test('cancelled child processes terminate on Windows without hanging the planner', async () => {
   const controller = new AbortController()
   const started = Date.now()
