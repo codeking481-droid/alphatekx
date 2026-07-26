@@ -79,12 +79,23 @@ await test('connected-app rendering requires backend connected and ready state',
 await test('admin auth profile refresh is bounded and recoverable', () => {
   const auth = fs.readFileSync(new URL('../src/lib/auth.tsx', import.meta.url), 'utf8')
   const adminAccess = fs.readFileSync(new URL('../src/lib/adminAccess.ts', import.meta.url), 'utf8')
+  const server = fs.readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
+  const billing = fs.readFileSync(new URL('../server/billing.mjs', import.meta.url), 'utf8')
+  const marketplace = fs.readFileSync(new URL('../server/marketplace.mjs', import.meta.url), 'utf8')
+  const composio = fs.readFileSync(new URL('../server/composioConnectorService.mjs', import.meta.url), 'utf8')
   assert.match(auth, /PROFILE_TIMEOUT_MS/)
   assert.match(auth, /withTimeout/)
   assert.match(auth, /profile refresh failed/)
   assert.match(auth, /isAdminUser/)
   assert.match(adminAccess, /iamdan4live@gmail.com/)
   assert.match(adminAccess, /identity_data/)
+  assert.match(server, /function authUserEmail/)
+  assert.match(server, /identity_data/)
+  assert.match(server, /async function authenticatedAdmin/)
+  assert.doesNotMatch(server, /x-admin-email/)
+  assert.match(billing, /function userEmail/)
+  assert.match(marketplace, /function userEmail/)
+  assert.match(composio, /function userEmail/)
 })
 
 await test('auth page supports signup and canonical redirects', () => {
@@ -97,11 +108,17 @@ await test('auth page supports signup and canonical redirects', () => {
 
 await test('connected apps accepts service links and shows released connectors', () => {
   const connectors = fs.readFileSync(new URL('../src/pages/Connectors.tsx', import.meta.url), 'utf8')
+  const featureAccess = fs.readFileSync(new URL('../server/featureAccess.mjs', import.meta.url), 'utf8')
   assert.match(connectors, /searchParams\.get\('platform'\) \|\| searchParams\.get\('service'\)/)
   assert.match(connectors, /getConnectedApps/)
   assert.match(connectors, /composioOAuthProviders/)
   assert.match(connectors, /Public tools active/)
   assert.match(connectors, /releasedPlatforms/)
+  assert.match(connectors, /publicConnectorIds/)
+  assert.match(connectors, /Google', description: 'Gmail, Calendar, Sheets and Drive/)
+  assert.match(connectors, /Telegram', description: 'Send Telegram messages/)
+  assert.match(featureAccess, /defaultFeature\?\.state === 'public'/)
+  assert.match(featureAccess, /const featureIds = new Set/)
 })
 
 await test('api clients omit browser cookies to avoid oversized header failures', () => {
