@@ -18,7 +18,7 @@ import * as providerHealth from './server/alpha/providerHealth.mjs'
 import * as billing from './server/billing.mjs'
 import { normalizeLinkedInScopes, publishLinkedInTextPost } from './server/linkedin.mjs'
 import { allowedWhatsAppRecipients, applyWhatsAppStatusEvent, executeApprovedWhatsAppMessage, sendWhatsAppText, verifyWhatsAppPhoneRegistration, verifyWhatsAppWebhookSignature, whatsappCredentials, whatsappWebhookEvents } from './server/whatsapp.mjs'
-import { connectorFeatureAccess, featureManagementSnapshot, featureStatusForUser, refreshFeatureConfig, setBetaUser, unavailableConnectorMessage, unavailablePromptConnector, updateFeature } from './server/featureAccess.mjs'
+import { connectorFeatureAccess, featureStatusForUser, refreshFeatureConfig, unavailableConnectorMessage, unavailablePromptConnector } from './server/featureAccess.mjs'
 import * as alphaConnector from './server/composioConnectorService.mjs'
 
 function loadEnv() {
@@ -1028,7 +1028,8 @@ function authUserEmail(user) {
 }
 
 function isAdminAuthUser(user) {
-  return authUserEmail(user) === adminEmail
+  authUserEmail(user)
+  return false
 }
 
 async function runUserWorker(worker, apiKey, prompt) {
@@ -1480,63 +1481,15 @@ async function authenticatedAdmin(req) {
 }
 
 async function adminFeaturesHandler(req, res) {
-  const auth = await authenticatedAdmin(req)
-  if (!auth) return json(res, 403, { error: 'Authenticated admin access required' })
-  await refreshFeatureConfig(auth.config, true)
-  return json(res, 200, featureManagementSnapshot())
+  return json(res, 410, { error: 'Feature management is disabled for launch. Released tools are controlled by code.' })
 }
 
 async function updateAdminFeatureHandler(req, res, featureId) {
-  const auth = await authenticatedAdmin(req)
-  if (!auth) return json(res, 403, { error: 'Authenticated admin access required' })
-  const body = await readBody(req)
-  await refreshFeatureConfig(auth.config, true)
-  const result = await updateFeature(auth.config, featureId, body, auth.user)
-  const feature = result.feature
-  if ((feature.state === 'disabled' || feature.state === 'maintenance') && feature.stop_existing) {
-    const agents = await listServerAgents()
-    for (const agent of agents) {
-      const connectors = new Set([...(agent.actions || []).map(action => action.connector), ...(agent.campaign?.meta?.platforms || []), ...(agent.campaign?.posts || []).flatMap(post => post.platforms || [])])
-      if (connectors.has(feature.id) && ['running', 'active', 'warning'].includes(agent.status)) {
-        const previousStatus = agent.status
-        const previousApproved = agent.approved
-        agent.status = 'paused'
-        agent.approved = false
-        agent.featurePause = { featureId: feature.id, state: feature.state, at: new Date().toISOString(), by: auth.user.email, previousStatus, previousApproved }
-        agent.trigger = { ...(agent.trigger || {}), pausedNextRun: agent.trigger?.nextRun || null, nextRun: null }
-        agent.nextRunAt = null
-        await saveServerAgent(agent)
-      }
-    }
-  } else if (feature.state === 'public' || feature.state === 'beta') {
-    const agents = await listServerAgents()
-    for (const agent of agents) {
-      if (agent.featurePause?.featureId !== feature.id) continue
-      const owner = { id: agent.userId, email: agent.userEmail }
-      if (!connectorFeatureAccess(owner, feature.id, true).enabled) continue
-      const pausedNextRun = agent.trigger?.pausedNextRun ? new Date(agent.trigger.pausedNextRun) : null
-      let nextRun = pausedNextRun && pausedNextRun.getTime() > Date.now() ? pausedNextRun.toISOString() : null
-      if (!nextRun && agent.trigger?.type === 'campaign') nextRun = campaignNextRun(agent.campaign)
-      if (!nextRun && agent.trigger?.cron) {
-        try { nextRun = nextRunFromCronServer(agent.trigger.cron, new Date(), agent.timezone || agent.schedule?.timezone || 'UTC').toISOString() } catch {}
-      }
-      agent.status = agent.featurePause.previousStatus || 'running'
-      agent.approved = agent.featurePause.previousApproved !== false
-      agent.trigger = { ...(agent.trigger || {}), nextRun, pausedNextRun: null }
-      agent.nextRunAt = nextRun
-      delete agent.featurePause
-      await saveServerAgent(agent)
-    }
-  }
-  return json(res, 200, result)
+  return json(res, 410, { error: 'Feature management is disabled for launch. Released tools are controlled by code.' })
 }
 
 async function adminBetaUserHandler(req, res) {
-  const auth = await authenticatedAdmin(req)
-  if (!auth) return json(res, 403, { error: 'Authenticated admin access required' })
-  const body = await readBody(req)
-  const betaUsers = await setBetaUser(auth.config, body.email, body.enabled !== false, auth.user)
-  return json(res, 200, { betaUsers })
+  return json(res, 410, { error: 'Beta feature management is disabled for launch.' })
 }
 
 async function liveTestIntegrations(req, res) {
@@ -5302,8 +5255,7 @@ function upsertLocalUser(user) {
 const adminFreePostsLimit = 999_999
 function defaultUser(userId, email = '') {
   const now = new Date().toISOString()
-  const isAdmin = normalizedAuthEmail(email) === adminEmail
-  return { id: userId, email, name: '', plan: 'free', credits: 0, freePostsUsed: 0, freePostsLimit: isAdmin ? adminFreePostsLimit : 2, connectors: {}, masterKeysUsed: false, created_at: now, last_active_at: now }
+  return { id: userId, email, name: '', plan: 'free', credits: 0, freePostsUsed: 0, freePostsLimit: 2, connectors: {}, masterKeysUsed: false, created_at: now, last_active_at: now }
 }
 
 async function getUser(userId, email = '') {
@@ -5320,7 +5272,6 @@ async function getUser(userId, email = '') {
           const tokens = decryptGenericTokens(row.tokens, key)
           if (tokens?.usage) {
             const merged = { ...defaultUser(userId, row.email || email), ...tokens.usage }
-            if (isAdminAuthUser(merged)) merged.freePostsLimit = adminFreePostsLimit
             return merged
           }
         }
@@ -5333,7 +5284,6 @@ async function getUser(userId, email = '') {
     const merged = { ...defaultUser(userId, existing.email || email), ...existing, connectors: existing.connectors || {} }
     const localCredits = readUserCreditsLocal(userId)
     if (localCredits != null) merged.credits = localCredits
-    if (isAdminAuthUser(merged)) merged.freePostsLimit = adminFreePostsLimit
     return merged
   }
   return defaultUser(userId, email)

@@ -41,9 +41,9 @@ for (const platform of ['facebook', 'instagram', 'whatsapp', 'x']) {
   })
 }
 
-await test('admin account can access public connector tools', () => {
+await test('former admin account behaves like a normal public user', () => {
   const status = featureStatusForUser(adminUser)
-  assert.equal(status.admin, true)
+  assert.equal(status.admin, false)
   for (const platform of ['facebook', 'instagram', 'whatsapp', 'x']) {
     assert.equal(status.connectors[platform].enabled, true)
     assert.equal(status.connectors[platform].availability, 'available')

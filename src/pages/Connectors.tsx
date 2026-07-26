@@ -4,7 +4,6 @@ import { useSearchParams } from 'react-router-dom'
 import { ConnectorIcon } from '../components/agents/ConnectorIcon'
 import { getConnector } from '../lib/agents/connectorRegistry'
 import type { Connector } from '../lib/agents/types'
-import { isAdminUser } from '../lib/adminAccess'
 import { useAuth } from '../lib/auth'
 import { connectProvider, disconnectProvider, getConnectedApps, reconnectProvider, type ConnectedAppStatus } from '../lib/connectors/connectorApi'
 import { deleteIntegration, disconnectGoogle, getFacebookPages, getIntegrationStatus, saveConnector, selectFacebookPage, startFacebookAuth, startGmailConnection, startLinkedInAuth, testConnector, type IntegrationStatus } from '../lib/integrations'
@@ -140,7 +139,6 @@ export default function Connectors() {
     const state = status[id]
     return state && 'connected' in state ? state : { connected: false }
   }
-  const isAdminTester = status._access?.admin === true || isAdminUser(user)
   const feature = (id: string) => status._access?.connectors?.[id] || {
     enabled: publicConnectorIds.has(id),
     publicEnabled: publicConnectorIds.has(id),
@@ -275,7 +273,7 @@ export default function Connectors() {
   return <main className="mx-auto min-h-[calc(100dvh-8rem)] w-full max-w-5xl px-4 py-8 sm:px-6">
     <header className="flex flex-col gap-4 border-b border-white/[.08] pb-6 sm:flex-row sm:items-end sm:justify-between">
       <div><p className="text-xs uppercase tracking-[.18em] text-violet-300">Connections</p><h1 className="mt-2 text-3xl font-semibold">Connected Apps</h1><p className="mt-2 max-w-2xl text-sm text-white/55">Connect the apps Alpha can use, then approve automations with confidence.</p></div>
-      <span className="w-fit rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-200">{isAdminTester ? 'Admin access active' : 'Public tools active'} - build {BUILD_ID}</span>
+      <span className="w-fit rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-200">Public tools active - build {BUILD_ID}</span>
     </header>
     {notice && <div role="status" className="mt-5 rounded-xl border border-violet-400/20 bg-violet-500/10 p-3 text-sm">{notice}</div>}
     <button onClick={() => setSelectorOpen(true)} className="mt-7 flex min-h-14 w-full items-center justify-between rounded-xl border border-white/10 bg-white/[.045] px-5 text-left hover:border-violet-400/30"><span className="flex items-center gap-3"><Plug size={18} className="text-violet-300"/><span><span className="block text-sm font-medium">Select or add a platform</span><span className="text-xs text-white/45">Search available, released, and connected apps</span></span></span><ChevronRight size={18}/></button>

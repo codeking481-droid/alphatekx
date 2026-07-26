@@ -1,6 +1,5 @@
 import { useEffect, useState, type PropsWithChildren } from 'react'
-import { isAdminUser } from '../../lib/adminAccess'
-import { Bot, HelpCircle, History, ListChecks, LogOut, Menu, Plug, Settings, ShieldCheck, Sparkles, X } from 'lucide-react'
+import { Bot, HelpCircle, History, ListChecks, LogOut, Menu, Plug, Settings, Sparkles, X } from 'lucide-react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { getCredits, hydrateCredits, subscribeCredits } from '../../lib/creditStore'
 import { useAuth } from '../../lib/auth'
@@ -49,7 +48,6 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
   const [plan, setPlan] = useState('free')
   const [running, setRunning] = useState(runningAgentsCount())
   const { session, user, profile, signOut } = useAuth()
-  const isAdmin = isAdminUser(user)
   const navigate = useNavigate()
   const location = useLocation()
   const { show, dismiss } = useShowOnboarding()
@@ -77,7 +75,7 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
       <NavLink to="/dashboard" className="text-sm font-semibold tracking-[.14em]">ALPHATEKX</NavLink>
       <button onClick={() => navigate('/settings?tab=billing')} className="flex items-center gap-1.5 rounded-full border border-white/[.12] bg-white/[0.05] px-3 py-1.5 text-sm shadow-sm transition-colors hover:bg-white/[0.08]">
         <span className="inline-block h-2 w-2 rounded-full bg-violet-500" />
-        <span className={needsCreditTopUp(credits) && !isAdmin ? 'text-amber-300' : 'text-white'}>{isAdmin ? '∞' : credits} Credits</span>
+        <span className={needsCreditTopUp(credits) ? 'text-amber-300' : 'text-white'}>{credits} Credits</span>
       </button>
     </header>
     {open && <button className="fixed inset-0 z-40 bg-black/50" onClick={() => setOpen(false)} aria-label="Close menu"/>}
@@ -88,7 +86,6 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
         <div className="my-3 border-t border-white/[0.08]" />
         {secondary.map(([label, to, Icon]) => <NavLink key={label} to={to} title={label} onClick={() => setOpen(false)} className={({ isActive }) => `flex min-h-12 items-center gap-3 rounded-lg px-4 text-sm ${isActive ? 'bg-white/[.08] font-medium text-white' : 'text-white/70 hover:bg-white/[.04]'}`}><Icon size={18}/>{label}</NavLink>)}
         <div className="my-3 border-t border-white/[0.08]" />
-        {isAdmin && <NavLink to="/admin/features" onClick={() => setOpen(false)} className={({ isActive }) => `flex min-h-12 items-center gap-3 rounded-lg px-4 text-sm ${isActive ? 'bg-white/[.08] font-medium text-white' : 'text-violet-200 hover:bg-white/[.04]'}`}><ShieldCheck size={18}/>Feature Management</NavLink>}
         <button onClick={() => void signOut()} className="flex min-h-12 w-full items-center gap-3 rounded-lg px-4 text-sm text-white/70 hover:bg-white/[.04]"><LogOut size={18}/>Logout</button>
       </nav>
       <div className="border-t border-white/[.12] p-4">

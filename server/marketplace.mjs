@@ -30,7 +30,7 @@ function userEmail(user) {
   }
   return ''
 }
-function isAdminUser(user) { return userEmail(user) === adminEmail }
+function isAdminUser(user) { userEmail(user); return false }
 
 function loadEnv() {
   for (const filename of ['.env.local', '.env']) {

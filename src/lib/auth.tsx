@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type PropsWith
 import type { Session, User } from '@supabase/supabase-js'
 import { isSupabaseConfigured, supabase } from './supabase'
 import { hydrateCredits } from './creditStore'
-import { isAdminUser, userEmail } from './adminAccess'
+import { userEmail } from './adminAccess'
 
 type LocalUser = { id: string; email: string; name?: string }
 type AuthUser = User | LocalUser
@@ -55,8 +55,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
       const fallback: Profile = {
         id: auth.user.id,
         email,
-        credits: isAdminUser(auth.user) ? 999999 : 0,
-        plan: isAdminUser(auth.user) ? 'admin' : 'free',
+        credits: 0,
+        plan: 'free',
         revenue: 0,
         display_name: String(auth.user.user_metadata?.name || auth.user.user_metadata?.full_name || email.split('@')[0] || 'AlphaTekx user'),
       }
@@ -72,14 +72,13 @@ export function AuthProvider({ children }: PropsWithChildren) {
         )).data
       }
       let nextProfile = (data || fallback) as Profile
-      if (isAdminUser(auth.user)) nextProfile = { ...nextProfile, email, credits: 999999, plan: 'admin' }
       const balance = await hydrateCredits().catch(() => Number.NaN)
-      if (!isAdminUser(auth.user) && Number.isFinite(balance)) nextProfile = { ...nextProfile, credits: balance }
+      if (Number.isFinite(balance)) nextProfile = { ...nextProfile, credits: balance }
       setProfile(nextProfile)
     } catch (error) {
       console.warn('[AlphaTekx] profile refresh failed:', error)
       const current = session?.user
-      if (current) setProfile({ id: current.id, email: userEmail(current), credits: isAdminUser(current) ? 999999 : 0, plan: isAdminUser(current) ? 'admin' : 'free', revenue: 0 })
+      if (current) setProfile({ id: current.id, email: userEmail(current), credits: 0, plan: 'free', revenue: 0 })
     }
   }
 

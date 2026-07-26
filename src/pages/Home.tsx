@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowUp, Bot, CreditCard, Plus, Sparkles } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { isAdminUser } from '../lib/adminAccess'
-import { useAuth } from '../lib/auth'
 import { getCredits, subscribeCredits } from '../lib/creditStore'
 import { useAgents } from '../lib/agents/agentStore'
 import type { Agent } from '../lib/agents/types'
@@ -30,7 +28,6 @@ function formatTime(iso: string) {
 
 export default function Home() {
   const navigate = useNavigate()
-  const { user } = useAuth()
   const agents = useAgents()
   const [input, setInput] = useState('')
   const [exampleIndex, setExampleIndex] = useState(0)
@@ -72,7 +69,7 @@ export default function Home() {
 
   const running = useMemo(() => agents.filter(a => a.status === 'running' || a.status === 'active'), [agents])
   const recent = useMemo(() => [...agents].sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime()).slice(0, 3), [agents])
-  const lowCredits = credits < 5 && !isAdminUser(user)
+  const lowCredits = credits < 5
 
   return (
     <section className="min-h-full px-4 py-10 text-center">

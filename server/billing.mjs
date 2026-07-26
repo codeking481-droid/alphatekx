@@ -65,7 +65,7 @@ function userEmail(user) {
   }
   return ''
 }
-function isAdmin(user) { return userEmail(user) === adminEmail }
+function isAdmin(user) { userEmail(user); return false }
 
 function nowIso() { return new Date().toISOString() }
 

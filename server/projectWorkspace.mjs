@@ -9,7 +9,7 @@ const root = path.resolve(__dirname, '..')
 const workspacesDir = path.resolve(root, 'build-workspaces')
 const previewRunsDir = path.resolve(root, 'preview-runs')
 
-const MAX_INSTALL_MS = 180_000
+const MAX_INSTALL_MS = Number(process.env.ALPHA_PREVIEW_INSTALL_TIMEOUT_MS || 60_000)
 const MAX_TOOL_MS = 120_000
 const SECRET_RE = /SECRET|KEY|TOKEN|PASSWORD|PRIVATE|APIKEY|CREDENTIAL|AUTH/i
 
@@ -145,6 +145,7 @@ export function runCommand(workspaceDir, command, args = [], options = {}) {
     const timer = setTimeout(() => {
       terminate()
       push(`\n[${label}] Timed out after ${timeoutMs}ms`)
+      setTimeout(() => finish(false, null), 5_000)
     }, timeoutMs)
 
     const abortHandler = () => {
@@ -162,6 +163,9 @@ export function runCommand(workspaceDir, command, args = [], options = {}) {
 }
 
 export async function installDependencies(workspaceDir, signal) {
+  if (process.env.ALPHA_PREVIEW_FORCE_INSTALL !== 'true' && fs.existsSync(path.resolve(root, 'node_modules', 'react')) && fs.existsSync(path.resolve(root, 'node_modules', 'vite'))) {
+    return { ok: true, log: '[npm install] Reused root workspace dependencies.', code: 0, label: 'npm install', killed: false }
+  }
   return runCommand(workspaceDir, 'npm', ['install', '--ignore-scripts', '--include=dev', '--no-audit', '--no-fund', '--prefer-offline'], { label: 'npm install', timeoutMs: MAX_INSTALL_MS, signal, env: { ...sanitizeEnv(), npm_config_ignore_scripts: 'true', NODE_ENV: 'development' } })
 }
 
