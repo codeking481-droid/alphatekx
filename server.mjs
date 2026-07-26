@@ -455,6 +455,42 @@ function getRoleModel(role, provider, defaultModel = '') {
   return process.env[`ALPHA_${role.toUpperCase()}_MODEL`] || process.env[`AI_ROLE_${role.toUpperCase()}_MODEL`] || process.env[`AI_${role.toUpperCase()}_MODEL`] || process.env[`${provider.toUpperCase()}_MODEL`] || defaultModel
 }
 
+function isProviderOrConfigError(error) {
+  const message = String(error instanceof Error ? error.message : error || '')
+  return /provider|api key|configured|configuration|rate limit|quota|fetch failed|timeout|temporarily unavailable|No AI provider|No content in provider response|invalid_api_key|unauthorized|upstream/i.test(message)
+}
+
+function alphaConfigurationMessage(error) {
+  const message = String(error instanceof Error ? error.message : error || '')
+  if (/No AI provider|not configured|api key|invalid_api_key|unauthorized/i.test(message)) {
+    return 'Alpha is online, but the AI provider is not configured correctly. Add a working Groq key in Render as GROQ_API_KEY, then redeploy.'
+  }
+  if (/rate limit|quota|tokens per|temporarily unavailable|upstream/i.test(message)) {
+    return 'Alpha is online, but the AI provider is temporarily unavailable or rate-limited. Groq should be the primary provider; check GROQ_API_KEY and GROQ_MODEL in Render.'
+  }
+  return 'Alpha is online, but the AI provider/configuration failed while planning. Check Render environment variables and try again.'
+}
+
+function fallbackConversationResponse(user, input, error) {
+  return {
+    id: randomUUID(),
+    type: 'conversation',
+    status: 'chatting',
+    conversationStage: 'chatting',
+    userId: user?.id || 'anonymous',
+    userEmail: user?.email || '',
+    originalRequest: String(input || ''),
+    knownFields: {},
+    missingFields: [],
+    pendingConnections: [],
+    automationDraft: null,
+    messages: [
+      { role: 'user', text: String(input || ''), ts: new Date().toISOString() },
+      { role: 'alpha', text: alphaConfigurationMessage(error), ts: new Date().toISOString() },
+    ],
+  }
+}
+
 async function callLLMForRole(role, systemPrompt, userPrompt, { jsonMode = true, maxTokens = 0, fallbackOrder = null } = {}) {
   const order = getRoleProviderOrder(role, fallbackOrder)
   if (order.length === 0) throw new Error('No AI provider configured or all providers are temporarily unavailable. Add OPENAI_API_KEY, GROQ_API_KEY, QWEN_API_KEY, KIMI_API_KEY, MINIMAX_API_KEY, or FLATKEY_API_KEY.')
@@ -5904,17 +5940,25 @@ const server = http.createServer(async (req, res) => {
     try { return await sendGmail(req, res) } catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : 'Email could not be sent' }) }
   }
   if (req.method === 'POST' && req.url === '/api/alpha/conversation') {
+    let user = null
+    let prompt = ''
     try {
       const config = supabaseConfig()
-      const user = await currentOrLocalUser(req, config.url, config.anon)
+      user = await currentOrLocalUser(req, config.url, config.anon)
       if (!user) return json(res, 401, { error: 'Authentication required' })
       const body = await readBody(req)
-      const prompt = String(body.prompt || '')
+      prompt = String(body.prompt || '')
       const unavailable = unavailablePromptConnector(user, prompt, trustedFeatureIdentity(req))
       if (unavailable) return json(res, 200, { conversation: { id: randomUUID(), type: 'conversation', conversationStage: 'chatting', status: 'chatting', messages: [{ role: 'assistant', content: unavailableConnectorMessage(unavailable) }], automationDraft: null }, agent: null })
       const conversation = await getConversationEngine().start(user, prompt)
       return json(res, 200, { conversation, agent: conversation.automationDraft })
-    } catch (error) { return json(res, error instanceof Error && error.message.includes('No AI provider') ? 503 : 400, { error: error instanceof Error ? error.message : 'Conversation failed' }) }
+    } catch (error) {
+      if (user && isProviderOrConfigError(error)) {
+        const conversation = fallbackConversationResponse(user, prompt, error)
+        return json(res, 200, { conversation, agent: null, warning: alphaConfigurationMessage(error) })
+      }
+      return json(res, error instanceof Error && error.message.includes('No AI provider') ? 503 : 400, { error: error instanceof Error ? error.message : 'Conversation failed' })
+    }
   }
   const conversationGetMatch = req.url?.match(/^\/api\/alpha\/conversation\/([^/]+)$/)
   if (conversationGetMatch && req.method === 'GET') {
@@ -5927,14 +5971,23 @@ const server = http.createServer(async (req, res) => {
     } catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : 'Could not load conversation' }) }
   }
   if (conversationGetMatch && req.method === 'POST') {
+    let user = null
+    let message = ''
     try {
       const config = supabaseConfig()
-      const user = await currentOrLocalUser(req, config.url, config.anon)
+      user = await currentOrLocalUser(req, config.url, config.anon)
       if (!user) return json(res, 401, { error: 'Authentication required' })
       const body = await readBody(req)
-      const conversation = await getConversationEngine().continue(conversationGetMatch[1], user, String(body.message || ''))
+      message = String(body.message || '')
+      const conversation = await getConversationEngine().continue(conversationGetMatch[1], user, message)
       return json(res, 200, { conversation, agent: conversation.automationDraft })
-    } catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : 'Could not continue conversation' }) }
+    } catch (error) {
+      if (user && isProviderOrConfigError(error)) {
+        const conversation = fallbackConversationResponse(user, message, error)
+        return json(res, 200, { conversation, agent: null, warning: alphaConfigurationMessage(error) })
+      }
+      return json(res, 400, { error: error instanceof Error ? error.message : 'Could not continue conversation' })
+    }
   }
   const conversationActionMatch = req.url?.match(/^\/api\/alpha\/conversation\/([^/]+)\/(approve|create|regenerate)$/)
   if (conversationActionMatch && req.method === 'POST') {

@@ -112,8 +112,19 @@ await test('auth page supports signup and canonical redirects', () => {
   assert.match(authPage, /SITE_URL_HELP/)
   assert.match(authPage, /OAUTH_STATE_HELP/)
   assert.match(authPage, /bad_oauth_state/)
+  assert.match(authPage, /clearStaleOAuthState/)
+  assert.match(authPage, /pkce\|oauth\|auth-token/)
   assert.match(renderConfig, /VITE_PUBLIC_APP_URL[\s\S]*https:\/\/alphatekx\.name\.ng/)
   assert.match(envExample, /VITE_PUBLIC_APP_URL=https:\/\/alphatekx\.name\.ng/)
+})
+
+await test('Alpha conversation reports provider configuration failures without killing the planner', () => {
+  const server = fs.readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
+  assert.match(server, /function isProviderOrConfigError/)
+  assert.match(server, /function alphaConfigurationMessage/)
+  assert.match(server, /function fallbackConversationResponse/)
+  assert.match(server, /Alpha is online, but the AI provider is not configured correctly/)
+  assert.match(server, /warning: alphaConfigurationMessage\(error\)/)
 })
 
 await test('connected apps accepts service links and shows released connectors', () => {
