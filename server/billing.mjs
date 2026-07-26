@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { createHmac, randomUUID } from 'node:crypto'
+import { supabaseServiceHeaders } from './supabaseHeaders.mjs'
 
 const adminEmail = 'iamdan4live@gmail.com'
 const DEFAULT_CREDITS = 30
@@ -20,7 +21,7 @@ function writeJsonFile(file, value) {
 }
 
 function serviceHeaders(serviceKey) {
-  return { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }
+  return supabaseServiceHeaders(serviceKey)
 }
 
 export const PLANS = {

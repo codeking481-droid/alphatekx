@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
+import { supabaseServiceHeaders } from './supabaseHeaders.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(__dirname, '..')
@@ -35,12 +36,7 @@ function writeJsonFile(file, data) {
 }
 
 function serviceHeaders(serviceKey) {
-  return {
-    apikey: serviceKey,
-    Authorization: `Bearer ${serviceKey}`,
-    'Content-Type': 'application/json',
-    Prefer: 'return=representation',
-  }
+  return supabaseServiceHeaders(serviceKey, { Prefer: 'return=representation' })
 }
 
 function nowIso() { return new Date().toISOString() }

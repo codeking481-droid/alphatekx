@@ -11,6 +11,7 @@ import { buildPreviewProject, servePreviewBuild } from './server/previewBuild.mj
 import { marketplaceHandler, fulfillMarketplaceOrder } from './server/marketplace.mjs'
 import { getRecords, getRecord, createRecord, updateRecord, deleteRecord, appEntitiesMigrationSql } from './server/appData.mjs'
 import { createAlphaBrain } from './server/alphaBrain.mjs'
+import { supabaseServiceHeaders } from './server/supabaseHeaders.mjs'
 import { buildCapabilityPlan, detectCapability, isSupportedAction } from './server/automation/capabilityRegistry.mjs'
 import { createContentMemoryRecord } from './server/automation/contentMemory.mjs'
 import { createConversationEngine } from './server/alpha/conversationEngine.mjs'
@@ -1097,7 +1098,7 @@ const supabaseConfig = () => ({
   service: process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.SERVICE_ROLE_KEY || process.env.SUPABASE_ADMIN_KEY || '',
 })
 const alphaBrain = createAlphaBrain({ currentOrLocalUser, getUser, supabaseConfig, json, readBody, callLLMJSON })
-const serviceHeaders = (service) => ({ apikey: service, Authorization: `Bearer ${service}`, 'Content-Type': 'application/json' })
+const serviceHeaders = (service) => supabaseServiceHeaders(service)
 const userDataHeaders = (req, config) => ({
   apikey: config.anon,
   Authorization: String(req.headers.authorization || ''),
@@ -3429,7 +3430,7 @@ export async function purchaseMarketplace(req, res) {
     const reference = body.reference ? String(body.reference) : null
     const user = await authenticatedUser(req, supabaseUrl, anonKey)
     if (!user) return json(res, 401, { error: 'Authentication required.' })
-    const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }
+    const headers = serviceHeaders(serviceKey)
     const itemResponse = await fetch(`${supabaseUrl}/rest/v1/marketplace_items?id=eq.${encodeURIComponent(itemId)}&select=id,price,price_type`, { headers })
     const item = (await itemResponse.json())?.[0]
     if (!item) return json(res, 404, { error: 'Marketplace item not found.' })
@@ -3854,7 +3855,7 @@ async function saveAuthAppIntegration(userId, provider, data, config) {
     }
     const res = await fetch(`${config.url}/auth/v1/admin/users/${encodeURIComponent(userId)}`, {
       method: 'PUT',
-      headers: { apikey: config.service, Authorization: `Bearer ${config.service}`, 'Content-Type': 'application/json' },
+      headers: serviceHeaders(config.service),
       body: JSON.stringify({ app_metadata: { ...meta, integrations } }),
     })
     return res.ok
@@ -3922,7 +3923,7 @@ async function deleteUserIntegration(userId, provider, config) {
         delete integrations[provider]
         await fetch(`${config.url}/auth/v1/admin/users/${encodeURIComponent(userId)}`, {
           method: 'PUT',
-          headers: { apikey: config.service, Authorization: `Bearer ${config.service}`, 'Content-Type': 'application/json' },
+          headers: serviceHeaders(config.service),
           body: JSON.stringify({ app_metadata: { ...meta, integrations } }),
         }).catch(() => {})
       }
@@ -6137,8 +6138,36 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { logs })
     } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Could not load logs' }) }
   }
-  if (req.method === 'GET' && req.url === '/api/health') {
-    return json(res, 200, { ok: true, timestamp: new Date().toISOString(), uptimeSeconds: schedulerState.uptime() })
+  if (req.method === 'GET' && req.url?.startsWith('/api/health')) {
+    const requestUrl = new URL(req.url, 'http://localhost')
+    if (requestUrl.searchParams.get('deep') !== '1') {
+      return json(res, 200, { ok: true, timestamp: new Date().toISOString(), uptimeSeconds: schedulerState.uptime() })
+    }
+    const config = supabaseConfig()
+    const providers = providerOrder().filter(name => Boolean(providerApiKey(name)))
+    let authStatus = 'missing'
+    let databaseStatus = 'missing'
+    if (config.url && config.service) {
+      const signal = AbortSignal.timeout(8_000)
+      const [authCheck, databaseCheck] = await Promise.allSettled([
+        fetch(`${config.url}/auth/v1/admin/users?page=1&per_page=1`, { headers: serviceHeaders(config.service), signal }),
+        fetch(`${config.url}/rest/v1/agents?select=id&limit=1`, { headers: serviceHeaders(config.service), signal }),
+      ])
+      authStatus = authCheck.status === 'fulfilled' && authCheck.value.ok ? 'ready' : 'failed'
+      databaseStatus = databaseCheck.status === 'fulfilled' && databaseCheck.value.ok ? 'ready' : 'failed'
+    }
+    const dependencies = {
+      supabaseAuth: authStatus,
+      durableAgents: databaseStatus,
+      aiProvider: providers.length ? 'ready' : 'missing',
+      aiProviders: providers,
+    }
+    return json(res, 200, {
+      ok: Object.values(dependencies).every(value => Array.isArray(value) || value === 'ready'),
+      timestamp: new Date().toISOString(),
+      uptimeSeconds: schedulerState.uptime(),
+      dependencies,
+    })
   }
   const agentIdMatch = req.url?.match(/^\/api\/agents\/([^/]+)(?:\/run)?\/?$/)
   if (agentIdMatch) {
