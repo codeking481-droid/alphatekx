@@ -32,6 +32,7 @@ async function requestJson<T>(url: string, init: RequestInit, options: { token?:
     let token = options.token || await authToken()
     const makeRequest = () => fetch(url, {
       ...init,
+      credentials: 'omit',
       headers: {
         'Content-Type': 'application/json',
         ...(!token ? localUserHeaders() : {}),
@@ -49,6 +50,7 @@ async function requestJson<T>(url: string, init: RequestInit, options: { token?:
     const raw = await response.text()
     let payload: Record<string, unknown> = {}
     try { payload = raw ? JSON.parse(raw) as Record<string, unknown> : {} } catch {}
+    if (response.status === 431) throw new Error('Alpha could not complete the request because the browser sent oversized saved headers. Refresh once; if it continues, clear AlphaTekx site data and sign in again.')
     if (!response.ok) throw new Error(String(payload.error || raw || `Alpha returned HTTP ${response.status}.`))
     return payload as T
   } catch (error) {
