@@ -236,8 +236,20 @@ function sanitizeError(error) {
   return message.slice(0, 200)
 }
 
+function normalizedEmail(value) { return String(value || '').trim().toLowerCase() }
+function userEmail(user) {
+  const direct = normalizedEmail(user?.email)
+  if (direct) return direct
+  const metadataEmail = normalizedEmail(user?.user_metadata?.email || user?.app_metadata?.email)
+  if (metadataEmail) return metadataEmail
+  for (const identity of user?.identities || []) {
+    const identityEmail = normalizedEmail(identity?.identity_data?.email)
+    if (identityEmail) return identityEmail
+  }
+  return ''
+}
 function isAdminUser(user) {
-  return user && String(user.email || '').toLowerCase() === ADMIN_EMAIL
+  return userEmail(user) === ADMIN_EMAIL
 }
 
 // ---------------------------------------------------------------------------

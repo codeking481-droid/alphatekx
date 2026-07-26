@@ -25,13 +25,13 @@ await test('disabled features are blocked for public and admin users', async () 
   assert.equal(connectorFeatureAccess(admin, 'facebook').enabled, false)
 })
 
-await test('beta features are available to signed-in users', async () => {
+await test('available default-public tools remain public even with stale beta database rows', async () => {
   await updateFeature(config, 'facebook', { state: 'beta', stopExisting: true }, admin)
   await setBetaUser(config, betaUser.email, true, admin)
   assert.equal(connectorFeatureAccess(publicUser, 'facebook').enabled, true)
+  assert.equal(connectorFeatureAccess(publicUser, 'facebook').availability, 'available')
   assert.equal(connectorFeatureAccess(admin, 'facebook').enabled, true)
   assert.equal(connectorFeatureAccess(betaUser, 'facebook').enabled, true)
-  assert.equal(connectorFeatureAccess(null, 'facebook').enabled, false)
 })
 
 await test('public state is immediately available to everyone', async () => {

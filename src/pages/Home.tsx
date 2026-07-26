@@ -18,7 +18,7 @@ const rotatingExamples = [
 const helpAnswers: { pattern: RegExp; answer: string }[] = [
   { pattern: /what can (alphatekx|you|it) automate/i, answer: 'AlphaTekx can automate tasks across Gmail, Google Calendar, Google Sheets, and Telegram. Examples: daily calendar emails, Gmail summaries to Telegram, spreadsheet updates, scheduled alerts, and reminders.' },
   { pattern: /how do credits work/i, answer: 'Credits are consumed when an automation runs actions. The cost is estimated before you approve the automation. You can buy more credits in Settings.' },
-  { pattern: /which apps (are supported|do you support)/i, answer: 'LinkedIn is public today. Admin beta access can test Google, Facebook, Instagram, X, WhatsApp, Notion, YouTube, Telegram, Slack, and Discord from Connected Apps when the matching server credentials are configured.' },
+  { pattern: /which apps (are supported|do you support)/i, answer: 'LinkedIn, Google, Facebook, Instagram, X, WhatsApp, Notion, YouTube, Telegram, Slack, and Discord are released in Connected Apps. Tools that need external OAuth credentials will show Ready to connect or Needs server config honestly.' },
   { pattern: /why did my automation fail/i, answer: 'Open the automation and check the History tab. Failures usually mean a disconnected app, expired permissions, or insufficient credits.' },
   { pattern: /help me create an automation/i, answer: 'Describe the result you want in the box above. For example: "Send me a summary of my calendar every morning at 8 AM."' },
   { pattern: /suggest useful automations/i, answer: 'Try: "Email me my daily calendar every morning", "Summarize my unread emails and send them to Telegram", or "Record new payments in a Google Sheet".' },

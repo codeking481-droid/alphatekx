@@ -86,7 +86,7 @@ try {
     assert.equal(status.linkedin.ready, true)
   })
 
-  await test('signed-in users can reach beta connector APIs directly', async () => {
+  await test('public signed-in users can reach released connector APIs directly', async () => {
     const response = await request('/api/connectors/facebook/start', {
       method: 'POST',
       body: JSON.stringify({ redirect: '/connected-apps' }),
