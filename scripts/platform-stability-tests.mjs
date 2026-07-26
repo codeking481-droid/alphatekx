@@ -84,6 +84,14 @@ await test('admin auth profile refresh is bounded and recoverable', () => {
   assert.match(auth, /iamdan4live@gmail.com/)
 })
 
+await test('auth page supports signup and canonical redirects', () => {
+  const authPage = fs.readFileSync(new URL('../src/pages/Auth.tsx', import.meta.url), 'utf8')
+  assert.match(authPage, /signUp/)
+  assert.match(authPage, /emailRedirectTo: authRedirectUrl\(\)/)
+  assert.match(authPage, /https:\/\/alphatekx\.name\.ng\/auth/)
+  assert.match(authPage, /SITE_URL_HELP/)
+})
+
 await test('connected apps accepts service links and shows Composio beta connectors', () => {
   const connectors = fs.readFileSync(new URL('../src/pages/Connectors.tsx', import.meta.url), 'utf8')
   assert.match(connectors, /searchParams\.get\('platform'\) \|\| searchParams\.get\('service'\)/)
