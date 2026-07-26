@@ -20,6 +20,7 @@ type AuthValue = {
 const AuthContext = createContext<AuthValue | null>(null)
 
 const LOCAL_USER_KEY = 'alphatekx:local-user'
+const PROFILE_TIMEOUT_MS = 10_000
 
 function readLocalUser(): LocalUser | null {
   try {
@@ -27,6 +28,15 @@ function readLocalUser(): LocalUser | null {
     if (!raw) return null
     return JSON.parse(raw) as LocalUser
   } catch { return null }
+}
+
+async function withTimeout<T>(work: Promise<T>, label: string, timeoutMs = PROFILE_TIMEOUT_MS): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} took too long. Please refresh and try again.`)), timeoutMs)
+  })
+  try { return await Promise.race([work, timeout]) }
+  finally { if (timer) clearTimeout(timer) }
 }
 
 export function AuthProvider({ children }: PropsWithChildren) {
@@ -37,17 +47,36 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   const refreshProfile = async () => {
     if (!supabase) return
-    const { data: auth } = await supabase.auth.getUser()
-    if (!auth.user) { setProfile(null); return }
-    let { data } = await supabase.from('profiles').select('id,email,credits,plan,revenue,display_name').eq('id', auth.user.id).maybeSingle()
-    if (!data) {
-      await supabase.rpc('ensure_user_profile')
-      data = (await supabase.from('profiles').select('id,email,credits,plan,revenue,display_name').eq('id', auth.user.id).maybeSingle()).data
-    }
-    if (data) {
-      const balance = await hydrateCredits()
-      if (Number.isFinite(balance)) data = { ...data, credits: balance }
-      setProfile(data as Profile)
+    try {
+      const { data: auth } = await withTimeout(supabase.auth.getUser(), 'Authentication check')
+      if (!auth.user) { setProfile(null); return }
+      const fallback: Profile = {
+        id: auth.user.id,
+        email: auth.user.email || '',
+        credits: auth.user.email?.toLowerCase() === 'iamdan4live@gmail.com' ? 999999 : 0,
+        plan: 'free',
+        revenue: 0,
+        display_name: auth.user.user_metadata?.name || auth.user.email?.split('@')[0] || 'AlphaTekx user',
+      }
+      let { data } = await withTimeout(
+        supabase.from('profiles').select('id,email,credits,plan,revenue,display_name').eq('id', auth.user.id).maybeSingle(),
+        'Profile load'
+      )
+      if (!data) {
+        await withTimeout(supabase.rpc('ensure_user_profile'), 'Profile setup')
+        data = (await withTimeout(
+          supabase.from('profiles').select('id,email,credits,plan,revenue,display_name').eq('id', auth.user.id).maybeSingle(),
+          'Profile reload'
+        )).data
+      }
+      let nextProfile = (data || fallback) as Profile
+      const balance = await hydrateCredits().catch(() => Number.NaN)
+      if (Number.isFinite(balance)) nextProfile = { ...nextProfile, credits: balance }
+      setProfile(nextProfile)
+    } catch (error) {
+      console.warn('[AlphaTekx] profile refresh failed:', error)
+      const current = session?.user
+      if (current) setProfile({ id: current.id, email: current.email || '', credits: current.email?.toLowerCase() === 'iamdan4live@gmail.com' ? 999999 : 0, plan: 'free', revenue: 0 })
     }
   }
 
@@ -61,9 +90,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
         setLocalUser(null)
         void refreshProfile()
       }
+    }).catch(error => {
+      console.warn('[AlphaTekx] session restore failed:', error)
+      setSession(null)
+      setProfile(null)
+      setLoading(false)
     })
     const { data } = supabase.auth.onAuthStateChange((_event, next) => {
       setSession(next)
+      setLoading(false)
       if (next) {
         localStorage.removeItem(LOCAL_USER_KEY)
         setLocalUser(null)

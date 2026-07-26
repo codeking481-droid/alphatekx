@@ -76,6 +76,22 @@ await test('connected-app rendering requires backend connected and ready state',
   assert.match(workflow, /s\.connected && s\.ready/)
 })
 
+await test('admin auth profile refresh is bounded and recoverable', () => {
+  const auth = fs.readFileSync(new URL('../src/lib/auth.tsx', import.meta.url), 'utf8')
+  assert.match(auth, /PROFILE_TIMEOUT_MS/)
+  assert.match(auth, /withTimeout/)
+  assert.match(auth, /profile refresh failed/)
+  assert.match(auth, /iamdan4live@gmail.com/)
+})
+
+await test('connected apps accepts service links and shows Composio beta connectors', () => {
+  const connectors = fs.readFileSync(new URL('../src/pages/Connectors.tsx', import.meta.url), 'utf8')
+  assert.match(connectors, /searchParams\.get\('platform'\) \|\| searchParams\.get\('service'\)/)
+  assert.match(connectors, /getConnectedApps/)
+  assert.match(connectors, /composioOAuthProviders/)
+  assert.match(connectors, /Admin beta access active/)
+})
+
 await test('cancelled child processes terminate on Windows without hanging the planner', async () => {
   const controller = new AbortController()
   const started = Date.now()

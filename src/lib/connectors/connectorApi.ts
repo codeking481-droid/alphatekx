@@ -70,7 +70,7 @@ export async function executeProviderAction(
   params: Record<string, unknown>,
   token?: string
 ): Promise<ExecuteResponse> {
-  return postJson<ExecuteResponse>(`/api/execute/${providerId}/${actionId}`, params, { token })
+  return postJson<ExecuteResponse>(`/api/execute/${providerId}/${actionId}`, { params }, { token })
 }
 
 // Get execution history for a provider
