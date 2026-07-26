@@ -1,5 +1,5 @@
 import { lazy, Suspense, type ReactNode } from 'react'
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 const Landing = lazy(() => import('./pages/Landing'))
 import About from './pages/About'
 import { AuthProvider } from './lib/auth'
@@ -29,10 +29,19 @@ const toDashboard = <Navigate to="/dashboard" replace />
 const toSettings = <Navigate to="/settings" replace />
 const toAutomations = <Navigate to="/automations" replace />
 
+function LandingRoute() {
+  const location = useLocation()
+  const query = new URLSearchParams(location.search)
+  if (query.has('error') || query.has('error_code') || query.has('error_description')) {
+    return <Navigate to={`/auth${location.search}`} replace />
+  }
+  return <AuthProvider>{suspended(<Landing />)}</AuthProvider>
+}
+
 export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<AuthProvider>{suspended(<Landing />)}</AuthProvider>} />
+      <Route path="/" element={<LandingRoute />} />
       <Route path="/about" element={<About />} />
       <Route path="/auth" element={suspended(<AuthRoute />)} />
 

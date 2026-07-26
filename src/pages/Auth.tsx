@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Chrome, LoaderCircle, Sparkles } from 'lucide-react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { supabase } from '../lib/supabase'
 
 const SITE_URL_HELP = 'Auth is blocked by the Supabase Site URL setting. Set Supabase Site URL to https://alphatekx.name.ng and add https://alphatekx.name.ng/auth as an allowed redirect URL.'
+const OAUTH_STATE_HELP = 'Google sign-in expired or was started from an old tab. Close old AlphaTekx login tabs, sign out of the stuck session if needed, then try Continue with Google again.'
 
 function authRedirectUrl() {
   const configured = String(import.meta.env.VITE_PUBLIC_APP_URL || '').trim().replace(/\/+$/, '')
@@ -35,6 +36,15 @@ export default function Auth() {
   const location = useLocation()
   const navigate = useNavigate()
   const destination = (location.state as {from?:string}|null)?.from || '/home'
+
+  useEffect(() => {
+    const query = new URLSearchParams(location.search)
+    const code = query.get('error_code') || ''
+    const description = query.get('error_description') || query.get('error') || ''
+    if (!code && !description) return
+    const text = `${code} ${description}`
+    setNotice(/bad_oauth_state|state.*expired|state.*not.*found/i.test(text) ? OAUTH_STATE_HELP : authMessage(description || code))
+  }, [location.search])
 
   if (user) return <Navigate to={destination} replace/>
 
