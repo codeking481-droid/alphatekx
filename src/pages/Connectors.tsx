@@ -11,6 +11,7 @@ import { deleteIntegration, disconnectGoogle, getFacebookPages, getIntegrationSt
 const apiKeyAvailable = new Set(['slack', 'discord'])
 const manualConnectionAvailable = new Set(['telegram', 'slack', 'discord'])
 const composioOAuthProviders = new Set(['notion', 'instagram', 'x', 'youtube', 'whatsapp'])
+const nativeOAuthProviders = new Set(['linkedin', 'facebook', 'google'])
 const betaPlatforms = [
   { id: 'facebook', name: 'Facebook', description: 'Facebook Page publishing.' },
   { id: 'instagram', name: 'Instagram', description: 'Instagram publishing.' },
@@ -70,11 +71,12 @@ export default function Connectors() {
         getIntegrationStatus(session?.access_token),
         getConnectedApps(session?.access_token).catch(() => ({ providers: [], executions: [] })),
       ])
-      const mapped = Object.fromEntries(connectorData.providers.map(provider => [provider.provider, provider]))
+      const mapped = Object.fromEntries(connectorData.providers.map(provider => [provider.provider === 'twitter' ? 'x' : provider.provider, provider]))
       setConnectorStatus(mapped)
       for (const provider of connectorData.providers) {
-        const current = nativeStatus[provider.provider]
-        nativeStatus[provider.provider] = {
+        const id = provider.provider === 'twitter' ? 'x' : provider.provider
+        const current = nativeStatus[id]
+        nativeStatus[id] = {
           ...(current && 'connected' in current ? current : { connected: false }),
           connected: Boolean((current && 'connected' in current && current.connected) || provider.connected),
           ready: Boolean((current && 'ready' in current && current.ready) || provider.connected),
@@ -155,13 +157,14 @@ export default function Connectors() {
     const beta = betaPlatforms.map(item => {
       const state = service(item.id)
       const access = feature(item.id)
-      const configured = connectorStatus[item.id]?.status !== 'unavailable'
-      return { ...item, connector: getConnector(item.id) || fallbackConnector(item.id, item.name), availability: access.enabled ? (state.connected && state.ready ? 'Connected - Testing' : configured ? 'Internal Beta' : 'Needs server config') : 'Coming Soon' }
+      const providerState = connectorStatus[item.id]
+      const configured = nativeOAuthProviders.has(item.id) || Boolean(providerState?.enabled) || (providerState && providerState.status !== 'unavailable')
+      return { ...item, connector: getConnector(item.id) || fallbackConnector(item.id, item.name), availability: access.enabled ? (state.connected && state.ready ? 'Connected - Testing' : configured ? 'Ready to connect' : 'Needs server config') : 'Coming Soon' }
     })
     const internal = isAdminTester ? ['google', 'telegram', 'slack', 'discord'].map(id => {
       const connector = getConnector(id === 'google' ? 'gmail' : id)!
       const state = service(id)
-      return { id, name: id === 'google' ? 'Google' : connector.name, description: id === 'google' ? 'Gmail, Calendar, Sheets and Drive.' : connector.description, connector, availability: state.connected && state.ready ? 'Connected - Testing' : 'Internal Beta' }
+      return { id, name: id === 'google' ? 'Google' : connector.name, description: id === 'google' ? 'Gmail, Calendar, Sheets and Drive.' : connector.description, connector, availability: state.connected && state.ready ? 'Connected - Testing' : 'Ready to connect' }
     }) : []
     return [...available, ...beta, ...internal].filter(item => `${item.name} ${item.description}`.toLowerCase().includes(query.toLowerCase()))
   }, [query, status, connectorStatus])
@@ -190,7 +193,7 @@ export default function Connectors() {
     if (availability === 'Needs server config') {
       setSelected(id)
       setSelectorOpen(false)
-      setNotice(`${getConnector(id)?.name || id} needs its server auth config before OAuth can start.`)
+      setNotice(`${getConnector(id)?.name || id} needs its server auth config before OAuth can start. Add the provider auth-config environment variable on Render.`)
       return
     }
     setSelected(id)
