@@ -16,10 +16,10 @@ async function test(name, fn) {
 const admin = { id: 'admin', email: 'iamdan4live@gmail.com' }
 const publicUser = { id: 'public', email: 'public@example.com' }
 
-await test('admin account is treated like a normal user for launch', () => {
+await test('verified admin account regains admin authority', () => {
   const status = featureStatusForUser(admin)
-  assert.equal(status.admin, false)
-  assert.equal(connectorFeatureAccess(admin, 'facebook').admin, false)
+  assert.equal(status.admin, true)
+  assert.equal(connectorFeatureAccess(admin, 'facebook').admin, true)
 })
 
 await test('released tools are controlled by code and remain public', () => {
@@ -47,29 +47,32 @@ await test('feature update API is retired for launch', async () => {
   assert.equal(unavailableConnectorMessage('tiktok'), 'TikTok integration is coming soon. LinkedIn is available now.')
 })
 
-await test('admin feature management UI and routes are removed from workspace', () => {
+await test('admin operations return while feature toggles remain retired', () => {
   const app = fs.readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
   const layout = fs.readFileSync(new URL('../src/components/workspace/WorkspaceLayout.tsx', import.meta.url), 'utf8')
   const connectors = fs.readFileSync(new URL('../src/pages/Connectors.tsx', import.meta.url), 'utf8')
   const server = fs.readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
   assert.doesNotMatch(app, /AdminFeatures/)
+  assert.equal(app.includes('path="/admin" element={protectedPage(<Admin />)}'), true)
   assert.match(app, /path="\/admin\/features" element=\{toDashboard\}/)
   assert.doesNotMatch(layout, /Feature Management/)
-  assert.doesNotMatch(layout, /isAdmin/)
+  assert.match(layout, /isAdminUser/)
+  assert.match(layout, />Admin<\/NavLink>/)
   assert.match(connectors, /Public tools active/)
   assert.doesNotMatch(connectors, /Admin access active/)
   assert.match(server, /Feature management is disabled for launch/)
 })
 
-await test('admin credit bypass is removed from client and server paths', () => {
+await test('verified admin receives admin credit authority only after authenticated identity', () => {
   const adminAccess = fs.readFileSync(new URL('../src/lib/adminAccess.ts', import.meta.url), 'utf8')
   const creditStore = fs.readFileSync(new URL('../src/lib/creditStore.ts', import.meta.url), 'utf8')
   const auth = fs.readFileSync(new URL('../src/lib/auth.tsx', import.meta.url), 'utf8')
   const server = fs.readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
-  assert.match(adminAccess, /return false/)
+  assert.match(adminAccess, /userEmail\(user\) === ADMIN_EMAIL/)
   assert.doesNotMatch(creditStore, /999999|result\.admin|iamdan4live@gmail.com/)
   assert.doesNotMatch(auth, /999999|plan: 'admin'/)
-  assert.match(server, /function isAdminAuthUser[\s\S]*return false/)
+  assert.match(server, /function isAdminAuthUser[\s\S]*authUserEmail\(user\) === adminEmail/)
+  assert.match(server, /if \(isAdminAuthUser\(user\)\) return json\(res, 200, \{ ok: true, admin: true/)
 })
 
 await test('stale local identity is not mixed with bearer authentication', () => {

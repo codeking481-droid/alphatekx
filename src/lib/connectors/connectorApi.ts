@@ -15,6 +15,7 @@ export type ConnectedAppStatus = {
   connectedAt?: string
   lastSyncedAt?: string
   metadata?: Record<string, unknown>
+  requiredEnvironment?: string[]
 }
 
 export type ExecutionResult = {
@@ -30,6 +31,7 @@ export type ExecutionResult = {
 export type ConnectedAppsResponse = {
   providers: ConnectedAppStatus[]
   executions: ExecutionResult[]
+  error?: string | null
 }
 
 export type ConnectResponse = {

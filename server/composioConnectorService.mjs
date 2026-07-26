@@ -95,6 +95,15 @@ const PROVIDER_DEFS = {
   },
 }
 
+const AUTH_CONFIG_ALIASES = {
+  notion: ['NOTION_AUTH_CONFIG_ID'],
+  facebook: ['FACEBOOK_AUTH_CONFIG_ID'],
+  instagram: ['INSTAGRAM_AUTH_CONFIG_ID', 'COMPOSIO_META_INSTAGRAM_AUTH_CONFIG_ID'],
+  twitter: ['COMPOSIO_X_AUTH_CONFIG_ID', 'TWITTER_AUTH_CONFIG_ID', 'X_AUTH_CONFIG_ID'],
+  youtube: ['YOUTUBE_AUTH_CONFIG_ID'],
+  whatsapp: ['WHATSAPP_AUTH_CONFIG_ID', 'COMPOSIO_WHATSAPP_BUSINESS_AUTH_CONFIG_ID'],
+}
+
 // ---------------------------------------------------------------------------
 // Provider alias resolution
 // ---------------------------------------------------------------------------
@@ -181,18 +190,22 @@ export function initialize() {
     
     // Load provider configs from env vars
     for (const [pid, def] of Object.entries(PROVIDER_DEFS)) {
-      const authConfigId = process.env[def.authConfigEnv]
+      const envNames = [def.authConfigEnv, ...(AUTH_CONFIG_ALIASES[pid] || [])]
+      const configuredEnv = envNames.find(name => String(process.env[name] || '').trim())
+      const authConfigId = configuredEnv ? String(process.env[configuredEnv]).trim() : ''
       if (authConfigId) {
         providerConfigs[pid] = {
           authConfigId,
           enabled: true,
+          configuredEnv,
         }
         PROVIDER_DEFS[pid].enabled = true
       } else {
         providerConfigs[pid] = {
           authConfigId: null,
           enabled: false,
-          error: `${def.authConfigEnv} not configured. ${def.name} is unavailable.`,
+          requiredEnvironment: envNames,
+          error: `Add ${envNames.join(' or ')} on Render, then redeploy.`,
         }
       }
     }
@@ -249,8 +262,7 @@ function userEmail(user) {
   return ''
 }
 function isAdminUser(user) {
-  userEmail(user)
-  return false
+  return userEmail(user) === ADMIN_EMAIL
 }
 
 // ---------------------------------------------------------------------------
@@ -266,9 +278,6 @@ function isAdminUser(user) {
  */
 export async function getConnectedApps(user) {
   const init = ensureInitialized()
-  if (!init.ok) {
-    return { providers: [], executions: [], error: init.error }
-  }
 
   const providers = []
   for (const [pid, def] of Object.entries(PROVIDER_DEFS)) {
@@ -278,9 +287,9 @@ export async function getConnectedApps(user) {
     let status = 'disconnected'
     let connectedAt = null
     let lastSyncedAt = null
-    let error = null
+    let error = config.error || (!init.ok ? init.error : null)
 
-    if (config.enabled && user) {
+    if (init.ok && config.enabled && user) {
       try {
         const uid = composioUserId(user.id)
         const accounts = await composioClient.connectedAccounts.list({
@@ -305,19 +314,20 @@ export async function getConnectedApps(user) {
       name: def.name,
       connected,
       connectionId,
-      status: connected ? 'connected' : (error ? 'error' : status),
+      status: connected ? 'connected' : (!config.enabled ? 'unavailable' : (error ? 'error' : status)),
       stage: def.stage,
       enabled: config.enabled,
       category: def.category,
       connectedAt,
       lastSyncedAt,
       error,
+      requiredEnvironment: config.requiredEnvironment || [],
       isNative: def.isNative,
       actions: def.actions,
     })
   }
 
-  return { providers, executions: [] }
+  return { providers, executions: [], error: init.ok ? null : init.error }
 }
 
 /**

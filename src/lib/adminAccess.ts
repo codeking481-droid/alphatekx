@@ -27,6 +27,5 @@ export function userEmail(user: MaybeUser | null | undefined) {
 }
 
 export function isAdminUser(user: MaybeUser | null | undefined) {
-  userEmail(user)
-  return false
+  return userEmail(user) === ADMIN_EMAIL
 }

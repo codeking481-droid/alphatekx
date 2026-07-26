@@ -41,9 +41,9 @@ for (const platform of ['facebook', 'instagram', 'whatsapp', 'x']) {
   })
 }
 
-await test('former admin account behaves like a normal public user', () => {
+await test('verified admin account has admin authority while public tools remain available', () => {
   const status = featureStatusForUser(adminUser)
-  assert.equal(status.admin, false)
+  assert.equal(status.admin, true)
   for (const platform of ['facebook', 'instagram', 'whatsapp', 'x']) {
     assert.equal(status.connectors[platform].enabled, true)
     assert.equal(status.connectors[platform].availability, 'available')

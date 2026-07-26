@@ -96,7 +96,7 @@ export async function refreshFeatureConfig(config, force = false) {
 }
 
 export function isAdminTestUser(user, trustedIdentity = true) {
-  return false
+  return Boolean(trustedIdentity && ADMIN_TEST_EMAILS.has(String(user?.email || '').trim().toLowerCase()))
 }
 
 export function connectorFeatureAccess(user, connector, trustedIdentity = true) {

@@ -37,7 +37,7 @@ export default function AdminWithdrawals() {
     }
   }
 
-  if (!isAdmin) return <Navigate to="/workspace" replace />
+  if (!isAdmin) return <Navigate to="/dashboard" replace />
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 sm:px-5">

@@ -76,7 +76,7 @@ await test('connected-app rendering requires backend connected and ready state',
   assert.match(workflow, /s\.connected && s\.ready/)
 })
 
-await test('profile refresh is bounded and admin bypass is disabled for launch', () => {
+await test('profile refresh is bounded and admin authority requires verified identity', () => {
   const auth = fs.readFileSync(new URL('../src/lib/auth.tsx', import.meta.url), 'utf8')
   const adminAccess = fs.readFileSync(new URL('../src/lib/adminAccess.ts', import.meta.url), 'utf8')
   const server = fs.readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
@@ -88,11 +88,11 @@ await test('profile refresh is bounded and admin bypass is disabled for launch',
   assert.match(auth, /profile refresh failed/)
   assert.match(adminAccess, /iamdan4live@gmail.com/)
   assert.match(adminAccess, /identity_data/)
-  assert.match(adminAccess, /return false/)
+  assert.match(adminAccess, /userEmail\(user\) === ADMIN_EMAIL/)
   assert.match(server, /function authUserEmail/)
   assert.match(server, /identity_data/)
   assert.match(server, /async function authenticatedAdmin/)
-  assert.match(server, /function isAdminAuthUser[\s\S]*return false/)
+  assert.match(server, /function isAdminAuthUser[\s\S]*authUserEmail\(user\) === adminEmail/)
   assert.doesNotMatch(server, /x-admin-email/)
   assert.match(billing, /function userEmail/)
   assert.match(marketplace, /function userEmail/)
@@ -140,6 +140,19 @@ await test('connected apps accepts service links and shows released connectors',
   assert.match(connectors, /Telegram', description: 'Send Telegram messages/)
   assert.match(featureAccess, /defaultFeature\?\.state === 'public'/)
   assert.match(featureAccess, /const featureIds = new Set/)
+})
+
+await test('Meta, WhatsApp, Instagram and X use the correct configuration paths', () => {
+  const connectors = fs.readFileSync(new URL('../src/pages/Connectors.tsx', import.meta.url), 'utf8')
+  const server = fs.readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
+  const composio = fs.readFileSync(new URL('../server/composioConnectorService.mjs', import.meta.url), 'utf8')
+  assert.match(connectors, /composioOAuthProviders = new Set\(\['notion', 'instagram', 'x', 'youtube'\]\)/)
+  assert.match(connectors, /serverManagedProviders = new Set\(\['whatsapp'\]\)/)
+  assert.match(server, /META_APP_ID and META_APP_SECRET/)
+  assert.match(server, /WHATSAPP_ACCESS_TOKEN/)
+  assert.match(composio, /COMPOSIO_INSTAGRAM_AUTH_CONFIG_ID/)
+  assert.match(composio, /COMPOSIO_X_AUTH_CONFIG_ID/)
+  assert.match(composio, /requiredEnvironment/)
 })
 
 await test('api clients omit browser cookies to avoid oversized header failures', () => {
