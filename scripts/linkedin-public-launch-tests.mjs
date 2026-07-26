@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { createConversationEngine } from '../server/alpha/conversationEngine.mjs'
-import { connectorFeatureAccess, featureStatusForUser, unavailableConnectorMessage } from '../server/featureAccess.mjs'
+import { connectorFeatureAccess, featureStatusForUser } from '../server/featureAccess.mjs'
 
 const tests = []
 async function test(name, fn) {
@@ -34,10 +34,10 @@ await test('public user sees LinkedIn as available', () => {
 })
 
 for (const platform of ['facebook', 'instagram', 'whatsapp', 'x']) {
-  await test(`public user sees ${platform} as Coming Soon`, () => {
+  await test(`signed-in user sees ${platform} beta as testing`, () => {
     const access = connectorFeatureAccess(publicUser, platform)
-    assert.equal(access.enabled, false)
-    assert.equal(access.availability, 'coming_soon')
+    assert.equal(access.enabled, true)
+    assert.equal(access.availability, 'testing')
   })
 }
 
@@ -53,17 +53,20 @@ await test('admin account can access internal connector testing', () => {
 await test('an untrusted email header cannot claim the admin override', () => {
   const access = connectorFeatureAccess(adminUser, 'facebook', false)
   assert.equal(access.admin, false)
+  assert.equal(access.enabled, true)
+})
+
+await test('anonymous users still cannot access beta connectors', () => {
+  const access = connectorFeatureAccess(null, 'facebook')
   assert.equal(access.enabled, false)
+  assert.equal(access.availability, 'coming_soon')
 })
 
 for (const platform of ['Facebook', 'WhatsApp']) {
-  await test(`public ${platform} request does not create an automation`, async () => {
+  await test(`signed-in ${platform} request is not blocked by feature gate`, async () => {
     const fixture = engineFixture()
     const conversation = await fixture.engine.start(publicUser, `${platform === 'WhatsApp' ? 'Send WhatsApp messages' : 'Post on Facebook'}`)
-    assert.equal(conversation.conversationStage, 'chatting')
-    assert.equal(conversation.automationDraft, null)
-    assert.equal(conversation.messages.at(-1).text, unavailableConnectorMessage(platform))
-    assert.equal(fixture.modelCalls, 0)
+    assert.notEqual(conversation.messages.at(-1).text, `${platform} integration is coming soon. LinkedIn is available now.`)
   })
 }
 
@@ -96,8 +99,8 @@ await test('public users cannot unlock hidden connectors through direct API payl
 await test('Connected Apps is server-driven and labels internal access', () => {
   const source = fs.readFileSync(new URL('../src/pages/Connectors.tsx', import.meta.url), 'utf8')
   assert.match(source, /status\._access\?\.connectors/)
-  assert.match(source, /Coming soon\. We are testing this integration before releasing it publicly\./)
-  assert.match(source, /Internal Beta/)
+  assert.match(source, /Coming Soon/)
+  assert.match(source, /Ready to connect/)
   assert.match(source, /Needs server config/)
   assert.match(source, /getConnectedApps/)
   assert.doesNotMatch(source, /localStorage.*admin/i)
