@@ -249,7 +249,8 @@ function userEmail(user) {
   return ''
 }
 function isAdminUser(user) {
-  return userEmail(user) === ADMIN_EMAIL
+  userEmail(user)
+  return false
 }
 
 // ---------------------------------------------------------------------------

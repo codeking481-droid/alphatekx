@@ -95,14 +95,14 @@ export async function refreshFeatureConfig(config, force = false) {
 }
 
 export function isAdminTestUser(user, trustedIdentity = true) {
-  return Boolean(trustedIdentity && ADMIN_TEST_EMAILS.has(String(user?.email || '').trim().toLowerCase()))
+  return false
 }
 
 export function connectorFeatureAccess(user, connector, trustedIdentity = true) {
   const id = normalizeFeatureId(connector)
   const feature = featureCache.get(id) || DEFAULT_FEATURE_MAP.get(id) || { id, name: id, state: 'disabled', stop_existing: true }
   const defaultFeature = DEFAULT_FEATURE_MAP.get(id)
-  const state = feature.state === 'beta' && defaultFeature?.state === 'public' ? 'public' : feature.state
+  const state = defaultFeature?.state === 'public' ? 'public' : feature.state
   const email = String(user?.email || '').trim().toLowerCase()
   const admin = isAdminTestUser(user, trustedIdentity)
   const beta = trustedIdentity && betaUsers.has(email)
@@ -169,6 +169,10 @@ export function featureManagementSnapshot() {
 }
 
 export async function updateFeature(config, id, changes, actor) {
+  throw new Error('Feature management is disabled for launch. Released tools are controlled by code.')
+}
+
+export async function updateFeatureDisabled(config, id, changes, actor) {
   const featureId = normalizeFeatureId(id)
   const previous = featureCache.get(featureId)
   if (!previous) throw new Error('Feature not found')

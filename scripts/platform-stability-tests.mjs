@@ -76,7 +76,7 @@ await test('connected-app rendering requires backend connected and ready state',
   assert.match(workflow, /s\.connected && s\.ready/)
 })
 
-await test('admin auth profile refresh is bounded and recoverable', () => {
+await test('profile refresh is bounded and admin bypass is disabled for launch', () => {
   const auth = fs.readFileSync(new URL('../src/lib/auth.tsx', import.meta.url), 'utf8')
   const adminAccess = fs.readFileSync(new URL('../src/lib/adminAccess.ts', import.meta.url), 'utf8')
   const server = fs.readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
@@ -86,12 +86,13 @@ await test('admin auth profile refresh is bounded and recoverable', () => {
   assert.match(auth, /PROFILE_TIMEOUT_MS/)
   assert.match(auth, /withTimeout/)
   assert.match(auth, /profile refresh failed/)
-  assert.match(auth, /isAdminUser/)
   assert.match(adminAccess, /iamdan4live@gmail.com/)
   assert.match(adminAccess, /identity_data/)
+  assert.match(adminAccess, /return false/)
   assert.match(server, /function authUserEmail/)
   assert.match(server, /identity_data/)
   assert.match(server, /async function authenticatedAdmin/)
+  assert.match(server, /function isAdminAuthUser[\s\S]*return false/)
   assert.doesNotMatch(server, /x-admin-email/)
   assert.match(billing, /function userEmail/)
   assert.match(marketplace, /function userEmail/)

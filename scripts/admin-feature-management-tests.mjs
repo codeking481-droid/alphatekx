@@ -2,8 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import {
   connectorFeatureAccess,
-  featureManagementSnapshot,
-  setBetaUser,
+  featureStatusForUser,
   unavailableConnectorMessage,
   updateFeature,
 } from '../server/featureAccess.mjs'
@@ -16,73 +15,61 @@ async function test(name, fn) {
 
 const admin = { id: 'admin', email: 'iamdan4live@gmail.com' }
 const publicUser = { id: 'public', email: 'public@example.com' }
-const betaUser = { id: 'beta', email: 'beta@example.com' }
-const config = {}
 
-await test('disabled features are blocked for public and admin users', async () => {
-  await updateFeature(config, 'facebook', { state: 'disabled', stopExisting: true }, admin)
-  assert.equal(connectorFeatureAccess(publicUser, 'facebook').enabled, false)
-  assert.equal(connectorFeatureAccess(admin, 'facebook').enabled, false)
+await test('admin account is treated like a normal user for launch', () => {
+  const status = featureStatusForUser(admin)
+  assert.equal(status.admin, false)
+  assert.equal(connectorFeatureAccess(admin, 'facebook').admin, false)
 })
 
-await test('available default-public tools remain public even with stale beta database rows', async () => {
-  await updateFeature(config, 'facebook', { state: 'beta', stopExisting: true }, admin)
-  await setBetaUser(config, betaUser.email, true, admin)
+await test('released tools are controlled by code and remain public', () => {
+  for (const platform of ['linkedin', 'facebook', 'instagram', 'whatsapp', 'x', 'google', 'gmail', 'google_drive', 'notion', 'youtube', 'telegram', 'slack', 'discord']) {
+    const access = connectorFeatureAccess(publicUser, platform)
+    assert.equal(access.enabled, true, `${platform} should be enabled`)
+    assert.equal(access.availability, 'available', `${platform} should be available`)
+  }
+})
+
+await test('unreleased tools stay disabled', () => {
+  for (const platform of ['tiktok', 'company_builder', 'image_generator', 'video_generator']) {
+    const access = connectorFeatureAccess(publicUser, platform)
+    assert.equal(access.enabled, false, `${platform} should stay disabled`)
+    assert.equal(access.availability, 'coming_soon')
+  }
+})
+
+await test('feature update API is retired for launch', async () => {
+  await assert.rejects(
+    updateFeature({}, 'facebook', { state: 'disabled', stopExisting: true }, admin),
+    /Feature management is disabled for launch/
+  )
   assert.equal(connectorFeatureAccess(publicUser, 'facebook').enabled, true)
-  assert.equal(connectorFeatureAccess(publicUser, 'facebook').availability, 'available')
-  assert.equal(connectorFeatureAccess(admin, 'facebook').enabled, true)
-  assert.equal(connectorFeatureAccess(betaUser, 'facebook').enabled, true)
+  assert.equal(unavailableConnectorMessage('tiktok'), 'TikTok integration is coming soon. LinkedIn is available now.')
 })
 
-await test('public state is immediately available to everyone', async () => {
-  await updateFeature(config, 'facebook', { state: 'public', stopExisting: true }, admin)
-  assert.equal(connectorFeatureAccess(publicUser, 'facebook').enabled, true)
-})
-
-await test('maintenance state blocks access with an honest message', async () => {
-  await updateFeature(config, 'facebook', { state: 'maintenance', stopExisting: true }, admin)
-  assert.equal(connectorFeatureAccess(publicUser, 'facebook').enabled, false)
-  assert.equal(unavailableConnectorMessage('facebook'), 'Facebook is temporarily under maintenance.')
-})
-
-await test('feature changes record modifier, timestamp, and audit transition', () => {
-  const snapshot = featureManagementSnapshot()
-  const feature = snapshot.features.find(item => item.id === 'facebook')
-  assert.equal(feature.updated_by, admin.email)
-  assert.ok(Date.parse(feature.updated_at))
-  assert.ok(snapshot.audit.some(item => item.feature_id === 'facebook' && item.changed_by === admin.email))
-})
-
-await test('admin API and UI are authenticated and server enforced', () => {
-  const server = fs.readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
+await test('admin feature management UI and routes are removed from workspace', () => {
   const app = fs.readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
-  const page = fs.readFileSync(new URL('../src/pages/AdminFeatures.tsx', import.meta.url), 'utf8')
-  assert.match(server, /async function authenticatedAdmin/)
-  assert.match(server, /authenticatedUser\(req, config\.url, config\.anon\)/)
-  assert.match(server, /\/api\/admin\/features/)
-  assert.match(server, /stop_existing/)
-  assert.match(server, /featurePause\?\.featureId/)
-  assert.match(server, /previousStatus/)
-  assert.match(app, /\/admin\/features/)
-  assert.match(page, /Feature Management/)
-  assert.match(page, /Beta testers/)
-  assert.match(page, /Audit log/)
-  assert.match(page, /setInterval\(refresh, 5_000\)/)
+  const layout = fs.readFileSync(new URL('../src/components/workspace/WorkspaceLayout.tsx', import.meta.url), 'utf8')
+  const connectors = fs.readFileSync(new URL('../src/pages/Connectors.tsx', import.meta.url), 'utf8')
+  const server = fs.readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
+  assert.doesNotMatch(app, /AdminFeatures/)
+  assert.match(app, /path="\/admin\/features" element=\{toDashboard\}/)
+  assert.doesNotMatch(layout, /Feature Management/)
+  assert.doesNotMatch(layout, /isAdmin/)
+  assert.match(connectors, /Public tools active/)
+  assert.doesNotMatch(connectors, /Admin access active/)
+  assert.match(server, /Feature management is disabled for launch/)
 })
 
-await test('database writes use verified upserts rather than unchecked filtered updates', () => {
-  const source = fs.readFileSync(new URL('../server/featureAccess.mjs', import.meta.url), 'utf8')
-  assert.match(source, /features\?on_conflict=id/)
-  assert.match(source, /resolution=merge-duplicates,return=representation/)
-  assert.match(source, /saved\[0\]\?\.state !== state/)
-})
-
-await test('database migration defines flags, beta users, audit log, and RLS', () => {
-  const sql = fs.readFileSync(new URL('../supabase/feature-management.sql', import.meta.url), 'utf8')
-  assert.match(sql, /create table if not exists public\.features/)
-  assert.match(sql, /feature_beta_users/)
-  assert.match(sql, /feature_audit_log/)
-  assert.match(sql, /enable row level security/)
+await test('admin credit bypass is removed from client and server paths', () => {
+  const adminAccess = fs.readFileSync(new URL('../src/lib/adminAccess.ts', import.meta.url), 'utf8')
+  const creditStore = fs.readFileSync(new URL('../src/lib/creditStore.ts', import.meta.url), 'utf8')
+  const auth = fs.readFileSync(new URL('../src/lib/auth.tsx', import.meta.url), 'utf8')
+  const server = fs.readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
+  assert.match(adminAccess, /return false/)
+  assert.doesNotMatch(creditStore, /999999|result\.admin|iamdan4live@gmail.com/)
+  assert.doesNotMatch(auth, /999999|plan: 'admin'/)
+  assert.match(server, /function isAdminAuthUser[\s\S]*return false/)
 })
 
 await test('stale local identity is not mixed with bearer authentication', () => {
@@ -94,9 +81,6 @@ await test('stale local identity is not mixed with bearer authentication', () =>
   assert.match(auth, /localStorage\.removeItem\(LOCAL_USER_KEY\)/)
   assert.match(server, /headers\.authorization.*Bearer/)
 })
-
-await updateFeature(config, 'facebook', { state: 'beta', stopExisting: true }, admin)
-await setBetaUser(config, betaUser.email, false, admin)
 
 const failed = tests.filter(item => !item.ok)
 console.log('ADMIN_FEATURE_MANAGEMENT_TESTS:')
