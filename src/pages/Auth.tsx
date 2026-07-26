@@ -4,6 +4,8 @@ import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { supabase } from '../lib/supabase'
 
+const SITE_URL_HELP = 'Auth is blocked by the Supabase Site URL setting. Set Supabase Site URL to https://alphatekx.name.ng and add https://alphatekx.name.ng/auth as an allowed redirect URL.'
+
 function authRedirectUrl() {
   const configured = String(import.meta.env.VITE_PUBLIC_APP_URL || '').trim().replace(/\/+$/, '')
   const origin = configured || window.location.origin
@@ -24,6 +26,7 @@ function authRedirectUrl() {
 export default function Auth() {
   const { user, configured, localSignIn } = useAuth()
   const [dev, setDev] = useState(false)
+  const [mode, setMode] = useState<'signin' | 'signup'>('signin')
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -35,15 +38,20 @@ export default function Auth() {
 
   if (user) return <Navigate to={destination} replace/>
 
+  const authMessage = (message: string) => {
+    const text = String(message || '')
+    return /site url|redirect/i.test(text) ? SITE_URL_HELP : text || 'Authentication failed. Please try again.'
+  }
+
   const google = async () => {
     if (!supabase) return
     setPending(true); setNotice('')
     try {
       const { error } = await supabase.auth.signInWithOAuth({ provider:'google', options:{ redirectTo: authRedirectUrl() } })
-      if (error) setNotice(error.message.includes('site url') ? 'Google sign-in is blocked by the Supabase Auth site URL setting. Use email sign-in now, then update Supabase Site URL to https://alphatekx.name.ng.' : error.message)
+      if (error) setNotice(authMessage(error.message))
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Google sign-in failed.'
-      setNotice(message.includes('site url') ? 'Google sign-in is blocked by the Supabase Auth site URL setting. Use email sign-in now, then update Supabase Site URL to https://alphatekx.name.ng.' : message)
+      setNotice(authMessage(message))
     } finally {
       setPending(false)
     }
@@ -54,14 +62,38 @@ export default function Auth() {
     setPending(true); setNotice('')
     try {
       const result = await supabase.auth.signInWithPassword({ email: email.trim(), password })
-      if (result.error) setNotice(result.error.message)
+      if (result.error) setNotice(authMessage(result.error.message))
       else navigate(destination)
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'Sign in failed. Please try again.')
+      setNotice(authMessage(error instanceof Error ? error.message : 'Sign in failed. Please try again.'))
     } finally {
       setPending(false)
     }
   }
+
+  const emailSignUp = async () => {
+    if (!supabase || !email.trim() || !password) return
+    setPending(true); setNotice('')
+    try {
+      const result = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+        options: {
+          emailRedirectTo: authRedirectUrl(),
+          data: { full_name: name.trim() || email.trim().split('@')[0] },
+        },
+      })
+      if (result.error) setNotice(authMessage(result.error.message))
+      else if (result.data.session) navigate(destination)
+      else setNotice('Account created. Check your email to confirm your account, then sign in.')
+    } catch (error) {
+      setNotice(authMessage(error instanceof Error ? error.message : 'Sign up failed. Please try again.'))
+    } finally {
+      setPending(false)
+    }
+  }
+
+  const submitEmail = () => mode === 'signin' ? emailSignIn() : emailSignUp()
 
   const submitLocal = async () => {
     if (!name.trim() || !email.trim()) return
@@ -76,8 +108,8 @@ export default function Auth() {
         <Link to="/" className="flex items-center justify-center gap-2 text-sm font-semibold tracking-[.12em] text-white/80">
           <Sparkles size={18} className="text-violet-400"/> ALPHATEKX
         </Link>
-        <h1 className="mt-6 text-center text-2xl font-semibold">Sign in to AlphaTekX</h1>
-        <p className="mt-2 text-center text-sm text-white/55">Use your Google account to start automating.</p>
+        <h1 className="mt-6 text-center text-2xl font-semibold">{mode === 'signin' ? 'Sign in to AlphaTekX' : 'Create your AlphaTekX account'}</h1>
+        <p className="mt-2 text-center text-sm text-white/55">Use Google or email to start automating.</p>
 
         <button onClick={()=>void google()} disabled={pending || !configured} className="btn-alpha mt-8 flex min-h-12 w-full items-center justify-center gap-3 rounded-full font-medium text-white disabled:opacity-40">
           {pending ? <LoaderCircle className="animate-spin" size={18}/> : <><Chrome size={18}/> Continue with Google</>}
@@ -85,10 +117,14 @@ export default function Auth() {
 
         {configured && (
           <div className="mt-5 space-y-3">
-            <input type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === 'Enter' && void emailSignIn()} className="field" placeholder="Email" />
-            <input type="password" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === 'Enter' && void emailSignIn()} className="field" placeholder="Password" />
-            <button onClick={() => void emailSignIn()} disabled={pending || !email.trim() || !password} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-white/15 bg-white/[0.07] text-sm text-white transition-all hover:bg-white/[0.12] disabled:opacity-40">
-              {pending ? <LoaderCircle className="animate-spin" size={16}/> : 'Sign in with email'}
+            {mode === 'signup' && <input value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === 'Enter' && void submitEmail()} className="field" placeholder="Full name" />}
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === 'Enter' && void submitEmail()} className="field" placeholder="Email" />
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === 'Enter' && void submitEmail()} className="field" placeholder={mode === 'signup' ? 'Password - at least 6 characters' : 'Password'} />
+            <button onClick={() => void submitEmail()} disabled={pending || !email.trim() || !password || (mode === 'signup' && password.length < 6)} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-white/15 bg-white/[0.07] text-sm text-white transition-all hover:bg-white/[0.12] disabled:opacity-40">
+              {pending ? <LoaderCircle className="animate-spin" size={16}/> : mode === 'signin' ? 'Sign in with email' : 'Create account with email'}
+            </button>
+            <button type="button" onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setNotice('') }} className="w-full text-xs text-violet-200/80 hover:text-violet-100">
+              {mode === 'signin' ? 'New here? Create an account' : 'Already have an account? Sign in'}
             </button>
           </div>
         )}
