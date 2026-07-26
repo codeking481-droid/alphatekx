@@ -24,6 +24,16 @@ function authRedirectUrl() {
   }
 }
 
+function clearStaleOAuthState() {
+  const shouldRemove = (key: string) => /supabase|sb-|pkce|oauth|auth-token/i.test(key)
+  for (const storage of [localStorage, sessionStorage]) {
+    try {
+      const keys = Array.from({ length: storage.length }, (_, index) => storage.key(index)).filter(Boolean) as string[]
+      for (const key of keys) if (shouldRemove(key)) storage.removeItem(key)
+    } catch {}
+  }
+}
+
 export default function Auth() {
   const { user, configured, localSignIn } = useAuth()
   const [dev, setDev] = useState(false)
@@ -57,6 +67,7 @@ export default function Auth() {
     if (!supabase) return
     setPending(true); setNotice('')
     try {
+      clearStaleOAuthState()
       const { error } = await supabase.auth.signInWithOAuth({ provider:'google', options:{ redirectTo: authRedirectUrl() } })
       if (error) setNotice(authMessage(error.message))
     } catch (error) {
