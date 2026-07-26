@@ -54,6 +54,7 @@ export default function Auth() {
     if (!code && !description) return
     const text = `${code} ${description}`
     setNotice(/bad_oauth_state|state.*expired|state.*not.*found/i.test(text) ? OAUTH_STATE_HELP : authMessage(description || code))
+    navigate(location.pathname, { replace: true })
   }, [location.search])
 
   if (user) return <Navigate to={destination} replace/>
@@ -67,9 +68,19 @@ export default function Auth() {
     if (!supabase) return
     setPending(true); setNotice('')
     try {
+      await supabase.auth.signOut({ scope: 'local' }).catch(() => null)
       clearStaleOAuthState()
-      const { error } = await supabase.auth.signInWithOAuth({ provider:'google', options:{ redirectTo: authRedirectUrl() } })
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: authRedirectUrl(),
+          skipBrowserRedirect: true,
+          queryParams: { prompt: 'select_account' },
+        },
+      })
       if (error) setNotice(authMessage(error.message))
+      else if (!data.url) setNotice('Google did not return a fresh sign-in URL. Please try again.')
+      else window.location.replace(data.url)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Google sign-in failed.'
       setNotice(authMessage(message))

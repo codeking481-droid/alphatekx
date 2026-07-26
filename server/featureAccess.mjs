@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { supabaseServiceHeaders } from './supabaseHeaders.mjs'
 
 export const ADMIN_TEST_EMAILS = new Set(['iamdan4live@gmail.com'])
 export const FEATURE_STATES = new Set(['disabled', 'beta', 'public', 'maintenance'])
@@ -57,7 +58,7 @@ function writeLocal() {
 }
 
 function serviceHeaders(config, extra = {}) {
-  return { apikey: config.service, Authorization: `Bearer ${config.service}`, 'Content-Type': 'application/json', ...extra }
+  return supabaseServiceHeaders(config.service, extra)
 }
 
 export function normalizeFeatureId(value) {
