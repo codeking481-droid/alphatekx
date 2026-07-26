@@ -1011,6 +1011,26 @@ async function authenticatedUser(req, supabaseUrl, anonKey) {
   }
 }
 
+function normalizedAuthEmail(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
+function authUserEmail(user) {
+  const direct = normalizedAuthEmail(user?.email)
+  if (direct) return direct
+  const metadataEmail = normalizedAuthEmail(user?.user_metadata?.email || user?.app_metadata?.email)
+  if (metadataEmail) return metadataEmail
+  for (const identity of user?.identities || []) {
+    const identityEmail = normalizedAuthEmail(identity?.identity_data?.email)
+    if (identityEmail) return identityEmail
+  }
+  return ''
+}
+
+function isAdminAuthUser(user) {
+  return authUserEmail(user) === adminEmail
+}
+
 async function runUserWorker(worker, apiKey, prompt) {
   const provider = String(worker.provider || '').toLowerCase()
   const model = String(worker.model || '').trim().slice(0, 100)
@@ -1451,10 +1471,10 @@ async function integrationsStatus(req, res) {
 async function authenticatedAdmin(req) {
   const config = supabaseConfig()
   const tokenUser = await authenticatedUser(req, config.url, config.anon).catch(() => null)
-  if (tokenUser?.email?.toLowerCase() === adminEmail) return { user: tokenUser, config }
+  if (isAdminAuthUser(tokenUser)) return { user: { ...tokenUser, email: authUserEmail(tokenUser) }, config }
   if (process.env.NODE_ENV !== 'production') {
     const local = localUserFromRequest(req)
-    if (local?.email?.toLowerCase() === adminEmail) return { user: local, config }
+    if (isAdminAuthUser(local)) return { user: { ...local, email: authUserEmail(local) }, config }
   }
   return null
 }

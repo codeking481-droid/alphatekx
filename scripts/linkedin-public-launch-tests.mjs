@@ -34,36 +34,34 @@ await test('public user sees LinkedIn as available', () => {
 })
 
 for (const platform of ['facebook', 'instagram', 'whatsapp', 'x']) {
-  await test(`public user sees ${platform} as Coming Soon`, () => {
+  await test(`public signed-in user sees ${platform} as available`, () => {
     const access = connectorFeatureAccess(publicUser, platform)
-    assert.equal(access.enabled, false)
-    assert.equal(access.availability, 'coming_soon')
+    assert.equal(access.enabled, true)
+    assert.equal(access.availability, 'available')
   })
 }
 
-await test('admin account can access internal connector testing', () => {
+await test('admin account can access public connector tools', () => {
   const status = featureStatusForUser(adminUser)
   assert.equal(status.admin, true)
   for (const platform of ['facebook', 'instagram', 'whatsapp', 'x']) {
     assert.equal(status.connectors[platform].enabled, true)
-    assert.equal(status.connectors[platform].availability, 'testing')
+    assert.equal(status.connectors[platform].availability, 'available')
   }
 })
 
-await test('an untrusted email header cannot claim the admin override', () => {
+await test('an untrusted email header cannot claim admin but still sees public tools', () => {
   const access = connectorFeatureAccess(adminUser, 'facebook', false)
   assert.equal(access.admin, false)
-  assert.equal(access.enabled, false)
+  assert.equal(access.enabled, true)
+  assert.equal(access.availability, 'available')
 })
 
 for (const platform of ['Facebook', 'WhatsApp']) {
-  await test(`public ${platform} request does not create an automation`, async () => {
+  await test(`public ${platform} request is not blocked as coming soon`, async () => {
     const fixture = engineFixture()
     const conversation = await fixture.engine.start(publicUser, `${platform === 'WhatsApp' ? 'Send WhatsApp messages' : 'Post on Facebook'}`)
-    assert.equal(conversation.conversationStage, 'chatting')
-    assert.equal(conversation.automationDraft, null)
-    assert.equal(conversation.messages.at(-1).text, unavailableConnectorMessage(platform))
-    assert.equal(fixture.modelCalls, 0)
+    assert.notEqual(conversation.messages.at(-1).text, unavailableConnectorMessage(platform))
   })
 }
 

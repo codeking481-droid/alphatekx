@@ -9,21 +9,21 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const localFile = path.resolve(root, 'data', 'feature-management.json')
 const DEFAULT_FEATURES = [
   ['linkedin', 'LinkedIn', 'public', 'connector'],
-  ['facebook', 'Facebook', 'beta', 'connector'],
-  ['instagram', 'Instagram', 'beta', 'connector'],
-  ['whatsapp', 'WhatsApp', 'beta', 'connector'],
-  ['x', 'X', 'beta', 'connector'],
+  ['facebook', 'Facebook', 'public', 'connector'],
+  ['instagram', 'Instagram', 'public', 'connector'],
+  ['whatsapp', 'WhatsApp', 'public', 'connector'],
+  ['x', 'X', 'public', 'connector'],
   ['tiktok', 'TikTok', 'disabled', 'connector'],
-  ['google', 'Google', 'beta', 'connector'],
-  ['gmail', 'Gmail', 'beta', 'connector'],
-  ['google_sheets', 'Google Sheets', 'beta', 'connector'],
-  ['google_calendar', 'Google Calendar', 'beta', 'connector'],
-  ['google_drive', 'Google Drive', 'beta', 'connector'],
-  ['notion', 'Notion', 'beta', 'connector'],
-  ['youtube', 'YouTube', 'beta', 'connector'],
-  ['telegram', 'Telegram', 'beta', 'connector'],
-  ['slack', 'Slack', 'beta', 'connector'],
-  ['discord', 'Discord', 'beta', 'connector'],
+  ['google', 'Google', 'public', 'connector'],
+  ['gmail', 'Gmail', 'public', 'connector'],
+  ['google_sheets', 'Google Sheets', 'public', 'connector'],
+  ['google_calendar', 'Google Calendar', 'public', 'connector'],
+  ['google_drive', 'Google Drive', 'public', 'connector'],
+  ['notion', 'Notion', 'public', 'connector'],
+  ['youtube', 'YouTube', 'public', 'connector'],
+  ['telegram', 'Telegram', 'public', 'connector'],
+  ['slack', 'Slack', 'public', 'connector'],
+  ['discord', 'Discord', 'public', 'connector'],
   ['company_builder', 'Company Builder', 'disabled', 'product'],
   ['image_generator', 'AI Image Generator', 'disabled', 'product'],
   ['video_generator', 'AI Video Generator', 'disabled', 'product'],
@@ -101,21 +101,23 @@ export function isAdminTestUser(user, trustedIdentity = true) {
 export function connectorFeatureAccess(user, connector, trustedIdentity = true) {
   const id = normalizeFeatureId(connector)
   const feature = featureCache.get(id) || DEFAULT_FEATURE_MAP.get(id) || { id, name: id, state: 'disabled', stop_existing: true }
+  const defaultFeature = DEFAULT_FEATURE_MAP.get(id)
+  const state = feature.state === 'beta' && defaultFeature?.state === 'public' ? 'public' : feature.state
   const email = String(user?.email || '').trim().toLowerCase()
   const admin = isAdminTestUser(user, trustedIdentity)
   const beta = trustedIdentity && betaUsers.has(email)
-  const enabled = feature.state === 'public' || (feature.state === 'beta' && (admin || beta))
+  const enabled = state === 'public' || (state === 'beta' && (admin || beta))
   return {
     id,
     name: feature.name || id,
-    state: feature.state,
+    state,
     category: feature.category || 'connector',
     stopExisting: feature.stop_existing !== false,
-    publicEnabled: feature.state === 'public',
+    publicEnabled: state === 'public',
     admin,
     beta,
     enabled,
-    availability: feature.state === 'public' ? 'available' : feature.state === 'maintenance' ? 'maintenance' : feature.state === 'beta' && (admin || beta) ? 'testing' : 'coming_soon',
+    availability: state === 'public' ? 'available' : state === 'maintenance' ? 'maintenance' : state === 'beta' && (admin || beta) ? 'testing' : 'coming_soon',
   }
 }
 

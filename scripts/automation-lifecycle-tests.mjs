@@ -86,15 +86,14 @@ try {
     assert.equal(status.linkedin.ready, true)
   })
 
-  await test('public users cannot call hidden connector APIs directly', async () => {
+  await test('public signed-in users can reach released connector APIs directly', async () => {
     const response = await request('/api/connectors/facebook/start', {
       method: 'POST',
       body: JSON.stringify({ redirect: '/connected-apps' }),
     }, otherHeaders)
     const payload = await response.json()
-    assert.equal(response.status, 403, JSON.stringify(payload))
-    assert.equal(payload.code, 'FEATURE_COMING_SOON')
-    assert.equal(payload.connector, 'facebook')
+    assert.notEqual(response.status, 403, JSON.stringify(payload))
+    assert.notEqual(payload.code, 'FEATURE_COMING_SOON')
   })
 
   await test('admin feature changes apply immediately while public writes are rejected', async () => {
