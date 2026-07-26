@@ -10,8 +10,9 @@ import { deleteIntegration, disconnectGoogle, getFacebookPages, getIntegrationSt
 
 const apiKeyAvailable = new Set(['slack', 'discord'])
 const manualConnectionAvailable = new Set(['telegram', 'slack', 'discord'])
-const composioOAuthProviders = new Set(['notion', 'instagram', 'x', 'youtube', 'whatsapp'])
+const composioOAuthProviders = new Set(['notion', 'instagram', 'x', 'youtube'])
 const nativeOAuthProviders = new Set(['linkedin', 'facebook', 'google'])
+const serverManagedProviders = new Set(['whatsapp'])
 const publicConnectorIds = new Set(['linkedin', 'facebook', 'instagram', 'whatsapp', 'x', 'google', 'gmail', 'google_sheets', 'google_calendar', 'google_drive', 'notion', 'youtube', 'telegram', 'slack', 'discord'])
 const BUILD_ID = String(import.meta.env.VITE_BUILD_ID || 'dev')
 const releasedPlatforms = [
@@ -167,7 +168,8 @@ export default function Connectors() {
       const state = service(item.id)
       const access = feature(item.id)
       const providerState = connectorStatus[item.id]
-      const configured = nativeOAuthProviders.has(item.id) || manualConnectionAvailable.has(item.id) || Boolean(providerState?.enabled) || (providerState && providerState.status !== 'unavailable')
+      const nativeConfigured = nativeOAuthProviders.has(item.id) && (item.id !== 'facebook' || state.configured !== false)
+      const configured = nativeConfigured || manualConnectionAvailable.has(item.id) || (serverManagedProviders.has(item.id) && state.connected && state.ready) || Boolean(providerState?.enabled) || (providerState && providerState.status !== 'unavailable')
       return { ...item, connector: getConnector(item.id) || fallbackConnector(item.id, item.name), availability: access.enabled ? (state.connected && state.ready ? 'Connected - Testing' : configured ? 'Ready to connect' : 'Needs server config') : 'Coming Soon' }
     })
     return [...available, ...released].filter(item => `${item.name} ${item.description}`.toLowerCase().includes(query.toLowerCase()))
@@ -181,7 +183,7 @@ export default function Connectors() {
     if (feature('facebook').enabled && service('facebook').connected && service('facebook').ready && facebook) result.push({ id: 'facebook', name: 'Facebook - Testing', connector: facebook, account: service('facebook').email || service('facebook').identifier || 'Facebook Page', capabilities: 'Internal Beta - Facebook Page text publishing' })
     const google = getConnector('gmail')
     if (feature('gmail').enabled && (service('google').connected && service('google').ready || service('gmail').connected && service('gmail').ready) && google) result.push({ id: 'google', name: 'Google - Testing', connector: google, account: service('google').email || service('gmail').email || 'Google account', capabilities: 'Internal Beta - Gmail, Calendar, Sheets and Drive' })
-    for (const id of [...manualConnectionAvailable, ...composioOAuthProviders]) {
+    for (const id of [...manualConnectionAvailable, ...composioOAuthProviders, ...serverManagedProviders]) {
       const connector = getConnector(id) || fallbackConnector(id)
       if (feature(id).enabled && service(id).connected && service(id).ready) result.push({ id, name: `${connector.name} - Testing`, connector, account: service(id).email || service(id).identifier || 'Connected', capabilities: `Internal Beta - ${connector.actions.map(action => action.label).join(', ') || 'OAuth connector'}` })
     }
@@ -197,7 +199,8 @@ export default function Connectors() {
     if (availability === 'Needs server config') {
       setSelected(id)
       setSelectorOpen(false)
-      setNotice(`${getConnector(id)?.name || id} needs its server auth config before OAuth can start. Add the provider auth-config environment variable on Render.`)
+      const provider = connectorStatus[id === 'x' ? 'x' : id] || connectorStatus[id === 'x' ? 'twitter' : id]
+      setNotice(service(id).setupError || provider?.error || `${getConnector(id)?.name || id} needs its server credentials on Render, followed by a redeploy.`)
       return
     }
     setSelected(id)
@@ -227,6 +230,7 @@ export default function Connectors() {
         return await startFacebookAuth(session?.access_token, redirect)
       }
       if (selected === 'google') return await startGmailConnection(session?.access_token, redirect)
+      if (serverManagedProviders.has(selected)) throw new Error('WhatsApp uses the protected server credentials. Add every WHATSAPP_* variable on Render and redeploy; no user bot token is required.')
       if (composioOAuthProviders.has(selected)) {
         const result = selectedConnected ? await reconnectProvider(selected, session?.access_token) : await connectProvider(selected, session?.access_token)
         if (!result.authUrl) throw new Error(`${getConnector(selected)?.name || selected} OAuth URL was not returned.`)
@@ -244,6 +248,10 @@ export default function Connectors() {
   }
 
   const disconnect = async (id: string) => {
+    if (serverManagedProviders.has(id)) {
+      setNotice(`${getConnector(id)?.name || id} is managed securely by the Render server credentials. Remove or replace those credentials on Render to disconnect it.`)
+      return
+    }
     if (!window.confirm(`Disconnect ${id === 'google' ? 'Google' : getConnector(id)?.name || id}? Existing automations may need attention.`)) return
     setBusy(true)
     try {
@@ -260,7 +268,7 @@ export default function Connectors() {
   const verify = async (id: string) => {
     setBusy(true)
     try {
-      if (id === 'google' || id === 'linkedin' || composioOAuthProviders.has(id)) { await load(); setNotice(`${getConnector(id)?.name || id} connection verified without publishing anything.`) }
+      if (id === 'google' || id === 'linkedin' || composioOAuthProviders.has(id) || serverManagedProviders.has(id)) { await load(); setNotice(`${getConnector(id)?.name || id} connection verified without publishing anything.`) }
       else { await testConnector(id, session?.access_token, 'AlphaTekx connection verification'); setNotice(`${getConnector(id)?.name || id} connection verified.`) }
     } catch (error) { setNotice(error instanceof Error ? error.message : 'Verification failed.') }
     finally { setBusy(false) }

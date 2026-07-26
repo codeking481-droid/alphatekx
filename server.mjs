@@ -1065,8 +1065,7 @@ function authUserEmail(user) {
 }
 
 function isAdminAuthUser(user) {
-  authUserEmail(user)
-  return false
+  return authUserEmail(user) === adminEmail
 }
 
 async function runUserWorker(worker, apiKey, prompt) {
@@ -1495,7 +1494,28 @@ async function integrationsStatus(req, res) {
   if (!status.paystack.connected && process.env.PAYSTACK_SECRET_KEY) status.paystack = { connected: true, ready: true, email: 'AlphaTekX backend' }
   if (!status.supabase.connected && config.url && config.service) status.supabase = { connected: true, ready: true, email: 'AlphaTekX backend' }
   const whatsappServer = whatsappCredentials()
-  if (whatsappServer.configured) status.whatsapp = { connected: true, ready: true, email: 'AlphaTekx WhatsApp test environment' }
+  const whatsappEnvironmentNames = {
+    accessToken: 'WHATSAPP_ACCESS_TOKEN',
+    phoneNumberId: 'WHATSAPP_PHONE_NUMBER_ID',
+    businessAccountId: 'WHATSAPP_BUSINESS_ACCOUNT_ID',
+    verifyToken: 'WHATSAPP_VERIFY_TOKEN',
+    appSecret: 'WHATSAPP_APP_SECRET',
+    apiVersion: 'WHATSAPP_API_VERSION',
+  }
+  if (whatsappServer.configured) status.whatsapp = { connected: true, ready: true, configured: true, email: 'AlphaTekx WhatsApp server account' }
+  else status.whatsapp = {
+    ...(status.whatsapp || {}),
+    connected: false,
+    ready: false,
+    configured: false,
+    setupError: `Missing Render variables: ${whatsappServer.missing.map(name => whatsappEnvironmentNames[name] || name).join(', ')}`,
+  }
+  const facebookServer = facebookCredentials()
+  status.facebook = {
+    ...(status.facebook || { connected: false, ready: false }),
+    configured: Boolean(facebookServer.appId && facebookServer.appSecret),
+    ...(!facebookServer.appId || !facebookServer.appSecret ? { setupError: 'Missing Render variables: META_APP_ID, META_APP_SECRET' } : {}),
+  }
   const features = featureStatusForUser(user, trustedFeatureIdentity(req))
   status._access = features
   for (const [provider, access] of Object.entries(features.connectors)) {
@@ -1898,7 +1918,7 @@ async function startFacebookConnection(req, res) {
   const user = config.url && config.anon ? (await authenticatedUser(req, config.url, config.anon).catch(() => null) || localUser) : localUser
   if (!user?.id || !user?.email) return json(res, 401, { error: 'Authentication required' })
   const { appId, appSecret } = facebookCredentials()
-  if (!appId || !appSecret) return json(res, 503, { error: 'Facebook app credentials are not configured' })
+  if (!appId || !appSecret) return json(res, 503, { error: 'Facebook OAuth needs META_APP_ID and META_APP_SECRET on Render, followed by a redeploy.' })
   const requestedRedirect = String(body?.redirect || '/connected-apps')
   const safeRedirect = requestedRedirect.startsWith('/') && !requestedRedirect.startsWith('//') ? requestedRedirect : '/connected-apps'
   const state = createOAuthState(user.id, config, user.email, safeRedirect)

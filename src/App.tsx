@@ -15,6 +15,9 @@ const Settings = lazy(() => import('./pages/Settings'))
 const Privacy = lazy(() => import('./pages/Privacy'))
 const Terms = lazy(() => import('./pages/Terms'))
 const ContentPage = lazy(() => import('./pages/ContentPage'))
+const Admin = lazy(() => import('./pages/Admin'))
+const AdminAgents = lazy(() => import('./pages/AdminAgents'))
+const AdminWithdrawals = lazy(() => import('./pages/AdminWithdrawals'))
 
 const loader = <div className="grid min-h-screen place-items-center bg-[#0B0215] text-sm text-zinc-500">Loading AlphaTekx...</div>
 const suspended = (page: ReactNode) => <Suspense fallback={loader}>{page}</Suspense>
@@ -53,9 +56,9 @@ export default function App() {
       <Route path="/help" element={<ContentPage slug="help" />} />
 
       {/* Admin */}
-      <Route path="/admin" element={toDashboard} />
-      <Route path="/admin/agents" element={toDashboard} />
-      <Route path="/admin/withdrawals" element={toDashboard} />
+      <Route path="/admin" element={protectedPage(<Admin />)} />
+      <Route path="/admin/agents" element={protectedPage(<AdminAgents />)} />
+      <Route path="/admin/withdrawals" element={protectedPage(<AdminWithdrawals />)} />
       <Route path="/admin/features" element={toDashboard} />
 
       {/* Public */}

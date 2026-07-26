@@ -1,10 +1,11 @@
 import { useEffect, useState, type PropsWithChildren } from 'react'
-import { Bot, HelpCircle, History, ListChecks, LogOut, Menu, Plug, Settings, Sparkles, X } from 'lucide-react'
+import { Bot, HelpCircle, History, ListChecks, LogOut, Menu, Plug, Settings, ShieldCheck, Sparkles, X } from 'lucide-react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { getCredits, hydrateCredits, subscribeCredits } from '../../lib/creditStore'
 import { useAuth } from '../../lib/auth'
 import { runningAgentsCount, subscribeAgents } from '../../lib/agents/agentStore'
 import { getPlan } from '../../lib/billing'
+import { isAdminUser } from '../../lib/adminAccess'
 
 const ONBOARDING_KEY = 'alphatekx:workspace-onboarding'
 
@@ -51,6 +52,7 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
   const navigate = useNavigate()
   const location = useLocation()
   const { show, dismiss } = useShowOnboarding()
+  const isAdmin = isAdminUser(user)
 
   useEffect(() => subscribeCredits(() => setCredits(getCredits())), [])
   useEffect(() => subscribeAgents(() => setRunning(runningAgentsCount())), [])
@@ -75,7 +77,7 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
       <NavLink to="/dashboard" className="text-sm font-semibold tracking-[.14em]">ALPHATEKX</NavLink>
       <button onClick={() => navigate('/settings?tab=billing')} className="flex items-center gap-1.5 rounded-full border border-white/[.12] bg-white/[0.05] px-3 py-1.5 text-sm shadow-sm transition-colors hover:bg-white/[0.08]">
         <span className="inline-block h-2 w-2 rounded-full bg-violet-500" />
-        <span className={needsCreditTopUp(credits) ? 'text-amber-300' : 'text-white'}>{credits} Credits</span>
+        <span className={!isAdmin && needsCreditTopUp(credits) ? 'text-amber-300' : 'text-white'}>{isAdmin ? 'Admin' : `${credits} Credits`}</span>
       </button>
     </header>
     {open && <button className="fixed inset-0 z-40 bg-black/50" onClick={() => setOpen(false)} aria-label="Close menu"/>}
@@ -85,6 +87,7 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
         {primary.map(([label, to, Icon]) => <NavLink key={label} to={to} title={label} onClick={() => setOpen(false)} className={({ isActive }) => `flex min-h-12 items-center gap-3 rounded-lg px-4 text-sm ${isActive ? 'bg-white/[.08] font-medium text-white' : 'text-white/70 hover:bg-white/[.04]'}`}><Icon size={18}/>{label}{label === 'Active Automations' && running > 0 && <span className="ml-auto flex h-2 w-2 rounded-full bg-emerald-500" />}</NavLink>)}
         <div className="my-3 border-t border-white/[0.08]" />
         {secondary.map(([label, to, Icon]) => <NavLink key={label} to={to} title={label} onClick={() => setOpen(false)} className={({ isActive }) => `flex min-h-12 items-center gap-3 rounded-lg px-4 text-sm ${isActive ? 'bg-white/[.08] font-medium text-white' : 'text-white/70 hover:bg-white/[.04]'}`}><Icon size={18}/>{label}</NavLink>)}
+        {isAdmin && <NavLink to="/admin" title="Admin" onClick={() => setOpen(false)} className={({ isActive }) => `flex min-h-12 items-center gap-3 rounded-lg px-4 text-sm ${isActive ? 'bg-white/[.08] font-medium text-white' : 'text-violet-200 hover:bg-white/[.04]'}`}><ShieldCheck size={18}/>Admin</NavLink>}
         <div className="my-3 border-t border-white/[0.08]" />
         <button onClick={() => void signOut()} className="flex min-h-12 w-full items-center gap-3 rounded-lg px-4 text-sm text-white/70 hover:bg-white/[.04]"><LogOut size={18}/>Logout</button>
       </nav>

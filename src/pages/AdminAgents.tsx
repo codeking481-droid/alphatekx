@@ -55,7 +55,7 @@ export default function AdminAgents() {
     try { await fetch(`/api/agents/${encodeURIComponent(agent.id)}/run`, { method: 'POST', headers: authHeaders() }); await load() } catch {}
   }
 
-  if (!isAdmin) return <Navigate to="/workspace" replace />
+  if (!isAdmin) return <Navigate to="/dashboard" replace />
 
   return <div className="mx-auto max-w-7xl px-4 py-20 sm:px-5"><div className="flex flex-wrap items-center justify-between gap-4"><div className="flex items-center gap-2"><ShieldCheck size={20}/><h1 className="text-xl font-semibold">Agents Admin</h1></div><button onClick={() => void load()} className="flex min-h-11 items-center gap-2 rounded-lg border border-white/[.15] px-4 text-sm"><RefreshCw size={16}/> Refresh</button></div><p className="mt-2 text-sm text-white/55">All agent schedules, executions, and per-action logs.</p>
 
