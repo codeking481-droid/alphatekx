@@ -22,11 +22,18 @@ await test('verified admin account regains admin authority', () => {
   assert.equal(connectorFeatureAccess(admin, 'facebook').admin, true)
 })
 
-await test('released tools are controlled by code and remain public', () => {
-  for (const platform of ['linkedin', 'facebook', 'instagram', 'whatsapp', 'x', 'google', 'gmail', 'google_drive', 'notion', 'youtube', 'telegram', 'slack', 'discord']) {
+await test('released native tools remain public', () => {
+  for (const platform of ['linkedin', 'google', 'gmail', 'google_drive', 'youtube', 'telegram', 'discord']) {
     const access = connectorFeatureAccess(publicUser, platform)
     assert.equal(access.enabled, true, `${platform} should be enabled`)
     assert.equal(access.availability, 'available', `${platform} should be available`)
+  }
+})
+
+await test('Composio and Meta beta tools are limited to trusted testers', () => {
+  for (const platform of ['notion', 'slack', 'airtable', 'shopify', 'facebook', 'instagram', 'whatsapp', 'x']) {
+    assert.equal(connectorFeatureAccess(publicUser, platform).enabled, false, `${platform} should not be public`)
+    assert.equal(connectorFeatureAccess(admin, platform).enabled, true, `${platform} should be available to admin beta testing`)
   }
 })
 
@@ -43,7 +50,7 @@ await test('feature update API is retired for launch', async () => {
     updateFeature({}, 'facebook', { state: 'disabled', stopExisting: true }, admin),
     /Feature management is disabled for launch/
   )
-  assert.equal(connectorFeatureAccess(publicUser, 'facebook').enabled, true)
+  assert.equal(connectorFeatureAccess(publicUser, 'facebook').enabled, false)
   assert.equal(unavailableConnectorMessage('tiktok'), 'TikTok integration is coming soon. LinkedIn is available now.')
 })
 

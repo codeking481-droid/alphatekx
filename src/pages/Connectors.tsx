@@ -8,12 +8,12 @@ import { useAuth } from '../lib/auth'
 import { connectProvider, disconnectProvider, getConnectedApps, reconnectProvider, type ConnectedAppStatus } from '../lib/connectors/connectorApi'
 import { deleteIntegration, disconnectGoogle, getFacebookPages, getIntegrationStatus, saveConnector, selectFacebookPage, startFacebookAuth, startGmailConnection, startLinkedInAuth, testConnector, type IntegrationStatus } from '../lib/integrations'
 
-const apiKeyAvailable = new Set(['slack', 'discord'])
-const manualConnectionAvailable = new Set(['telegram', 'slack', 'discord'])
-const composioOAuthProviders = new Set(['notion', 'instagram', 'x', 'youtube'])
+const apiKeyAvailable = new Set(['discord'])
+const manualConnectionAvailable = new Set(['telegram', 'discord'])
+const composioOAuthProviders = new Set(['notion', 'slack', 'airtable', 'shopify'])
 const nativeOAuthProviders = new Set(['linkedin', 'facebook', 'google'])
 const serverManagedProviders = new Set(['whatsapp'])
-const publicConnectorIds = new Set(['linkedin', 'facebook', 'instagram', 'whatsapp', 'x', 'google', 'gmail', 'google_sheets', 'google_calendar', 'google_drive', 'notion', 'youtube', 'telegram', 'slack', 'discord'])
+const publicConnectorIds = new Set(['linkedin', 'facebook', 'instagram', 'whatsapp', 'x', 'google', 'gmail', 'google_sheets', 'google_calendar', 'google_drive', 'notion', 'youtube', 'telegram', 'slack', 'airtable', 'shopify', 'discord'])
 const BUILD_ID = String(import.meta.env.VITE_BUILD_ID || 'dev')
 const releasedPlatforms = [
   { id: 'facebook', name: 'Facebook', description: 'Facebook Page publishing.' },
@@ -22,6 +22,8 @@ const releasedPlatforms = [
   { id: 'x', name: 'X', description: 'X posts and threads.' },
   { id: 'google', name: 'Google', description: 'Gmail, Calendar, Sheets and Drive.' },
   { id: 'notion', name: 'Notion', description: 'Create pages and notes.' },
+  { id: 'airtable', name: 'Airtable', description: 'Work with Airtable records.' },
+  { id: 'shopify', name: 'Shopify', description: 'Work with Shopify commerce data.' },
   { id: 'youtube', name: 'YouTube', description: 'YouTube workflow foundation.' },
   { id: 'telegram', name: 'Telegram', description: 'Send Telegram messages.' },
   { id: 'slack', name: 'Slack', description: 'Send Slack messages.' },
