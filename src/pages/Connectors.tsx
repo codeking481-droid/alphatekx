@@ -13,14 +13,19 @@ const apiKeyAvailable = new Set(['slack', 'discord'])
 const manualConnectionAvailable = new Set(['telegram', 'slack', 'discord'])
 const composioOAuthProviders = new Set(['notion', 'instagram', 'x', 'youtube', 'whatsapp'])
 const nativeOAuthProviders = new Set(['linkedin', 'facebook', 'google'])
+const publicConnectorIds = new Set(['linkedin', 'facebook', 'instagram', 'whatsapp', 'x', 'google', 'gmail', 'google_sheets', 'google_calendar', 'google_drive', 'notion', 'youtube', 'telegram', 'slack', 'discord'])
 const BUILD_ID = String(import.meta.env.VITE_BUILD_ID || 'dev')
-const betaPlatforms = [
+const releasedPlatforms = [
   { id: 'facebook', name: 'Facebook', description: 'Facebook Page publishing.' },
   { id: 'instagram', name: 'Instagram', description: 'Instagram publishing.' },
   { id: 'whatsapp', name: 'WhatsApp', description: 'WhatsApp messaging.' },
   { id: 'x', name: 'X', description: 'X posts and threads.' },
+  { id: 'google', name: 'Google', description: 'Gmail, Calendar, Sheets and Drive.' },
   { id: 'notion', name: 'Notion', description: 'Create pages and notes.' },
   { id: 'youtube', name: 'YouTube', description: 'YouTube workflow foundation.' },
+  { id: 'telegram', name: 'Telegram', description: 'Send Telegram messages.' },
+  { id: 'slack', name: 'Slack', description: 'Send Slack messages.' },
+  { id: 'discord', name: 'Discord', description: 'Send Discord messages.' },
 ]
 
 function fieldConfig(id: string) {
@@ -137,9 +142,9 @@ export default function Connectors() {
   }
   const isAdminTester = status._access?.admin === true || isAdminUser(user)
   const feature = (id: string) => status._access?.connectors?.[id] || {
-    enabled: id === 'linkedin' || isAdminTester,
-    publicEnabled: id === 'linkedin',
-    availability: id === 'linkedin' ? 'available' : isAdminTester ? 'testing' : 'coming_soon',
+    enabled: publicConnectorIds.has(id),
+    publicEnabled: publicConnectorIds.has(id),
+    availability: publicConnectorIds.has(id) ? 'available' : 'coming_soon',
   }
 
   useEffect(() => {
@@ -160,19 +165,14 @@ export default function Connectors() {
       const state = service(id)
       return { id, name: connector.name, description: connector.description, connector, availability: state.connected && state.ready ? 'Connected' : 'Available' }
     })
-    const beta = betaPlatforms.map(item => {
+    const released = releasedPlatforms.map(item => {
       const state = service(item.id)
       const access = feature(item.id)
       const providerState = connectorStatus[item.id]
-      const configured = nativeOAuthProviders.has(item.id) || Boolean(providerState?.enabled) || (providerState && providerState.status !== 'unavailable')
+      const configured = nativeOAuthProviders.has(item.id) || manualConnectionAvailable.has(item.id) || Boolean(providerState?.enabled) || (providerState && providerState.status !== 'unavailable')
       return { ...item, connector: getConnector(item.id) || fallbackConnector(item.id, item.name), availability: access.enabled ? (state.connected && state.ready ? 'Connected - Testing' : configured ? 'Ready to connect' : 'Needs server config') : 'Coming Soon' }
     })
-    const internal = isAdminTester ? ['google', 'telegram', 'slack', 'discord'].map(id => {
-      const connector = getConnector(id === 'google' ? 'gmail' : id)!
-      const state = service(id)
-      return { id, name: id === 'google' ? 'Google' : connector.name, description: id === 'google' ? 'Gmail, Calendar, Sheets and Drive.' : connector.description, connector, availability: state.connected && state.ready ? 'Connected - Testing' : 'Ready to connect' }
-    }) : []
-    return [...available, ...beta, ...internal].filter(item => `${item.name} ${item.description}`.toLowerCase().includes(query.toLowerCase()))
+    return [...available, ...released].filter(item => `${item.name} ${item.description}`.toLowerCase().includes(query.toLowerCase()))
   }, [query, status, connectorStatus])
 
   const connected = useMemo(() => {
@@ -275,10 +275,10 @@ export default function Connectors() {
   return <main className="mx-auto min-h-[calc(100dvh-8rem)] w-full max-w-5xl px-4 py-8 sm:px-6">
     <header className="flex flex-col gap-4 border-b border-white/[.08] pb-6 sm:flex-row sm:items-end sm:justify-between">
       <div><p className="text-xs uppercase tracking-[.18em] text-violet-300">Connections</p><h1 className="mt-2 text-3xl font-semibold">Connected Apps</h1><p className="mt-2 max-w-2xl text-sm text-white/55">Connect the apps Alpha can use, then approve automations with confidence.</p></div>
-      {isAdminTester && <span className="w-fit rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-200">Admin beta access active - build {BUILD_ID}</span>}
+      <span className="w-fit rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-200">{isAdminTester ? 'Admin access active' : 'Public tools active'} - build {BUILD_ID}</span>
     </header>
     {notice && <div role="status" className="mt-5 rounded-xl border border-violet-400/20 bg-violet-500/10 p-3 text-sm">{notice}</div>}
-    <button onClick={() => setSelectorOpen(true)} className="mt-7 flex min-h-14 w-full items-center justify-between rounded-xl border border-white/10 bg-white/[.045] px-5 text-left hover:border-violet-400/30"><span className="flex items-center gap-3"><Plug size={18} className="text-violet-300"/><span><span className="block text-sm font-medium">Select or add a platform</span><span className="text-xs text-white/45">Search available, beta, and connected apps</span></span></span><ChevronRight size={18}/></button>
+    <button onClick={() => setSelectorOpen(true)} className="mt-7 flex min-h-14 w-full items-center justify-between rounded-xl border border-white/10 bg-white/[.045] px-5 text-left hover:border-violet-400/30"><span className="flex items-center gap-3"><Plug size={18} className="text-violet-300"/><span><span className="block text-sm font-medium">Select or add a platform</span><span className="text-xs text-white/45">Search available, released, and connected apps</span></span></span><ChevronRight size={18}/></button>
 
     {selected && <section className="mt-5 rounded-xl border border-violet-400/20 bg-violet-500/[.055] p-5">
       <div className="flex items-start justify-between gap-3"><div className="flex items-center gap-3">{selectedConnector && <span className="grid size-11 place-items-center rounded-lg bg-white/[.07]"><ConnectorIcon connector={selectedConnector}/></span>}<div><h2 className="font-semibold">{selected === 'google' ? 'Google' : selectedConnector?.name}</h2><p className="mt-1 text-xs text-white/50">{selectedConnected ? 'Connected and verified by backend status.' : 'Complete this connection to continue.'}</p></div></div><button onClick={() => setSelected(null)} aria-label="Close connection details"><X size={18}/></button></div>

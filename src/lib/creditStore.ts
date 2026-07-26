@@ -1,5 +1,6 @@
 import { DEFAULT_CREDIT_BALANCE } from './credits'
 import { supabase } from './supabase'
+import { isAdminUser, userEmail as authUserEmail } from './adminAccess'
 
 const KEY = 'alphatekx_credits'
 const EVENT = 'alphatekx:credits-change'
@@ -9,17 +10,15 @@ export function getCredits() {
   return Number.isFinite(parsed) ? parsed : DEFAULT_CREDIT_BALANCE
 }
 
-const adminEmail = 'iamdan4live@gmail.com'
-
 export async function spendCredits(amount: number) {
   const headers: Record<string, string> = {}
   let userEmail = ''
   if (supabase) {
     const session = (await supabase.auth.getSession()).data.session
     if (!session) return false
-    if (session.user.email?.toLowerCase() === adminEmail) return true
+    if (isAdminUser(session.user)) return true
     headers.Authorization = `Bearer ${session.access_token}`
-    userEmail = session.user.email || ''
+    userEmail = authUserEmail(session.user)
   } else {
     try {
       const raw = localStorage.getItem('alphatekx:local-user')
@@ -33,7 +32,7 @@ export async function spendCredits(amount: number) {
       }
     } catch {}
   }
-  if (userEmail.toLowerCase() === adminEmail) return true
+  if (userEmail === 'iamdan4live@gmail.com') return true
   try {
     const response = await fetch('/api/credits/spend', { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify({ amount }) })
     const raw = await response.text()
@@ -57,6 +56,7 @@ export async function hydrateCredits() {
   try {
     const session = (await supabase.auth.getSession()).data.session
     if (!session) return getCredits()
+    if (isAdminUser(session.user)) return 999999
     const res = await fetch('/api/credits/balance', { headers: { Authorization: `Bearer ${session.access_token}` } })
     if (res.ok) {
       const data = await res.json().catch(() => ({}))

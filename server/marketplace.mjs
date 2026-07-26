@@ -18,6 +18,20 @@ try { fs.mkdirSync(uploadsDir, { recursive: true }) } catch {}
 
 const adminEmail = 'iamdan4live@gmail.com'
 
+function normalizedEmail(value) { return String(value || '').trim().toLowerCase() }
+function userEmail(user) {
+  const direct = normalizedEmail(user?.email)
+  if (direct) return direct
+  const metadataEmail = normalizedEmail(user?.user_metadata?.email || user?.app_metadata?.email)
+  if (metadataEmail) return metadataEmail
+  for (const identity of user?.identities || []) {
+    const identityEmail = normalizedEmail(identity?.identity_data?.email)
+    if (identityEmail) return identityEmail
+  }
+  return ''
+}
+function isAdminUser(user) { return userEmail(user) === adminEmail }
+
 function loadEnv() {
   for (const filename of ['.env.local', '.env']) {
     try {
@@ -178,10 +192,10 @@ async function getProduct(req, res, id) {
   const product = readProducts().find(p => p.id === id)
   if (!product) return json(res, 404, { error: 'Product not found' })
   const orders = readOrders()
-  const userEmail = user ? String(user.email || '').toLowerCase() : ''
-  const isOwner = user && (product.userId === user.id || (userEmail && product.sellerEmail?.toLowerCase() === userEmail))
-  const hasPurchased = user && orders.some(o => o.productId === id && (o.buyerId === user.id || (userEmail && o.buyerEmail?.toLowerCase() === userEmail)) && o.status === 'paid')
-  const isAdmin = userEmail === adminEmail
+  const email = userEmail(user)
+  const isOwner = user && (product.userId === user.id || (email && product.sellerEmail?.toLowerCase() === email))
+  const hasPurchased = user && orders.some(o => o.productId === id && (o.buyerId === user.id || (email && o.buyerEmail?.toLowerCase() === email)) && o.status === 'paid')
+  const isAdmin = isAdminUser(user)
   const hasAccess = isOwner || hasPurchased || isAdmin
   return json(res, 200, { product: { ...product, hasAccess } })
 }
@@ -193,9 +207,9 @@ async function deleteProduct(req, res, id) {
   const idx = products.findIndex(p => p.id === id)
   if (idx < 0) return json(res, 404, { error: 'Product not found' })
   const product = products[idx]
-  const userEmail = String(user.email || '').toLowerCase()
-  const isOwner = product.userId === user.id || (userEmail && product.sellerEmail?.toLowerCase() === userEmail)
-  const isAdmin = userEmail === adminEmail
+  const email = userEmail(user)
+  const isOwner = product.userId === user.id || (email && product.sellerEmail?.toLowerCase() === email)
+  const isAdmin = isAdminUser(user)
   if (!isOwner && !isAdmin) return json(res, 403, { error: 'You can only delete your own products' })
   products.splice(idx, 1)
   writeProducts(products)
@@ -352,7 +366,7 @@ async function withdraw(req, res) {
   if (!bankName || !accountNumber || !accountName) return json(res, 400, { error: 'Bank details required' })
   const wallets = readWallets()
   const wallet = ensureWallet(user.id)
-  const isAdmin = user.email?.toLowerCase() === adminEmail
+  const isAdmin = isAdminUser(user)
   if (!isAdmin && wallet.balance < amount) return json(res, 400, { error: 'Insufficient balance' })
   if (wallet.balance >= amount) {
     wallet.balance -= amount
@@ -382,14 +396,14 @@ async function withdraw(req, res) {
 
 async function adminWithdrawals(req, res) {
   const user = await currentOrLocalUser(req)
-  if (!user || user.email?.toLowerCase() !== adminEmail) return json(res, 403, { error: 'Admin access required' })
+  if (!isAdminUser(user)) return json(res, 403, { error: 'Admin access required' })
   const list = readWithdrawals()
   return json(res, 200, { withdrawals: list })
 }
 
 async function markWithdrawalPaid(req, res, id) {
   const user = await currentOrLocalUser(req)
-  if (!user || user.email?.toLowerCase() !== adminEmail) return json(res, 403, { error: 'Admin access required' })
+  if (!isAdminUser(user)) return json(res, 403, { error: 'Admin access required' })
   const body = await readBody(req)
   const list = readWithdrawals()
   const idx = list.findIndex(w => w.id === id)

@@ -57,10 +57,11 @@ function fixture(overrides = {}) {
 }
 
 await refreshFeatureConfig({}, true)
-await test('public user cannot access WhatsApp beta', () => {
-  assert.equal(connectorFeatureAccess({ email: 'public@example.com' }, 'whatsapp', true).enabled, false)
+await test('public user can access released WhatsApp tool', () => {
+  assert.equal(connectorFeatureAccess({ email: 'public@example.com' }, 'whatsapp', true).enabled, true)
+  assert.equal(connectorFeatureAccess({ email: 'public@example.com' }, 'whatsapp', true).availability, 'available')
 })
-await test('admin user can access WhatsApp beta', () => {
+await test('admin user can access released WhatsApp tool', () => {
   assert.equal(connectorFeatureAccess({ email: 'iamdan4live@gmail.com' }, 'whatsapp', true).enabled, true)
 })
 await test('capability creates one exact explicitly approved action', () => {

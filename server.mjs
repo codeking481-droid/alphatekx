@@ -2168,7 +2168,7 @@ async function activateCampaignHandler(req, res) {
     agent.campaign.meta.localTime = body.localTime || null
   }
 
-  const admin = String(user.email || '').toLowerCase() === adminEmail
+  const admin = isAdminAuthUser(user)
   const total = agent.campaign.totalCredits || 0
   if (total > 0 && !admin) {
     const balance = await getUserCredits(user, config)
@@ -2344,7 +2344,7 @@ function generateExecutionId(agent, trigger, now = new Date()) {
 }
 
 function isAdminUser(user) {
-  return String(user?.email || '').toLowerCase() === adminEmail
+  return isAdminAuthUser(user)
 }
 
 function computeEstimatedCredits(agent) { return billing.estimateAgentCredits(agent) }
@@ -3154,7 +3154,7 @@ async function creditSpend(req, res) {
     if (!user) return json(res, 401, { error: 'Authentication required' })
     const body = await readBody(req); const amount = Number(body.amount)
     if (!Number.isInteger(amount) || amount <= 0) return json(res, 400, { error: 'Invalid credit amount' })
-    if (String(user.email || '').toLowerCase() === adminEmail) return json(res, 200, { ok: true, admin: true, credits: null })
+    if (isAdminAuthUser(user)) return json(res, 200, { ok: true, admin: true, credits: null })
     const spent = await spendUserCredits(user, amount)
     if (!spent) return json(res, 402, { error: 'Insufficient credits' })
     const remaining = await getUserCredits(user, config)
@@ -3306,7 +3306,8 @@ function currentUserFromRequest(req) {
     const parts = token.split('.')
     if (parts.length === 3) {
       const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'))
-      if (payload.sub && payload.email) return { id: payload.sub, email: payload.email, name: payload.name || '' }
+      const email = authUserEmail(payload)
+      if (payload.sub && email) return { id: payload.sub, email, name: payload.name || payload.user_metadata?.name || payload.user_metadata?.full_name || '' }
     }
   } catch {}
   return null
@@ -3337,19 +3338,15 @@ async function activityPing(req, res) {
 }
 
 async function adminProviderDiagnostics(req, res) {
-  const tokenUser = currentUserFromRequest(req)
-  const adminEmailHeader = String(req.headers['x-admin-email'] || '')
-  const isAdmin = tokenUser?.email?.toLowerCase() === adminEmail || adminEmailHeader.toLowerCase() === adminEmail
-  if (!isAdmin) return json(res, 403, { error: 'Admin access required' })
+  const auth = await authenticatedAdmin(req)
+  if (!auth) return json(res, 403, { error: 'Admin access required' })
   const aiStats = (typeof alphaBrain?.getProviderStats === 'function' && alphaBrain.getProviderStats()) || { modelCalls: 0, fallbackCalls: 0 }
   return json(res, 200, { ...providerHealth.getAdminProviderDiagnostics(), aiStats })
 }
 
 async function adminProviderHealthCheck(req, res) {
-  const tokenUser = currentUserFromRequest(req)
-  const adminEmailHeader = String(req.headers['x-admin-email'] || '')
-  const isAdmin = tokenUser?.email?.toLowerCase() === adminEmail || adminEmailHeader.toLowerCase() === adminEmail
-  if (!isAdmin) return json(res, 403, { error: 'Admin access required' })
+  const auth = await authenticatedAdmin(req)
+  if (!auth) return json(res, 403, { error: 'Admin access required' })
   const body = await readBody(req)
   const name = String(body.name || '')
   if (!providerHealth.getAllProviderHealth().some(p => p.name === name)) return json(res, 400, { error: 'Unknown provider' })
@@ -3359,10 +3356,8 @@ async function adminProviderHealthCheck(req, res) {
 
 async function adminStats(req, res) {
   const config = supabaseConfig()
-  const tokenUser = currentUserFromRequest(req)
-  const adminEmailHeader = String(req.headers['x-admin-email'] || '')
-  const isAdmin = tokenUser?.email?.toLowerCase() === adminEmail || adminEmailHeader.toLowerCase() === adminEmail
-  if (!isAdmin) return json(res, 403, { error: 'Admin access required' })
+  const auth = await authenticatedAdmin(req)
+  if (!auth) return json(res, 403, { error: 'Admin access required' })
   const local = localAdminStats()
   if (!config.url || !config.anon || !config.service) return json(res, 200, local)
   try {
@@ -3749,7 +3744,7 @@ async function appDataHandler(req, res) {
   if (!slug || !validSlug(slug)) return false
   const config = supabaseConfig()
   const user = await currentOrLocalUser(req, config.url, config.anon).catch(() => null)
-  const isAdmin = user?.email === adminEmail
+  const isAdmin = isAdminAuthUser(user)
   if (migrateMatch && req.method === 'POST') {
     json(res, 200, { sql: appEntitiesMigrationSql(slug), note: 'Run this SQL in your Supabase SQL Editor if you want data in Supabase. Local JSON storage is active now.' })
     return true
@@ -4546,7 +4541,7 @@ async function postToSocial(platform, user, params) {
   const userId = typeof user === 'string' ? user : user?.id
   const fullUser = await getUser(userId, user?.email || '')
   if (!fullUser) throw new Error('User not found')
-  const isAdmin = fullUser.email === adminEmail
+  const isAdmin = isAdminAuthUser(fullUser)
   const text = String(params.text || params.message || '')
   if (!text && !params.imageUrl) throw new Error('Social post requires text or image')
   const creds = await getPostingCredentials(fullUser, platform, { ...params, _skipFreeLimit: params._skipFreeLimit || isAdmin })
@@ -5296,7 +5291,7 @@ function upsertLocalUser(user) {
     if (user.name) existing.name = user.name
     if (user.plan) existing.plan = user.plan
   } else {
-    const isAdmin = String(user.email || '').toLowerCase() === adminEmail
+    const isAdmin = isAdminAuthUser(user)
     const startingCredits = Number.isFinite(user.credits) ? user.credits : DEFAULT_CREDITS
     users.unshift({ id: user.id, email: user.email, name: user.name || '', plan: user.plan || 'free', credits: startingCredits, freePostsUsed: 0, freePostsLimit: isAdmin ? adminFreePostsLimit : 2, connectors: {}, masterKeysUsed: false, created_at: now, last_active_at: now })
     writeUserCreditsLocal(user.id, startingCredits)
@@ -5307,7 +5302,7 @@ function upsertLocalUser(user) {
 const adminFreePostsLimit = 999_999
 function defaultUser(userId, email = '') {
   const now = new Date().toISOString()
-  const isAdmin = String(email).toLowerCase() === adminEmail
+  const isAdmin = normalizedAuthEmail(email) === adminEmail
   return { id: userId, email, name: '', plan: 'free', credits: 0, freePostsUsed: 0, freePostsLimit: isAdmin ? adminFreePostsLimit : 2, connectors: {}, masterKeysUsed: false, created_at: now, last_active_at: now }
 }
 
@@ -5325,7 +5320,7 @@ async function getUser(userId, email = '') {
           const tokens = decryptGenericTokens(row.tokens, key)
           if (tokens?.usage) {
             const merged = { ...defaultUser(userId, row.email || email), ...tokens.usage }
-            if (String(merged.email || '').toLowerCase() === adminEmail) merged.freePostsLimit = adminFreePostsLimit
+            if (isAdminAuthUser(merged)) merged.freePostsLimit = adminFreePostsLimit
             return merged
           }
         }
@@ -5338,7 +5333,7 @@ async function getUser(userId, email = '') {
     const merged = { ...defaultUser(userId, existing.email || email), ...existing, connectors: existing.connectors || {} }
     const localCredits = readUserCreditsLocal(userId)
     if (localCredits != null) merged.credits = localCredits
-    if (String(merged.email || '').toLowerCase() === adminEmail) merged.freePostsLimit = adminFreePostsLimit
+    if (isAdminAuthUser(merged)) merged.freePostsLimit = adminFreePostsLimit
     return merged
   }
   return defaultUser(userId, email)
@@ -5440,7 +5435,7 @@ async function whatsappFirstMessageHandler(req, res) {
     approved: body.approved === true,
     idempotencyKey: String(body.idempotencyKey || ''),
   }, {
-    featureEnabled: access.enabled && (access.admin || access.beta),
+    featureEnabled: access.enabled,
     credentials,
     allowedRecipients: allowedWhatsAppRecipients(),
     isAdmin: access.admin,

@@ -148,7 +148,8 @@ export function unavailablePromptConnector(user, prompt, trustedIdentity = true)
 
 export function featureStatusForUser(user, trustedIdentity = true) {
   const connectors = {}
-  for (const feature of featureCache.values()) connectors[feature.id] = connectorFeatureAccess(user, feature.id, trustedIdentity)
+  const featureIds = new Set([...DEFAULT_FEATURE_MAP.keys(), ...featureCache.keys()])
+  for (const featureId of featureIds) connectors[featureId] = connectorFeatureAccess(user, featureId, trustedIdentity)
   return {
     admin: isAdminTestUser(user, trustedIdentity),
     beta: betaUsers.has(String(user?.email || '').toLowerCase()),

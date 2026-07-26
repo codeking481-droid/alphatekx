@@ -95,12 +95,13 @@ await test('auth page supports signup and canonical redirects', () => {
   assert.match(authPage, /SITE_URL_HELP/)
 })
 
-await test('connected apps accepts service links and shows Composio beta connectors', () => {
+await test('connected apps accepts service links and shows released connectors', () => {
   const connectors = fs.readFileSync(new URL('../src/pages/Connectors.tsx', import.meta.url), 'utf8')
   assert.match(connectors, /searchParams\.get\('platform'\) \|\| searchParams\.get\('service'\)/)
   assert.match(connectors, /getConnectedApps/)
   assert.match(connectors, /composioOAuthProviders/)
-  assert.match(connectors, /Admin beta access active/)
+  assert.match(connectors, /Public tools active/)
+  assert.match(connectors, /releasedPlatforms/)
 })
 
 await test('api clients omit browser cookies to avoid oversized header failures', () => {

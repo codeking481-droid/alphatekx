@@ -53,7 +53,19 @@ export const CREDIT_PACKS = [
 export function getPlan(id) { return PLANS[id] || PLANS.free }
 export function getCreditPack(id) { return CREDIT_PACKS.find(p => p.id === id) }
 
-function isAdmin(user) { return String(user?.email || '').toLowerCase() === adminEmail }
+function normalizedEmail(value) { return String(value || '').trim().toLowerCase() }
+function userEmail(user) {
+  const direct = normalizedEmail(user?.email)
+  if (direct) return direct
+  const metadataEmail = normalizedEmail(user?.user_metadata?.email || user?.app_metadata?.email)
+  if (metadataEmail) return metadataEmail
+  for (const identity of user?.identities || []) {
+    const identityEmail = normalizedEmail(identity?.identity_data?.email)
+    if (identityEmail) return identityEmail
+  }
+  return ''
+}
+function isAdmin(user) { return userEmail(user) === adminEmail }
 
 function nowIso() { return new Date().toISOString() }
 
