@@ -11,6 +11,7 @@
 
 import { spawn } from 'node:child_process'
 import http from 'node:http'
+import fs from 'node:fs'
 
 const TEST_PORT = Number(process.env.TEST_PORT || 3219)
 const BASE = process.env.TEST_BASE || `http://127.0.0.1:${TEST_PORT}`
@@ -90,6 +91,15 @@ async function api(method, path, body = null, user = null) {
 // ── Test Suite ──────────────────────────────────────────────────────
 
 async function runTests() {
+  const serviceSource = fs.readFileSync('server/composioConnectorService.mjs', 'utf8')
+  const migrationSource = fs.readFileSync('supabase/composio-connected-apps.sql', 'utf8')
+  assert(serviceSource.includes('`alphatekx:${alphaUserId}`'), 'Composio external user ID is deterministic and namespaced')
+  assert(!serviceSource.includes('dangerouslySkipVersionCheck'), 'Tool execution does not bypass SDK version safety')
+  assert(serviceSource.includes('Explicit approval is required'), 'Execution requires explicit approval')
+  assert(serviceSource.includes('Idempotency key is required'), 'Execution requires an idempotency key')
+  assert(migrationSource.includes('UNIQUE(user_id, idempotency_key)'), 'Database enforces per-user execution idempotency')
+  assert(migrationSource.includes("connection_backend = 'native'"), 'Migration preserves existing native connections')
+  assert(!migrationSource.toLowerCase().includes('access_token'), 'Composio migration stores no provider token')
   process.stdout.write('\n🧪 Composio Connector Tests\n')
   process.stdout.write('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n')
 
@@ -112,6 +122,10 @@ async function runTests() {
   {
     const res = await api('POST', '/api/connect/notion')
     assert(res.status === 401, '3. Unauthenticated POST /api/connect/notion returns 401')
+  }
+  {
+    const res = await api('POST', '/api/connectors/notion/connect')
+    assert(res.status === 401, 'Canonical connector connect route requires authentication')
   }
   {
     const res = await api('DELETE', '/api/disconnect/notion')

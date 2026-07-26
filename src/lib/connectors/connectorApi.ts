@@ -54,17 +54,17 @@ export async function getConnectedApps(token?: string): Promise<ConnectedAppsRes
 
 // Start OAuth connection for a provider
 export async function connectProvider(providerId: string, token?: string): Promise<ConnectResponse> {
-  return postJson<ConnectResponse>(`/api/connect/${providerId}`, {}, { token })
+  return postJson<ConnectResponse>(`/api/connectors/${providerId}/connect`, {}, { token })
 }
 
 // Disconnect a provider
 export async function disconnectProvider(providerId: string, token?: string): Promise<{ success: boolean }> {
-  return deleteJson<{ success: boolean }>(`/api/disconnect/${providerId}`, { token })
+  return deleteJson<{ success: boolean }>(`/api/connectors/${providerId}`, { token })
 }
 
 // Reconnect OAuth for a provider
 export async function reconnectProvider(providerId: string, token?: string): Promise<ConnectResponse> {
-  return postJson<ConnectResponse>(`/api/reconnect/${providerId}`, {}, { token })
+  return postJson<ConnectResponse>(`/api/connectors/${providerId}/connect`, {}, { token })
 }
 
 // Execute an action on a connected provider

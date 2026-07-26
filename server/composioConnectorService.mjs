@@ -3,13 +3,12 @@
 // No credentials/tokens leave the server
 
 import { Composio } from '@composio/core'
+import { supabaseServiceHeaders } from './supabaseHeaders.mjs'
 
 // ---------------------------------------------------------------------------
 // Provider Registry — maps AlphaTekX provider IDs to Composio toolkit slugs
 // and auth-config environment variable names
 // ---------------------------------------------------------------------------
-
-const ADMIN_EMAIL = 'iamdan4live@gmail.com'
 
 /**
  * Provider definition.
@@ -34,74 +33,50 @@ const PROVIDER_DEFS = {
     authConfigEnv: 'COMPOSIO_NOTION_AUTH_CONFIG_ID',
     enabled: false,
     stage: 'beta',
-    actions: ['create_page', 'append_block', 'search'],
+    actions: ['create_page'],
     isNative: false,
     category: 'Productivity',
   },
-  facebook: {
-    id: 'facebook',
-    name: 'Facebook',
-    composioAppName: 'facebook',
-    authConfigEnv: 'COMPOSIO_FACEBOOK_AUTH_CONFIG_ID',
+  slack: {
+    id: 'slack',
+    name: 'Slack',
+    composioAppName: 'slack',
+    authConfigEnv: 'COMPOSIO_SLACK_AUTH_CONFIG_ID',
     enabled: false,
     stage: 'beta',
-    actions: ['create_page_post', 'upload_photo', 'upload_video'],
-    isNative: false,
-    category: 'Social Media',
-  },
-  instagram: {
-    id: 'instagram',
-    name: 'Instagram',
-    composioAppName: 'instagram',
-    authConfigEnv: 'COMPOSIO_INSTAGRAM_AUTH_CONFIG_ID',
-    enabled: false,
-    stage: 'beta',
-    actions: ['create_media_post', 'create_carousel', 'create_reel'],
-    isNative: false,
-    category: 'Social Media',
-  },
-  twitter: {
-    id: 'twitter',
-    name: 'X (Twitter)',
-    composioAppName: 'twitter',
-    authConfigEnv: 'COMPOSIO_TWITTER_AUTH_CONFIG_ID',
-    enabled: false,
-    stage: 'beta',
-    actions: ['create_post', 'create_thread', 'reply_to_tweet', 'quote_tweet'],
-    isNative: false,
-    category: 'Social Media',
-  },
-  youtube: {
-    id: 'youtube',
-    name: 'YouTube',
-    composioAppName: 'youtube',
-    authConfigEnv: 'COMPOSIO_YOUTUBE_AUTH_CONFIG_ID',
-    enabled: false,
-    stage: 'beta',
-    actions: ['upload_video', 'update_video', 'schedule_video'],
-    isNative: false,
-    category: 'Content',
-  },
-  whatsapp: {
-    id: 'whatsapp',
-    name: 'WhatsApp',
-    composioAppName: 'whatsapp_business',
-    authConfigEnv: 'COMPOSIO_WHATSAPP_AUTH_CONFIG_ID',
-    enabled: false,
-    stage: 'beta',
-    actions: ['send_message', 'send_template', 'send_media'],
+    actions: [],
     isNative: false,
     category: 'Communication',
+  },
+  airtable: {
+    id: 'airtable',
+    name: 'Airtable',
+    composioAppName: 'airtable',
+    authConfigEnv: 'COMPOSIO_AIRTABLE_AUTH_CONFIG_ID',
+    enabled: false,
+    stage: 'beta',
+    actions: [],
+    isNative: false,
+    category: 'Productivity',
+  },
+  shopify: {
+    id: 'shopify',
+    name: 'Shopify',
+    composioAppName: 'shopify',
+    authConfigEnv: 'COMPOSIO_SHOPIFY_AUTH_CONFIG_ID',
+    enabled: false,
+    stage: 'beta',
+    actions: [],
+    isNative: false,
+    category: 'Commerce',
   },
 }
 
 const AUTH_CONFIG_ALIASES = {
   notion: ['NOTION_AUTH_CONFIG_ID'],
-  facebook: ['FACEBOOK_AUTH_CONFIG_ID'],
-  instagram: ['INSTAGRAM_AUTH_CONFIG_ID', 'COMPOSIO_META_INSTAGRAM_AUTH_CONFIG_ID'],
-  twitter: ['COMPOSIO_X_AUTH_CONFIG_ID', 'TWITTER_AUTH_CONFIG_ID', 'X_AUTH_CONFIG_ID'],
-  youtube: ['YOUTUBE_AUTH_CONFIG_ID'],
-  whatsapp: ['WHATSAPP_AUTH_CONFIG_ID', 'COMPOSIO_WHATSAPP_BUSINESS_AUTH_CONFIG_ID'],
+  slack: ['SLACK_AUTH_CONFIG_ID'],
+  airtable: ['AIRTABLE_AUTH_CONFIG_ID'],
+  shopify: ['SHOPIFY_AUTH_CONFIG_ID'],
 }
 
 // ---------------------------------------------------------------------------
@@ -109,8 +84,6 @@ const AUTH_CONFIG_ALIASES = {
 // ---------------------------------------------------------------------------
 
 const ALIASES = {
-  x: 'twitter',
-  'x (twitter)': 'twitter',
   linkedin: 'linkedin', // native, not composio
   gmail: 'gmail', // native
   telegram: 'telegram', // native
@@ -133,25 +106,7 @@ function resolveProviderAlias(idOrName) {
 
 /** Maps (providerId, actionId) → Composio tool slug */
 const ACTION_TOOL_MAP = {
-  'notion.create_page': 'NOTION_CREATE_PAGE',
-  'notion.append_block': 'NOTION_APPEND_BLOCK',
-  'notion.search': 'NOTION_SEARCH',
-  'facebook.create_page_post': 'FACEBOOK_CREATE_PAGE_POST',
-  'facebook.upload_photo': 'FACEBOOK_UPLOAD_PHOTO',
-  'facebook.upload_video': 'FACEBOOK_UPLOAD_VIDEO',
-  'instagram.create_media_post': 'INSTAGRAM_CREATE_MEDIA_POST',
-  'instagram.create_carousel': 'INSTAGRAM_CREATE_CAROUSEL',
-  'instagram.create_reel': 'INSTAGRAM_CREATE_REEL',
-  'twitter.create_post': 'TWITTER_CREATE_POST',
-  'twitter.create_thread': 'TWITTER_CREATE_THREAD',
-  'twitter.reply_to_tweet': 'TWITTER_REPLY_TO_TWEET',
-  'twitter.quote_tweet': 'TWITTER_QUOTE_TWEET',
-  'youtube.upload_video': 'YOUTUBE_UPLOAD_VIDEO',
-  'youtube.update_video': 'YOUTUBE_UPDATE_VIDEO',
-  'youtube.schedule_video': 'YOUTUBE_SCHEDULE_VIDEO',
-  'whatsapp.send_message': 'WHATSAPP_SEND_MESSAGE',
-  'whatsapp.send_template': 'WHATSAPP_SEND_TEMPLATE',
-  'whatsapp.send_media': 'WHATSAPP_SEND_MEDIA',
+  'notion.create_page': process.env.COMPOSIO_NOTION_CREATE_PAGE_TOOL || 'NOTION_CREATE_NOTION_PAGE',
 }
 
 // ---------------------------------------------------------------------------
@@ -230,12 +185,12 @@ function ensureInitialized() {
 // ---------------------------------------------------------------------------
 
 function composioUserId(alphaUserId) {
-  return `alphatekx_${alphaUserId}`
+  return `alphatekx:${alphaUserId}`
 }
 
 function alphaUserIdFromComposio(cuid) {
   if (!cuid || typeof cuid !== 'string') return null
-  const prefix = 'alphatekx_'
+  const prefix = 'alphatekx:'
   return cuid.startsWith(prefix) ? cuid.slice(prefix.length) : null
 }
 
@@ -249,20 +204,57 @@ function sanitizeError(error) {
   return message.slice(0, 200)
 }
 
-function normalizedEmail(value) { return String(value || '').trim().toLowerCase() }
-function userEmail(user) {
-  const direct = normalizedEmail(user?.email)
-  if (direct) return direct
-  const metadataEmail = normalizedEmail(user?.user_metadata?.email || user?.app_metadata?.email)
-  if (metadataEmail) return metadataEmail
-  for (const identity of user?.identities || []) {
-    const identityEmail = normalizedEmail(identity?.identity_data?.email)
-    if (identityEmail) return identityEmail
-  }
-  return ''
+function persistenceConfig() {
+  const url = String(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').replace(/\/$/, '')
+  const service = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '')
+  return url && service ? { url, service } : null
 }
-function isAdminUser(user) {
-  return userEmail(user) === ADMIN_EMAIL
+
+async function persistConnection(user, provider, account, status) {
+  const config = persistenceConfig()
+  if (!config) return
+  const record = {
+    user_id: user.id,
+    provider,
+    connection_backend: 'composio',
+    toolkit_slug: provider,
+    composio_connected_account_id: account.id,
+    status,
+    display_label: account.displayName || account.name || PROVIDER_DEFS[provider]?.name || provider,
+    account_metadata: {},
+    last_verified_at: new Date().toISOString(),
+    disconnected_at: status === 'disconnected' ? new Date().toISOString() : null,
+  }
+  const response = await fetch(`${config.url}/rest/v1/connected_accounts?on_conflict=user_id,provider`, {
+    method: 'POST',
+    headers: supabaseServiceHeaders(config.service, { Prefer: 'resolution=merge-duplicates,return=minimal' }),
+    body: JSON.stringify(record),
+  })
+  if (!response.ok) throw new Error('Connection was verified but could not be saved')
+}
+
+async function persistExecution(record) {
+  const config = persistenceConfig()
+  if (!config) return true
+  const response = await fetch(`${config.url}/rest/v1/connector_executions`, {
+    method: 'POST',
+    headers: supabaseServiceHeaders(config.service, { Prefer: 'return=minimal' }),
+    body: JSON.stringify(record),
+  })
+  if (response.status === 409) return false
+  if (!response.ok) throw new Error('Execution history could not be saved')
+  return true
+}
+
+async function finishExecution(userId, idempotencyKey, changes) {
+  const config = persistenceConfig()
+  if (!config) return
+  const response = await fetch(`${config.url}/rest/v1/connector_executions?user_id=eq.${encodeURIComponent(userId)}&idempotency_key=eq.${encodeURIComponent(idempotencyKey)}`, {
+    method: 'PATCH',
+    headers: supabaseServiceHeaders(config.service, { Prefer: 'return=minimal' }),
+    body: JSON.stringify({ ...changes, completed_at: new Date().toISOString() }),
+  })
+  if (!response.ok) throw new Error('Execution result could not be saved')
 }
 
 // ---------------------------------------------------------------------------
@@ -303,6 +295,7 @@ export async function getConnectedApps(user) {
           status = connected ? 'connected' : account.status?.toLowerCase() || 'disconnected'
           connectedAt = account.createdAt || account.created_at || null
           lastSyncedAt = account.updatedAt || account.updated_at || null
+          await persistConnection(user, pid, account, connected ? 'connected' : status)
         }
       } catch (err) {
         error = sanitizeError(err)
@@ -505,10 +498,11 @@ export async function disconnectProvider(user, providerId) {
     const account = accounts.items[0]
     // Verify ownership before deleting
     const accountUserId = alphaUserIdFromComposio(account.userId || account.user_id)
-    if (accountUserId !== user.id && !isAdminUser(user)) {
+    if (accountUserId !== user.id) {
       throw new Error('You do not own this connection')
     }
     await composioClient.connectedAccounts.delete(account.id)
+    await persistConnection(user, pid, account, 'disconnected')
   }
 
   return { success: true, provider: pid }
@@ -568,19 +562,36 @@ export async function executeProviderAction(user, providerId, actionId, payload)
 
   const account = accounts.items[0]
   const accountUserId = alphaUserIdFromComposio(account.userId || account.user_id)
-  if (accountUserId !== user.id && !isAdminUser(user)) {
+  if (accountUserId !== user.id) {
     throw new Error('You do not own this connection')
   }
 
+  const approvalId = String(payload?.approvalId || '').trim()
+  const idempotencyKey = String(payload?.idempotencyKey || '').trim()
+  if (!approvalId) throw new Error('Explicit approval is required')
+  if (!idempotencyKey) throw new Error('Idempotency key is required')
+  const actionArguments = { ...(payload || {}) }
+  delete actionArguments.approvalId
+  delete actionArguments.idempotencyKey
+  const claimed = await persistExecution({
+    user_id: user.id, toolkit_slug: pid, capability_id: actionId, status: 'claimed',
+    approval_id: approvalId, idempotency_key: idempotencyKey, credits_charged: 0,
+  })
+  if (!claimed) throw new Error('This approved action was already executed')
   const startTime = Date.now()
 
   // Execute through Composio SDK tools
-  const result = await composioClient.tools.execute(toolSlug, {
-    connectedAccountId: account.id,
-    userId: uid,
-    arguments: payload || {},
-    dangerouslySkipVersionCheck: true,
-  })
+  let result
+  try {
+    result = await composioClient.tools.execute(toolSlug, {
+      connectedAccountId: account.id,
+      userId: uid,
+      arguments: actionArguments,
+    })
+  } catch (error) {
+    await finishExecution(user.id, idempotencyKey, { status: 'failed', error_code: 'provider_error' })
+    throw error
+  }
 
   const executionTimeMs = Date.now() - startTime
 
@@ -594,9 +605,15 @@ export async function executeProviderAction(user, providerId, actionId, payload)
   const successful = result.successful === true && responseData != null
 
   if (!successful) {
+    await finishExecution(user.id, idempotencyKey, { status: 'failed', error_code: 'provider_unconfirmed' })
     throw new Error('Provider did not confirm a successful execution')
   }
 
+  await finishExecution(user.id, idempotencyKey, {
+    status: 'succeeded',
+    provider_execution_id: result.logId || null, result_metadata: { confirmed: true },
+    credits_charged: 0,
+  })
   return {
     success: true,
     executionId: result.logId || `exec_${Date.now()}`,
@@ -617,7 +634,24 @@ export async function getExecutionHistory(user, providerId, limit = 10) {
   // Execution history is stored in our own database (alpha_connector_executions table)
   // This method returns a server-side reference — the actual history should be
   // queried from the database by the route handler
-  return { executions: [] }
+  const pid = resolveProviderAlias(providerId)
+  const config = persistenceConfig()
+  if (!pid || !user?.id || !config) return { executions: [] }
+  const safeLimit = Math.min(50, Math.max(1, Number(limit) || 10))
+  try {
+    const response = await fetch(`${config.url}/rest/v1/connector_executions?user_id=eq.${encodeURIComponent(user.id)}&toolkit_slug=eq.${encodeURIComponent(pid)}&select=*&order=created_at.desc&limit=${safeLimit}`, {
+      headers: supabaseServiceHeaders(config.service),
+    })
+    if (!response.ok) return { executions: [], warning: 'Execution history is temporarily unavailable' }
+    return { executions: await response.json() }
+  } catch {
+    return { executions: [], warning: 'Execution history is temporarily unavailable' }
+  }
+}
+
+export async function testConnection(user, providerId) {
+  const status = await getConnectionStatus(user, providerId)
+  return { ...status, verified: status.connected === true, checkedAt: new Date().toISOString() }
 }
 
 // ---------------------------------------------------------------------------
