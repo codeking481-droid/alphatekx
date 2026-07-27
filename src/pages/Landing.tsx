@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
+import { AnimatePresence, motion, useReducedMotion, useScroll, useSpring } from 'framer-motion'
 import { Link } from 'react-router-dom'
 import {
   ArrowRight, Bot, CalendarDays, Check, CheckCircle2, ChevronDown, CirclePlay,
@@ -66,6 +66,12 @@ function DotGrid() {
   return <div aria-hidden className="perspective-grid-shell pointer-events-none absolute inset-x-0 bottom-0 h-[72%] overflow-hidden"><div className="premium-grid perspective-grid-plane absolute inset-[-30%] opacity-55" /></div>
 }
 
+function ScrollProgress() {
+  const { scrollYProgress } = useScroll()
+  const scaleX = useSpring(scrollYProgress, { stiffness: 120, damping: 28, restDelta: .001 })
+  return <motion.div aria-hidden style={{ scaleX }} className="fixed inset-x-0 top-0 z-[70] h-[3px] origin-left bg-gradient-to-r from-[#9E77ED] via-[#6941C6] to-[#2E90FA]"/>
+}
+
 function AvatarStack() {
   return <div className="flex -space-x-2">{['DA','MK','SN','AO'].map((initials, index) => <span key={initials} className="grid size-8 place-items-center rounded-full border-2 border-white text-[10px] font-black text-white" style={{ background: ['#6941C6','#1570EF','#039855','#DC6803'][index] }}>{initials}</span>)}</div>
 }
@@ -78,7 +84,7 @@ function LiveBuilderCount() {
     const timer = window.setInterval(() => setCount(value => value >= 2199 ? 2147 : value + 1), 2400)
     return () => window.clearInterval(timer)
   }, [reduce])
-  return <span className="inline-flex items-center gap-2 text-xs font-bold text-[#475467]"><i className="relative flex size-2.5"><i className="absolute inline-flex size-full animate-ping rounded-full bg-[#32D583] opacity-60"/><i className="relative inline-flex size-2.5 rounded-full bg-[#12B76A]"/></i>Alpha is working for <motion.strong key={count} initial={{ y: -4, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="font-black tabular-nums text-[#0B0F19]">{count.toLocaleString()}</motion.strong> builders right now</span>
+  return <span className="inline-flex max-w-full flex-wrap items-center justify-center gap-2 text-center text-xs font-bold leading-5 text-[#475467] lg:justify-start lg:text-left"><i className="relative flex size-2.5 shrink-0"><i className="absolute inline-flex size-full animate-ping rounded-full bg-[#32D583] opacity-60"/><i className="relative inline-flex size-2.5 rounded-full bg-[#12B76A]"/></i>Alpha is working for <motion.strong key={count} initial={{ y: -4, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="font-black tabular-nums text-[#0B0F19]">{count.toLocaleString()}</motion.strong> builders right now</span>
 }
 
 function RevealLine({ words, delay = 0, inline = false }: { words: string[]; delay?: number; inline?: boolean }) {
@@ -103,6 +109,18 @@ function BrainWave() {
   </svg>
 }
 
+function FutureOrbit() {
+  const reduce = useReducedMotion()
+  return <div aria-hidden className="future-orbit pointer-events-none absolute -right-28 -top-32 size-[430px] opacity-70 sm:-right-16">
+    <motion.div animate={reduce ? undefined : { rotate: 360 }} transition={{ duration: 34, repeat: Infinity, ease: 'linear' }} className="absolute inset-0 rounded-full border border-[#D6BBFB]/70">
+      <i className="absolute left-1/2 top-[-5px] size-3 -translate-x-1/2 rounded-full bg-[#6941C6] shadow-[0_8px_24px_rgba(105,65,198,.45)]"/>
+      <i className="absolute bottom-[16%] left-[5%] size-2 rounded-full bg-[#2E90FA] shadow-[0_8px_18px_rgba(46,144,250,.35)]"/>
+    </motion.div>
+    <motion.div animate={reduce ? undefined : { rotate: -360 }} transition={{ duration: 24, repeat: Infinity, ease: 'linear' }} className="absolute inset-[18%] rounded-full border border-[#B2DDFF]/80"><i className="absolute right-[10%] top-[9%] size-2.5 rounded-full bg-[#9E77ED]"/></motion.div>
+    <div className="absolute inset-[37%] rounded-full bg-white shadow-[0_18px_70px_rgba(105,65,198,.18)]"/>
+  </div>
+}
+
 function CommandMockup() {
   const reduce = useReducedMotion()
   const questions = ['What platform should Alpha use?', 'What days should it run?', 'What time works best for you?']
@@ -125,6 +143,7 @@ function CommandMockup() {
   return <motion.div initial={{ opacity: 0, y: 26 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: .25, type: 'spring', stiffness: 80 }} className="relative mx-auto w-full max-w-[590px]">
     <div className="rounded-[24px] border border-[#D0D5DD] bg-white p-3 shadow-[0_32px_80px_rgba(16,24,40,.16)] sm:p-4">
       <div className="overflow-hidden rounded-[18px] border border-[#EAECF0] bg-[#F9FAFB]">
+        <motion.i aria-hidden animate={reduce ? undefined : { x: ['-120%', '620%'] }} transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut', repeatDelay: 2 }} className="pointer-events-none absolute inset-y-4 z-20 w-16 skew-x-[-12deg] bg-gradient-to-r from-transparent via-[#B692F6]/15 to-transparent blur-sm"/>
         <div className="flex items-center justify-between border-b border-[#EAECF0] bg-white px-4 py-4 sm:px-5"><div className="flex items-center gap-3"><span className="grid size-9 place-items-center rounded-xl bg-[#6941C6] text-white"><Bot size={18}/></span><div><p className="text-xs font-bold text-[#6941C6]">COMMAND CENTRE</p><p className="text-sm font-black text-[#0B0F19]">Plan with Alpha</p></div></div><span className="flex items-center gap-2 rounded-lg border border-[#EAECF0] bg-[#F9FAFB] px-2.5 py-1.5 text-[10px] font-black text-[#667085]"><kbd>⌘</kbd><kbd>K</kbd></span></div>
         <div className="p-4 sm:p-6">
           <div className="rounded-2xl border border-[#EAECF0] bg-white p-5 shadow-[0_1px_2px_rgba(16,24,40,.05)]">
@@ -212,7 +231,7 @@ function InteractiveDemo() {
     }, 760)
   }
   const reset = () => { setStep(0); setAnswers([]); setThinking(false); setThoughtComplete(false) }
-  return <section id="live-demo" className="bg-[#0B0F19] px-4 py-24 text-white sm:px-6 lg:py-32"><div className="mx-auto grid max-w-7xl items-center gap-12 lg:grid-cols-[.85fr_1.15fr]"><SectionHeading align="left" eyebrow="Live demo" title="Feel how calm automation can be." copy="Click through the miniature Command Centre. Alpha asks for one decision, waits, then moves forward."/><div className="rounded-[24px] border border-white/10 bg-white/[.06] p-3 shadow-[0_30px_80px_rgba(0,0,0,.35)] backdrop-blur"><div className="min-h-[420px] rounded-[18px] bg-white p-5 text-[#0B0F19] sm:p-8">
+  return <section id="live-demo" className="relative overflow-hidden bg-[#FAFBFF] px-4 py-24 sm:px-6 lg:py-32"><div className="future-mesh pointer-events-none absolute inset-0 opacity-55"/><FutureOrbit/><div className="relative mx-auto grid max-w-7xl items-center gap-12 lg:grid-cols-[.85fr_1.15fr]"><SectionHeading align="left" eyebrow="Live demo" title="Feel how calm automation can be." copy="Click through the miniature Command Centre. Alpha asks for one decision, waits, then moves forward."/><div className="rounded-[24px] border border-[#D6BBFB] bg-white/75 p-3 shadow-[0_30px_80px_rgba(105,65,198,.14)] backdrop-blur-xl"><div className="relative min-h-[420px] overflow-hidden rounded-[18px] border border-[#EAECF0] bg-white p-5 text-[#0B0F19] sm:p-8">
     <div className="flex items-center justify-between"><span className="flex items-center gap-2 text-xs font-black text-[#6941C6]"><Bot size={17}/>ALPHA COMMAND PALETTE</span><span className="rounded-lg border border-[#EAECF0] bg-[#F9FAFB] px-2 py-1 text-[10px] font-black text-[#667085]">⌘ K</span></div>
     <div className="mt-4 rounded-xl border border-[#EAECF0] bg-[#F9FAFB] px-4 py-3 text-xs font-bold text-[#98A2B3]">Ask Alpha to automate anything…</div>
     <div className="mt-6 space-y-3">{answers.map((answer,index) => <div key={`${answer}-${index}`} className="flex justify-end"><span className="rounded-2xl rounded-br-sm bg-[#6941C6] px-4 py-3 text-sm font-semibold text-white">{answer}</span></div>)}</div>
@@ -247,8 +266,8 @@ function Stats() {
     ['2030','Autonomous business','AI employees coordinate reliable business operations.'],
   ]
   return <section className="bg-white px-4 py-24 sm:px-6 lg:py-32"><div className="mx-auto max-w-7xl">
-    <motion.div initial={{ opacity: 0, scale: .98 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: true }} className="future-stat-panel relative overflow-hidden rounded-[28px] bg-[#0B0F19] px-6 py-14 text-white shadow-[0_24px_70px_rgba(11,15,25,.22)] sm:px-12">
-      <div className="future-mesh pointer-events-none absolute inset-0 opacity-40"/><div className="relative"><p className="text-center text-sm font-bold uppercase tracking-[.18em] text-[#B692F6]">Backed by the future</p><h2 className="mx-auto mt-5 max-w-3xl text-center text-3xl font-black tracking-[-.04em] sm:text-5xl">The next operating system for work is already arriving.</h2><div className="mt-12 grid gap-4 md:grid-cols-3">{[['$1.77T','AI market by 2032'],['$1.2T','Automation opportunity'],['Now','You are early']].map(([value,label]) => <div key={value} className="rounded-2xl border border-white/10 bg-white/[.06] p-6 text-center backdrop-blur-xl"><p className="text-4xl font-black text-white">{value}</p><p className="mt-2 text-sm font-semibold text-[#D0D5DD]">{label}</p></div>)}</div></div>
+    <motion.div initial={{ opacity: 0, scale: .98 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: true }} className="future-stat-panel relative overflow-hidden rounded-[28px] border border-[#D6BBFB] bg-[#FAFBFF] px-6 py-14 text-[#0B0F19] shadow-[0_24px_70px_rgba(105,65,198,.14)] sm:px-12">
+      <div className="future-mesh pointer-events-none absolute inset-0 opacity-70"/><FutureOrbit/><div className="relative"><p className="text-center text-sm font-bold uppercase tracking-[.18em] text-[#6941C6]">Backed by the future</p><h2 className="mx-auto mt-5 max-w-3xl text-center text-3xl font-black tracking-[-.04em] text-[#0B0F19] sm:text-5xl">The next operating system for work is already arriving.</h2><div className="mt-12 grid gap-4 md:grid-cols-3">{[['$1.77T','AI market by 2032'],['$1.2T','Automation opportunity'],['Now','You are early']].map(([value,label]) => <motion.div whileHover={{ y: -5, scale: 1.015 }} key={value} className="rounded-2xl border border-[#EAECF0] bg-white/80 p-6 text-center shadow-[0_12px_32px_rgba(105,65,198,.08)] backdrop-blur-xl"><p className="text-4xl font-black text-[#0B0F19]">{value}</p><p className="mt-2 text-sm font-semibold text-[#667085]">{label}</p></motion.div>)}</div></div>
     </motion.div>
     <div className="relative mt-16 grid gap-5 lg:grid-cols-4"><motion.div initial={{ scaleX: 0 }} whileInView={{ scaleX: 1 }} viewport={{ once: true }} className="absolute left-[8%] right-[8%] top-4 hidden h-px origin-left bg-gradient-to-r from-[#D6BBFB] via-[#6941C6] to-[#B2DDFF] lg:block"/>{timeline.map(([year,title,copy], index) => <motion.article initial={{ opacity: 0, y: 18 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: index * .1 }} key={year} className={`relative rounded-2xl border p-6 ${year === '2026' ? 'border-[#6941C6] bg-[#F4F3FF] shadow-[0_16px_40px_rgba(105,65,198,.14)]' : 'border-[#EAECF0] bg-white'}`}><span className={`absolute -top-3 left-6 rounded-full px-3 py-1 text-xs font-black ${year === '2026' ? 'bg-[#6941C6] text-white' : 'border border-[#EAECF0] bg-white text-[#667085]'}`}>{year}</span><h3 className="mt-5 text-lg font-black text-[#0B0F19]">{title}</h3><p className="mt-2 text-sm leading-6 text-[#667085]">{copy}</p>{year === '2026' && <span className="mt-4 inline-flex items-center gap-2 text-xs font-black text-[#6941C6]"><i className="size-2 animate-pulse rounded-full bg-[#6941C6]"/>YOU ARE HERE</span>}</motion.article>)}</div>
   </div></section>
@@ -278,8 +297,8 @@ function Pricing() {
   ] as const
   return <section id="pricing" className="bg-white px-4 py-24 sm:px-6 lg:py-32"><div className="mx-auto max-w-7xl"><SectionHeading eyebrow="Simple pricing" title="Start small. Scale to millions." copy="Planning is free. Pay only when Alpha works."/>
     <div className="mx-auto mt-8 flex w-fit rounded-xl border border-[#EAECF0] bg-[#F9FAFB] p-1"><button onClick={() => setYearly(false)} className={`min-h-11 rounded-lg px-5 text-sm font-bold ${!yearly ? 'bg-white text-[#0B0F19] shadow-sm' : 'text-[#667085]'}`}>Monthly</button><button onClick={() => setYearly(true)} className={`min-h-11 rounded-lg px-5 text-sm font-bold ${yearly ? 'bg-white text-[#0B0F19] shadow-sm' : 'text-[#667085]'}`}>Yearly <span className="text-[#039855]">−20%</span></button></div>
-    <div className="mt-12"><p className="mb-5 text-center text-sm font-black uppercase tracking-[.14em] text-[#667085]">Small packs for testers</p><div className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-5 md:grid md:grid-cols-3 md:overflow-visible md:pb-0">{packs.map(([name,price,credits],index) => <TiltCard key={name} featured={index === 1}>{index === 1 && <span className="absolute right-4 top-4 rounded-full bg-[#F4F3FF] px-3 py-1 text-[10px] font-black uppercase text-[#6941C6]">Most popular</span>}<p className="text-sm font-black uppercase tracking-[.14em] text-[#6941C6]">{name}</p><p className="mt-5 text-4xl font-black text-[#0B0F19]">{price}</p><p className="mt-2 font-semibold text-[#667085]">{credits}</p><Link to="/auth" className="mt-6 block min-h-11 rounded-xl bg-[#0B0F19] px-5 py-3 text-center text-sm font-semibold text-white">Buy credits</Link></TiltCard>)}</div></div>
-    <div className="mt-16"><p className="mb-5 text-center text-sm font-black uppercase tracking-[.14em] text-[#667085]">Monthly credits for business</p><div className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-5 lg:grid lg:grid-cols-3 lg:overflow-visible lg:pb-0">{plans.map(([name,monthly,credits,benefits],index) => { const price = yearly ? Math.round(monthly * .8) : monthly; return <TiltCard key={name} featured={index === 1}>{index === 1 && <span className="absolute right-4 top-4 rounded-full bg-[#6941C6] px-3 py-1 text-[10px] font-black uppercase text-white">Recommended</span>}<p className="text-sm font-black uppercase tracking-[.14em] text-[#6941C6]">{name}</p><p className="mt-5 text-4xl font-black text-[#0B0F19]">${price}<span className="text-base font-semibold text-[#667085]">/mo</span></p>{yearly && <p className="mt-1 text-xs font-bold text-[#039855]">Billed yearly · save 20%</p>}<p className="mt-5 text-lg font-black text-[#344054]">{credits} credits/month</p><p className="mt-3 min-h-12 text-sm leading-6 text-[#667085]">{benefits}</p><Link to="/auth" className={`mt-6 block min-h-11 rounded-xl px-5 py-3 text-center text-sm font-semibold ${index === 1 ? 'bg-[#6941C6] text-white' : 'bg-[#0B0F19] text-white'}`}>Choose {name}</Link></TiltCard>})}</div></div>
+    <div className="mt-12"><p className="mb-5 text-center text-sm font-black uppercase tracking-[.14em] text-[#667085]">Small packs for testers</p><div className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-5 md:grid md:grid-cols-3 md:overflow-visible md:pb-0">{packs.map(([name,price,credits],index) => <TiltCard key={name} featured={index === 1}>{index === 1 && <span className="absolute right-4 top-4 rounded-full bg-[#F4F3FF] px-3 py-1 text-[10px] font-black uppercase text-[#6941C6]">Most popular</span>}<p className="text-sm font-black uppercase tracking-[.14em] text-[#6941C6]">{name}</p><p className="mt-5 text-4xl font-black text-[#0B0F19]">{price}</p><p className="mt-2 font-semibold text-[#667085]">{credits}</p><Link to="/auth" className="mt-6 block min-h-11 rounded-xl bg-[#6941C6] px-5 py-3 text-center text-sm font-semibold text-white shadow-[0_10px_24px_rgba(105,65,198,.18)]">Buy credits</Link></TiltCard>)}</div></div>
+    <div className="mt-16"><p className="mb-5 text-center text-sm font-black uppercase tracking-[.14em] text-[#667085]">Monthly credits for business</p><div className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-5 lg:grid lg:grid-cols-3 lg:overflow-visible lg:pb-0">{plans.map(([name,monthly,credits,benefits],index) => { const price = yearly ? Math.round(monthly * .8) : monthly; return <TiltCard key={name} featured={index === 1}>{index === 1 && <span className="absolute right-4 top-4 rounded-full bg-[#6941C6] px-3 py-1 text-[10px] font-black uppercase text-white">Recommended</span>}<p className="text-sm font-black uppercase tracking-[.14em] text-[#6941C6]">{name}</p><p className="mt-5 text-4xl font-black text-[#0B0F19]">${price}<span className="text-base font-semibold text-[#667085]">/mo</span></p>{yearly && <p className="mt-1 text-xs font-bold text-[#039855]">Billed yearly · save 20%</p>}<p className="mt-5 text-lg font-black text-[#344054]">{credits} credits/month</p><p className="mt-3 min-h-12 text-sm leading-6 text-[#667085]">{benefits}</p><Link to="/auth" className="mt-6 block min-h-11 rounded-xl bg-[#6941C6] px-5 py-3 text-center text-sm font-semibold text-white shadow-[0_10px_24px_rgba(105,65,198,.18)]">Choose {name}</Link></TiltCard>})}</div></div>
     <div className="mx-auto mt-8 flex max-w-3xl flex-wrap justify-center gap-2 rounded-full border border-[#EAECF0] bg-[#F9FAFB] px-5 py-3 text-center text-xs font-bold text-[#475467]"><span>Google signup = 1 tester credit</span><span className="text-[#D0D5DD]">•</span><span>Phone verification = 10 credits, recommended, one time</span></div>
   </div></section>
 }
@@ -290,11 +309,11 @@ function FAQ() {
 }
 
 function FinalCTA() {
-  return <section className="bg-white px-4 py-20 sm:px-6"><div className="mx-auto max-w-7xl overflow-hidden rounded-[28px] bg-[#0B0F19] px-6 py-16 text-center text-white shadow-[0_24px_60px_rgba(11,15,25,.2)] sm:px-12"><Zap className="mx-auto text-[#B692F6]" size={32}/><h2 className="mt-5 text-4xl font-black tracking-[-.04em] sm:text-6xl">Ready to delegate?</h2><p className="mx-auto mt-5 max-w-xl text-lg text-[#D0D5DD]">Give Alpha the outcome. Keep the approval. Get your time back.</p><Link to="/auth" className="mt-8 inline-flex min-h-12 items-center gap-2 rounded-xl bg-[#6941C6] px-6 font-semibold text-white shadow-[0_10px_25px_rgba(105,65,198,.3)]">Start automating <ArrowRight size={18}/></Link><p className="mt-4 text-xs font-semibold text-[#98A2B3]">No credit card required for planning</p></div></section>
+  return <section className="bg-white px-4 py-20 sm:px-6"><div className="relative mx-auto max-w-7xl overflow-hidden rounded-[28px] border border-[#D6BBFB] bg-[#FAFBFF] px-6 py-16 text-center shadow-[0_24px_60px_rgba(105,65,198,.14)] sm:px-12"><div className="future-mesh pointer-events-none absolute inset-0"/><FutureOrbit/><div className="relative"><Zap className="mx-auto text-[#6941C6]" size={32}/><h2 className="mt-5 text-4xl font-black tracking-[-.04em] text-[#0B0F19] sm:text-6xl">Ready to delegate?</h2><p className="mx-auto mt-5 max-w-xl text-lg text-[#667085]">Give Alpha the outcome. Keep the approval. Get your time back.</p><Link to="/auth" className="mt-8 inline-flex min-h-12 items-center gap-2 rounded-xl bg-[#6941C6] px-6 font-semibold text-white shadow-[0_10px_25px_rgba(105,65,198,.25)]">Start automating <ArrowRight size={18}/></Link><p className="mt-4 text-xs font-semibold text-[#98A2B3]">No credit card required for planning</p></div></div></section>
 }
 
 function Footer() {
-  return <footer className="border-t border-[#EAECF0] bg-[#FAFBFF] px-4 py-10 sm:px-6"><div className="mx-auto flex max-w-7xl flex-col gap-8"><div className="flex flex-col justify-between gap-6 md:flex-row md:items-center"><Logo/><nav className="flex flex-wrap gap-5 text-sm font-semibold text-[#475467]"><a href="#how-it-works">How it works</a><a href="#pricing">Pricing</a><Link to="/privacy">Privacy</Link><Link to="/terms">Terms</Link><a href="https://twitter.com" aria-label="AlphaTekx on X"><Twitter size={18}/></a><a href="https://linkedin.com" aria-label="AlphaTekx on LinkedIn"><Linkedin size={18}/></a></nav></div><div className="h-px bg-[#EAECF0]"/><p className="text-sm font-medium text-[#667085]">© 2026 AlphaTekx. Built for real work.</p></div></footer>
+  return <footer className="border-t border-[#EAECF0] bg-[#FAFBFF] px-4 pb-24 pt-10 sm:px-6 md:pb-10"><div className="mx-auto flex max-w-7xl flex-col gap-8"><div className="flex flex-col justify-between gap-6 md:flex-row md:items-center"><Logo/><nav className="flex flex-wrap gap-5 text-sm font-semibold text-[#475467]"><a href="#how-it-works">How it works</a><a href="#pricing">Pricing</a><Link to="/privacy">Privacy</Link><Link to="/terms">Terms</Link><a href="https://twitter.com" aria-label="AlphaTekx on X"><Twitter size={18}/></a><a href="https://linkedin.com" aria-label="AlphaTekx on LinkedIn"><Linkedin size={18}/></a></nav></div><div className="h-px bg-[#EAECF0]"/><p className="text-sm font-medium text-[#667085]">© 2026 AlphaTekx. Built for real work.</p></div></footer>
 }
 
 function MobileStickyCTA() {
@@ -307,13 +326,13 @@ function MobileStickyCTA() {
     observer.observe(hero)
     return () => observer.disconnect()
   }, [])
-  return <AnimatePresence>{visible && <motion.div initial={{ y: 90, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 90, opacity: 0 }} transition={{ type: 'spring', stiffness: 240, damping: 24 }} className="fixed inset-x-0 bottom-0 z-40 border-t border-white/60 bg-white/75 p-3 backdrop-blur-2xl md:hidden"><Link to={user ? '/dashboard' : '/auth'} className="mx-auto flex min-h-12 max-w-sm items-center justify-center gap-2 rounded-full bg-[#0B0F19] px-6 font-black text-white shadow-[0_14px_35px_rgba(11,15,25,.28)]">Start Automating — Free <ArrowRight size={17}/></Link></motion.div>}</AnimatePresence>
+  return <AnimatePresence>{visible && <motion.div initial={{ y: 90, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 90, opacity: 0 }} transition={{ type: 'spring', stiffness: 240, damping: 24 }} className="fixed inset-x-0 bottom-0 z-40 border-t border-white/60 bg-white/75 p-3 backdrop-blur-2xl md:hidden"><Link to={user ? '/dashboard' : '/auth'} className="mx-auto flex min-h-12 max-w-sm items-center justify-center gap-2 rounded-full bg-[#6941C6] px-6 font-black text-white shadow-[0_14px_35px_rgba(105,65,198,.28)]">Start Automating — Free <ArrowRight size={17}/></Link></motion.div>}</AnimatePresence>
 }
 
 export default function Landing() {
   return <div className="min-h-screen overflow-x-hidden bg-white font-sans text-[#0B0F19]">
     <SEO title="AlphaTekx — Delegate the work. Turn Your Idea Into Reality" description="Your AI Employee that asks, plans, waits for approval, and executes while you sleep."/>
     <div aria-hidden className="premium-noise pointer-events-none fixed inset-0 z-[60] opacity-[.02]"/>
-    <Header/><main><Hero/><LogoMarquee/><ProblemSolution/><HowItWorks/><InteractiveDemo/><AutomationGallery/><ActivityRail/><ConnectedApps/><FeatureDeepDive/><Stats/><Testimonials/><Pricing/><FAQ/><FinalCTA/></main><Footer/><MobileStickyCTA/>
+    <ScrollProgress/><Header/><main><Hero/><LogoMarquee/><ProblemSolution/><HowItWorks/><InteractiveDemo/><AutomationGallery/><ActivityRail/><ConnectedApps/><FeatureDeepDive/><Stats/><Testimonials/><Pricing/><FAQ/><FinalCTA/></main><Footer/><MobileStickyCTA/>
   </div>
 }
