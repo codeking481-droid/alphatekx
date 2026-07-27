@@ -52,16 +52,16 @@ export const PLANS: Record<PlanId, Plan> = {
     features: ['1 Google credit or 10 verified-phone credits', '1 active automation', '1 post per hour', 'Schedule up to 7 days ahead'],
   },
   creator_monthly: {
-    id: 'creator_monthly', name: 'Creator Monthly', priceKobo: 1500, currency: 'USD', monthlyCredits: 150, maxActiveAutomations: 5,
-    features: ['150 credits every month', 'Up to 5 active automations', 'Scheduled automations', 'Connected app support'],
+    id: 'creator_monthly', name: 'Starter', priceKobo: 1500, currency: 'USD', monthlyCredits: 150, maxActiveAutomations: 2,
+    features: ['150 credits every month', 'Up to 2 active automations', 'Scheduled automations', 'Basic support'],
   },
   builder_monthly: {
-    id: 'builder_monthly', name: 'Builder Monthly', priceKobo: 2900, currency: 'USD', monthlyCredits: 350, maxActiveAutomations: 15,
-    features: ['350 credits every month', 'Up to 15 active automations', 'Priority scheduling', 'Connected app support'], badge: 'Most Popular',
+    id: 'builder_monthly', name: 'Growth', priceKobo: 2900, currency: 'USD', monthlyCredits: 400, maxActiveAutomations: 10,
+    features: ['400 credits every month', 'Up to 10 active automations', 'Priority scheduling', 'Priority support'], badge: 'Most Popular',
   },
   scale_monthly: {
-    id: 'scale_monthly', name: 'Scale Monthly', priceKobo: 7900, currency: 'USD', monthlyCredits: 1000, maxActiveAutomations: 50,
-    features: ['1,000 credits every month', 'Up to 50 active automations', 'Priority support', 'Advanced history'],
+    id: 'scale_monthly', name: 'Scale', priceKobo: 7900, currency: 'USD', monthlyCredits: 1200, maxActiveAutomations: 1000000,
+    features: ['1,200 credits every month', 'Unlimited active automations', 'Dedicated success', 'API access'],
   },
 }
 

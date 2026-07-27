@@ -31,7 +31,8 @@
     "test:e2e": "node scripts/full-test.mjs && node scripts/path-deploy-test.mjs && node scripts/render-smoke.mjs",
     "test:thorough": "node scripts/thorough-test.mjs",
     "test:composio": "node scripts/composio-connector-tests.mjs",
-    "test:bold-white-flow": "node scripts/bold-white-automation-flow-tests.mjs"
+    "test:bold-white-flow": "node scripts/bold-white-automation-flow-tests.mjs",
+    "test:premium-landing": "node scripts/premium-landing-tests.mjs"
   },
   "engines": {
     "node": ">=22.0.0"
