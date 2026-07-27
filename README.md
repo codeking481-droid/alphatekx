@@ -32,6 +32,7 @@ The API runs on port 3001 and Vite proxies `/api/*` to it.
 5. Copy `.env.example` to `.env.local` and fill the browser-safe Supabase values.
 
 Set `DEVICE_FINGERPRINT_SECRET` to a stable random server-only value in production. AlphaTekx HMAC-hashes the browser fingerprint before its atomic claim check; raw fingerprints are never stored.
+Set `SUPER_ADMIN_EMAILS` to a comma-separated list of trusted Google accounts that should receive the supervisor credit bypass without consuming a device claim.
 
 RLS restricts Missions, Messages, Activities, Creations, Workers, and Profiles to their owners. Marketplace items are publicly readable. Credit deductions use the atomic `spend_credits` database function.
 

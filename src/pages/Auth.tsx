@@ -10,11 +10,13 @@ const OAUTH_STATE_HELP = 'Google sign-in expired or was started from an old tab.
 
 type VerificationResult = {
   ok?: boolean
+  success?: boolean
   claimed?: boolean
   credits?: number
   creditsAdded?: number
   reason?: string
   error?: string
+  isAdmin?: boolean
 }
 
 function authRedirectUrl() {
@@ -83,7 +85,7 @@ export default function Auth() {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${session.access_token}`,
           },
-          body: JSON.stringify({ fingerprint }),
+          body: JSON.stringify({ fingerprintHash: fingerprint }),
         })
         const body = await response.json().catch(() => ({})) as VerificationResult
         if (!response.ok) throw new Error(body.error || 'Human verification could not be completed.')
@@ -91,7 +93,7 @@ export default function Auth() {
         if (remaining) await new Promise(resolve => window.setTimeout(resolve, remaining))
         setResult(body)
         await refreshProfile()
-        window.setTimeout(() => navigate('/onboarding', { replace: true }), 1_350)
+        if (body.success) window.setTimeout(() => navigate('/onboarding', { replace: true }), 1_350)
       } catch (error) {
         setNotice(error instanceof Error ? error.message : 'Human verification could not be completed.')
       } finally {
@@ -126,11 +128,13 @@ export default function Auth() {
   }
 
   const blocked = !configured || pending || Boolean(user)
-  const bonusMessage = result?.claimed
-    ? 'Human verified! 10 credits unlocked 🎉'
+  const bonusMessage = result?.isAdmin
+    ? 'Welcome Boss! 10 credits unlocked 🔓'
+    : result?.claimed
+      ? 'Human verified! 10 credits unlocked 🎉'
     : result?.reason === 'device_already_claimed'
       ? 'This device already claimed the 10-credit bonus. One bonus per human.'
-      : 'Your Google account was already verified. Your credits are safe.'
+      : 'This Google account already claimed the bonus. You have 1 credit.'
 
   return (
     <main className="grid min-h-screen place-items-center bg-[#FAFBFF] p-5 text-[#0B0F19]">
@@ -161,7 +165,8 @@ export default function Auth() {
           <div role="status" aria-live="polite" className="mt-5 rounded-2xl border border-violet-200 bg-[#FAFBFF] p-5 text-center shadow-[0_12px_35px_rgba(109,40,217,.10)]">
             {verifying ? <LoaderCircle className="mx-auto animate-spin text-[#6D28D9]" size={28}/> : <CheckCircle2 className="mx-auto text-emerald-600" size={30}/>}
             <p className="mt-3 font-black text-[#0B0F19]">{verifying ? "Verifying you're human…" : bonusMessage}</p>
-            {result && <p className="mt-1 text-xs font-bold text-slate-600">Balance: {result.credits ?? 1} credits · Opening your Command Centre…</p>}
+            {result && <p className="mt-1 text-xs font-bold text-slate-600">Balance: {result.credits ?? 1} credits{result.success ? ' · Opening your Command Centre…' : ''}</p>}
+            {result && !result.success && <button onClick={() => navigate('/onboarding', { replace: true })} className="mt-4 min-h-11 rounded-xl bg-[#6D28D9] px-5 text-sm font-black text-white shadow-[0_10px_24px_rgba(109,40,217,.22)]">Continue with 1 credit</button>}
           </div>
         )}
 

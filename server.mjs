@@ -3303,8 +3303,18 @@ function googleIdentitySubject(user) {
     googleIdentity?.id ||
     googleIdentity?.identity_data?.sub ||
     user?.user_metadata?.sub ||
+    user?.id ||
     ''
   ).trim()
+}
+
+function supervisorEmails() {
+  return new Set(
+    String(process.env.SUPER_ADMIN_EMAILS || '')
+      .split(',')
+      .map(normalizedAuthEmail)
+      .filter(Boolean)
+  )
 }
 
 const bonusVerificationAttempts = new Map()
@@ -3326,7 +3336,6 @@ function bonusRateLimited(req) {
 }
 
 async function verifyDeviceBonus(req, res) {
-  if (bonusRateLimited(req)) return json(res, 429, { error: 'Too many verification attempts. Please try again in one hour.' })
   const config = supabaseConfig()
   const user = await currentOrLocalUser(req, config.url, config.anon)
   if (!user) return json(res, 401, { error: 'Authentication required' })
@@ -3338,8 +3347,22 @@ async function verifyDeviceBonus(req, res) {
   if (!providers.has('google') || !googleSub) return json(res, 400, { error: 'A verified Google identity is required for this bonus.' })
   if (!config.url || !config.service) return json(res, 503, { error: 'Human verification is not configured on the server.' })
 
+  const email = authUserEmail(user)
+  if (supervisorEmails().has(email)) {
+    const response = await fetch(`${config.url}/rest/v1/rpc/grant_supervisor_bonus`, {
+      method: 'POST',
+      headers: serviceHeaders(config.service),
+      body: JSON.stringify({ p_user_id: user.id, p_email: email }),
+    })
+    const payload = await response.json().catch(() => null)
+    if (!response.ok) return json(res, 503, { error: 'Supervisor credit verification needs the fingerprint-credits database migration.' })
+    const credits = Number(Array.isArray(payload) ? payload[0] : payload) || 10
+    return json(res, 200, { ok: true, success: true, claimed: true, credits, creditsAdded: 0, isAdmin: true, reason: 'supervisor_bypass' })
+  }
+
+  if (bonusRateLimited(req)) return json(res, 429, { error: 'Too many verification attempts. Please try again in one hour.' })
   const body = await readBody(req)
-  const fingerprint = String(body.fingerprint || '').trim()
+  const fingerprint = String(body.fingerprintHash || body.fingerprint || '').trim()
   if (!/^[a-zA-Z0-9_-]{16,256}$/.test(fingerprint)) return json(res, 400, { error: 'The device fingerprint is invalid.' })
 
   const fingerprintHash = createHmac('sha256', process.env.DEVICE_FINGERPRINT_SECRET || config.service)
@@ -3368,10 +3391,12 @@ async function verifyDeviceBonus(req, res) {
   const result = Array.isArray(payload) ? payload[0] : payload
   return json(res, 200, {
     ok: true,
+    success: Boolean(result?.claimed),
     claimed: Boolean(result?.claimed),
     reason: String(result?.reason || ''),
     credits: Number(result?.credits || 0),
     creditsAdded: Number(result?.credits_added || 0),
+    isAdmin: false,
   })
 }
 

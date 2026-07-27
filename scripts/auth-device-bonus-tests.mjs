@@ -35,6 +35,7 @@ test('human verification runs after an authenticated Google session', () => {
   assert.match(auth, /if \(!user \|\| !session\?\.access_token/)
   assert.match(auth, /getDeviceFingerprint\(\)/)
   assert.match(auth, /fetch\('\/api\/verify-bonus'/)
+  assert.match(auth, /fingerprintHash: fingerprint/)
   assert.match(auth, /navigate\('\/onboarding'/)
 })
 
@@ -55,6 +56,16 @@ test('server derives Google subject and enforces five attempts per hour', () => 
   assert.match(server, /BONUS_RATE_WINDOW_MS = 60 \* 60 \* 1000/)
   assert.match(server, /BONUS_RATE_MAX = 5/)
   assert.match(server, /429/)
+})
+
+test('configured supervisors bypass device claims without weakening authentication', () => {
+  assert.match(read('.env.example'), /SUPER_ADMIN_EMAILS=/)
+  assert.match(server, /supervisorEmails\(\)\.has\(email\)/)
+  assert.match(server, /grant_supervisor_bonus/)
+  assert.match(server, /isAdmin: true/)
+  assert.match(auth, /Welcome Boss! 10 credits unlocked/)
+  assert.match(auth, /Continue with 1 credit/)
+  assert.match(migration, /Supervisor welcome-credit bypass/)
 })
 
 test('database claim and credit award are atomic and idempotent', () => {
@@ -83,4 +94,4 @@ test('Firebase runtime and environment contracts are removed', () => {
   assert.equal(fs.existsSync(path.resolve(root, 'server/firebasePhoneAuth.mjs')), false)
 })
 
-if (!process.exitCode) process.stdout.write(`\n${passed}/8 auth device-bonus checks passed.\n`)
+if (!process.exitCode) process.stdout.write(`\n${passed}/9 auth device-bonus checks passed.\n`)

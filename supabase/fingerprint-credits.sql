@@ -62,6 +62,57 @@ END;
 $$;
 GRANT EXECUTE ON FUNCTION public.ensure_user_profile() TO authenticated;
 
+CREATE OR REPLACE FUNCTION public.grant_supervisor_bonus(
+  p_user_id UUID,
+  p_email TEXT
+)
+RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  current_credits INTEGER;
+  bonus_delta INTEGER;
+BEGIN
+  IF p_user_id IS NULL THEN RAISE EXCEPTION 'Authenticated supervisor required'; END IF;
+
+  INSERT INTO public.profiles(id, email, credits, plan, monthly_credits, purchased_credits)
+  VALUES(p_user_id, coalesce(p_email, ''), 0, 'free', 0, 0)
+  ON CONFLICT(id) DO NOTHING;
+
+  SELECT coalesce(p.credits, 0) INTO current_credits
+  FROM public.profiles p
+  WHERE p.id = p_user_id
+  FOR UPDATE;
+
+  bonus_delta := greatest(0, 10 - current_credits);
+  IF bonus_delta > 0 THEN
+    UPDATE public.profiles
+    SET credits = current_credits + bonus_delta,
+        purchased_credits = coalesce(purchased_credits, 0) + bonus_delta
+    WHERE id = p_user_id;
+
+    INSERT INTO public.credit_transactions(
+      user_id, type, credits_added, balance_after, reference, reason, metadata
+    ) VALUES (
+      p_user_id,
+      'welcome',
+      bonus_delta,
+      current_credits + bonus_delta,
+      'supervisor-bonus:' || p_user_id::text,
+      'Supervisor welcome-credit bypass',
+      jsonb_build_object('source', 'supervisor_bypass')
+    );
+  END IF;
+
+  RETURN current_credits + bonus_delta;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.grant_supervisor_bonus(UUID, TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.grant_supervisor_bonus(UUID, TEXT) TO service_role;
+
 CREATE OR REPLACE FUNCTION public.claim_device_bonus(
   p_user_id UUID,
   p_fingerprint_hash TEXT,
