@@ -3335,6 +3335,93 @@ function bonusRateLimited(req) {
   return entry.count > BONUS_RATE_MAX
 }
 
+async function serviceRows(config, table, query) {
+  const response = await fetch(`${config.url}/rest/v1/${table}?${query}`, { headers: serviceHeaders(config.service) })
+  if (!response.ok) throw new Error(`Supabase ${table} read failed (${response.status})`)
+  return response.json()
+}
+
+async function ensureCreditProfile(user, config) {
+  let rows = await serviceRows(config, 'profiles', `id=eq.${encodeURIComponent(user.id)}&select=id,credits,purchased_credits&limit=1`)
+  if (rows[0]) return rows[0]
+  const response = await fetch(`${config.url}/rest/v1/profiles`, {
+    method: 'POST',
+    headers: { ...serviceHeaders(config.service), Prefer: 'resolution=ignore-duplicates,return=representation' },
+    body: JSON.stringify({ id: user.id, email: authUserEmail(user), credits: 0, purchased_credits: 0, plan: 'free' }),
+  })
+  if (!response.ok && response.status !== 409) throw new Error(`Supabase profile setup failed (${response.status})`)
+  rows = await serviceRows(config, 'profiles', `id=eq.${encodeURIComponent(user.id)}&select=id,credits,purchased_credits&limit=1`)
+  if (!rows[0]) throw new Error('Supabase profile setup did not persist')
+  return rows[0]
+}
+
+async function setProfileMinimumCredits(user, config, minimum) {
+  const profile = await ensureCreditProfile(user, config)
+  const current = Number(profile.credits) || 0
+  if (current >= minimum) return { credits: current, added: 0 }
+  const added = minimum - current
+  const patch = { credits: minimum, purchased_credits: (Number(profile.purchased_credits) || 0) + added }
+  let response = await fetch(`${config.url}/rest/v1/profiles?id=eq.${encodeURIComponent(user.id)}`, {
+    method: 'PATCH',
+    headers: serviceHeaders(config.service),
+    body: JSON.stringify(patch),
+  })
+  if (!response.ok) {
+    response = await fetch(`${config.url}/rest/v1/profiles?id=eq.${encodeURIComponent(user.id)}`, {
+      method: 'PATCH',
+      headers: serviceHeaders(config.service),
+      body: JSON.stringify({ credits: minimum }),
+    })
+  }
+  if (!response.ok) throw new Error(`Supabase credit update failed (${response.status})`)
+  return { credits: minimum, added }
+}
+
+const googleCreditLocks = new Map()
+async function grantGoogleCreditDirect(user, googleSub, config) {
+  if (googleCreditLocks.has(user.id)) return googleCreditLocks.get(user.id)
+  const work = (async () => {
+    const reference = `welcome-google:${user.id}`
+    const existing = await serviceRows(
+      config,
+      'credit_transactions',
+      `user_id=eq.${encodeURIComponent(user.id)}&reference=eq.${encodeURIComponent(reference)}&select=id,balance_after&limit=1`
+    )
+    if (existing[0]) {
+      const profile = await ensureCreditProfile(user, config)
+      return Number(profile.credits) || Number(existing[0].balance_after) || 1
+    }
+    const profile = await ensureCreditProfile(user, config)
+    const current = Number(profile.credits) || 0
+    const next = current + 1
+    const updated = await setProfileMinimumCredits(user, config, next)
+    const transaction = await fetch(`${config.url}/rest/v1/credit_transactions`, {
+      method: 'POST',
+      headers: serviceHeaders(config.service),
+      body: JSON.stringify({
+        user_id: user.id,
+        type: 'welcome',
+        credits_added: 1,
+        balance_after: updated.credits,
+        reference,
+        reason: 'Google signup tester credit',
+        metadata: { source: 'google_signup', google_sub: googleSub },
+      }),
+    })
+    if (!transaction.ok) {
+      await fetch(`${config.url}/rest/v1/profiles?id=eq.${encodeURIComponent(user.id)}`, {
+        method: 'PATCH',
+        headers: serviceHeaders(config.service),
+        body: JSON.stringify({ credits: current, purchased_credits: Number(profile.purchased_credits) || 0 }),
+      }).catch(() => null)
+      throw new Error(`Supabase welcome-credit history failed (${transaction.status})`)
+    }
+    return updated.credits
+  })().finally(() => googleCreditLocks.delete(user.id))
+  googleCreditLocks.set(user.id, work)
+  return work
+}
+
 async function verifyDeviceBonus(req, res) {
   const config = supabaseConfig()
   const user = await currentOrLocalUser(req, config.url, config.anon)
@@ -3349,15 +3436,8 @@ async function verifyDeviceBonus(req, res) {
 
   const email = authUserEmail(user)
   if (supervisorEmails().has(email)) {
-    const response = await fetch(`${config.url}/rest/v1/rpc/grant_supervisor_bonus`, {
-      method: 'POST',
-      headers: serviceHeaders(config.service),
-      body: JSON.stringify({ p_user_id: user.id, p_email: email }),
-    })
-    const payload = await response.json().catch(() => null)
-    if (!response.ok) return json(res, 503, { error: 'Supervisor credit verification needs the fingerprint-credits database migration.' })
-    const credits = Number(Array.isArray(payload) ? payload[0] : payload) || 10
-    return json(res, 200, { ok: true, success: true, claimed: true, credits, creditsAdded: 0, isAdmin: true, reason: 'supervisor_bypass' })
+    const result = await setProfileMinimumCredits(user, config, 10)
+    return json(res, 200, { ok: true, success: true, claimed: true, credits: result.credits, creditsAdded: result.added, isAdmin: true, reason: 'supervisor_bypass' })
   }
 
   if (bonusRateLimited(req)) return json(res, 429, { error: 'Too many verification attempts. Please try again in one hour.' })
@@ -3368,36 +3448,37 @@ async function verifyDeviceBonus(req, res) {
   const fingerprintHash = createHmac('sha256', process.env.DEVICE_FINGERPRINT_SECRET || config.service)
     .update(fingerprint)
     .digest('hex')
-  const response = await fetch(`${config.url}/rest/v1/rpc/claim_device_bonus`, {
+  const claimQuery = `select=id,fingerprint_hash,google_sub&or=(fingerprint_hash.eq.${encodeURIComponent(fingerprintHash)},google_sub.eq.${encodeURIComponent(googleSub)})&limit=1`
+  const existing = await serviceRows(config, 'device_claims', claimQuery)
+  if (existing[0]) {
+    const profile = await ensureCreditProfile(user, config)
+    return json(res, 200, { ok: true, success: false, claimed: false, reason: 'already_claimed', credits: Number(profile.credits) || 1, creditsAdded: 0, isAdmin: false })
+  }
+
+  const claimResponse = await fetch(`${config.url}/rest/v1/device_claims`, {
     method: 'POST',
-    headers: serviceHeaders(config.service),
+    headers: { ...serviceHeaders(config.service), Prefer: 'return=representation' },
     body: JSON.stringify({
-      p_user_id: user.id,
-      p_fingerprint_hash: fingerprintHash,
-      p_google_sub: googleSub,
-      p_email: authUserEmail(user),
+      fingerprint_hash: fingerprintHash,
+      google_sub: googleSub,
+      email,
     }),
   })
-  const payload = await response.json().catch(() => null)
-  if (!response.ok) {
-    const detail = String(payload?.message || payload?.hint || '')
-    const migrationMissing = response.status === 404 || /claim_device_bonus|schema cache|function/i.test(detail)
-    return json(res, migrationMissing ? 503 : 500, {
-      error: migrationMissing
-        ? 'Human verification needs the fingerprint-credits database migration.'
-        : 'Human verification could not be completed. Your Google credit is safe.',
-    })
+  if (claimResponse.status === 409) {
+    const profile = await ensureCreditProfile(user, config)
+    return json(res, 200, { ok: true, success: false, claimed: false, reason: 'already_claimed', credits: Number(profile.credits) || 1, creditsAdded: 0, isAdmin: false })
   }
-  const result = Array.isArray(payload) ? payload[0] : payload
-  return json(res, 200, {
-    ok: true,
-    success: Boolean(result?.claimed),
-    claimed: Boolean(result?.claimed),
-    reason: String(result?.reason || ''),
-    credits: Number(result?.credits || 0),
-    creditsAdded: Number(result?.credits_added || 0),
-    isAdmin: false,
-  })
+  if (!claimResponse.ok) return json(res, 500, { error: `Human verification claim failed (${claimResponse.status}). Your Google credit is safe.` })
+  try {
+    const result = await setProfileMinimumCredits(user, config, 10)
+    return json(res, 200, { ok: true, success: true, claimed: true, reason: 'bonus_unlocked', credits: result.credits, creditsAdded: result.added, isAdmin: false })
+  } catch (error) {
+    await fetch(`${config.url}/rest/v1/device_claims?fingerprint_hash=eq.${encodeURIComponent(fingerprintHash)}&google_sub=eq.${encodeURIComponent(googleSub)}`, {
+      method: 'DELETE',
+      headers: serviceHeaders(config.service),
+    }).catch(() => null)
+    throw error
+  }
 }
 
 async function googleWelcomeCredit(req, res) {
@@ -3411,14 +3492,8 @@ async function googleWelcomeCredit(req, res) {
   const googleSub = googleIdentitySubject(user)
   if (!providers.has('google') || !googleSub) return json(res, 400, { error: 'A verified Google identity is required for this credit.' })
   if (!config.url || !config.service) return json(res, 503, { error: 'Google welcome credits are not configured on the server.' })
-  const response = await fetch(`${config.url}/rest/v1/rpc/grant_google_signup_credit`, {
-    method: 'POST',
-    headers: serviceHeaders(config.service),
-    body: JSON.stringify({ p_user_id: user.id, p_google_sub: googleSub, p_email: authUserEmail(user) }),
-  })
-  const payload = await response.json().catch(() => null)
-  if (!response.ok) return json(res, 503, { error: 'Google welcome credits need the fingerprint-credits database migration.' })
-  return json(res, 200, { ok: true, success: true, credits: Number(Array.isArray(payload) ? payload[0] : payload) || 1 })
+  const credits = await grantGoogleCreditDirect(user, googleSub, config)
+  return json(res, 200, { ok: true, success: true, credits })
 }
 
 async function billingHandler(req, res) {
