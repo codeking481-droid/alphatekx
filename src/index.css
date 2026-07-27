@@ -149,9 +149,7 @@ pre, code { font-family: var(--font-mono); }
   .hover-lift:hover { transform: translateY(-2px) scale(1.01); box-shadow: 0 12px 40px rgba(0,0,0,0.16); }
 
   .action,
-  .launch-action,
-  .field,
-  .control {
+  .launch-action {
     background: rgba(255, 255, 255, 0.03);
     backdrop-filter: blur(32px) saturate(180%);
     -webkit-backdrop-filter: blur(32px) saturate(180%);
@@ -161,8 +159,15 @@ pre, code { font-family: var(--font-mono); }
     color: white;
   }
   .action { @apply flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm text-white/90 transition-colors hover:border-indigo-400/40; }
-  .field { @apply min-h-12 w-full rounded-xl px-4 text-white outline-none placeholder:text-white/35 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400/30; transition: border-color .15s, box-shadow .15s; }
-  .control { @apply min-h-12 w-full rounded-lg px-3 text-white outline-none placeholder:text-white/35 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400/30; transition: border-color .15s, box-shadow .15s; }
+  .field,
+  .control {
+    background: #FFFFFF;
+    border: 1px solid #D0D5DD;
+    color: #0B0F19;
+    box-shadow: 0 4px 18px rgba(16, 24, 40, 0.07);
+  }
+  .field { @apply min-h-12 w-full rounded-xl px-4 outline-none placeholder:text-slate-500 focus:border-violet-500 focus:ring-4 focus:ring-violet-100; transition: border-color .15s, box-shadow .15s; }
+  .control { @apply min-h-12 w-full rounded-lg px-3 outline-none placeholder:text-slate-500 focus:border-violet-500 focus:ring-4 focus:ring-violet-100; transition: border-color .15s, box-shadow .15s; }
   .launch-action { @apply flex min-h-12 items-center justify-center gap-2 rounded-xl px-4 text-sm text-white/90 transition-colors hover:border-indigo-400/40; }
 
   .skeleton {
@@ -175,6 +180,16 @@ pre, code { font-family: var(--font-mono); }
   .status-dot.live { background: #10B981; box-shadow: 0 0 8px #10B981; }
   .status-dot.ready { background: #8B5CF6; box-shadow: 0 0 8px #8B5CF6; }
   .status-dot.offline { background: #6B7280; }
+}
+
+:where(input:not([type='checkbox']):not([type='radio']):not([type='range']), textarea, select) {
+  color: #0B0F19;
+  caret-color: #6D28D9;
+}
+
+:where(input, textarea)::placeholder {
+  color: #667085;
+  opacity: 1;
 }
 
 details > summary { list-style: none; }

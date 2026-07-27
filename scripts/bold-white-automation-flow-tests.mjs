@@ -15,14 +15,20 @@ test('landing uses bold white premium foundation', () => {
   assert.match(source, /#6941C6/)
   assert.doesNotMatch(source, /bg-black/)
 })
-test('signup offers both explicit credit paths', () => {
+test('signup offers Google plus human-verification credit paths', () => {
   const source = read('src/pages/Auth.tsx')
-  for (const phrase of ['Sign up with Google', '1 credit', 'Sign up with WhatsApp', '10 credits', 'RECOMMENDED']) assert.match(source, new RegExp(phrase))
+  for (const phrase of ['Sign in with Google', '1 credit', 'Verify human', '10 credits', 'RECOMMENDED']) assert.match(source, new RegExp(phrase))
+  assert.doesNotMatch(source, /signInWithPassword|signUp\(|Use email instead|Firebase|phoneMode/)
 })
-test('phone credits are verified and idempotent', () => {
-  assert.match(read('server/firebasePhoneAuth.mjs'), /verifyIdToken\(idToken, true\)/)
-  assert.match(read('server/firebasePhoneAuth.mjs'), /firebase-phone:/)
-  assert.doesNotMatch(read('supabase/phone-auth-and-welcome-credits.sql'), /phone_number\s+text/i)
+test('device credits are server verified, rate limited and idempotent', () => {
+  const migration = read('supabase/fingerprint-credits.sql')
+  const server = read('server.mjs')
+  assert.match(migration, /fingerprint_hash TEXT NOT NULL UNIQUE/i)
+  assert.match(migration, /google_sub TEXT NOT NULL UNIQUE/i)
+  assert.match(migration, /pg_advisory_xact_lock/)
+  assert.match(server, /BONUS_RATE_MAX = 5/)
+  assert.match(server, /claim_device_bonus/)
+  assert.match(server, /createHmac\('sha256'/)
 })
 test('onboarding routes verified platforms into Command Centre', () => {
   const source = read('src/pages/Home.tsx')

@@ -30,8 +30,8 @@ const builder=await import('../src/lib/alphaBuilder.ts')
 localStorage.clear(); credits.setCredits(100)
 
 // 1. Auth and profiles: cloud contracts are validated from schema/client code without using real credentials.
-await test('Auth: signup profile defaults to 30 credits',()=>{const sql=source('supabase/schema.sql');assert(/handle_new_user[\s\S]*30,'free'/.test(sql),'signup trigger/default missing')})
-await test('Auth: wrong password error is surfaced',()=>{const auth=source('src/pages/Auth.tsx');assert(auth.includes('signInWithPassword')&&auth.includes('result.error'),'password failure is not handled')})
+await test('Auth: signup profile starts at zero before verified welcome credit',()=>{const sql=source('supabase/schema.sql');assert(/handle_new_user[\s\S]*0,'free'/.test(sql),'zero-credit signup trigger/default missing')})
+await test('Auth: password and phone authentication are removed',()=>{const auth=source('src/pages/Auth.tsx');assert(!/signInWithPassword|signUp\(|password|Firebase|phoneMode/.test(auth),'retired auth path remains')})
 await test('Auth: protected core routes use auth gate',()=>{const app=source('src/App.tsx');const gate=source('src/components/auth/AuthGate.tsx');assert(app.includes('protectedPage(<Home')&&app.includes('protectedPage(<Automations')&&gate.includes('<Navigate to="/auth"'),'protected redirect missing')})
 await test('Auth: Google OAuth exists',()=>assert(/provider:\s*['"]google['"]/.test(source('src/pages/Auth.tsx')),'Google OAuth missing'))
 await test('Auth: sign out clears Supabase session',()=>assert(source('src/lib/auth.tsx').includes('supabase?.auth.signOut()'),'sign out missing'))

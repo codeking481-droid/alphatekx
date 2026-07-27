@@ -40,18 +40,6 @@ async function withTimeout<T>(work: Promise<T>, label: string, timeoutMs = PROFI
   finally { if (timer) clearTimeout(timer) }
 }
 
-async function claimGoogleWelcomeCredit(session: Session) {
-  const providers = new Set([
-    String(session.user.app_metadata?.provider || '').toLowerCase(),
-    ...(session.user.identities || []).map(identity => String(identity?.provider || '').toLowerCase()),
-  ])
-  if (!providers.has('google')) return
-  await fetch('/api/auth/welcome-credit/google', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${session.access_token}` },
-  }).catch(() => null)
-}
-
 export function AuthProvider({ children }: PropsWithChildren) {
   const [session, setSession] = useState<Session | null>(null)
   const [localUser, setLocalUser] = useState<LocalUser | null>(readLocalUser())
@@ -102,7 +90,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       if (data.session) {
         localStorage.removeItem(LOCAL_USER_KEY)
         setLocalUser(null)
-        void claimGoogleWelcomeCredit(data.session).finally(() => refreshProfile())
+        void refreshProfile()
       }
     }).catch(error => {
       console.warn('[AlphaTekx] session restore failed:', error)
@@ -116,7 +104,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       if (next) {
         localStorage.removeItem(LOCAL_USER_KEY)
         setLocalUser(null)
-        void claimGoogleWelcomeCredit(next).finally(() => refreshProfile())
+        void refreshProfile()
       } else setProfile(null)
     })
     return () => data.subscription.unsubscribe()

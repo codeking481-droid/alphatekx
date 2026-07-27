@@ -46,6 +46,7 @@ export default function App() {
 
       {/* Core authenticated product */}
       <Route path="/dashboard" element={protectedPage(<Home />)} />
+      <Route path="/onboarding" element={protectedPage(<Home />)} />
       <Route path="/automations" element={protectedPage(<Automations />)} />
       <Route path="/active-automations" element={protectedPage(<ActiveAutomations />)} />
       <Route path="/active-automations/:id" element={protectedPage(<ActiveAutomations />)} />

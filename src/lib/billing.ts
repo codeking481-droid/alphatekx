@@ -49,7 +49,7 @@ export type BillingSummary = {
 export const PLANS: Record<PlanId, Plan> = {
   free: {
     id: 'free', name: 'Free', priceKobo: 0, monthlyCredits: 0, maxActiveAutomations: 1,
-    features: ['1 Google credit or 10 verified-phone credits', '1 active automation', '1 post per hour', 'Schedule up to 7 days ahead'],
+    features: ['1 Google credit or 10 human-verified credits', '1 active automation', '1 post per hour', 'Schedule up to 7 days ahead'],
   },
   creator_monthly: {
     id: 'creator_monthly', name: 'Starter', priceKobo: 1500, currency: 'USD', monthlyCredits: 150, maxActiveAutomations: 2,

@@ -153,23 +153,23 @@ export default function Settings() {
       <div className="mx-auto max-w-3xl space-y-6">
         <div>
           <h1 className="text-2xl font-semibold md:text-3xl">Settings</h1>
-          <p className="mt-2 text-sm text-white/55">Manage your account, credits, and preferences.</p>
+          <p className="mt-2 text-sm font-medium text-slate-600">Manage your account, credits, and preferences.</p>
         </div>
 
-        <section className="rounded-2xl border border-white/[.12] bg-white/[0.04] p-6">
+        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_12px_35px_rgba(15,23,42,.07)]">
           <div className="flex items-center gap-2 text-lg font-semibold"><User size={20} className="text-violet-400"/> Profile</div>
           <div className="mt-4 flex items-center gap-3">
-            <span className="grid size-12 place-items-center rounded-full bg-white/[.08] text-white font-semibold">{(user?.email?.[0] || 'A').toUpperCase()}</span>
+            <span className="grid size-12 place-items-center rounded-full bg-[#6D28D9] text-white font-semibold">{(user?.email?.[0] || 'A').toUpperCase()}</span>
             <div>
               <p className="font-medium">{user?.email || 'Guest'}</p>
-              <p className="text-sm text-white/55">Signed in securely</p>
+              <p className="text-sm font-medium text-slate-600">Signed in securely with Google</p>
             </div>
           </div>
         </section>
 
-        <section ref={billingRef} className="rounded-2xl border border-white/[.12] bg-white/[0.04] p-6">
+        <section ref={billingRef} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_12px_35px_rgba(15,23,42,.07)]">
           <div className="flex items-center gap-2 text-lg font-semibold"><CreditCard size={20} className="text-violet-400"/> Billing & Credits</div>
-          <p className="mt-2 text-sm text-white/55">Credits are consumed only when an automation performs work. Costs are always shown before you approve an automation.</p>
+          <p className="mt-2 text-sm font-medium text-slate-600">Credits are consumed only when an automation performs work. Costs are always shown before you approve an automation.</p>
 
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <Stat label="Current Plan" value={currentPlan.name} sub={currentPlan.badge ? `Most Popular` : undefined} />
@@ -186,11 +186,11 @@ export default function Settings() {
               {Object.values(PLANS).map((plan) => {
                 const active = selectedPlan === plan.id || billing?.plan === plan.id
                 return (
-                  <button key={plan.id} onClick={() => selectPlan(plan.id)} disabled={billing?.plan === plan.id} className={`relative rounded-2xl border p-4 text-left transition-all text-left ${active ? 'border-violet-500 bg-violet-500/10' : 'border-white/[.12] bg-white/[.04] hover:border-white/[.25]'} ${billing?.plan === plan.id ? 'opacity-70' : ''}`}>
+                  <button key={plan.id} onClick={() => selectPlan(plan.id)} disabled={billing?.plan === plan.id} className={`relative rounded-2xl border p-4 text-left text-[#0B0F19] transition-all ${active ? 'border-violet-500 bg-violet-50' : 'border-slate-200 bg-white hover:border-violet-300'} ${billing?.plan === plan.id ? 'opacity-70' : ''}`}>
                     {plan.badge && <span className="absolute right-3 top-3 rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 px-2 py-0.5 text-[10px] font-semibold text-black">{plan.badge}</span>}
                     <span className="font-semibold">{plan.name}</span>
                     <p className="mt-2 text-2xl font-semibold">{plan.priceKobo === 0 ? 'Free' : `${formatCurrency(plan.priceKobo)}/mo`}</p>
-                    <ul className="mt-2 space-y-1 text-xs text-white/55">
+                    <ul className="mt-2 space-y-1 text-xs font-medium text-slate-600">
                       {plan.features.map((f, i) => <li key={i} className="flex items-start gap-1.5"><Check size={12} className="mt-0.5 text-violet-400"/> {f}</li>)}
                     </ul>
                   </button>
@@ -201,23 +201,23 @@ export default function Settings() {
 
           <div className="mt-6">
             <h3 className="flex items-center gap-2 font-semibold"><Wallet size={16} className="text-violet-400"/> Buy credits</h3>
-            <p className="text-sm text-white/55">Purchased credits never expire. Prices are shown in USD; Paystack may collect the configured local-currency equivalent.</p>
+            <p className="text-sm font-medium text-slate-600">Purchased credits never expire. Prices are shown in USD; Paystack may collect the configured local-currency equivalent.</p>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               {CREDIT_PACKS.map((pack) => {
                 const active = selectedPack?.id === pack.id
                 return (
-                  <button key={pack.id} onClick={() => selectPack(pack)} className={`relative rounded-2xl border p-4 text-left transition-all ${active ? 'border-violet-500 bg-violet-500/10' : 'border-white/[.12] bg-white/[.04] hover:border-white/[.25]'}`}>
+                  <button key={pack.id} onClick={() => selectPack(pack)} className={`relative rounded-2xl border p-4 text-left text-[#0B0F19] transition-all ${active ? 'border-violet-500 bg-violet-50' : 'border-slate-200 bg-white hover:border-violet-300'}`}>
                     {active && <span className="absolute right-3 top-3 grid size-5 place-items-center rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 text-black"><Check size={12}/></span>}
                     <span className="flex items-center gap-2 font-semibold"><WalletCards size={16}/>{pack.label}</span>
                     <p className="mt-2 text-2xl font-semibold">{formatCurrency(pack.amountKobo)}</p>
-                    <p className="mt-1 text-xs text-white/55">{pack.description}</p>
+                    <p className="mt-1 text-xs font-medium text-slate-600">{pack.description}</p>
                   </button>
                 )
               })}
             </div>
           </div>
 
-          {notice && <p role="status" className="mt-4 rounded-lg border border-white/[.12] bg-white/[.04] p-3 text-sm">{notice}</p>}
+          {notice && <p role="status" className="mt-4 rounded-lg border border-violet-200 bg-violet-50 p-3 text-sm font-semibold text-[#0B0F19]">{notice}</p>}
 
           <button onClick={() => void startCheckout()} disabled={pending || (!selectedPack && !selectedPlan)} className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl btn-alpha px-4 text-sm font-medium text-white transition-all disabled:opacity-50">
             {pending ? <LoaderCircle className="animate-spin" size={16}/> : <WalletCards size={16}/>}
@@ -226,17 +226,17 @@ export default function Settings() {
 
           <div className="mt-6">
             <h3 className="flex items-center gap-2 font-semibold"><Receipt size={16} className="text-violet-400"/> Credit History</h3>
-            {loadingBilling ? <p className="mt-3 text-sm text-white/55">Loading...</p> : !billing?.transactions?.length ? <p className="mt-3 text-sm text-white/55">No transactions yet.</p> : (
+            {loadingBilling ? <p className="mt-3 text-sm text-slate-600">Loading...</p> : !billing?.transactions?.length ? <p className="mt-3 text-sm text-slate-600">No transactions yet.</p> : (
               <div className="mt-3 space-y-2 max-h-64 overflow-y-auto pr-1">
                 {billing.transactions.map((t) => (
-                  <div key={t.id} className="flex items-center justify-between rounded-xl border border-white/[.12] bg-white/[.04] px-4 py-3 text-sm">
+                  <div key={t.id} className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-[#0B0F19]">
                     <div>
                       <p className="font-medium capitalize">{String(t.type).replace('_', ' ')}</p>
-                      <p className="text-xs text-white/55">{t.reason || '—'} • {new Date(t.createdAt).toLocaleString()}</p>
+                      <p className="text-xs text-slate-600">{t.reason || '—'} • {new Date(t.createdAt).toLocaleString()}</p>
                     </div>
                     <div className="text-right">
-                      <p className={`font-semibold ${t.creditsAdded ? 'text-emerald-400' : t.creditsRemoved ? 'text-rose-300' : ''}`}>{t.creditsAdded ? `+${t.creditsAdded}` : t.creditsRemoved ? `-${t.creditsRemoved}` : '—'}</p>
-                      <p className="text-xs text-white/55">bal {t.balanceAfter.toLocaleString()}</p>
+                      <p className={`font-semibold ${t.creditsAdded ? 'text-emerald-700' : t.creditsRemoved ? 'text-rose-700' : ''}`}>{t.creditsAdded ? `+${t.creditsAdded}` : t.creditsRemoved ? `-${t.creditsRemoved}` : '—'}</p>
+                      <p className="text-xs text-slate-600">bal {t.balanceAfter.toLocaleString()}</p>
                     </div>
                   </div>
                 ))}
@@ -245,30 +245,30 @@ export default function Settings() {
           </div>
         </section>
 
-        <section className="rounded-2xl border border-white/[.12] bg-white/[0.04] p-6">
+        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_12px_35px_rgba(15,23,42,.07)]">
           <div className="flex items-center gap-2 text-lg font-semibold"><Palette size={20} className="text-violet-400"/> Preferences</div>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <Pref label="Timezone" icon={<Globe size={16}/>} value="UTC / Local time" />
             <Pref label="Notifications" icon={<Zap size={16}/>} value="Email when automations fail" />
             <Pref label="Language" icon={<span className="text-xs">EN</span>} value="English" />
-            <Pref label="Appearance" icon={<Moon size={16}/>} value="Dark purple" />
+            <Pref label="Appearance" icon={<Moon size={16}/>} value="Bold white" />
           </div>
-          <p className="mt-4 text-xs text-white/40">More preference options will be added soon.</p>
+          <p className="mt-4 text-xs text-slate-500">More preference options will be added soon.</p>
         </section>
 
-        <section className="rounded-2xl border border-white/[.12] bg-white/[0.04] p-6">
+        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_12px_35px_rgba(15,23,42,.07)]">
           <div className="flex items-center gap-2 text-lg font-semibold"><Shield size={20} className="text-violet-400"/> Security</div>
           <div className="mt-4 space-y-3">
-            <div className="flex items-center justify-between rounded-xl border border-white/[.12] bg-white/[.04] px-4 py-3">
-              <span className="text-sm text-white/70">Connected login method</span>
-              <span className="text-sm">Email / Password</span>
+            <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <span className="text-sm font-medium text-slate-700">Connected login method</span>
+              <span className="text-sm font-black text-[#0B0F19]">Google</span>
             </div>
-            <button onClick={() => void signOut()} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-white/[.15] px-4 text-sm transition-all hover:border-violet-500 hover:bg-white/[0.04]"><LogOut size={16}/>Sign out</button>
+            <button onClick={() => void signOut()} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-[#0B0F19] transition-all hover:border-violet-500 hover:bg-violet-50"><LogOut size={16}/>Sign out</button>
           </div>
-          <div className="mt-6 border-t border-white/[.12] pt-6">
-            <h3 className="text-rose-400 font-semibold">Danger zone</h3>
-            <p className="mt-1 text-sm text-white/55">Permanently delete your account and all data.</p>
-            <button onClick={deleteAccount} className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 text-sm text-rose-300 transition-all hover:bg-rose-500/20"><Trash2 size={16}/>Delete account</button>
+          <div className="mt-6 border-t border-slate-200 pt-6">
+            <h3 className="font-semibold text-rose-700">Danger zone</h3>
+            <p className="mt-1 text-sm text-slate-600">Permanently delete your account and all data.</p>
+            <button onClick={deleteAccount} className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 text-sm font-bold text-rose-700 transition-all hover:bg-rose-100"><Trash2 size={16}/>Delete account</button>
           </div>
         </section>
       </div>
@@ -277,16 +277,16 @@ export default function Settings() {
 }
 
 function Pref({ label, icon, value }: { label: string; icon: React.ReactNode; value: string }) {
-  return <div className="flex items-center justify-between rounded-xl border border-white/[.12] bg-white/[.04] px-4 py-3">
-    <span className="flex items-center gap-2 text-sm text-white/70">{icon}{label}</span>
-    <span className="text-sm">{value}</span>
+  return <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+    <span className="flex items-center gap-2 text-sm font-medium text-slate-700">{icon}{label}</span>
+    <span className="text-sm font-bold text-[#0B0F19]">{value}</span>
   </div>
 }
 
 function Stat({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
-  return <div className="rounded-xl border border-white/[.12] bg-white/[.04] px-4 py-3">
-    <p className="text-xs text-white/55">{label}{sub ? <span className="ml-1.5 rounded-full bg-violet-500/20 px-1.5 py-0.5 text-[10px] text-violet-300">{sub}</span> : null}</p>
-    <p className="mt-1 text-lg font-semibold">{value}</p>
+  return <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+    <p className="text-xs font-medium text-slate-600">{label}{sub ? <span className="ml-1.5 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] text-[#6D28D9]">{sub}</span> : null}</p>
+    <p className="mt-1 text-lg font-semibold text-[#0B0F19]">{value}</p>
   </div>
 }
 

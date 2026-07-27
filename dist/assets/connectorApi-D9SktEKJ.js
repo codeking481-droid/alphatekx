@@ -1,1 +1,0 @@
-import{g as e,p as o,d as t}from"./apiClient-D6DUd_oO.js";async function s(n){return e("/api/connected-apps",{token:n})}async function a(n,c){return o(`/api/connectors/${n}/connect`,{},{token:c})}async function i(n,c){return t(`/api/connectors/${n}`,{token:c})}async function p(n,c){return o(`/api/connectors/${n}/connect`,{},{token:c})}export{a as c,i as d,s as g,p as r};

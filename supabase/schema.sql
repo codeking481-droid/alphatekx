@@ -1,6 +1,6 @@
 create extension if not exists pgcrypto;
 
-create table if not exists public.profiles (id uuid primary key references auth.users(id) on delete cascade, email text not null default '', credits integer not null default 30 check (credits >= 0), plan text not null default 'free', revenue numeric not null default 0 check (revenue >= 0), display_name text not null default '', created_at timestamptz not null default now());
+create table if not exists public.profiles (id uuid primary key references auth.users(id) on delete cascade, email text not null default '', credits integer not null default 0 check (credits >= 0), plan text not null default 'free', revenue numeric not null default 0 check (revenue >= 0), display_name text not null default '', created_at timestamptz not null default now());
 alter table public.profiles add column if not exists revenue numeric not null default 0 check (revenue >= 0);
 alter table public.profiles add column if not exists display_name text not null default '';
 alter table public.profiles add column if not exists last_active_at timestamptz not null default now();
@@ -57,17 +57,17 @@ create policy "general chat owner access" on public.general_chat_threads for all
 create policy "credit purchase owner read" on public.credit_purchases for select using(auth.uid()=user_id);
 create policy "alpha memory owner access" on public.alpha_memory for all using(auth.uid()=user_id) with check(auth.uid()=user_id);
 
-create or replace function public.handle_new_user() returns trigger language plpgsql security definer set search_path=public as $$ begin insert into public.profiles(id,email,credits,plan) values(new.id,coalesce(new.email,''),30,'free') on conflict(id) do nothing; return new; end; $$;
+create or replace function public.handle_new_user() returns trigger language plpgsql security definer set search_path=public as $$ begin insert into public.profiles(id,email,credits,plan) values(new.id,coalesce(new.email,''),0,'free') on conflict(id) do nothing; return new; end; $$;
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created after insert on auth.users for each row execute function public.handle_new_user();
-insert into public.profiles(id,email,credits,plan) select id,coalesce(email,''),30,'free' from auth.users on conflict(id) do nothing;
+insert into public.profiles(id,email,credits,plan) select id,coalesce(email,''),0,'free' from auth.users on conflict(id) do nothing;
 
 create or replace function public.spend_credits(amount integer) returns integer language plpgsql security definer set search_path=public as $$
 declare balance integer;
 begin
   if amount <= 0 then raise exception 'Invalid credit amount'; end if;
   insert into public.profiles(id,email,credits,plan)
-  values(auth.uid(),coalesce(auth.jwt()->>'email',''),30,'free')
+  values(auth.uid(),coalesce(auth.jwt()->>'email',''),0,'free')
   on conflict(id) do nothing;
   update public.profiles set credits=credits-amount where id=auth.uid() and credits>=amount returning credits into balance;
   if balance is null then raise exception 'Insufficient credits'; end if;
@@ -81,7 +81,7 @@ declare balance integer;
 begin
   if auth.uid() is null then raise exception 'Authentication required'; end if;
   insert into public.profiles(id,email,credits,plan)
-  values(auth.uid(),coalesce(auth.jwt()->>'email',''),30,'free')
+  values(auth.uid(),coalesce(auth.jwt()->>'email',''),0,'free')
   on conflict(id) do nothing;
   select credits into balance from public.profiles where id=auth.uid();
   return balance;
@@ -95,7 +95,7 @@ declare balance integer;
 begin
   if p_reference is null or char_length(p_reference) < 4 then raise exception 'Invalid payment reference'; end if;
   insert into public.credit_purchases(reference,user_id,amount,credits,plan) values(p_reference,p_user_id,p_amount,p_credits,p_plan);
-  insert into public.profiles(id,email,credits,plan) values(p_user_id,'',30,'free') on conflict(id) do nothing;
+  insert into public.profiles(id,email,credits,plan) values(p_user_id,'',0,'free') on conflict(id) do nothing;
   update public.profiles set credits=credits+p_credits, plan=p_plan where id=p_user_id returning credits into balance;
   return balance;
 exception when unique_violation then
@@ -164,8 +164,8 @@ alter table public.credit_transactions enable row level security;
 create policy "credit transactions owner read" on public.credit_transactions for select using (auth.uid()=user_id);
 create index if not exists idx_credit_transactions_user on public.credit_transactions(user_id, created_at desc);
 
-create or replace function public.handle_new_user() returns trigger language plpgsql security definer set search_path=public as $$ begin insert into public.profiles(id,email,credits,plan,monthly_credits,purchased_credits) values(new.id,coalesce(new.email,''),30,'free',0,30) on conflict(id) do nothing; return new; end; $$;
-insert into public.profiles(id,email,credits,plan,monthly_credits,purchased_credits) select id,coalesce(email,''),30,'free',0,30 from auth.users on conflict(id) do nothing;
+create or replace function public.handle_new_user() returns trigger language plpgsql security definer set search_path=public as $$ begin insert into public.profiles(id,email,credits,plan,monthly_credits,purchased_credits) values(new.id,coalesce(new.email,''),0,'free',0,0) on conflict(id) do nothing; return new; end; $$;
+insert into public.profiles(id,email,credits,plan,monthly_credits,purchased_credits) select id,coalesce(email,''),0,'free',0,0 from auth.users on conflict(id) do nothing;
 
 create or replace function public.spend_credits(amount integer) returns integer language plpgsql security definer set search_path=public as $$
 declare
@@ -180,7 +180,7 @@ begin
   if amount <= 0 then raise exception 'Invalid credit amount'; end if;
   select * into profile_rec from public.profiles where id=auth.uid() for update;
   if profile_rec.id is null then
-    insert into public.profiles(id,email,credits,plan,monthly_credits,purchased_credits) values(auth.uid(),coalesce(auth.jwt()->>'email',''),30,'free',0,30) returning * into profile_rec;
+    insert into public.profiles(id,email,credits,plan,monthly_credits,purchased_credits) values(auth.uid(),coalesce(auth.jwt()->>'email',''),0,'free',0,0) returning * into profile_rec;
   end if;
   if (profile_rec.monthly_credits + profile_rec.purchased_credits) < amount then raise exception 'Insufficient credits'; end if;
   if profile_rec.monthly_credits >= amount then
@@ -211,7 +211,7 @@ create or replace function public.ensure_user_profile() returns integer language
 declare balance integer;
 begin
   if auth.uid() is null then raise exception 'Authentication required'; end if;
-  insert into public.profiles(id,email,credits,plan,monthly_credits,purchased_credits) values(auth.uid(),coalesce(auth.jwt()->>'email',''),30,'free',0,30) on conflict(id) do nothing;
+  insert into public.profiles(id,email,credits,plan,monthly_credits,purchased_credits) values(auth.uid(),coalesce(auth.jwt()->>'email',''),0,'free',0,0) on conflict(id) do nothing;
   select credits into balance from public.profiles where id=auth.uid();
   return balance;
 end;
@@ -229,7 +229,7 @@ declare
 begin
   if p_reference is null or char_length(p_reference) < 4 then raise exception 'Invalid payment reference'; end if;
   insert into public.credit_purchases(reference,user_id,amount,credits,plan) values(p_reference,p_user_id,p_amount,p_credits,p_plan);
-  insert into public.profiles(id,email,credits,plan,monthly_credits,purchased_credits) values(p_user_id,'',30,'free',0,30) on conflict(id) do nothing;
+  insert into public.profiles(id,email,credits,plan,monthly_credits,purchased_credits) values(p_user_id,'',0,'free',0,0) on conflict(id) do nothing;
   select * into profile_rec from public.profiles where id=p_user_id for update;
   is_subscription := p_plan is not null and p_plan != 'free' and p_plan != 'credits';
   if is_subscription then
