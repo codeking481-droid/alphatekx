@@ -49,8 +49,8 @@ test('FingerprintJS is isolated behind one cached helper', () => {
 
 test('raw device fingerprints are hashed and never stored directly', () => {
   assert.match(server, /createHmac\('sha256'/)
-  assert.match(server, /p_fingerprint_hash: fingerprintHash/)
-  assert.doesNotMatch(server, /p_fingerprint_hash:\s*fingerprint[,}]/)
+  assert.match(server, /fingerprint_hash: fingerprintHash/)
+  assert.doesNotMatch(server, /fingerprint_hash:\s*fingerprint[,}]/)
 })
 
 test('server derives Google subject and enforces five attempts per hour', () => {
@@ -63,21 +63,22 @@ test('server derives Google subject and enforces five attempts per hour', () => 
 test('configured supervisors bypass device claims without weakening authentication', () => {
   assert.match(read('.env.example'), /SUPER_ADMIN_EMAILS=/)
   assert.match(server, /supervisorEmails\(\)\.has\(email\)/)
-  assert.match(server, /grant_supervisor_bonus/)
+  assert.match(server, /setProfileMinimumCredits\(user, config, 10\)/)
   assert.match(server, /isAdmin: true/)
   assert.match(auth, /Welcome Boss! 10 credits unlocked/)
   assert.match(auth, /Continue with 1 credit/)
   assert.match(migration, /Supervisor welcome-credit bypass/)
 })
 
-test('database claim and credit award are atomic and idempotent', () => {
+test('service-role device claim and credit award are durable and idempotent', () => {
   assert.match(migration, /fingerprint_hash TEXT NOT NULL UNIQUE/i)
   assert.match(migration, /google_sub TEXT NOT NULL UNIQUE/i)
-  assert.match(migration, /pg_advisory_xact_lock/g)
-  assert.match(migration, /ON CONFLICT DO NOTHING/)
-  assert.match(migration, /greatest\(0, 10 - current_credits\)/)
-  assert.match(migration, /credit_transactions/)
-  assert.match(migration, /grant_google_signup_credit/)
+  assert.match(server, /serviceRows\(config, 'device_claims'/)
+  assert.match(server, /serviceHeaders\(config\.service\)/)
+  assert.match(server, /credit_transactions/)
+  assert.match(server, /reference=eq\./)
+  assert.doesNotMatch(server, /rest\/v1\/rpc\/(?:claim_device_bonus|grant_google_signup_credit|grant_supervisor_bonus)/)
+  assert.doesNotMatch(server, /credits need the fingerprint-credits database migration/)
 })
 
 test('shared inputs use visible dark text on white surfaces', () => {

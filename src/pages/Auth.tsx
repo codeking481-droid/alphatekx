@@ -145,7 +145,7 @@ export default function Auth() {
     ? 'Welcome Boss! 10 credits unlocked 🔓'
     : result?.claimed
       ? 'Human verified! 10 credits unlocked 🎉'
-    : result?.reason === 'device_already_claimed'
+    : result?.reason === 'device_already_claimed' || result?.reason === 'already_claimed'
       ? 'This device already claimed the 10-credit bonus. One bonus per human.'
       : 'This Google account already claimed the bonus. You have 1 credit.'
 

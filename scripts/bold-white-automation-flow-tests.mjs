@@ -25,9 +25,9 @@ test('device credits are server verified, rate limited and idempotent', () => {
   const server = read('server.mjs')
   assert.match(migration, /fingerprint_hash TEXT NOT NULL UNIQUE/i)
   assert.match(migration, /google_sub TEXT NOT NULL UNIQUE/i)
-  assert.match(migration, /pg_advisory_xact_lock/)
+  assert.match(server, /serviceRows\(config, 'device_claims'/)
   assert.match(server, /BONUS_RATE_MAX = 5/)
-  assert.match(server, /claim_device_bonus/)
+  assert.match(server, /serviceHeaders\(config\.service\)/)
   assert.match(server, /createHmac\('sha256'/)
 })
 test('onboarding routes verified platforms into Command Centre', () => {
