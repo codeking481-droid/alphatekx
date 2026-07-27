@@ -1,15 +1,14 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { Link } from 'react-router-dom'
 import {
-  ArrowRight, Bot, CalendarDays, Check, CheckCircle2, ChevronDown, CirclePlay,
-  Clock3, Instagram, Linkedin, Mail, Menu, Pause, Play, ShieldCheck, Sparkles,
+  ArrowRight, Bot, CalendarDays, CheckCircle2, ChevronDown, CirclePlay,
+  Clock3, Instagram, Linkedin, Mail, Menu, Pause, ShieldCheck, Sparkles,
   Star, TimerReset, Twitter, X, Zap,
 } from 'lucide-react'
 import SEO from '../components/SEO'
 import { useAuth } from '../lib/auth'
 
-const purple = '#6941C6'
 const nav = [['How it works', '#how-it-works'], ['Automations', '#automations'], ['Connected apps', '#connected-apps'], ['Pricing', '#pricing']]
 const platforms = [
   { name: 'X', icon: Twitter }, { name: 'LinkedIn', icon: Linkedin }, { name: 'Instagram', icon: Instagram },
