@@ -31,13 +31,16 @@ test('Google is the only sign-in provider shown', () => {
   assert.doesNotMatch(auth, /signInWithPassword|signUp\(|type="password"|Use email instead|Phone|Firebase/)
 })
 
-test('human verification runs after an authenticated Google session', () => {
+test('Google credit and human verification are separate user choices', () => {
   assert.match(auth, /if \(!user \|\| !session\?\.access_token/)
+  const welcomeEffect = auth.slice(auth.indexOf('welcomeCreditStarted.current'), auth.indexOf('const verifyHuman'))
+  assert.match(welcomeEffect, /\/api\/auth\/welcome-credit\/google/)
+  assert.doesNotMatch(welcomeEffect, /getDeviceFingerprint|\/api\/verify-bonus/)
+  assert.match(auth, /onClick=\{\(\) => void verifyHuman\(\)\}/)
+  assert.match(auth, /disabled=\{!user \|\| pending \|\| verifying\}/)
   assert.match(auth, /getDeviceFingerprint\(\)/)
   assert.match(auth, /fetch\('\/api\/verify-bonus'/)
   assert.match(auth, /fingerprintHash: fingerprint/)
-  assert.match(auth, /\/api\/auth\/welcome-credit\/google/)
-  assert.match(auth, /welcomeResponse\.ok/)
   assert.match(auth, /navigate\('\/onboarding'/)
 })
 
