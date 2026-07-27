@@ -31,7 +31,7 @@ export const PLANS = {
     priceKobo: 0,
     monthlyCredits: 0,
     maxActiveAutomations: 1,
-    features: ['1 Google signup credit or 10 verified-phone credits', '1 active automation', 'Basic automations', 'Execution history'],
+    features: ['1 Google signup credit or 10 human-verified credits', '1 active automation', 'Basic automations', 'Execution history'],
   },
   creator_monthly: {
     id: 'creator_monthly',
@@ -340,7 +340,7 @@ export async function spendCredits(user, amount, config, metadata = {}) {
 function transactionExists(userId, reference) {
   if (!reference) return false
   const all = readJsonFile(transactionsFile, [])
-  return all.some(t => t.user_id === userId && t.reference === reference && (t.type === 'purchase' || t.type === 'subscription' || t.type === 'plan_change'))
+  return all.some(t => t.user_id === userId && t.reference === reference)
 }
 
 export async function addCredits(user, amount, config, { reference, type = 'purchase', reason, metadata = {} } = {}) {

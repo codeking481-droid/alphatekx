@@ -22,7 +22,6 @@ import { normalizeLinkedInScopes, publishLinkedInTextPost } from './server/linke
 import { allowedWhatsAppRecipients, applyWhatsAppStatusEvent, executeApprovedWhatsAppMessage, sendWhatsAppText, verifyWhatsAppPhoneRegistration, verifyWhatsAppWebhookSignature, whatsappCredentials, whatsappWebhookEvents } from './server/whatsapp.mjs'
 import { connectorFeatureAccess, featureStatusForUser, refreshFeatureConfig, unavailableConnectorMessage, unavailablePromptConnector } from './server/featureAccess.mjs'
 import * as alphaConnector from './server/composioConnectorService.mjs'
-import { verifyFirebasePhoneAndCreateSession } from './server/firebasePhoneAuth.mjs'
 
 function loadEnv() {
   for (const filename of ['.env.local', '.env']) {
@@ -3298,7 +3297,36 @@ async function creditsBalance(req, res) {
   return json(res, 200, { credits })
 }
 
-async function googleWelcomeCredit(req, res) {
+function googleIdentitySubject(user) {
+  const googleIdentity = (user?.identities || []).find(identity => String(identity?.provider || '').toLowerCase() === 'google')
+  return String(
+    googleIdentity?.id ||
+    googleIdentity?.identity_data?.sub ||
+    user?.user_metadata?.sub ||
+    ''
+  ).trim()
+}
+
+const bonusVerificationAttempts = new Map()
+const BONUS_RATE_WINDOW_MS = 60 * 60 * 1000
+const BONUS_RATE_MAX = 5
+
+function bonusRequestIp(req) {
+  return String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown').split(',')[0].trim()
+}
+
+function bonusRateLimited(req) {
+  const ip = bonusRequestIp(req)
+  const now = Date.now()
+  const current = bonusVerificationAttempts.get(ip)
+  const entry = !current || now >= current.reset ? { count: 0, reset: now + BONUS_RATE_WINDOW_MS } : current
+  entry.count += 1
+  bonusVerificationAttempts.set(ip, entry)
+  return entry.count > BONUS_RATE_MAX
+}
+
+async function verifyDeviceBonus(req, res) {
+  if (bonusRateLimited(req)) return json(res, 429, { error: 'Too many verification attempts. Please try again in one hour.' })
   const config = supabaseConfig()
   const user = await currentOrLocalUser(req, config.url, config.anon)
   if (!user) return json(res, 401, { error: 'Authentication required' })
@@ -3306,27 +3334,45 @@ async function googleWelcomeCredit(req, res) {
     String(user.app_metadata?.provider || '').toLowerCase(),
     ...(user.identities || []).map(identity => String(identity?.provider || '').toLowerCase()),
   ])
-  if (!providers.has('google')) return json(res, 400, { error: 'Google authentication is required for this credit' })
-  const result = await billing.addCredits(user, 1, config, {
-    reference: `welcome-google:${user.id}`,
-    type: 'welcome',
-    reason: 'Google signup tester credit',
-    metadata: { source: 'google_signup' },
-  })
-  return json(res, 200, { ok: true, credits: result.remaining })
-}
+  const googleSub = googleIdentitySubject(user)
+  if (!providers.has('google') || !googleSub) return json(res, 400, { error: 'A verified Google identity is required for this bonus.' })
+  if (!config.url || !config.service) return json(res, 503, { error: 'Human verification is not configured on the server.' })
 
-async function firebasePhoneSession(req, res) {
-  const config = supabaseConfig()
   const body = await readBody(req)
-  try {
-    const result = await verifyFirebasePhoneAndCreateSession(String(body.idToken || ''), config, billing.addCredits)
-    return json(res, 200, result)
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Phone verification failed'
-    const status = /not configured|migration/i.test(message) ? 503 : 400
-    return json(res, status, { error: message })
+  const fingerprint = String(body.fingerprint || '').trim()
+  if (!/^[a-zA-Z0-9_-]{16,256}$/.test(fingerprint)) return json(res, 400, { error: 'The device fingerprint is invalid.' })
+
+  const fingerprintHash = createHmac('sha256', process.env.DEVICE_FINGERPRINT_SECRET || config.service)
+    .update(fingerprint)
+    .digest('hex')
+  const response = await fetch(`${config.url}/rest/v1/rpc/claim_device_bonus`, {
+    method: 'POST',
+    headers: serviceHeaders(config.service),
+    body: JSON.stringify({
+      p_user_id: user.id,
+      p_fingerprint_hash: fingerprintHash,
+      p_google_sub: googleSub,
+      p_email: authUserEmail(user),
+    }),
+  })
+  const payload = await response.json().catch(() => null)
+  if (!response.ok) {
+    const detail = String(payload?.message || payload?.hint || '')
+    const migrationMissing = response.status === 404 || /claim_device_bonus|schema cache|function/i.test(detail)
+    return json(res, migrationMissing ? 503 : 500, {
+      error: migrationMissing
+        ? 'Human verification needs the fingerprint-credits database migration.'
+        : 'Human verification could not be completed. Your Google credit is safe.',
+    })
   }
+  const result = Array.isArray(payload) ? payload[0] : payload
+  return json(res, 200, {
+    ok: true,
+    claimed: Boolean(result?.claimed),
+    reason: String(result?.reason || ''),
+    credits: Number(result?.credits || 0),
+    creditsAdded: Number(result?.credits_added || 0),
+  })
 }
 
 async function billingHandler(req, res) {
@@ -5797,7 +5843,7 @@ async function buildMissionFiles(req, res) {
 const rateLimitMap = new Map()
 const RATE_LIMIT_WINDOW_MS = 60_000
 const RATE_LIMIT_MAX = 60
-const SENSITIVE_PATHS = ['/api/alpha', '/api/brain', '/api/credits', '/api/agents', '/api/alpha/mission', '/api/previews/', '/api/creations/publish', '/api/integrations/']
+const SENSITIVE_PATHS = ['/api/alpha', '/api/brain', '/api/credits', '/api/agents', '/api/alpha/mission', '/api/previews/', '/api/creations/publish', '/api/integrations/', '/api/verify-bonus']
 function isRateLimited(req) {
   const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown').split(',')[0].trim()
   const now = Date.now()
@@ -6394,8 +6440,10 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && req.url === '/api/credits/balance') {
     try { return await creditsBalance(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Balance failed' }) }
   }
-  if (req.method === 'POST' && req.url === '/api/auth/welcome-credit/google') return googleWelcomeCredit(req, res)
-  if (req.method === 'POST' && req.url === '/api/auth/firebase-phone/session') return firebasePhoneSession(req, res)
+  if (req.method === 'POST' && req.url === '/api/verify-bonus') {
+    try { return await verifyDeviceBonus(req, res) }
+    catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Human verification failed.' }) }
+  }
   if (req.url === '/api/billing' || req.url === '/api/billing/upgrade') {
     try { return await billingHandler(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Billing failed' }) }
   }

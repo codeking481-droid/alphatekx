@@ -100,15 +100,17 @@ await test('profile refresh is bounded and admin authority requires verified ide
   assert.match(composio, /accountUserId !== user\.id/)
 })
 
-await test('auth page supports signup and canonical redirects', () => {
+await test('auth page supports Google-only signup and canonical redirects', () => {
   const app = fs.readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
   const authPage = fs.readFileSync(new URL('../src/pages/Auth.tsx', import.meta.url), 'utf8')
   const renderConfig = fs.readFileSync(new URL('../render.yaml', import.meta.url), 'utf8')
   const envExample = fs.readFileSync(new URL('../.env.example', import.meta.url), 'utf8')
   assert.match(app, /query\.has\('error'\)/)
   assert.match(app, /Navigate to=\{`\/auth\$\{location\.search\}`\}/)
-  assert.match(authPage, /signUp/)
-  assert.match(authPage, /emailRedirectTo: authRedirectUrl\(\)/)
+  assert.match(authPage, /signInWithOAuth/)
+  assert.match(authPage, /provider: 'google'/)
+  assert.match(authPage, /redirectTo: authRedirectUrl\(\)/)
+  assert.doesNotMatch(authPage, /signInWithPassword|type="password"|Use email instead/)
   assert.match(authPage, /https:\/\/alphatekx\.name\.ng\/auth/)
   assert.match(authPage, /SITE_URL_HELP/)
   assert.match(authPage, /OAUTH_STATE_HELP/)
