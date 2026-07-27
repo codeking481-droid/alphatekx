@@ -29,6 +29,7 @@
     "test:intent": "node scripts/intent-classification-tests.mjs",
     "test:auth-reliability": "node scripts/supabase-auth-reliability-tests.mjs",
     "test:auth-bonus": "node scripts/auth-device-bonus-tests.mjs",
+    "test:auth-bonus:integration": "node scripts/bonus-service-integration-tests.mjs",
     "test:e2e": "node scripts/full-test.mjs && node scripts/path-deploy-test.mjs && node scripts/render-smoke.mjs",
     "test:thorough": "node scripts/thorough-test.mjs",
     "test:composio": "node scripts/composio-connector-tests.mjs",
