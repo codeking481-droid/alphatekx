@@ -20,6 +20,17 @@ test('all seven premium motion concepts exist', () => {
   assert.match(landing, /useReducedMotion/)
   assert.match(css, /prefers-reduced-motion/)
 })
+test('2030 hero includes perspective, glass signals, word reveal and live builder count', () => {
+  for (const contract of ['perspective-grid-shell', 'FloatingHeroSignals', 'RevealLine', 'LiveBuilderCount', 'Alpha is working for']) assert.match(`${landing}\n${css}`, new RegExp(contract))
+  assert.match(css, /future-mesh-shift/)
+  assert.match(css, /premium-noise/)
+})
+test('command centre morphs thinking state and exposes command palette affordance', () => {
+  for (const contract of ['Thinking…', 'thoughtComplete', 'ALPHA COMMAND PALETTE', '⌘ K', '<BrainWave/>']) assert.ok(landing.includes(contract), `${contract} missing`)
+})
+test('future credibility timeline marks the current AlphaTekx era', () => {
+  for (const contract of ["['2024','Manual posting'", "['2025','AI captions'", "['2026','AlphaTekx AI Employee'", "['2030','Autonomous business'", '$1.2T', 'YOU ARE HERE']) assert.ok(landing.includes(contract), `${contract} missing`)
+})
 test('long trust-page sections are present in the required order', () => {
   const sections = ['<Hero/>','<LogoMarquee/>','<ProblemSolution/>','<HowItWorks/>','<InteractiveDemo/>','<AutomationGallery/>','<ActivityRail/>','<ConnectedApps/>','<FeatureDeepDive/>','<Stats/>','<Testimonials/>','<Pricing/>','<FAQ/>','<FinalCTA/>']
   let cursor = -1
@@ -33,6 +44,8 @@ test('375px mobile contract avoids fixed content widths and keeps touch targets'
   assert.match(landing, /px-4/)
   assert.match(landing, /min-h-11/)
   assert.match(landing, /overflow-x-hidden/)
+  assert.match(landing, /MobileStickyCTA/)
+  assert.match(landing, /snap-x snap-mandatory/)
 })
 test('768px tablet contract uses responsive grids and navigation', () => {
   assert.match(landing, /md:grid-cols-2/)
@@ -49,4 +62,4 @@ test('Paystack CTA routes through authenticated checkout surfaces', () => {
   assert.doesNotMatch(landing, /paystack\.co/)
 })
 
-if (!process.exitCode) process.stdout.write(`\n${passed}/8 premium landing checks passed.\n`)
+if (!process.exitCode) process.stdout.write(`\n${passed}/11 premium landing checks passed.\n`)
