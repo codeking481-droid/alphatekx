@@ -134,9 +134,10 @@ try {
   assert.equal(supervisor.status, 200)
   assert.equal(supervisor.body.isAdmin, true)
   assert.equal(supervisor.body.credits, 10)
-  assert.equal(claims.length, 1, 'supervisor or duplicate device created an extra claim')
-  assert.equal(transactions.filter(item => item.reference === `welcome-google:${users['normal-a'].id}`).length, 1)
-  process.stdout.write('BONUS_SERVICE_INTEGRATION_OK google=1 idempotent=1 human=10 duplicate=1 supervisor=10 claims=1\n')
+  assert.equal(claims.length, 3, 'unexpected claim count: two Google markers plus one human claim expected')
+  assert.equal(claims.filter(item => item.email === users.supervisor.email).length, 0, 'supervisor created a device or Google marker')
+  assert.equal(transactions.length, 0, 'credit_transactions should not be read or written')
+  process.stdout.write('BONUS_SERVICE_INTEGRATION_OK google=1 idempotent=1 human=10 duplicate=1 supervisor=10 claims=3 transactions=0\n')
 } finally {
   child.kill('SIGTERM')
   await new Promise(resolve => mock.close(resolve))
