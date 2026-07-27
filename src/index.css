@@ -4,6 +4,74 @@
 @tailwind components;
 @tailwind utilities;
 
+@keyframes premium-grid-drift {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(24px, 24px, 0); }
+}
+
+@keyframes premium-underline {
+  0%, 100% { transform: scaleX(.72); opacity: .7; }
+  50% { transform: scaleX(1); opacity: 1; }
+}
+
+@keyframes future-mesh-shift {
+  0%, 100% { transform: translate3d(-2%, -1%, 0) scale(1.05); filter: hue-rotate(0deg); }
+  50% { transform: translate3d(2%, 1%, 0) scale(1.1); filter: hue-rotate(18deg); }
+}
+
+.premium-grid {
+  background-image: radial-gradient(circle, rgba(105, 65, 198, .18) 1px, transparent 1px);
+  background-size: 24px 24px;
+  animation: premium-grid-drift 12s linear infinite;
+  will-change: transform;
+}
+
+.perspective-grid-shell {
+  perspective: 500px;
+  perspective-origin: 50% 20%;
+}
+
+.perspective-grid-plane {
+  transform: rotateX(62deg) translate3d(0, 12%, 0) scale(1.2);
+  transform-origin: center bottom;
+  mask-image: linear-gradient(to bottom, transparent, #000 30%, transparent 92%);
+}
+
+.future-mesh {
+  background:
+    radial-gradient(circle at 18% 30%, rgba(105, 65, 198, .16), transparent 36%),
+    radial-gradient(circle at 78% 28%, rgba(46, 144, 250, .13), transparent 34%),
+    radial-gradient(circle at 52% 80%, rgba(158, 119, 237, .1), transparent 38%);
+  animation: future-mesh-shift 20s ease-in-out infinite;
+  will-change: transform, filter;
+}
+
+.premium-noise {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.8'/%3E%3C/svg%3E");
+  mix-blend-mode: multiply;
+}
+
+.reality-underline::after {
+  position: absolute;
+  right: 0;
+  bottom: -.08em;
+  left: 0;
+  height: .11em;
+  content: "";
+  border-radius: 999px;
+  background: linear-gradient(90deg, #9e77ed, #6941c6, #2e90fa);
+  transform-origin: center;
+  animation: premium-underline 2.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .premium-grid,
+  .reality-underline::after,
+  .future-mesh {
+    animation: none;
+  }
+}
+
 :root {
   --background: 0 0% 100%;
   --foreground: 221 39% 11%;

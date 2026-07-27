@@ -12,7 +12,7 @@ function test(name, fn) {
 test('landing uses bold white premium foundation', () => {
   const source = read('src/pages/Landing.tsx')
   assert.match(source, /Turn Your Idea Into Reality/)
-  assert.match(source, /#6D28D9/)
+  assert.match(source, /#6941C6/)
   assert.doesNotMatch(source, /bg-black/)
 })
 test('signup offers both explicit credit paths', () => {
@@ -61,6 +61,7 @@ test('duplicate captions are rejected', () => {
 test('billing catalog has all requested packs and tiers', () => {
   const source = read('server/billing.mjs')
   for (const value of ['spark_5', 'creator_20', 'builder_40', 'scale_100', 'creator_monthly', 'builder_monthly', 'scale_monthly']) assert.match(source, new RegExp(value))
+  for (const value of ['monthlyCredits: 150', 'monthlyCredits: 400', 'monthlyCredits: 1200', 'maxActiveAutomations: 2', 'maxActiveAutomations: 10']) assert.match(source, new RegExp(value))
 })
 
 if (!process.exitCode) process.stdout.write(`\n${passed}/10 bold-white automation-flow checks passed.\n`)
