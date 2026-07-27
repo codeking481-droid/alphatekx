@@ -1,9 +1,10 @@
-export type PlanId = 'free' | 'pro_early_access'
+export type PlanId = 'free' | 'creator_monthly' | 'builder_monthly' | 'scale_monthly'
 
 export type Plan = {
   id: PlanId
   name: string
   priceKobo: number
+  currency?: string
   monthlyCredits: number
   maxActiveAutomations: number
   features: string[]
@@ -15,6 +16,7 @@ export type CreditPack = {
   label: string
   credits: number
   amountKobo: number
+  currency?: string
   description: string
 }
 
@@ -46,41 +48,40 @@ export type BillingSummary = {
 
 export const PLANS: Record<PlanId, Plan> = {
   free: {
-    id: 'free',
-    name: 'Free',
-    priceKobo: 0,
-    monthlyCredits: 0,
-    maxActiveAutomations: 1,
-    features: ['30 one-time welcome credits', '1 active automation', 'Basic automations', 'Execution history', 'No card required'],
+    id: 'free', name: 'Free', priceKobo: 0, monthlyCredits: 0, maxActiveAutomations: 1,
+    features: ['1 Google credit or 10 verified-phone credits', '1 active automation', '1 post per hour', 'Schedule up to 7 days ahead'],
   },
-  pro_early_access: {
-    id: 'pro_early_access',
-    name: 'Pro Early Access',
-    priceKobo: 350000,
-    monthlyCredits: 500,
-    maxActiveAutomations: 5,
-    features: ['500 credits every month', 'Up to 5 active automations', 'Scheduled automations', 'Connected app support', 'Email notifications'],
-    badge: 'Most Popular',
+  creator_monthly: {
+    id: 'creator_monthly', name: 'Creator Monthly', priceKobo: 1500, currency: 'USD', monthlyCredits: 150, maxActiveAutomations: 5,
+    features: ['150 credits every month', 'Up to 5 active automations', 'Scheduled automations', 'Connected app support'],
+  },
+  builder_monthly: {
+    id: 'builder_monthly', name: 'Builder Monthly', priceKobo: 2900, currency: 'USD', monthlyCredits: 350, maxActiveAutomations: 15,
+    features: ['350 credits every month', 'Up to 15 active automations', 'Priority scheduling', 'Connected app support'], badge: 'Most Popular',
+  },
+  scale_monthly: {
+    id: 'scale_monthly', name: 'Scale Monthly', priceKobo: 7900, currency: 'USD', monthlyCredits: 1000, maxActiveAutomations: 50,
+    features: ['1,000 credits every month', 'Up to 50 active automations', 'Priority support', 'Advanced history'],
   },
 }
 
 export const CREDIT_PACKS: CreditPack[] = [
-  { id: 'credits_100', label: '100 Credits', credits: 100, amountKobo: 70000, description: 'Light top-up for occasional automations' },
-  { id: 'credits_500', label: '500 Credits', credits: 500, amountKobo: 250000, description: 'Best value for regular usage' },
-  { id: 'credits_1500', label: '1,500 Credits', credits: 1500, amountKobo: 600000, description: 'For creators and small teams' },
-  { id: 'credits_5000', label: '5,000 Credits', credits: 5000, amountKobo: 1750000, description: 'High-volume automations' },
+  { id: 'spark_5', label: 'Spark', credits: 5, amountKobo: 100, currency: 'USD', description: '5 credits for $1' },
+  { id: 'creator_20', label: 'Creator', credits: 20, amountKobo: 300, currency: 'USD', description: '20 credits for $3' },
+  { id: 'builder_40', label: 'Builder', credits: 40, amountKobo: 500, currency: 'USD', description: '40 credits for $5' },
+  { id: 'scale_100', label: 'Scale', credits: 100, amountKobo: 1000, currency: 'USD', description: '100 credits for $10' },
 ]
 
 export function getPlan(id: PlanId | string): Plan {
-  return (PLANS[id as PlanId] || PLANS.free)
+  return PLANS[id as PlanId] || PLANS.free
 }
 
 export function getCreditPack(id: string): CreditPack | undefined {
-  return CREDIT_PACKS.find((p) => p.id === id)
+  return CREDIT_PACKS.find(pack => pack.id === id)
 }
 
-export function formatCurrency(kobo: number): string {
-  return `₦${(kobo / 100).toLocaleString()}`
+export function formatCurrency(minorUnits: number): string {
+  return `$${(minorUnits / 100).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
 }
 
 export function estimateMonthlyUsage(perRun: number, durationDays = 30): number {

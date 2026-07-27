@@ -21,7 +21,7 @@ const DEFAULT_FEATURES = [
   ['google_calendar', 'Google Calendar', 'public', 'connector'],
   ['google_drive', 'Google Drive', 'public', 'connector'],
   ['notion', 'Notion', 'beta', 'connector'],
-  ['youtube', 'YouTube', 'public', 'connector'],
+  ['youtube', 'YouTube', 'beta', 'connector'],
   ['telegram', 'Telegram', 'public', 'connector'],
   ['slack', 'Slack', 'beta', 'connector'],
   ['airtable', 'Airtable', 'beta', 'connector'],

@@ -26,57 +26,74 @@ import { supabaseServiceHeaders } from './supabaseHeaders.mjs'
 
 /** @type {Record<string, ConnectorProviderDef>} */
 const PROVIDER_DEFS = {
-  notion: {
-    id: 'notion',
-    name: 'Notion',
-    composioAppName: 'notion',
-    authConfigEnv: 'COMPOSIO_NOTION_AUTH_CONFIG_ID',
+  whatsapp: {
+    id: 'whatsapp',
+    name: 'WhatsApp',
+    composioAppName: 'whatsapp',
+    composioAppNames: ['whatsapp', 'whatsapp_business'],
+    authConfigEnv: 'COMPOSIO_WHATSAPP_AUTH_CONFIG_ID',
     enabled: false,
     stage: 'beta',
-    actions: ['create_page'],
-    isNative: false,
-    category: 'Productivity',
-  },
-  slack: {
-    id: 'slack',
-    name: 'Slack',
-    composioAppName: 'slack',
-    authConfigEnv: 'COMPOSIO_SLACK_AUTH_CONFIG_ID',
-    enabled: false,
-    stage: 'beta',
-    actions: [],
+    actions: ['send_message'],
     isNative: false,
     category: 'Communication',
   },
-  airtable: {
-    id: 'airtable',
-    name: 'Airtable',
-    composioAppName: 'airtable',
-    authConfigEnv: 'COMPOSIO_AIRTABLE_AUTH_CONFIG_ID',
+  facebook: {
+    id: 'facebook',
+    name: 'Facebook',
+    composioAppName: 'facebook',
+    composioAppNames: ['facebook'],
+    authConfigEnv: 'COMPOSIO_FACEBOOK_AUTH_CONFIG_ID',
     enabled: false,
     stage: 'beta',
-    actions: [],
+    actions: ['create_page_post'],
     isNative: false,
-    category: 'Productivity',
+    category: 'Social Media',
   },
-  shopify: {
-    id: 'shopify',
-    name: 'Shopify',
-    composioAppName: 'shopify',
-    authConfigEnv: 'COMPOSIO_SHOPIFY_AUTH_CONFIG_ID',
+  instagram: {
+    id: 'instagram',
+    name: 'Instagram',
+    composioAppName: 'instagram',
+    composioAppNames: ['instagram'],
+    authConfigEnv: 'COMPOSIO_INSTAGRAM_AUTH_CONFIG_ID',
     enabled: false,
     stage: 'beta',
-    actions: [],
+    actions: ['create_media_post'],
     isNative: false,
-    category: 'Commerce',
+    category: 'Social Media',
+  },
+  twitter: {
+    id: 'twitter',
+    name: 'X (Twitter)',
+    composioAppName: 'twitter',
+    composioAppNames: ['twitter'],
+    authConfigEnv: 'COMPOSIO_TWITTER_AUTH_CONFIG_ID',
+    enabled: false,
+    stage: 'beta',
+    actions: ['create_post'],
+    isNative: false,
+    category: 'Social Media',
+  },
+  youtube: {
+    id: 'youtube',
+    name: 'YouTube',
+    composioAppName: 'youtube',
+    composioAppNames: ['youtube'],
+    authConfigEnv: 'COMPOSIO_YOUTUBE_AUTH_CONFIG_ID',
+    enabled: false,
+    stage: 'beta',
+    actions: ['upload_video'],
+    isNative: false,
+    category: 'Content',
   },
 }
 
 const AUTH_CONFIG_ALIASES = {
-  notion: ['NOTION_AUTH_CONFIG_ID'],
-  slack: ['SLACK_AUTH_CONFIG_ID'],
-  airtable: ['AIRTABLE_AUTH_CONFIG_ID'],
-  shopify: ['SHOPIFY_AUTH_CONFIG_ID'],
+  whatsapp: ['WHATSAPP_AUTH_CONFIG_ID', 'COMPOSIO_WHATSAPP_BUSINESS_AUTH_CONFIG_ID'],
+  facebook: ['FACEBOOK_AUTH_CONFIG_ID'],
+  instagram: ['INSTAGRAM_AUTH_CONFIG_ID', 'COMPOSIO_META_INSTAGRAM_AUTH_CONFIG_ID'],
+  twitter: ['COMPOSIO_X_AUTH_CONFIG_ID', 'TWITTER_AUTH_CONFIG_ID', 'X_AUTH_CONFIG_ID'],
+  youtube: ['YOUTUBE_AUTH_CONFIG_ID'],
 }
 
 // ---------------------------------------------------------------------------
@@ -84,6 +101,8 @@ const AUTH_CONFIG_ALIASES = {
 // ---------------------------------------------------------------------------
 
 const ALIASES = {
+  x: 'twitter',
+  'x (twitter)': 'twitter',
   linkedin: 'linkedin', // native, not composio
   gmail: 'gmail', // native
   telegram: 'telegram', // native
@@ -106,7 +125,11 @@ function resolveProviderAlias(idOrName) {
 
 /** Maps (providerId, actionId) → Composio tool slug */
 const ACTION_TOOL_MAP = {
-  'notion.create_page': process.env.COMPOSIO_NOTION_CREATE_PAGE_TOOL || 'NOTION_CREATE_NOTION_PAGE',
+  'whatsapp.send_message': process.env.COMPOSIO_WHATSAPP_SEND_MESSAGE_TOOL || 'WHATSAPP_SEND_MESSAGE',
+  'facebook.create_page_post': process.env.COMPOSIO_FACEBOOK_CREATE_PAGE_POST_TOOL || 'FACEBOOK_CREATE_PAGE_POST',
+  'instagram.create_media_post': process.env.COMPOSIO_INSTAGRAM_CREATE_MEDIA_POST_TOOL || 'INSTAGRAM_CREATE_MEDIA_POST',
+  'twitter.create_post': process.env.COMPOSIO_TWITTER_CREATE_POST_TOOL || 'TWITTER_CREATE_POST',
+  'youtube.upload_video': process.env.COMPOSIO_YOUTUBE_UPLOAD_VIDEO_TOOL || 'YOUTUBE_UPLOAD_VIDEO',
 }
 
 // ---------------------------------------------------------------------------
@@ -178,6 +201,43 @@ function ensureInitialized() {
   if (!initialized) return initialize()
   if (initError) return { ok: false, error: initError }
   return { ok: true }
+}
+
+async function resolveProviderConfig(providerId) {
+  const existing = providerConfigs[providerId]
+  if (existing?.enabled && existing.authConfigId) return existing
+  const def = PROVIDER_DEFS[providerId]
+  if (!def || !composioClient) return existing || { enabled: false, authConfigId: null }
+
+  for (const toolkit of def.composioAppNames || [def.composioAppName]) {
+    try {
+      const response = await composioClient.authConfigs.list({ toolkit, showDisabled: false, limit: 100 })
+      const items = Array.isArray(response?.items) ? response.items : []
+      const enabled = items.find(item => String(item?.status || '').toUpperCase() === 'ENABLED') || items[0]
+      if (enabled?.id) {
+        const discovered = {
+          authConfigId: enabled.id,
+          enabled: true,
+          configuredEnv: null,
+          discoveredFromComposio: true,
+          toolkit,
+        }
+        providerConfigs[providerId] = discovered
+        def.enabled = true
+        return discovered
+      }
+    } catch {
+      // Try the next compatible toolkit slug. Safe configuration details stay server-side.
+    }
+  }
+  const unavailable = {
+    ...(existing || {}),
+    enabled: false,
+    authConfigId: null,
+    error: `${def.name} has no enabled Auth Config in the AlphaTekx Composio project.`,
+  }
+  providerConfigs[providerId] = unavailable
+  return unavailable
 }
 
 // ---------------------------------------------------------------------------
@@ -273,7 +333,7 @@ export async function getConnectedApps(user) {
 
   const providers = []
   for (const [pid, def] of Object.entries(PROVIDER_DEFS)) {
-    const config = providerConfigs[pid] || { enabled: false }
+    const config = init.ok ? await resolveProviderConfig(pid) : (providerConfigs[pid] || { enabled: false })
     let connected = false
     let connectionId = null
     let status = 'disconnected'
@@ -341,7 +401,7 @@ export async function startConnection(user, providerId, callbackUrl) {
   const def = PROVIDER_DEFS[pid]
   if (!def) throw new Error(`Unknown provider: ${providerId}`)
 
-  const config = providerConfigs[pid]
+  const config = await resolveProviderConfig(pid)
   if (!config || !config.enabled || !config.authConfigId) {
     throw new Error(`${def.name} is not configured. ${config?.error || 'Contact support.'}`)
   }
@@ -379,11 +439,13 @@ export async function startConnection(user, providerId, callbackUrl) {
  * @returns {Promise<{connected: boolean, status: string, connectionId?: string, connectedAt?: string}>}
  */
 export async function getConnectionStatus(user, providerId) {
+  const init = ensureInitialized()
+  if (!init.ok) return { connected: false, status: 'unavailable', error: init.error, provider: resolveProviderAlias(providerId) || providerId }
   const pid = resolveProviderAlias(providerId)
   if (!pid) throw new Error(`Unknown provider: ${providerId}`)
 
   const def = PROVIDER_DEFS[pid]
-  const config = providerConfigs[pid]
+  const config = await resolveProviderConfig(pid)
 
   if (!config || !config.enabled) {
     return { connected: false, status: 'unavailable', provider: pid }
@@ -435,7 +497,7 @@ export async function reconnectProvider(user, providerId, callbackUrl) {
   if (!pid) throw new Error(`Unknown provider: ${providerId}`)
 
   const def = PROVIDER_DEFS[pid]
-  const config = providerConfigs[pid]
+  const config = await resolveProviderConfig(pid)
 
   if (!config || !config.enabled || !config.authConfigId) {
     throw new Error(`${def.name} is not configured.`)
@@ -479,7 +541,7 @@ export async function disconnectProvider(user, providerId) {
   const pid = resolveProviderAlias(providerId)
   if (!pid) throw new Error(`Unknown provider: ${providerId}`)
 
-  const config = providerConfigs[pid]
+  const config = await resolveProviderConfig(pid)
   if (!config || !config.authConfigId) {
     throw new Error(`Provider ${providerId} has no auth config`)
   }
@@ -533,7 +595,7 @@ export async function executeProviderAction(user, providerId, actionId, payload)
     throw new Error(`Action "${actionId}" is not supported for ${def.name}`)
   }
 
-  const config = providerConfigs[pid]
+  const config = await resolveProviderConfig(pid)
   if (!config || !config.enabled || !config.authConfigId) {
     throw new Error(`${def.name} is not configured.`)
   }

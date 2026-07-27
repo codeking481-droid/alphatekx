@@ -96,7 +96,8 @@ await test('profile refresh is bounded and admin authority requires verified ide
   assert.doesNotMatch(server, /x-admin-email/)
   assert.match(billing, /function userEmail/)
   assert.match(marketplace, /function userEmail/)
-  assert.match(composio, /function userEmail/)
+  assert.doesNotMatch(composio, /isAdminUser/)
+  assert.match(composio, /accountUserId !== user\.id/)
 })
 
 await test('auth page supports signup and canonical redirects', () => {
@@ -146,8 +147,8 @@ await test('Meta, WhatsApp, Instagram and X use the correct configuration paths'
   const connectors = fs.readFileSync(new URL('../src/pages/Connectors.tsx', import.meta.url), 'utf8')
   const server = fs.readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
   const composio = fs.readFileSync(new URL('../server/composioConnectorService.mjs', import.meta.url), 'utf8')
-  assert.match(connectors, /composioOAuthProviders = new Set\(\['notion', 'instagram', 'x', 'youtube'\]\)/)
-  assert.match(connectors, /serverManagedProviders = new Set\(\['whatsapp'\]\)/)
+  assert.match(connectors, /composioOAuthProviders = new Set\(\['whatsapp', 'facebook', 'instagram', 'x', 'youtube'\]\)/)
+  assert.match(connectors, /serverManagedProviders = new Set<string>\(\)/)
   assert.match(server, /META_APP_ID and META_APP_SECRET/)
   assert.match(server, /WHATSAPP_ACCESS_TOKEN/)
   assert.match(composio, /COMPOSIO_INSTAGRAM_AUTH_CONFIG_ID/)

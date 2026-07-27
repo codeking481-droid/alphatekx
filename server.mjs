@@ -14,6 +14,7 @@ import { createAlphaBrain } from './server/alphaBrain.mjs'
 import { supabaseServiceHeaders } from './server/supabaseHeaders.mjs'
 import { buildCapabilityPlan, detectCapability, isSupportedAction } from './server/automation/capabilityRegistry.mjs'
 import { createContentMemoryRecord } from './server/automation/contentMemory.mjs'
+import { validateFreeCampaign } from './server/automation/freePlanPolicy.mjs'
 import { createConversationEngine } from './server/alpha/conversationEngine.mjs'
 import * as providerHealth from './server/alpha/providerHealth.mjs'
 import * as billing from './server/billing.mjs'
@@ -21,6 +22,7 @@ import { normalizeLinkedInScopes, publishLinkedInTextPost } from './server/linke
 import { allowedWhatsAppRecipients, applyWhatsAppStatusEvent, executeApprovedWhatsAppMessage, sendWhatsAppText, verifyWhatsAppPhoneRegistration, verifyWhatsAppWebhookSignature, whatsappCredentials, whatsappWebhookEvents } from './server/whatsapp.mjs'
 import { connectorFeatureAccess, featureStatusForUser, refreshFeatureConfig, unavailableConnectorMessage, unavailablePromptConnector } from './server/featureAccess.mjs'
 import * as alphaConnector from './server/composioConnectorService.mjs'
+import { verifyFirebasePhoneAndCreateSession } from './server/firebasePhoneAuth.mjs'
 
 function loadEnv() {
   for (const filename of ['.env.local', '.env']) {
@@ -1090,7 +1092,7 @@ async function runUserWorker(worker, apiKey, prompt) {
 }
 
 const adminEmail = 'iamdan4live@gmail.com'
-const DEFAULT_CREDITS = 30
+const DEFAULT_CREDITS = 0
 const supabaseConfig = () => ({
   url: process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '',
   anon: process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '',
@@ -2179,6 +2181,11 @@ async function activateCampaignHandler(req, res) {
   }
 
   const admin = isAdminAuthUser(user)
+  const billingSummary = await billing.getUserBilling(user, config)
+  if (!admin && billingSummary.plan === 'free') {
+    const policy = validateFreeCampaign(agent.campaign.posts || [], agent.campaign.contentMemory || [], new Date())
+    if (!policy.ok) return json(res, 400, { error: policy.error, code: policy.code })
+  }
   const total = agent.campaign.totalCredits || 0
   if (total > 0 && !admin) {
     const balance = await getUserCredits(user, config)
@@ -3289,6 +3296,37 @@ async function creditsBalance(req, res) {
   if (!user) return json(res, 401, { error: 'Authentication required' })
   const credits = await getUserCredits(user, config)
   return json(res, 200, { credits })
+}
+
+async function googleWelcomeCredit(req, res) {
+  const config = supabaseConfig()
+  const user = await currentOrLocalUser(req, config.url, config.anon)
+  if (!user) return json(res, 401, { error: 'Authentication required' })
+  const providers = new Set([
+    String(user.app_metadata?.provider || '').toLowerCase(),
+    ...(user.identities || []).map(identity => String(identity?.provider || '').toLowerCase()),
+  ])
+  if (!providers.has('google')) return json(res, 400, { error: 'Google authentication is required for this credit' })
+  const result = await billing.addCredits(user, 1, config, {
+    reference: `welcome-google:${user.id}`,
+    type: 'welcome',
+    reason: 'Google signup tester credit',
+    metadata: { source: 'google_signup' },
+  })
+  return json(res, 200, { ok: true, credits: result.remaining })
+}
+
+async function firebasePhoneSession(req, res) {
+  const config = supabaseConfig()
+  const body = await readBody(req)
+  try {
+    const result = await verifyFirebasePhoneAndCreateSession(String(body.idToken || ''), config, billing.addCredits)
+    return json(res, 200, result)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Phone verification failed'
+    const status = /not configured|migration/i.test(message) ? 503 : 400
+    return json(res, status, { error: message })
+  }
 }
 
 async function billingHandler(req, res) {
@@ -5875,13 +5913,21 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, await alphaConnector.getConnectedApps(user))
     } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Failed to list connected apps' }) }
   }
-  if (req.url?.startsWith('/api/connectors/') && !req.url.startsWith('/api/connectors/facebook')) {
+  if (req.url?.startsWith('/api/connectors/')) {
     const url = new URL(req.url, 'http://localhost')
     const match = url.pathname.match(/^\/api\/connectors\/([^/]+)\/(connect|status|callback|test)\/?$/)
     const deleteMatch = url.pathname.match(/^\/api\/connectors\/([^/]+)\/?$/)
     if (match || (deleteMatch && req.method === 'DELETE')) {
       const toolkit = (match || deleteMatch)[1]
       try {
+        const operation = match?.[2]
+        if (operation === 'callback' && req.method === 'GET') {
+          const redirectUrl = new URL('/connected-apps', publicAppUrl())
+          redirectUrl.searchParams.set('provider', toolkit)
+          redirectUrl.searchParams.set('connected', 'checking')
+          res.writeHead(302, { Location: redirectUrl.toString(), 'Cache-Control': 'no-store' })
+          return res.end()
+        }
         const config = supabaseConfig()
         const user = await currentOrLocalUser(req, config.url, config.anon)
         if (!user) return json(res, 401, { error: 'Authentication required' })
@@ -5889,24 +5935,17 @@ const server = http.createServer(async (req, res) => {
         if (deleteMatch && req.method === 'DELETE') {
           return json(res, 200, await alphaConnector.disconnectProvider(user, toolkit))
         }
-        const operation = match[2]
         if (operation === 'connect' && req.method === 'POST') {
-          const callbackUrl = `${getRequestOrigin(req)}/api/connectors/${encodeURIComponent(toolkit)}/callback`
-          return json(res, 200, await alphaConnector.startConnection(user, toolkit, callbackUrl))
+          const callbackUrl = new URL('/connected-apps', publicAppUrl())
+          callbackUrl.searchParams.set('provider', toolkit)
+          callbackUrl.searchParams.set('connected', 'checking')
+          return json(res, 200, await alphaConnector.startConnection(user, toolkit, callbackUrl.toString()))
         }
         if (operation === 'status' && req.method === 'GET') {
           return json(res, 200, await alphaConnector.getConnectionStatus(user, toolkit))
         }
         if (operation === 'test' && req.method === 'POST') {
           return json(res, 200, await alphaConnector.testConnection(user, toolkit))
-        }
-        if (operation === 'callback' && req.method === 'GET') {
-          const status = await alphaConnector.getConnectionStatus(user, toolkit)
-          const redirectUrl = new URL('/connected-apps', publicAppUrl())
-          redirectUrl.searchParams.set('provider', toolkit)
-          redirectUrl.searchParams.set('connected', status.connected ? 'success' : 'error')
-          res.writeHead(302, { Location: redirectUrl.toString(), 'Cache-Control': 'no-store' })
-          return res.end()
         }
         return json(res, 405, { error: 'Method not allowed' })
       } catch (error) {
@@ -6355,6 +6394,8 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && req.url === '/api/credits/balance') {
     try { return await creditsBalance(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Balance failed' }) }
   }
+  if (req.method === 'POST' && req.url === '/api/auth/welcome-credit/google') return googleWelcomeCredit(req, res)
+  if (req.method === 'POST' && req.url === '/api/auth/firebase-phone/session') return firebasePhoneSession(req, res)
   if (req.url === '/api/billing' || req.url === '/api/billing/upgrade') {
     try { return await billingHandler(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Billing failed' }) }
   }
