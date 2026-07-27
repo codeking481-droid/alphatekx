@@ -177,7 +177,7 @@ export default function Auth() {
         <section className="relative mt-4 rounded-2xl border-2 border-violet-200 bg-violet-50 p-4 shadow-[0_15px_35px_rgba(109,40,217,.14)]">
           <h2 className="font-black text-[#0B0F19]">Human verification · 10 credits</h2>
           <p className="mt-1 text-sm font-semibold text-slate-600">After Google sign-in, choose this option to verify and unlock ten credits.</p>
-        <button onClick={() => void verifyHuman()} disabled={!user || pending || verifying} className="relative mt-3 flex min-h-16 w-full items-center justify-center gap-3 rounded-xl bg-[#6D28D9] px-4 font-black text-white shadow-[0_15px_35px_rgba(109,40,217,.3)] transition hover:-translate-y-0.5 hover:bg-[#5B21B6] disabled:cursor-not-allowed disabled:opacity-60">
+        <button onClick={() => user ? void verifyHuman() : void google()} disabled={!configured || pending || verifying} className="relative mt-3 flex min-h-16 w-full items-center justify-center gap-3 rounded-xl bg-[#6D28D9] px-4 font-black text-white shadow-[0_15px_35px_rgba(109,40,217,.3)] transition hover:-translate-y-0.5 hover:bg-[#5B21B6] disabled:cursor-not-allowed disabled:opacity-60">
           {verifying ? <LoaderCircle className="animate-spin" size={20}/> : <ShieldCheck size={20}/>}
           {verifying ? "Verifying you're human…" : user ? 'Verify human & unlock 10 credits' : 'Sign in & verify human — 10 credits'}
           <span className="absolute -right-2 -top-2 rounded-full bg-violet-100 px-2.5 py-1 text-[9px] font-black tracking-wide text-[#5B21B6]">RECOMMENDED</span>
