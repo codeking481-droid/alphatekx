@@ -4,6 +4,43 @@
 @tailwind components;
 @tailwind utilities;
 
+@keyframes premium-grid-drift {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(24px, 24px, 0); }
+}
+
+@keyframes premium-underline {
+  0%, 100% { transform: scaleX(.72); opacity: .7; }
+  50% { transform: scaleX(1); opacity: 1; }
+}
+
+.premium-grid {
+  background-image: radial-gradient(circle, rgba(105, 65, 198, .18) 1px, transparent 1px);
+  background-size: 24px 24px;
+  animation: premium-grid-drift 12s linear infinite;
+  will-change: transform;
+}
+
+.reality-underline::after {
+  position: absolute;
+  right: 0;
+  bottom: -.08em;
+  left: 0;
+  height: .11em;
+  content: "";
+  border-radius: 999px;
+  background: linear-gradient(90deg, #9e77ed, #6941c6, #2e90fa);
+  transform-origin: center;
+  animation: premium-underline 2.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .premium-grid,
+  .reality-underline::after {
+    animation: none;
+  }
+}
+
 :root {
   --background: 0 0% 100%;
   --foreground: 221 39% 11%;
