@@ -36,6 +36,8 @@ test('human verification runs after an authenticated Google session', () => {
   assert.match(auth, /getDeviceFingerprint\(\)/)
   assert.match(auth, /fetch\('\/api\/verify-bonus'/)
   assert.match(auth, /fingerprintHash: fingerprint/)
+  assert.match(auth, /\/api\/auth\/welcome-credit\/google/)
+  assert.match(auth, /welcomeResponse\.ok/)
   assert.match(auth, /navigate\('\/onboarding'/)
 })
 
@@ -75,6 +77,7 @@ test('database claim and credit award are atomic and idempotent', () => {
   assert.match(migration, /ON CONFLICT DO NOTHING/)
   assert.match(migration, /greatest\(0, 10 - current_credits\)/)
   assert.match(migration, /credit_transactions/)
+  assert.match(migration, /grant_google_signup_credit/)
 })
 
 test('shared inputs use visible dark text on white surfaces', () => {

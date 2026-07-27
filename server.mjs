@@ -3400,6 +3400,27 @@ async function verifyDeviceBonus(req, res) {
   })
 }
 
+async function googleWelcomeCredit(req, res) {
+  const config = supabaseConfig()
+  const user = await currentOrLocalUser(req, config.url, config.anon)
+  if (!user) return json(res, 401, { error: 'Authentication required' })
+  const providers = new Set([
+    String(user.app_metadata?.provider || '').toLowerCase(),
+    ...(user.identities || []).map(identity => String(identity?.provider || '').toLowerCase()),
+  ])
+  const googleSub = googleIdentitySubject(user)
+  if (!providers.has('google') || !googleSub) return json(res, 400, { error: 'A verified Google identity is required for this credit.' })
+  if (!config.url || !config.service) return json(res, 503, { error: 'Google welcome credits are not configured on the server.' })
+  const response = await fetch(`${config.url}/rest/v1/rpc/grant_google_signup_credit`, {
+    method: 'POST',
+    headers: serviceHeaders(config.service),
+    body: JSON.stringify({ p_user_id: user.id, p_google_sub: googleSub, p_email: authUserEmail(user) }),
+  })
+  const payload = await response.json().catch(() => null)
+  if (!response.ok) return json(res, 503, { error: 'Google welcome credits need the fingerprint-credits database migration.' })
+  return json(res, 200, { ok: true, success: true, credits: Number(Array.isArray(payload) ? payload[0] : payload) || 1 })
+}
+
 async function billingHandler(req, res) {
   const config = supabaseConfig()
   const user = await currentOrLocalUser(req, config.url, config.anon)
@@ -6468,6 +6489,10 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && req.url === '/api/verify-bonus') {
     try { return await verifyDeviceBonus(req, res) }
     catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Human verification failed.' }) }
+  }
+  if (req.method === 'POST' && req.url === '/api/auth/welcome-credit/google') {
+    try { return await googleWelcomeCredit(req, res) }
+    catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Google welcome credit failed.' }) }
   }
   if (req.url === '/api/billing' || req.url === '/api/billing/upgrade') {
     try { return await billingHandler(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Billing failed' }) }
