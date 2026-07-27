@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react'
-import { AlertCircle, CalendarClock, CheckCircle2, Copy, History, Pause, Play, Plus, Trash2 } from 'lucide-react'
+import { AlertCircle, CalendarClock, CalendarDays, CheckCircle2, Copy, History, List, Pause, Pencil, Play, Plus, Trash2 } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { deleteAgent, saveAgent, setAgentLifecycle, useAgents } from '../lib/agents/agentStore'
 import type { Agent, AgentStatus } from '../lib/agents/types'
@@ -21,10 +21,20 @@ function platformNames(agent: Agent) {
   return values.length ? values.map(value => value.replace(/_/g, ' ')).join(', ') : 'Automation'
 }
 
+function nextRunOf(agent: Agent) {
+  return agent.trigger?.nextRun || agent.nextRunAt
+}
+
 function lastResult(agent: Agent) {
   const run = agent.executionHistory?.[0]
   if (!run) return 'No runs yet'
-  return run.status === 'success' ? run.log || 'Completed successfully' : run.log || 'Needs attention'
+  return run.log || (run.status === 'success' ? 'Completed successfully' : 'Needs attention')
+}
+
+function progress(agent: Agent) {
+  const done = agent.executionsDone || 0
+  const total = agent.executionsTotal || agent.campaign?.posts?.length || 0
+  return total > 0 ? `${Math.min(done, total)}/${total} done` : `${done} completed`
 }
 
 function matchesFilter(agent: Agent, filter: Filter) {
@@ -39,6 +49,7 @@ export default function ActiveAutomations() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [filter, setFilter] = useState<Filter>('All')
+  const [view, setView] = useState<'list' | 'calendar'>('list')
   const [notice, setNotice] = useState('')
   const selected = id ? agents.find(agent => agent.id === id) : null
   const visible = useMemo(() => agents.filter(agent => agent.status !== 'deleted' && matchesFilter(agent, filter)), [agents, filter])
@@ -46,8 +57,10 @@ export default function ActiveAutomations() {
   const changeStatus = async (agent: Agent, status: AgentStatus) => {
     try {
       await setAgentLifecycle(agent.id, status === 'paused' ? 'pause' : 'resume')
-      setNotice(status === 'paused' ? 'Automation paused. No future run will start until you resume it.' : 'Automation resumed.')
-    } catch (error) { setNotice(error instanceof Error ? error.message : 'Could not update automation.') }
+      setNotice(status === 'paused' ? 'Automation paused. Future runs will wait until you resume it.' : 'Automation resumed successfully.')
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Could not update automation.')
+    }
   }
 
   const duplicate = async (agent: Agent) => {
@@ -67,46 +80,124 @@ export default function ActiveAutomations() {
         ...agent.campaign,
         approved: false,
         status: 'pending_approval',
-        posts: agent.campaign.posts.map(post => ({ ...post, id: crypto.randomUUID(), status: 'pending_approval', approved: false, charged: false, providerPostId: undefined, providerUrl: undefined, executionKey: undefined })),
+        posts: agent.campaign.posts.map(post => ({
+          ...post,
+          id: crypto.randomUUID(),
+          status: 'pending_approval',
+          approved: false,
+          charged: false,
+          providerPostId: undefined,
+          providerUrl: undefined,
+          executionKey: undefined,
+        })),
       } : undefined,
     }
     await saveAgent(copy)
     navigate(`/active-automations/${copy.id}`)
   }
 
-  if (id && !selected) return <main className="mx-auto min-h-[calc(100dvh-8rem)] max-w-3xl px-4 py-12"><div className="rounded-3xl border border-white/10 bg-white/[.04] p-8 text-center"><h1 className="text-xl font-semibold">Automation not found</h1><p className="mt-2 text-sm text-white/55">It may have been deleted or is no longer available on the server.</p><Link to="/active-automations" className="mt-6 inline-flex rounded-xl btn-alpha px-4 py-3 text-sm">Back to Active Automations</Link></div></main>
+  if (id && !selected) return <Page><Empty title="Automation not found" body="It may have been deleted or is no longer available on the server."><Link to="/active-automations" className="primary-button">Back to Running Automations</Link></Empty></Page>
 
   if (selected) {
-    const nextRun = selected.trigger?.nextRun || selected.nextRunAt
+    const nextRun = nextRunOf(selected)
     const lastRun = selected.lastRunAt || selected.executionHistory?.[0]?.at
-    return <main className="mx-auto min-h-[calc(100dvh-8rem)] max-w-4xl px-4 py-10 sm:px-6">
-      <button onClick={() => navigate('/active-automations')} className="text-sm text-violet-300 hover:text-violet-200">← Active Automations</button>
-      {notice && <div role="status" className="mt-4 rounded-xl border border-violet-400/20 bg-violet-500/10 p-3 text-sm">{notice}</div>}
-      <section className="mt-6 rounded-3xl border border-white/10 bg-white/[.045] p-5 sm:p-8">
-        <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs uppercase tracking-[.2em] text-violet-300">{displayStatus(selected)}</p><h1 className="mt-2 text-2xl font-semibold sm:text-3xl">{selected.name}</h1><p className="mt-2 text-sm capitalize text-white/55">{platformNames(selected)}</p></div><div className="flex gap-2">{selected.status === 'paused' ? <button onClick={() => void changeStatus(selected, 'running')} className="action"><Play size={16}/>Resume</button> : <button onClick={() => void changeStatus(selected, 'paused')} className="action"><Pause size={16}/>Pause</button>}<button onClick={() => void duplicate(selected)} className="action"><Copy size={16}/>Duplicate</button></div></div>
+    return <Page size="max-w-4xl">
+      <button onClick={() => navigate('/active-automations')} className="text-sm font-bold text-[#6D28D9] hover:text-violet-800">← Running Automations</button>
+      {notice && <Notice>{notice}</Notice>}
+      <section className="mt-6 rounded-[2rem] border border-slate-200 bg-white p-5 shadow-[0_24px_70px_rgba(30,41,59,.14)] sm:p-8">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div><p className="eyebrow">{displayStatus(selected)}</p><h1 className="mt-2 text-2xl font-black text-slate-900 sm:text-3xl">{selected.name}</h1><p className="mt-2 text-sm font-semibold capitalize text-slate-500">{platformNames(selected)}</p></div>
+          <div className="flex flex-wrap gap-2">
+            {selected.status === 'paused' ? <button onClick={() => void changeStatus(selected, 'running')} className="action-light"><Play size={16}/>Resume</button> : <button onClick={() => void changeStatus(selected, 'paused')} className="action-light"><Pause size={16}/>Pause</button>}
+            <Link to={`/automations?id=${encodeURIComponent(selected.id)}`} className="action-light"><Pencil size={16}/>Edit schedule — free</Link>
+            <button onClick={() => void duplicate(selected)} className="action-light"><Copy size={16}/>Duplicate</button>
+          </div>
+        </div>
         <div className="mt-8 grid gap-4 sm:grid-cols-2">
-          <Info label="Mission" value={selected.mission || selected.interpretedGoal || selected.description || 'Continue the approved automation reliably.'} />
-          <Info label="Strategy" value={selected.strategy?.summary || selected.campaign?.description || 'Use the approved content plan and preferences.'} />
+          <Info label="Platform" value={platformNames(selected)} />
+          <Info label="Progress" value={progress(selected)} />
           <Info label="Schedule" value={selected.campaign?.meta?.frequencyText || selected.trigger?.cron || 'One time'} icon={<CalendarClock size={15}/>} />
           <Info label="Timezone" value={selected.timezone || selected.campaign?.meta?.timezone || 'UTC'} />
           <Info label="Next run" value={nextRun ? new Date(nextRun).toLocaleString() : 'No future run'} />
           <Info label="Last confirmed run" value={lastRun ? new Date(lastRun).toLocaleString() : 'No runs yet'} />
-          <Info label="Approval" value={selected.approvalPolicy === 'implicit' ? 'Automatic publishing' : 'Review before publishing'} />
+          <Info label="Approval" value={selected.approvalPolicy === 'implicit' ? 'Automatic after your approved plan' : 'Review before publishing'} />
           <Info label="Last result" value={lastResult(selected)} />
         </div>
-        <div className="mt-8 flex flex-wrap gap-2"><Link to={`/history?automation=${encodeURIComponent(selected.id)}`} className="action"><History size={16}/>View history</Link><Link to={`/automations?id=${encodeURIComponent(selected.id)}`} className="action"><CheckCircle2 size={16}/>Review content or schedule</Link><button onClick={async () => { if (window.confirm('Delete this automation? This removes it from Active Automations.')) { try { await deleteAgent(selected.id); navigate('/active-automations') } catch (error) { setNotice(error instanceof Error ? error.message : 'Could not delete automation.') } } }} className="action text-rose-300"><Trash2 size={16}/>Delete</button></div>
+        <div className="mt-8 flex flex-wrap gap-2">
+          <Link to={`/history?automation=${encodeURIComponent(selected.id)}`} className="action-light"><History size={16}/>View history</Link>
+          <Link to={`/automations?id=${encodeURIComponent(selected.id)}`} className="action-light"><CheckCircle2 size={16}/>Review content</Link>
+          <button onClick={async () => {
+            if (!window.confirm('Delete this automation? This removes it permanently.')) return
+            try { await deleteAgent(selected.id); navigate('/active-automations') }
+            catch (error) { setNotice(error instanceof Error ? error.message : 'Could not delete automation.') }
+          }} className="action-light text-rose-700"><Trash2 size={16}/>Delete</button>
+        </div>
       </section>
-    </main>
+    </Page>
   }
 
-  return <main className="mx-auto min-h-[calc(100dvh-8rem)] w-full max-w-6xl px-4 py-10 sm:px-6">
-    <header className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs uppercase tracking-[.2em] text-violet-300">Your jobs</p><h1 className="mt-2 text-3xl font-semibold">Active Automations</h1><p className="mt-2 max-w-2xl text-sm text-white/55">See what Alpha is doing, what happens next, and anything that needs your attention.</p></div><Link to="/automations" className="flex min-h-11 items-center gap-2 rounded-xl btn-alpha px-4 text-sm"><Plus size={17}/>New automation</Link></header>
-    {notice && <div role="status" className="mt-5 rounded-xl border border-violet-400/20 bg-violet-500/10 p-3 text-sm">{notice}</div>}
-    <div className="mt-7 flex gap-2 overflow-x-auto pb-2" aria-label="Automation filters">{filters.map(item => <button key={item} onClick={() => setFilter(item)} className={`whitespace-nowrap rounded-full px-3 py-2 text-xs ${filter === item ? 'bg-violet-500 text-white' : 'border border-white/10 bg-white/[.04] text-white/60'}`}>{item}</button>)}</div>
-    {visible.length === 0 ? <section className="mt-14 rounded-3xl border border-dashed border-white/15 p-10 text-center"><h2 className="font-semibold">{agents.length ? 'No automations match this filter' : 'No active automations yet'}</h2><p className="mt-2 text-sm text-white/55">{agents.length ? 'Choose another filter.' : 'Tell Alpha what you want done and your automation will appear here.'}</p></section> : <section className="mt-6 grid gap-4 md:grid-cols-2">{visible.map(agent => <Link key={agent.id} to={`/active-automations/${agent.id}`} className="rounded-2xl border border-white/10 bg-white/[.04] p-5 transition hover:border-violet-400/30 hover:bg-white/[.06]"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><h2 className="truncate font-semibold">{agent.name}</h2><p className="mt-1 text-xs capitalize text-white/50">{platformNames(agent)}</p></div><span className="rounded-full border border-white/10 px-2.5 py-1 text-[11px] text-white/70">{displayStatus(agent)}</span></div><p className="mt-5 text-sm text-white/65">{agent.trigger?.nextRun ? `Next run ${new Date(agent.trigger.nextRun).toLocaleString()}` : lastResult(agent)}</p>{displayStatus(agent) === 'Needs Attention' && <p className="mt-3 flex items-center gap-2 text-xs text-amber-300"><AlertCircle size={14}/>Open to see what needs attention.</p>}</Link>)}</section>}
-  </main>
+  return <Page>
+    <header className="flex flex-wrap items-end justify-between gap-4">
+      <div><p className="eyebrow">Your work</p><h1 className="mt-2 text-3xl font-black text-slate-900 sm:text-4xl">Running Automations</h1><p className="mt-2 max-w-2xl text-sm font-medium text-slate-600">Track every approved automation, its next run, and its confirmed progress.</p></div>
+      <Link to="/automations" className="primary-button"><Plus size={17}/>New automation</Link>
+    </header>
+    {notice && <Notice>{notice}</Notice>}
+    <div className="mt-7 flex flex-wrap items-center justify-between gap-3">
+      <div className="flex gap-2 overflow-x-auto pb-2" aria-label="Automation filters">{filters.map(item => <button key={item} onClick={() => setFilter(item)} className={`whitespace-nowrap rounded-full px-3 py-2 text-xs font-bold ${filter === item ? 'bg-[#6D28D9] text-white shadow-lg shadow-violet-200' : 'border border-slate-200 bg-white text-slate-600'}`}>{item}</button>)}</div>
+      <div className="flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+        <button onClick={() => setView('list')} className={`view-button ${view === 'list' ? 'view-button-active' : ''}`}><List size={15}/>List</button>
+        <button onClick={() => setView('calendar')} className={`view-button ${view === 'calendar' ? 'view-button-active' : ''}`}><CalendarDays size={15}/>Calendar</button>
+      </div>
+    </div>
+    {visible.length === 0 ? <Empty title={agents.length ? 'No automations match this filter' : 'No running automations yet'} body={agents.length ? 'Choose another filter.' : 'Approve a plan in Command Centre and it will appear here.'} /> : view === 'calendar' ? <CalendarView agents={visible} /> : <section className="mt-6 grid gap-5 md:grid-cols-2">{visible.map(agent => <AutomationCard key={agent.id} agent={agent} />)}</section>}
+  </Page>
+}
+
+function AutomationCard({ agent }: { agent: Agent }) {
+  const nextRun = nextRunOf(agent)
+  return <Link to={`/active-automations/${agent.id}`} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_18px_45px_rgba(30,41,59,.10)] transition hover:-translate-y-1 hover:border-violet-300 hover:shadow-[0_24px_60px_rgba(109,40,217,.16)]">
+    <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-xs font-black uppercase tracking-[.16em] text-[#6D28D9]">{platformNames(agent)}</p><h2 className="mt-2 truncate text-lg font-black text-slate-900">{agent.name}</h2></div><span className="rounded-full bg-violet-50 px-3 py-1 text-[11px] font-black text-violet-700">{displayStatus(agent)}</span></div>
+    <dl className="mt-6 grid grid-cols-2 gap-4 text-sm"><CardStat label="Schedule" value={agent.campaign?.meta?.frequencyText || agent.trigger?.cron || 'One time'} /><CardStat label="Progress" value={progress(agent)} /><CardStat label="Next run" value={nextRun ? new Date(nextRun).toLocaleString() : 'No future run'} /><CardStat label="Last result" value={lastResult(agent)} /></dl>
+    {displayStatus(agent) === 'Needs Attention' && <p className="mt-4 flex items-center gap-2 text-xs font-bold text-amber-700"><AlertCircle size={14}/>Open to see what needs attention.</p>}
+  </Link>
+}
+
+function CalendarView({ agents }: { agents: Agent[] }) {
+  const now = new Date()
+  const first = new Date(now.getFullYear(), now.getMonth(), 1)
+  const days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+  const cells = [...Array(first.getDay()).fill(null), ...Array.from({ length: days }, (_, index) => index + 1)]
+  return <section className="mt-6 rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_18px_45px_rgba(30,41,59,.10)] sm:p-6">
+    <h2 className="text-xl font-black text-slate-900">{now.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</h2>
+    <div className="mt-5 grid grid-cols-7 gap-1 text-center text-xs font-black uppercase text-slate-400">{['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(day => <div key={day}>{day}</div>)}</div>
+    <div className="mt-2 grid grid-cols-7 gap-1">{cells.map((day, index) => {
+      const scheduled = day ? agents.filter(agent => {
+        const value = nextRunOf(agent)
+        if (!value) return false
+        const date = new Date(value)
+        return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === day
+      }) : []
+      return <div key={`${day}-${index}`} className="min-h-20 rounded-xl border border-slate-100 p-1.5 sm:min-h-28 sm:p-2">{day && <><span className="text-xs font-black text-slate-700">{day}</span>{scheduled.slice(0, 2).map(agent => <Link key={agent.id} to={`/active-automations/${agent.id}`} className="mt-1 block truncate rounded bg-violet-100 px-1 py-1 text-[9px] font-bold text-violet-800 sm:text-[11px]">{agent.name}</Link>)}</>}</div>
+    })}</div>
+  </section>
+}
+
+function Page({ children, size = 'max-w-6xl' }: { children: ReactNode; size?: string }) {
+  return <main className={`mx-auto min-h-[calc(100dvh-8rem)] w-full ${size} bg-white px-4 py-10 text-slate-900 sm:px-6`}>{children}</main>
+}
+
+function Empty({ title, body, children }: { title: string; body: string; children?: ReactNode }) {
+  return <section className="mt-12 rounded-3xl border-2 border-dashed border-slate-200 bg-white p-10 text-center"><h2 className="font-black text-slate-900">{title}</h2><p className="mt-2 text-sm font-medium text-slate-500">{body}</p>{children && <div className="mt-6">{children}</div>}</section>
+}
+
+function Notice({ children }: { children: ReactNode }) {
+  return <div role="status" className="mt-5 rounded-xl border border-violet-200 bg-violet-50 p-3 text-sm font-bold text-violet-800">{children}</div>
 }
 
 function Info({ label, value, icon }: { label: string; value: string; icon?: ReactNode }) {
-  return <div className="rounded-2xl border border-white/[.08] bg-white/[.035] p-4"><div className="flex items-center gap-2 text-xs text-white/45">{icon}{label}</div><p className="mt-2 text-sm leading-6 text-white/80">{value}</p></div>
+  return <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><div className="flex items-center gap-2 text-xs font-bold text-slate-500">{icon}{label}</div><p className="mt-2 text-sm font-semibold leading-6 text-slate-800">{value}</p></div>
+}
+
+function CardStat({ label, value }: { label: string; value: string }) {
+  return <div><dt className="text-xs font-bold text-slate-400">{label}</dt><dd className="mt-1 line-clamp-2 font-bold text-slate-700">{value}</dd></div>
 }
