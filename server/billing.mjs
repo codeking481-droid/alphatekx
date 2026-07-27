@@ -451,6 +451,28 @@ function publicAppUrl() {
   return process.env.PUBLIC_APP_URL || process.env.VITE_PUBLIC_APP_URL || process.env.RENDER_EXTERNAL_URL || `http://localhost:${process.env.PORT || 3001}`
 }
 
+export function resolvePaystackCharge(item) {
+  const usdCents = Number(item?.amountKobo ?? item?.priceKobo ?? 0)
+  if (!Number.isInteger(usdCents) || usdCents <= 0) throw new Error('Payment amount is invalid')
+  const requestedCurrency = String(process.env.PAYSTACK_CHECKOUT_CURRENCY || 'NGN').trim().toUpperCase()
+  const supported = new Set(['NGN', 'USD'])
+  if (!supported.has(requestedCurrency)) throw new Error('PAYSTACK_CHECKOUT_CURRENCY must be NGN or USD')
+
+  // Paystack's USD transaction minimum is $2. Keep the $1 Spark pack usable
+  // by falling back to its configured NGN equivalent.
+  if (requestedCurrency === 'USD' && usdCents >= 200) {
+    return { amount: usdCents, currency: 'USD', listPriceUsdCents: usdCents }
+  }
+
+  const nairaPerUsd = Number(process.env.PAYSTACK_NGN_PER_USD || 1600)
+  if (!Number.isFinite(nairaPerUsd) || nairaPerUsd <= 0) throw new Error('PAYSTACK_NGN_PER_USD must be a positive number')
+  return {
+    amount: Math.max(5000, Math.round(usdCents * nairaPerUsd)),
+    currency: 'NGN',
+    listPriceUsdCents: usdCents,
+  }
+}
+
 export async function parsePaystackResponse(response, operation) {
   const raw = await response.text()
   if (!raw.trim()) throw new Error(`Paystack returned an empty response during ${operation}`)
@@ -465,14 +487,14 @@ async function initializePaystack(user, item, config) {
   const plan = isSubscription ? getPlan(item.planId) : null
   if (!isSubscription && !pack) throw new Error('Invalid credit pack')
   if (isSubscription && !plan) throw new Error('Invalid plan')
-  const amount = isSubscription ? plan.priceKobo : pack.amountKobo
-  const currency = isSubscription ? (plan.currency || 'NGN') : (pack.currency || 'NGN')
+  const charge = resolvePaystackCharge(isSubscription ? { priceKobo: plan.priceKobo } : { amountKobo: pack.amountKobo })
+  const { amount, currency, listPriceUsdCents } = charge
   const credits = isSubscription ? plan.monthlyCredits : pack.credits
   const source = isSubscription ? `subscription_${plan.id}` : `credits_${pack.id}`
   const email = String(user.email || '')
   const reference = `alphatekx_${source}_${user.id.slice(0, 8)}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
   const pending = readJsonFile(path.resolve(dataDir, 'pending-transactions.json'), {})
-  pending[reference] = { userId: user.id, email, credits, amount, currency, source, status: 'pending', createdAt: nowIso(), item }
+  pending[reference] = { userId: user.id, email, credits, amount, currency, listPriceUsdCents, source, status: 'pending', createdAt: nowIso(), item }
   writeJsonFile(path.resolve(dataDir, 'pending-transactions.json'), pending)
   const callback = String(process.env.PAYSTACK_CALLBACK_URL || `${publicAppUrl()}/settings`)
   if (!secret) {
@@ -483,7 +505,7 @@ async function initializePaystack(user, item, config) {
   const response = await fetch('https://api.paystack.co/transaction/initialize', {
     method: 'POST',
     headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, amount, currency, reference, callback_url: callback, metadata: { user_id: user.id, credits, source, currency, plan: isSubscription ? plan.id : undefined, pack: !isSubscription ? pack.id : undefined } })
+    body: JSON.stringify({ email, amount, currency, reference, callback_url: callback, metadata: { user_id: user.id, credits, source, currency, list_price_usd_cents: listPriceUsdCents, plan: isSubscription ? plan.id : undefined, pack: !isSubscription ? pack.id : undefined } })
   })
   const data = await parsePaystackResponse(response, 'checkout initialization')
   if (!response.ok) throw new Error(data.message || 'Paystack initialization failed')
@@ -521,6 +543,10 @@ async function verifyPaystack(reference, config) {
   if (!response.ok || data.data?.status !== 'success') return { ok: false, reference, message: data.message || 'Payment not successful' }
   const pending = readJsonFile(path.resolve(dataDir, 'pending-transactions.json'), {})
   const pendingRecord = pending[reference]
+  if (!pendingRecord) return { ok: false, reference, message: 'Payment reference was not initialized by AlphaTekx' }
+  if (String(data.data?.currency || '').toUpperCase() !== String(pendingRecord.currency || '').toUpperCase() || Number(data.data?.amount) !== Number(pendingRecord.amount)) {
+    return { ok: false, reference, message: 'Payment amount or currency does not match the initialized checkout' }
+  }
   const meta = data.data?.metadata || pendingRecord?.item || {}
   const userId = data.data?.metadata?.user_id || pendingRecord?.userId
   const source = String(data.data?.metadata?.source || pendingRecord?.source || '')

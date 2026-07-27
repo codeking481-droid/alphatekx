@@ -201,7 +201,7 @@ export default function Settings() {
 
           <div className="mt-6">
             <h3 className="flex items-center gap-2 font-semibold"><Wallet size={16} className="text-violet-400"/> Buy credits</h3>
-            <p className="text-sm text-white/55">Purchased credits never expire and are used when your monthly credits run out.</p>
+            <p className="text-sm text-white/55">Purchased credits never expire. Prices are shown in USD; Paystack may collect the configured local-currency equivalent.</p>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               {CREDIT_PACKS.map((pack) => {
                 const active = selectedPack?.id === pack.id
