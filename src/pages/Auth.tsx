@@ -77,7 +77,19 @@ export default function Auth() {
 
     void (async () => {
       const startedAt = Date.now()
+      let googleCredits = 1
+      let googleCreditAwarded = false
       try {
+        const welcomeResponse = await fetch('/api/auth/welcome-credit/google', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        })
+        const welcomeBody = await welcomeResponse.json().catch(() => ({})) as VerificationResult
+        if (!welcomeResponse.ok) throw new Error(welcomeBody.error || 'Your Google signup credit could not be activated.')
+        googleCredits = Number(welcomeBody.credits || 1)
+        googleCreditAwarded = true
+        await refreshProfile()
+
         const fingerprint = await getDeviceFingerprint()
         const response = await fetch('/api/verify-bonus', {
           method: 'POST',
@@ -96,6 +108,7 @@ export default function Auth() {
         if (body.success) window.setTimeout(() => navigate('/onboarding', { replace: true }), 1_350)
       } catch (error) {
         setNotice(error instanceof Error ? error.message : 'Human verification could not be completed.')
+        if (googleCreditAwarded) setResult({ success: false, claimed: false, credits: googleCredits, reason: 'verification_failed' })
       } finally {
         setVerifying(false)
       }
@@ -151,12 +164,12 @@ export default function Auth() {
           {pending ? <LoaderCircle className="animate-spin" size={18}/> : <><Chrome size={19} className="text-[#6D28D9]"/> Sign in with Google <span className="text-xs text-slate-600">— 1 credit</span></>}
         </button>
 
-        <button disabled={!user || verifying} className="relative mt-3 flex min-h-16 w-full items-center justify-center gap-3 rounded-xl bg-[#6D28D9] px-4 font-black text-white shadow-[0_15px_35px_rgba(109,40,217,.3)] disabled:cursor-not-allowed disabled:opacity-45">
+        <button onClick={() => { if (!user) void google() }} disabled={pending || verifying} className="relative mt-3 flex min-h-16 w-full items-center justify-center gap-3 rounded-xl bg-[#6D28D9] px-4 font-black text-white shadow-[0_15px_35px_rgba(109,40,217,.3)] transition hover:-translate-y-0.5 hover:bg-[#5B21B6] disabled:cursor-not-allowed disabled:opacity-60">
           {verifying ? <LoaderCircle className="animate-spin" size={20}/> : <ShieldCheck size={20}/>}
-          {verifying ? "Verifying you're human…" : 'Verify human & unlock 10 credits'}
+          {verifying ? "Verifying you're human…" : user ? 'Verify human & unlock 10 credits' : 'Sign in & verify human — 10 credits'}
           <span className="absolute -right-2 -top-2 rounded-full bg-violet-100 px-2.5 py-1 text-[9px] font-black tracking-wide text-[#5B21B6]">RECOMMENDED</span>
         </button>
-        {!user && <p className="mt-3 text-center text-xs font-bold text-slate-500">Sign in with Google first. Human verification then runs automatically.</p>}
+        {!user && <p className="mt-3 text-center text-xs font-bold text-slate-500">Choose either button. Google sign-in gives 1 credit, then human verification can unlock 10.</p>}
 
         {!configured && <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-center text-xs font-bold text-amber-900">Authentication needs the public Supabase values configured.</p>}
         {notice && <p role="alert" className="mt-4 rounded-xl border border-violet-200 bg-violet-50 p-3 text-sm font-bold text-[#0B0F19]">{notice}</p>}
