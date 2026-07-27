@@ -55,7 +55,7 @@ export default function Auth() {
   const [verifying, setVerifying] = useState(false)
   const [notice, setNotice] = useState('')
   const [result, setResult] = useState<VerificationResult | null>(null)
-  const verificationStarted = useRef(false)
+  const welcomeCreditStarted = useRef(false)
   const location = useLocation()
   const navigate = useNavigate()
 
@@ -70,15 +70,12 @@ export default function Auth() {
   }, [location.pathname, location.search, navigate])
 
   useEffect(() => {
-    if (!user || !session?.access_token || verificationStarted.current) return
-    verificationStarted.current = true
-    setVerifying(true)
+    if (!user || !session?.access_token || welcomeCreditStarted.current) return
+    welcomeCreditStarted.current = true
+    setPending(true)
     setNotice('')
 
     void (async () => {
-      const startedAt = Date.now()
-      let googleCredits = 1
-      let googleCreditAwarded = false
       try {
         const welcomeResponse = await fetch('/api/auth/welcome-credit/google', {
           method: 'POST',
@@ -86,34 +83,41 @@ export default function Auth() {
         })
         const welcomeBody = await welcomeResponse.json().catch(() => ({})) as VerificationResult
         if (!welcomeResponse.ok) throw new Error(welcomeBody.error || 'Your Google signup credit could not be activated.')
-        googleCredits = Number(welcomeBody.credits || 1)
-        googleCreditAwarded = true
+        setResult({ ...welcomeBody, success: false, reason: 'google_credit_ready' })
         await refreshProfile()
-
-        const fingerprint = await getDeviceFingerprint()
-        const response = await fetch('/api/verify-bonus', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({ fingerprintHash: fingerprint }),
-        })
-        const body = await response.json().catch(() => ({})) as VerificationResult
-        if (!response.ok) throw new Error(body.error || 'Human verification could not be completed.')
-        const remaining = Math.max(0, 1_200 - (Date.now() - startedAt))
-        if (remaining) await new Promise(resolve => window.setTimeout(resolve, remaining))
-        setResult(body)
-        await refreshProfile()
-        if (body.success) window.setTimeout(() => navigate('/onboarding', { replace: true }), 1_350)
       } catch (error) {
-        setNotice(error instanceof Error ? error.message : 'Human verification could not be completed.')
-        if (googleCreditAwarded) setResult({ success: false, claimed: false, credits: googleCredits, reason: 'verification_failed' })
+        setNotice(error instanceof Error ? error.message : 'Your Google signup credit could not be activated.')
       } finally {
-        setVerifying(false)
+        setPending(false)
       }
     })()
-  }, [navigate, refreshProfile, session?.access_token, user])
+  }, [refreshProfile, session?.access_token, user])
+
+  const verifyHuman = async () => {
+    if (!user || !session?.access_token || verifying) return
+    setVerifying(true)
+    setNotice('')
+    try {
+      const fingerprint = await getDeviceFingerprint()
+      const response = await fetch('/api/verify-bonus', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ fingerprintHash: fingerprint }),
+      })
+      const body = await response.json().catch(() => ({})) as VerificationResult
+      if (!response.ok) throw new Error(body.error || 'Human verification could not be completed.')
+      setResult(body)
+      await refreshProfile()
+      if (body.success) window.setTimeout(() => navigate('/onboarding', { replace: true }), 1_350)
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Human verification could not be completed.')
+    } finally {
+      setVerifying(false)
+    }
+  }
 
   const google = async () => {
     if (!supabase) return
@@ -141,7 +145,9 @@ export default function Auth() {
   }
 
   const blocked = !configured || pending || Boolean(user)
-  const bonusMessage = result?.isAdmin
+  const bonusMessage = result?.reason === 'google_credit_ready'
+    ? 'Google sign-in complete. Your 1 credit is ready.'
+    : result?.isAdmin
     ? 'Welcome Boss! 10 credits unlocked 🔓'
     : result?.claimed
       ? 'Human verified! 10 credits unlocked 🎉'
@@ -158,18 +164,26 @@ export default function Auth() {
         </Link>
 
         <h1 className="mt-7 text-center text-3xl font-black tracking-[-.04em] text-[#0B0F19]">Join AlphaTekx</h1>
-        <p className="mt-2 text-center text-sm font-bold text-slate-600">Get 10 credits free</p>
+        <p className="mt-2 text-center text-sm font-bold text-slate-600">Choose how you want to get started.</p>
 
-        <button onClick={() => void google()} disabled={blocked} className="mt-8 flex min-h-14 w-full items-center justify-center gap-3 rounded-xl border-2 border-slate-200 bg-white px-4 font-black text-[#0B0F19] shadow-[0_10px_25px_rgba(15,23,42,.07)] transition hover:border-violet-300 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50">
+        <section className="mt-8 rounded-2xl border-2 border-slate-200 bg-white p-4 shadow-[0_10px_25px_rgba(15,23,42,.07)]">
+          <h2 className="font-black text-[#0B0F19]">Google signup · 1 credit</h2>
+          <p className="mt-1 text-sm font-semibold text-slate-600">Sign in and get one credit to run your first automation.</p>
+        <button onClick={() => void google()} disabled={blocked} className="mt-4 flex min-h-14 w-full items-center justify-center gap-3 rounded-xl border-2 border-slate-200 bg-white px-4 font-black text-[#0B0F19] shadow-[0_10px_25px_rgba(15,23,42,.07)] transition hover:border-violet-300 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50">
           {pending ? <LoaderCircle className="animate-spin" size={18}/> : <><Chrome size={19} className="text-[#6D28D9]"/> Sign in with Google <span className="text-xs text-slate-600">— 1 credit</span></>}
         </button>
+        </section>
 
-        <button onClick={() => { if (!user) void google() }} disabled={pending || verifying} className="relative mt-3 flex min-h-16 w-full items-center justify-center gap-3 rounded-xl bg-[#6D28D9] px-4 font-black text-white shadow-[0_15px_35px_rgba(109,40,217,.3)] transition hover:-translate-y-0.5 hover:bg-[#5B21B6] disabled:cursor-not-allowed disabled:opacity-60">
+        <section className="relative mt-4 rounded-2xl border-2 border-violet-200 bg-violet-50 p-4 shadow-[0_15px_35px_rgba(109,40,217,.14)]">
+          <h2 className="font-black text-[#0B0F19]">Human verification · 10 credits</h2>
+          <p className="mt-1 text-sm font-semibold text-slate-600">After Google sign-in, choose this option to verify and unlock ten credits.</p>
+        <button onClick={() => void verifyHuman()} disabled={!user || pending || verifying} className="relative mt-3 flex min-h-16 w-full items-center justify-center gap-3 rounded-xl bg-[#6D28D9] px-4 font-black text-white shadow-[0_15px_35px_rgba(109,40,217,.3)] transition hover:-translate-y-0.5 hover:bg-[#5B21B6] disabled:cursor-not-allowed disabled:opacity-60">
           {verifying ? <LoaderCircle className="animate-spin" size={20}/> : <ShieldCheck size={20}/>}
           {verifying ? "Verifying you're human…" : user ? 'Verify human & unlock 10 credits' : 'Sign in & verify human — 10 credits'}
           <span className="absolute -right-2 -top-2 rounded-full bg-violet-100 px-2.5 py-1 text-[9px] font-black tracking-wide text-[#5B21B6]">RECOMMENDED</span>
         </button>
-        {!user && <p className="mt-3 text-center text-xs font-bold text-slate-500">Choose either button. Google sign-in gives 1 credit, then human verification can unlock 10.</p>}
+        {!user && <p className="mt-3 text-center text-xs font-bold text-slate-500">Sign in with Google first. Human verification starts only when you click this button.</p>}
+        </section>
 
         {!configured && <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-center text-xs font-bold text-amber-900">Authentication needs the public Supabase values configured.</p>}
         {notice && <p role="alert" className="mt-4 rounded-xl border border-violet-200 bg-violet-50 p-3 text-sm font-bold text-[#0B0F19]">{notice}</p>}

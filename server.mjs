@@ -3342,7 +3342,12 @@ async function serviceRows(config, table, query) {
 }
 
 async function ensureCreditProfile(user, config) {
-  let rows = await serviceRows(config, 'profiles', `id=eq.${encodeURIComponent(user.id)}&select=id,credits,purchased_credits&limit=1`)
+  let rows
+  try {
+    rows = await serviceRows(config, 'profiles', `id=eq.${encodeURIComponent(user.id)}&select=id,credits,purchased_credits&limit=1`)
+  } catch {
+    rows = await serviceRows(config, 'profiles', `id=eq.${encodeURIComponent(user.id)}&select=id,credits&limit=1`)
+  }
   if (rows[0]) return rows[0]
   const response = await fetch(`${config.url}/rest/v1/profiles`, {
     method: 'POST',
@@ -3350,7 +3355,11 @@ async function ensureCreditProfile(user, config) {
     body: JSON.stringify({ id: user.id, email: authUserEmail(user), credits: 0, purchased_credits: 0, plan: 'free' }),
   })
   if (!response.ok && response.status !== 409) throw new Error(`Supabase profile setup failed (${response.status})`)
-  rows = await serviceRows(config, 'profiles', `id=eq.${encodeURIComponent(user.id)}&select=id,credits,purchased_credits&limit=1`)
+  try {
+    rows = await serviceRows(config, 'profiles', `id=eq.${encodeURIComponent(user.id)}&select=id,credits,purchased_credits&limit=1`)
+  } catch {
+    rows = await serviceRows(config, 'profiles', `id=eq.${encodeURIComponent(user.id)}&select=id,credits&limit=1`)
+  }
   if (!rows[0]) throw new Error('Supabase profile setup did not persist')
   return rows[0]
 }
@@ -3381,42 +3390,38 @@ const googleCreditLocks = new Map()
 async function grantGoogleCreditDirect(user, googleSub, config) {
   if (googleCreditLocks.has(user.id)) return googleCreditLocks.get(user.id)
   const work = (async () => {
-    const reference = `welcome-google:${user.id}`
-    const existing = await serviceRows(
-      config,
-      'credit_transactions',
-      `user_id=eq.${encodeURIComponent(user.id)}&reference=eq.${encodeURIComponent(reference)}&select=id,balance_after&limit=1`
-    )
+    if (supervisorEmails().has(authUserEmail(user))) {
+      return (await setProfileMinimumCredits(user, config, 1)).credits
+    }
+    const secret = process.env.DEVICE_FINGERPRINT_SECRET || config.service
+    const markerHash = createHmac('sha256', secret).update(`google-welcome:${googleSub}`).digest('hex')
+    const markerSub = `welcome-${createHmac('sha256', secret).update(`google-sub:${googleSub}`).digest('hex')}`
+    const existing = await serviceRows(config, 'device_claims', `fingerprint_hash=eq.${markerHash}&select=id&limit=1`)
     if (existing[0]) {
-      const profile = await ensureCreditProfile(user, config)
-      return Number(profile.credits) || Number(existing[0].balance_after) || 1
+      return (await setProfileMinimumCredits(user, config, 1)).credits
     }
     const profile = await ensureCreditProfile(user, config)
     const current = Number(profile.credits) || 0
-    const next = current + 1
-    const updated = await setProfileMinimumCredits(user, config, next)
-    const transaction = await fetch(`${config.url}/rest/v1/credit_transactions`, {
+    const marker = await fetch(`${config.url}/rest/v1/device_claims`, {
       method: 'POST',
-      headers: serviceHeaders(config.service),
+      headers: { ...serviceHeaders(config.service), Prefer: 'return=minimal' },
       body: JSON.stringify({
-        user_id: user.id,
-        type: 'welcome',
-        credits_added: 1,
-        balance_after: updated.credits,
-        reference,
-        reason: 'Google signup tester credit',
-        metadata: { source: 'google_signup', google_sub: googleSub },
+        fingerprint_hash: markerHash,
+        google_sub: markerSub,
+        email: authUserEmail(user),
       }),
     })
-    if (!transaction.ok) {
-      await fetch(`${config.url}/rest/v1/profiles?id=eq.${encodeURIComponent(user.id)}`, {
-        method: 'PATCH',
+    if (marker.status === 409) return (await setProfileMinimumCredits(user, config, 1)).credits
+    if (!marker.ok) throw new Error(`Supabase Google-credit claim failed (${marker.status})`)
+    try {
+      return (await setProfileMinimumCredits(user, config, current + 1)).credits
+    } catch (error) {
+      await fetch(`${config.url}/rest/v1/device_claims?fingerprint_hash=eq.${markerHash}`, {
+        method: 'DELETE',
         headers: serviceHeaders(config.service),
-        body: JSON.stringify({ credits: current, purchased_credits: Number(profile.purchased_credits) || 0 }),
       }).catch(() => null)
-      throw new Error(`Supabase welcome-credit history failed (${transaction.status})`)
+      throw error
     }
-    return updated.credits
   })().finally(() => googleCreditLocks.delete(user.id))
   googleCreditLocks.set(user.id, work)
   return work
