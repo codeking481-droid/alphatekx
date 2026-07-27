@@ -25,6 +25,19 @@ test('2030 hero includes perspective, glass signals, word reveal and live builde
   assert.match(css, /future-mesh-shift/)
   assert.match(css, /premium-noise/)
 })
+test('bold-white contract permits no dark sections and only one dark primary button', () => {
+  assert.doesNotMatch(landing, /bg-black/)
+  assert.doesNotMatch(landing, /<section[^>]*bg-\[#(?:000000|0B0F19|1D2939)\]/)
+  assert.equal((landing.match(/bg-\[#0B0F19\]/g) || []).length, 1)
+  for (const section of landing.matchAll(/<section[^>]*className="([^"]+)"/g)) {
+    assert.match(section[1], /bg-(?:white|\[#(?:FFFFFF|FAFBFF|F9FAFB)\])/)
+  }
+})
+test('2050 motion layer adds scroll telemetry, bright orbits and holographic scanning', () => {
+  for (const contract of ['ScrollProgress', 'FutureOrbit', 'useScroll', 'useSpring', 'skew-x-[-12deg]']) {
+    assert.ok(landing.includes(contract), `${contract} missing`)
+  }
+})
 test('command centre morphs thinking state and exposes command palette affordance', () => {
   for (const contract of ['Thinking…', 'thoughtComplete', 'ALPHA COMMAND PALETTE', '⌘ K', '<BrainWave/>']) assert.ok(landing.includes(contract), `${contract} missing`)
 })
@@ -62,4 +75,4 @@ test('Paystack CTA routes through authenticated checkout surfaces', () => {
   assert.doesNotMatch(landing, /paystack\.co/)
 })
 
-if (!process.exitCode) process.stdout.write(`\n${passed}/11 premium landing checks passed.\n`)
+if (!process.exitCode) process.stdout.write(`\n${passed}/13 premium landing checks passed.\n`)
