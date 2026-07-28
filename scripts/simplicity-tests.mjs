@@ -34,7 +34,7 @@ await test('Official Active Automations routes and retired aliases are registere
 
 await test('Navigation uses the required simplicity-first wording', () => {
   const source = read('src/components/workspace/WorkspaceLayout.tsx')
-  for (const label of ['Automate', 'Active Automations', 'History', 'Connected Apps', 'Settings', 'Help', 'Logout']) assert.match(source, new RegExp(label))
+  for (const label of ['Automate', 'Running Automations', 'History', 'Connected Apps', 'Settings', 'Help', 'Logout']) assert.match(source, new RegExp(label))
   assert.doesNotMatch(source, /\['Dashboard'/)
 })
 
