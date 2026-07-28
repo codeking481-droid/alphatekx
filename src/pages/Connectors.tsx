@@ -28,6 +28,16 @@ const releasedPlatforms = [
 ] as const
 const publicConnectorIds = new Set(releasedPlatforms.map(platform => platform.id))
 
+function withDeadline<T>(operation: Promise<T>, timeoutMs = 12_000): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error('Connection status took too long. You can still connect or retry.')), timeoutMs)
+    operation.then(
+      value => { window.clearTimeout(timer); resolve(value) },
+      error => { window.clearTimeout(timer); reject(error) },
+    )
+  })
+}
+
 function fallbackConnector(id: string, name: string): Connector {
   return { id, name, icon: id === 'youtube' ? 'video' : 'plug', authType: 'oauth', category: 'Connected Apps', color: '#8B5CF6', description: '', triggers: [], actions: [], permissions: [] }
 }
@@ -46,6 +56,7 @@ export default function Connectors() {
   const [notice, setNotice] = useState('')
   const [wabaReady, setWabaReady] = useState(false)
   const slowTimer = useRef<number | null>(null)
+  const autoStarted = useRef(false)
 
   const applyProviders = (providers: ConnectedAppStatus[]) => {
     const unique = new Map<string, ConnectedAppStatus>()
@@ -58,24 +69,27 @@ export default function Connectors() {
       const cached = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null')
       if (cached?.timestamp && Date.now() - cached.timestamp < CACHE_TTL && Array.isArray(cached.providers)) {
         applyProviders(cached.providers)
+        if (cached.native && typeof cached.native === 'object') setNative(cached.native)
         setLoading(false)
       }
     } catch {}
-    try {
-      const [nativeStatus, connected] = await Promise.all([
-        getIntegrationStatus(session?.access_token),
-        getConnectedApps(session?.access_token),
-      ])
-      setNative(nativeStatus)
-      applyProviders(connected.providers)
-      try { localStorage.setItem(CACHE_KEY, JSON.stringify({ providers: connected.providers, timestamp: Date.now() })) } catch {}
+    const [nativeResult, connectedResult] = await Promise.allSettled([
+      withDeadline(getIntegrationStatus(session?.access_token)),
+      getConnectedApps(session?.access_token),
+    ])
+    if (nativeResult.status === 'fulfilled') setNative(nativeResult.value)
+    if (connectedResult.status === 'fulfilled') applyProviders(connectedResult.value.providers)
+    if (nativeResult.status === 'fulfilled' || connectedResult.status === 'fulfilled') {
+      const nativeValue = nativeResult.status === 'fulfilled' ? nativeResult.value : native
+      const providerValue = connectedResult.status === 'fulfilled' ? connectedResult.value.providers : Object.values(composio)
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify({ providers: providerValue, native: nativeValue, timestamp: Date.now() })) } catch {}
       setNotice('')
-    } catch (error) {
-      console.error('[Composio]', error)
-      setNotice(error instanceof Error ? error.message : 'Could not refresh connections.')
-    } finally {
-      setLoading(false)
+    } else {
+      console.error('[Connections]', nativeResult.reason, connectedResult.reason)
+      const reason = connectedResult.reason || nativeResult.reason
+      setNotice(reason instanceof Error ? reason.message : 'Could not refresh connections.')
     }
+    setLoading(false)
   }
 
   useEffect(() => { void load() }, [session?.access_token])
@@ -148,7 +162,15 @@ export default function Connectors() {
     } finally { setConnecting(null) }
   }
 
-  return <main className="relative mx-auto min-h-[calc(100dvh-8rem)] w-full max-w-5xl px-4 py-8 text-white sm:px-6">
+  useEffect(() => {
+    if (autoStarted.current || searchParams.get('autostart') !== '1' || !requestedPlatform) return
+    const platform = releasedPlatforms.find(item => item.id === requestedPlatform)
+    if (!platform) return
+    autoStarted.current = true
+    void connect(platform.id, platform.name)
+  }, [requestedPlatform, searchParams])
+
+  return <main className="relative mx-auto min-h-[calc(100dvh-8rem)] w-full min-w-0 max-w-5xl overflow-x-hidden px-4 pb-28 pt-7 text-white sm:px-6 sm:py-8">
     <p className="text-xs font-black uppercase tracking-[.18em] text-violet-300">AlphaTekx connections</p>
     <h1 className="mt-2 text-3xl font-black">Connect your platforms</h1>
     <p className="mt-2 text-sm font-semibold text-slate-300">Six platforms, one connection each. LinkedIn stays native; the other publishing accounts connect securely through AlphaTekx.</p>
@@ -163,12 +185,12 @@ export default function Connectors() {
           const connected = status[item.id]
           const busy = connecting === item.id
           const connector = getConnector(item.id) || fallbackConnector(item.id, item.name)
-          return <article id={`platform-${item.id}`} key={item.id} className="liquid-glass rounded-[20px] p-5">
+          return <article id={`platform-${item.id}`} key={item.id} className="liquid-glass min-w-0 rounded-[20px] p-4 sm:p-5">
             <div className="flex items-center gap-3"><span className="grid size-12 place-items-center rounded-full text-white" style={{ background: item.id === 'instagram' ? 'linear-gradient(135deg,#F58529,#DD2A7B,#8134AF)' : item.color }}><ConnectorIcon connector={connector}/></span><div><h2 className="font-black">{item.name}</h2><span className={`mt-1 inline-flex rounded-full border px-2 py-1 text-[11px] font-bold ${connected ? 'border-emerald-300/25 bg-emerald-300/10 text-emerald-200' : 'border-violet-400/20 bg-violet-500/10 text-slate-300'}`}>{connected ? '● Connected' : '○ Not connected'}</span></div></div>
             <p className="mt-4 min-h-10 text-xs font-semibold text-slate-300">{item.description}</p>
             {item.id === 'whatsapp' && <div className="mt-3 text-xs text-slate-300"><p>Requires an approved 15-digit WABA ID from Meta Business Suite. Regular WhatsApp sellers can skip this.</p>{wabaReady && <a href="https://business.facebook.com/settings/whatsapp-business-accounts" target="_blank" rel="noreferrer" className="mt-2 inline-block text-violet-300 underline">How to get a WABA ID</a>}</div>}
             {item.id === 'whatsapp' && !connected && !wabaReady ? <div className="mt-4 grid gap-2"><button onClick={() => setWabaReady(true)} className="min-h-11 rounded-xl bg-[#7C3AED] px-3 text-sm font-black">I have WABA ID — Connect</button><button onClick={() => { setNotice('WhatsApp skipped. Instagram and Facebook are ready.'); document.getElementById('platform-instagram')?.scrollIntoView({ behavior: 'smooth' }) }} className="min-h-11 rounded-xl border border-violet-400/20 bg-violet-500/10 px-3 text-sm font-bold">I don’t have one — Skip</button></div> :
-              <div className="mt-4 flex gap-2"><button onClick={() => void connect(item.id, item.name)} disabled={Boolean(connecting)} className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[#7C3AED] px-3 text-sm font-black disabled:opacity-50">{busy ? <LoaderCircle className="animate-spin" size={16}/> : connected ? <RefreshCw size={16}/> : <CheckCircle2 size={16}/>}{busy ? 'Connecting…' : connected ? 'Reconnect' : 'Connect'}</button>{connected && <button onClick={() => void disconnect(item.id)} disabled={Boolean(connecting)} aria-label={`Disconnect ${item.name}`} className="grid size-11 place-items-center rounded-xl border border-violet-400/20 bg-violet-500/10 text-rose-300"><Unplug size={16}/></button>}</div>}
+              <div className="mt-4 flex min-w-0 gap-2"><button onClick={() => void connect(item.id, item.name)} disabled={Boolean(connecting)} className="flex min-h-11 min-w-0 flex-1 items-center justify-center gap-2 rounded-xl bg-[#7C3AED] px-3 text-sm font-black disabled:opacity-50">{busy ? <LoaderCircle className="shrink-0 animate-spin" size={16}/> : connected ? <RefreshCw className="shrink-0" size={16}/> : <CheckCircle2 className="shrink-0" size={16}/>}{busy ? 'Connecting…' : connected ? 'Reconnect' : 'Connect'}</button>{connected && <button onClick={() => void disconnect(item.id)} disabled={Boolean(connecting)} aria-label={`Disconnect ${item.name}`} className="grid size-11 shrink-0 place-items-center rounded-xl border border-violet-400/20 bg-violet-500/10 text-rose-300"><Unplug size={16}/></button>}</div>}
           </article>
         })}
       </section>}

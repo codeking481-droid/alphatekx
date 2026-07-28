@@ -88,10 +88,17 @@ const PAGES: Record<string, PageData> = {
   },
 }
 
-export default function ContentPage({ slug: propSlug }: { slug?: string }) {
+export default function ContentPage({ slug: propSlug, workspace = false }: { slug?: string; workspace?: boolean }) {
   const params = useParams<{ slug?: string }>()
   const slug = propSlug || params.slug || ''
   const page = PAGES[slug] || { title: 'Page Not Found', body: <p className="text-white/70">This page does not exist yet.</p> }
+  const content = (
+    <main className={`mx-auto w-full max-w-3xl px-4 sm:px-6 ${workspace ? 'pb-28 pt-8 sm:py-12' : 'py-12 sm:py-16'}`}>
+      <h1 className="break-words text-3xl font-bold tracking-tight text-white md:text-4xl">{page.title}</h1>
+      <div className="mt-6 break-words text-white/80 leading-relaxed sm:mt-8">{page.body}</div>
+    </main>
+  )
+  if (workspace) return content
   return (
     <div className="min-h-screen bg-[#0B0215] text-white">
       <SEO title={page.title} description={`${page.title} — AlphaTekx`} />
@@ -104,10 +111,7 @@ export default function ContentPage({ slug: propSlug }: { slug?: string }) {
           <Link to="/" className="flex items-center gap-2 text-sm font-medium text-white/70 hover:text-white"><ArrowLeft size={16}/> Back home</Link>
         </div>
       </header>
-      <main className="mx-auto max-w-3xl px-6 py-16">
-        <h1 className="text-3xl font-bold tracking-tight text-white md:text-4xl">{page.title}</h1>
-        <div className="mt-8 text-white/80 leading-relaxed">{page.body}</div>
-      </main>
+      {content}
     </div>
   )
 }

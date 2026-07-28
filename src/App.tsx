@@ -63,7 +63,7 @@ export default function App() {
       <Route path="/media-library" element={protectedPage(<MediaLibrary />)} />
       <Route path="/leads" element={protectedPage(<Leads />)} />
       <Route path="/settings" element={protectedPage(<Settings />)} />
-      <Route path="/help" element={<ContentPage slug="help" />} />
+      <Route path="/help" element={protectedPage(<ContentPage slug="help" workspace />)} />
 
       {/* Admin */}
       <Route path="/admin" element={protectedPage(<Admin />)} />

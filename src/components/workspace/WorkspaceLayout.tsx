@@ -98,7 +98,7 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
       </div>
     </aside>
 
-    <main className="relative z-10 flex-1 min-h-0 overflow-y-auto pt-16 pb-16 lg:pb-0">
+    <main className="relative z-10 min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto pb-[calc(4rem+env(safe-area-inset-bottom))] pt-16 lg:pb-0">
       {isHome && show && (
         <div className="mx-auto max-w-3xl px-4 pt-6">
           <div className="relative rounded-2xl border border-violet-400/20 bg-violet-500/10 p-5 shadow-[0_15px_40px_rgba(15,23,42,.08)]">
@@ -124,9 +124,9 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
       {children}
     </main>
 
-    <nav className="fixed bottom-0 left-0 right-0 z-30 flex min-h-16 items-center gap-1 overflow-x-auto border-t border-violet-400/20 bg-[#0A0F1E]/90 px-2 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_25px_rgba(3,7,18,.3)] backdrop-blur-xl scrollbar-hide lg:hidden">
+    <nav className="fixed bottom-0 left-0 right-0 z-30 grid min-h-16 grid-cols-5 items-center border-t border-violet-400/20 bg-[#0A0F1E]/90 px-1 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_25px_rgba(3,7,18,.3)] backdrop-blur-xl lg:hidden">
       {mobileNav.map(([label, to, Icon]) => (
-        <NavLink key={label} to={to} title={label} className={({ isActive }) => `flex min-w-[64px] flex-1 flex-col items-center justify-center gap-1 rounded-full py-2 text-[10px] font-black ${isActive ? 'bg-[#7C3AED] text-white' : 'text-slate-400'}`}>
+        <NavLink key={label} to={to} title={label} className={({ isActive }) => `flex min-w-0 flex-col items-center justify-center gap-1 rounded-full px-0.5 py-2 text-[9px] font-black min-[380px]:text-[10px] ${isActive ? 'bg-[#7C3AED] text-white' : 'text-slate-400'}`}>
           <Icon size={20} />
           {label}
         </NavLink>

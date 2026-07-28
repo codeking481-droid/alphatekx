@@ -355,7 +355,16 @@ export async function runDueMedia(config, executeProviderAction, now = new Date(
     `${config.url}/rest/v1/media_library?status=in.(scheduled,waiting_credits)&scheduled_for=lte.${encodeURIComponent(now.toISOString())}&claimed_at=is.null&select=*&order=scheduled_for.asc&limit=20`,
     { headers: headers(config.service) },
   )
-  const due = await responseJson(dueResponse)
+  let due
+  try {
+    due = await responseJson(dueResponse)
+  } catch (error) {
+    // A deployment can briefly serve before its database migration reaches the
+    // PostgREST schema cache. There is no queue to process in that state, and
+    // repeatedly logging the raw schema error every minute is misleading.
+    if (isMissingMediaSchema(error)) return []
+    throw error
+  }
   const results = []
   for (const item of due || []) {
     const executionKey = `vault:${item.id}:${item.scheduled_for}`
