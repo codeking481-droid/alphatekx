@@ -56,7 +56,7 @@ export default function Home() {
 
   const connect = () => {
     if (!platform || platform.soon) return
-    navigate(`/connected-apps?platform=${encodeURIComponent(platform.id)}&returnTo=${encodeURIComponent(`/dashboard?platform=${platform.id}`)}`)
+    navigate(`/connected-apps?platform=${encodeURIComponent(platform.id)}&autostart=1&returnTo=${encodeURIComponent(`/dashboard?platform=${platform.id}`)}`)
   }
 
   return (
