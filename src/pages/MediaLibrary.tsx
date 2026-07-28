@@ -24,7 +24,7 @@ export default function MediaLibrary() {
       const response = await listMedia()
       setItems(response.items)
       setSetupRequired(response.setupRequired === true)
-      setNotice(response.setupRequired ? 'Media Library setup is required. Ask the administrator to apply the production content migration.' : '')
+      setNotice(response.setupRequired ? 'Media Library is being prepared. Uploading will become available as soon as storage setup finishes.' : '')
     } catch (error) { setNotice(error instanceof Error ? error.message : 'Could not load your Media Library.') }
     finally { setLoading(false) }
   }
@@ -110,10 +110,10 @@ export default function MediaLibrary() {
     finally { setBusy(false) }
   }
 
-  return <main className="mx-auto min-h-[calc(100dvh-8rem)] w-full max-w-6xl bg-violet-500/10 px-4 py-8 text-white sm:px-6">
+  return <main className="mx-auto min-h-[calc(100dvh-8rem)] w-full min-w-0 max-w-6xl overflow-x-hidden bg-violet-500/10 px-4 pb-28 pt-7 text-white sm:px-6 sm:py-8">
     <header className="flex flex-wrap items-end justify-between gap-4">
       <div><p className="text-xs font-black uppercase tracking-[.18em] text-violet-300">Content vault</p><h1 className="mt-2 text-3xl font-black">Your Media Library</h1><p className="mt-2 max-w-2xl text-sm font-semibold text-slate-400">Upload up to 20 videos at once. Alpha keeps the files private and prepares an honest publishing queue.</p></div>
-      <button onClick={() => setScheduleOpen(true)} className="flex min-h-11 items-center gap-2 rounded-xl bg-[#6D28D9] px-5 text-sm font-black text-white shadow-lg shadow-violet-200"><CalendarClock size={17}/>Drip schedule</button>
+      <button onClick={() => setScheduleOpen(true)} disabled={setupRequired} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#6D28D9] px-5 text-sm font-black text-white shadow-lg shadow-violet-200 disabled:opacity-50 sm:w-auto"><CalendarClock size={17}/>Drip schedule</button>
     </header>
 
     <section className="mt-7 grid grid-cols-2 gap-3 lg:grid-cols-4">

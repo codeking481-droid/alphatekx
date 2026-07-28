@@ -61,7 +61,7 @@ export type ComposioStatusResponse = {
 
 // Get all providers with their connection status
 export async function getConnectedApps(token?: string): Promise<ConnectedAppsResponse> {
-  return getJson<ConnectedAppsResponse>('/api/connected-apps', { token })
+  return getJson<ConnectedAppsResponse>('/api/connected-apps', { token, timeoutMs: 12_000 })
 }
 
 export async function getComposioStatus(token?: string): Promise<ComposioStatusResponse> {
@@ -87,17 +87,17 @@ export async function executeComposioAction(
 
 // Start OAuth connection for a provider
 export async function connectProvider(providerId: string, token?: string): Promise<ConnectResponse> {
-  return postJson<ConnectResponse>(`/api/connectors/${providerId}/connect`, {}, { token })
+  return postJson<ConnectResponse>(`/api/connectors/${providerId}/connect`, {}, { token, timeoutMs: 20_000 })
 }
 
 // Disconnect a provider
 export async function disconnectProvider(providerId: string, token?: string): Promise<{ success: boolean }> {
-  return deleteJson<{ success: boolean }>(`/api/connectors/${providerId}`, { token })
+  return deleteJson<{ success: boolean }>(`/api/connectors/${providerId}`, { token, timeoutMs: 20_000 })
 }
 
 // Reconnect OAuth for a provider
 export async function reconnectProvider(providerId: string, token?: string): Promise<ConnectResponse> {
-  return postJson<ConnectResponse>(`/api/connectors/${providerId}/connect`, {}, { token })
+  return postJson<ConnectResponse>(`/api/connectors/${providerId}/connect`, {}, { token, timeoutMs: 20_000 })
 }
 
 // Execute an action on a connected provider

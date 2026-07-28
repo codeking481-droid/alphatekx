@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowRight, CheckCircle2, ChevronDown, Instagram, Linkedin, LoaderCircle, Mail, Plug, Sparkles, Twitter, Youtube } from 'lucide-react'
+import { ArrowRight, CheckCircle2, ChevronDown, Instagram, Linkedin, Mail, Plug, Sparkles, Twitter, Youtube } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { getConnectedApps } from '../lib/connectors/connectorApi'
@@ -10,7 +10,7 @@ const platforms = [
   { id: 'instagram', label: 'Instagram', icon: Instagram, soon: false },
   { id: 'linkedin', label: 'LinkedIn', icon: Linkedin, soon: false },
   { id: 'gmail', label: 'Gmail', icon: Mail, soon: false },
-  { id: 'youtube', label: 'YouTube', icon: Youtube, soon: true },
+  { id: 'youtube', label: 'YouTube', icon: Youtube, soon: false },
 ]
 
 export default function Home() {
@@ -19,11 +19,9 @@ export default function Home() {
   const [searchParams] = useSearchParams()
   const [selected, setSelected] = useState(searchParams.get('platform') || '')
   const [connected, setConnected] = useState<Set<string>>(new Set())
-  const [loading, setLoading] = useState(true)
   const [notice, setNotice] = useState('')
 
   const refresh = async () => {
-    setLoading(true)
     try {
       const [native, composio] = await Promise.all([
         getIntegrationStatus(session?.access_token),
@@ -41,7 +39,7 @@ export default function Home() {
       setConnected(ready)
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Could not verify connected apps.')
-    } finally { setLoading(false) }
+    }
   }
 
   useEffect(() => { void refresh() }, [session?.access_token])
@@ -56,7 +54,7 @@ export default function Home() {
 
   const connect = () => {
     if (!platform || platform.soon) return
-    navigate(`/connected-apps?platform=${encodeURIComponent(platform.id)}&returnTo=${encodeURIComponent(`/dashboard?platform=${platform.id}`)}`)
+    navigate(`/connected-apps?platform=${encodeURIComponent(platform.id)}&autostart=1&returnTo=${encodeURIComponent(`/dashboard?platform=${platform.id}`)}`)
   }
 
   return (
@@ -87,11 +85,10 @@ export default function Home() {
             </div>
           )}
 
-          {loading && <p className="mt-5 flex items-center justify-center gap-2 text-sm font-bold text-slate-400"><LoaderCircle size={16} className="animate-spin"/>Checking your apps…</p>}
           {notice && <p className="mt-5 rounded-xl border border-rose-200 bg-rose-500/10 p-3 text-sm font-bold text-rose-300">{notice}</p>}
 
           {!isConnected ? (
-            <button onClick={connect} disabled={!platform || platform.soon || loading} className="mt-6 flex min-h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#6D28D9] font-black text-white shadow-[0_15px_35px_rgba(109,40,217,.28)] transition hover:-translate-y-0.5 hover:bg-[#5B21B6] disabled:translate-y-0 disabled:opacity-40"><Plug size={19}/>Connect {platform?.label || 'platform'}</button>
+            <button onClick={connect} disabled={!platform || platform.soon} className="mt-6 flex min-h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#6D28D9] font-black text-white shadow-[0_15px_35px_rgba(109,40,217,.28)] transition hover:-translate-y-0.5 hover:bg-[#5B21B6] disabled:translate-y-0 disabled:opacity-40"><Plug size={19}/>Connect {platform?.label || 'platform'}</button>
           ) : (
             <button onClick={() => navigate(`/automations?platform=${encodeURIComponent(selected)}`)} className="mt-6 flex min-h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#6D28D9] font-black text-white shadow-[0_15px_35px_rgba(109,40,217,.28)] transition hover:-translate-y-0.5 hover:bg-[#5B21B6]">Go to Command Centre <ArrowRight size={19}/></button>
           )}
