@@ -139,8 +139,11 @@ await test('connected apps accepts service links and shows released connectors',
   assert.match(connectors, /Public tools active/)
   assert.match(connectors, /releasedPlatforms/)
   assert.match(connectors, /publicConnectorIds/)
-  assert.match(connectors, /Google', description: 'Gmail, Calendar, Sheets and Drive/)
-  assert.match(connectors, /Telegram', description: 'Send Telegram messages/)
+  for (const platform of ['LinkedIn', 'Instagram', 'Facebook', 'X', 'YouTube', 'WhatsApp']) {
+    assert.match(connectors, new RegExp(`name: '${platform}'`))
+  }
+  assert.doesNotMatch(connectors, /name: 'Google'/)
+  assert.doesNotMatch(connectors, /name: 'Telegram'/)
   assert.match(featureAccess, /defaultFeature\?\.state === 'public'/)
   assert.match(featureAccess, /const featureIds = new Set/)
 })

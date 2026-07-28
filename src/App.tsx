@@ -22,7 +22,7 @@ const Admin = lazy(() => import('./pages/Admin'))
 const AdminAgents = lazy(() => import('./pages/AdminAgents'))
 const AdminWithdrawals = lazy(() => import('./pages/AdminWithdrawals'))
 
-const loader = <div className="grid min-h-screen place-items-center bg-white text-sm font-bold text-slate-500">Loading AlphaTekx...</div>
+const loader = <div className="workspace-living-bg grid min-h-screen place-items-center text-sm font-bold text-slate-300"><span className="skeleton rounded-xl px-6 py-3">Loading AlphaTekx…</span></div>
 const suspended = (page: ReactNode) => <Suspense fallback={loader}>{page}</Suspense>
 const protectedPage = (page: ReactNode) => suspended(<ProtectedPage>{suspended(page)}</ProtectedPage>)
 

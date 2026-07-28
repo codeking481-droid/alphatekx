@@ -19,6 +19,16 @@
   50% { transform: translate3d(2%, 1%, 0) scale(1.1); filter: hue-rotate(18deg); }
 }
 
+@keyframes aurora-float-one { 0%,100% { transform: translate3d(0,0,0); } 50% { transform: translate3d(30px,40px,0); } }
+@keyframes aurora-float-two { 0%,100% { transform: translate3d(0,0,0); } 50% { transform: translate3d(-35px,30px,0); } }
+@keyframes aurora-float-three { 0%,100% { transform: translate3d(0,0,0); } 50% { transform: translate3d(25px,-35px,0); } }
+
+.workspace-living-bg { background: #0A0F1E; }
+.aurora-blob { position: fixed; z-index: 0; pointer-events: none; border-radius: 999px; will-change: transform; }
+.aurora-blob-one { width: 600px; height: 600px; top: -200px; left: -200px; opacity: .15; filter: blur(80px); background: radial-gradient(circle, #06FFA5 0%, transparent 70%); animation: aurora-float-one 20s infinite ease-in-out; }
+.aurora-blob-two { width: 500px; height: 500px; top: -100px; right: -150px; opacity: .12; filter: blur(70px); background: radial-gradient(circle, #3B82F6 0%, transparent 70%); animation: aurora-float-two 25s infinite ease-in-out; }
+.aurora-blob-three { width: 700px; height: 700px; bottom: -300px; left: 30%; opacity: .10; filter: blur(90px); background: radial-gradient(circle, #8B5CF6 0%, transparent 70%); animation: aurora-float-three 30s infinite ease-in-out; }
+
 .premium-grid {
   background-image: radial-gradient(circle, rgba(105, 65, 198, .18) 1px, transparent 1px);
   background-size: 24px 24px;

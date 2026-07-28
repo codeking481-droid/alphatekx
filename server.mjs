@@ -24,6 +24,7 @@ import { connectorFeatureAccess, featureStatusForUser, refreshFeatureConfig, una
 import * as alphaConnector from './server/composioConnectorService.mjs'
 import * as mediaLibrary from './server/mediaLibraryService.mjs'
 import * as moneyLoop from './server/moneyLoopService.mjs'
+import { scheduledCreditCost } from './server/schedulePricing.mjs'
 
 function loadEnv() {
   for (const filename of ['.env.local', '.env']) {
@@ -2180,6 +2181,17 @@ async function activateCampaignHandler(req, res) {
     agent.campaign.meta.localDate = body.localDate || null
     agent.campaign.meta.localTime = body.localTime || null
   }
+  agent.campaign.posts = (agent.campaign.posts || []).map(post => {
+    const baseCredits = Number(post.baseCredits) > 0
+      ? Number(post.baseCredits)
+      : computeCampaignPostCredits(post.platforms || [], agent.campaign.meta?.includeImages === true)
+    return {
+      ...post,
+      baseCredits,
+      credits: scheduledCreditCost(baseCredits, post.scheduledAt),
+    }
+  })
+  agent.campaign.totalCredits = computeCampaignTotalCredits(agent.campaign.posts)
 
   const admin = isAdminAuthUser(user)
   const billingSummary = await billing.getUserBilling(user, config)
@@ -2636,7 +2648,8 @@ function buildCampaignPosts(brand, meta) {
         captions,
         status: 'pending_approval',
         result: {},
-        credits: computeCampaignPostCredits(meta.platforms, meta.includeImages),
+        baseCredits: computeCampaignPostCredits(meta.platforms, meta.includeImages),
+        credits: scheduledCreditCost(computeCampaignPostCredits(meta.platforms, meta.includeImages), date),
       })
     }
   }
@@ -2671,7 +2684,10 @@ async function buildCampaignPlan(prompt, user, brandProfile) {
       const system = `You are Alpha Content Employee. Given brand info and campaign meta, generate all posts as JSON with shape {"calendar":[{"day":1,"slot":"morning","scheduledAt":"ISO","platforms":["facebook","linkedin"],"topic":"...","postType":"educational|product|story|cta","captions":{"facebook":"...","linkedin":"..."},"credits":5,"status":"pending_approval"}]}. Mix: 40% educational, 30% product, 20% story, 10% CTA. Include CTA in ~70% of posts. Adapt tone per platform (Facebook short + 2-3 hashtags, LinkedIn professional + 3-5 hashtags). Avoid: ${brand.dontPost.join(', ')}. Total posts: ${meta.totalPosts}.`
       const res = await callLLMJSON(system, JSON.stringify({ brand: brand, meta }))
       if (res && Array.isArray(res.calendar) && res.calendar.length) {
-        posts = res.calendar.map(p => ({ ...p, id: p.id || randomUUID(), credits: computeCampaignPostCredits(p.platforms || meta.platforms, meta.includeImages), status: p.status || 'pending_approval', result: {} }))
+        posts = res.calendar.map(p => {
+          const baseCredits = computeCampaignPostCredits(p.platforms || meta.platforms, meta.includeImages)
+          return { ...p, id: p.id || randomUUID(), baseCredits, credits: scheduledCreditCost(baseCredits, p.scheduledAt), status: p.status || 'pending_approval', result: {} }
+        })
       }
     } catch (err) { process.stdout.write(`[campaign] AI generation failed: ${err instanceof Error ? err.message : err}\n`) }
   }

@@ -14,11 +14,11 @@ const checks = [
     assert.match(main, /Something went wrong\. Please refresh\./)
     assert.match(main, /bg-white/)
   }],
-  ['five production connection cards are visible', () => {
-    for (const platform of ['youtube', 'instagram', 'x', 'facebook', 'whatsapp']) assert.match(connectors, new RegExp(`id: '${platform}'`))
-    assert.match(connectors, /Connect Your Platforms/)
+  ['six production connection cards are visible', () => {
+    for (const platform of ['linkedin', 'youtube', 'instagram', 'x', 'facebook', 'whatsapp']) assert.match(connectors, new RegExp(`id: '${platform}'`))
+    assert.match(connectors, /Connect your platforms/)
     assert.match(connectors, /● Connected/)
-    assert.match(connectors, /○ Not Connected/)
+    assert.match(connectors, /○ Not connected/)
   }],
   ['planner never defaults a missing platform', () => {
     assert.doesNotMatch(engine, /known\.platforms\) && known\.platforms\.length \? known\.platforms : \['facebook'\]/)
