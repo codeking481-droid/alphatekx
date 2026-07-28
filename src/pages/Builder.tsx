@@ -486,22 +486,22 @@ export default function Builder() {
                 {previewLoading && <span className="flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-1 text-[10px] font-medium text-amber-400"><LoaderCircle size={12} className="animate-spin" /> Loading</span>}
                 {previewError && <span className="flex items-center gap-1 rounded-full bg-red-500/10 px-2 py-1 text-[10px] font-medium text-red-400">Error</span>}
               </div>
-              <div className={`relative min-h-0 flex-1 rounded-b-xl border border-white/[.12] bg-black/30 ${previewMode === 'phone' || previewMode === 'tablet' ? 'flex justify-center' : ''}`}>
+              <div className={`relative min-h-0 flex-1 rounded-b-xl border border-white/[.12] bg-[#0A0F1E]/55 ${previewMode === 'phone' || previewMode === 'tablet' ? 'flex justify-center' : ''}`}>
                 {previewError && (
-                  <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-b-xl bg-black/80 p-6 text-center">
+                  <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-b-xl bg-[#0A0F1E]/90 p-6 text-center">
                     <p className="text-sm text-red-300">Preview failed to load</p>
                     <p className="max-w-md text-xs text-zinc-400">{previewError}</p>
                     <button onClick={refreshPreview} className="rounded-lg bg-white px-4 py-2 text-xs font-semibold text-black hover:bg-zinc-100">Try again</button>
                   </div>
                 )}
                 {previewLoading && (
-                  <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-b-xl bg-black/60">
+                  <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-b-xl bg-[#0A0F1E]/75">
                     <LoaderCircle size={24} className="animate-spin text-emerald-400" />
                     <span className="text-xs text-zinc-300">Starting preview server...</span>
                   </div>
                 )}
                 {previewUrl ? (
-                  <iframe key={previewKey} ref={previewIframeRef} title="Generated application" src={previewUrl} onLoad={() => setPreviewLoading(false)} onError={() => { setPreviewLoading(false); setPreviewError('Could not load preview frame.') }} sandbox="allow-scripts allow-forms allow-modals allow-same-origin allow-popups" className={`h-full ${previewFrameClass} ${previewMode === 'phone' ? 'rounded-b-xl border-x border-white/[0.08] bg-black' : 'rounded-b-xl'}`} />
+                  <iframe key={previewKey} ref={previewIframeRef} title="Generated application" src={previewUrl} onLoad={() => setPreviewLoading(false)} onError={() => { setPreviewLoading(false); setPreviewError('Could not load preview frame.') }} sandbox="allow-scripts allow-forms allow-modals allow-same-origin allow-popups" className={`h-full ${previewFrameClass} ${previewMode === 'phone' ? 'rounded-b-xl border-x border-white/[0.08] bg-[#0A0F1E]' : 'rounded-b-xl'}`} />
                 ) : mission?.plan ? (
                   <PlanPanel mission={mission} building={building} onBuild={() => void runBuild()} />
                 ) : <EmptyPreview building={building} onBuild={() => void runBuild()} />}
@@ -572,7 +572,7 @@ export default function Builder() {
             <div className="flex h-full min-h-0 flex-col rounded-2xl border border-white/[.12] bg-white/[0.04] p-4 ">
               <h2 className="text-lg font-semibold">Alpha log</h2>
               {previewSteps.length > 0 && (
-                <div className="mt-3 space-y-1 rounded-xl bg-black/30 p-3">
+                <div className="mt-3 space-y-1 rounded-xl bg-[#0A0F1E]/55 p-3">
                   {previewSteps.map((s, i) => (
                     <div key={i} className="flex items-center gap-2 text-sm">
                       <span className={`inline-block h-2 w-2 rounded-full ${s.ok ? 'bg-emerald-500' : 'bg-rose-500'}`} />
@@ -583,11 +583,11 @@ export default function Builder() {
                   ))}
                 </div>
               )}
-              <details className="mt-3 flex-1 overflow-y-auto rounded-xl bg-black/30 p-4">
+              <details className="mt-3 flex-1 overflow-y-auto rounded-xl bg-[#0A0F1E]/55 p-4">
                 <summary className="cursor-pointer text-sm text-white/60">Technical logs</summary>
                 <pre className="mt-2 whitespace-pre-wrap font-mono text-xs leading-5 text-white/70">{previewLogs || 'No build logs yet.'}</pre>
               </details>
-              <div className="mt-3 flex-1 overflow-y-auto rounded-xl bg-black/30 p-4">
+              <div className="mt-3 flex-1 overflow-y-auto rounded-xl bg-[#0A0F1E]/55 p-4">
                 <ActivityFeedPanel activities={activities} building={building} />
               </div>
             </div>

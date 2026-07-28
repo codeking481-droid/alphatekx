@@ -191,8 +191,8 @@ export default function Missions() {
             <div className="rounded-xl border border-white/[.12] bg-white/[.04] p-4">
               <h3 className="text-sm font-semibold">Live worker logs</h3>
               <div className="mt-3 max-h-[460px] space-y-2 overflow-y-auto text-sm text-white/65">
-                {activities.map(item => <p key={item.id} className="rounded-lg bg-black/20 p-3">{item.text}</p>)}
-                {logs.map((line, index) => <p key={`${line}-${index}`} className="rounded-lg bg-black/20 p-3">{line}</p>)}
+                {activities.map(item => <p key={item.id} className="rounded-lg bg-[#0A0F1E]/45 p-3">{item.text}</p>)}
+                {logs.map((line, index) => <p key={`${line}-${index}`} className="rounded-lg bg-[#0A0F1E]/45 p-3">{line}</p>)}
                 {!activities.length && !logs.length && <p className="text-white/45">Start a mission to see worker logs.</p>}
               </div>
             </div>

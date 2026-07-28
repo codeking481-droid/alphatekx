@@ -544,7 +544,7 @@ function applySafeLocalEdit(code: string, request: string): string {
   }
 
   if (/\bcontact\s+form\b/i.test(lower) && !/<input[^>]*name="email"/i.test(edited)) {
-    const contactSection = `<section className="py-16 px-6 md:px-12 bg-white/5">\n      <h2 className="text-2xl font-semibold text-white mb-6">Contact us</h2>\n      <form className="max-w-md space-y-4" onSubmit={(e) => { e.preventDefault(); alert('Message sent'); }}>\n        <input name="email" type="email" placeholder="Email" className="w-full rounded-lg bg-black/20 border border-white/10 p-3 text-white" required />\n        <textarea name="message" placeholder="Message" className="w-full rounded-lg bg-black/20 border border-white/10 p-3 text-white" required />\n        <button type="submit" className="rounded-lg bg-blue-600 px-5 py-2 text-white">Send</button>\n      </form>\n    </section>\n    `
+    const contactSection = `<section className="py-16 px-6 md:px-12 bg-white/5">\n      <h2 className="text-2xl font-semibold text-white mb-6">Contact us</h2>\n      <form className="max-w-md space-y-4" onSubmit={(e) => { e.preventDefault(); alert('Message sent'); }}>\n        <input name="email" type="email" placeholder="Email" className="w-full rounded-lg bg-[#0A0F1E]/45 border border-white/10 p-3 text-white" required />\n        <textarea name="message" placeholder="Message" className="w-full rounded-lg bg-[#0A0F1E]/45 border border-white/10 p-3 text-white" required />\n        <button type="submit" className="rounded-lg bg-blue-600 px-5 py-2 text-white">Send</button>\n      </form>\n    </section>\n    `
     edited = edited.replace(/(<footer\b)/i, `${contactSection}$1`)
   }
 
