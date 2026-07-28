@@ -36,12 +36,20 @@ test('Google credit and human verification are separate user choices', () => {
   const welcomeEffect = auth.slice(auth.indexOf('welcomeCreditStarted.current'), auth.indexOf('const verifyHuman'))
   assert.match(welcomeEffect, /\/api\/auth\/welcome-credit\/google/)
   assert.doesNotMatch(welcomeEffect, /getDeviceFingerprint|\/api\/verify-bonus/)
-  assert.match(auth, /onClick=\{\(\) => user \? void verifyHuman\(\) : void google\(\)\}/)
+  assert.match(auth, /onClick=\{\(\) => user \? void verifyHuman\(\) : void google\(true\)\}/)
   assert.match(auth, /disabled=\{!configured \|\| pending \|\| verifying\}/)
   assert.match(auth, /getDeviceFingerprint\(\)/)
   assert.match(auth, /fetch\('\/api\/verify-bonus'/)
   assert.match(auth, /fingerprintHash: fingerprint/)
   assert.match(auth, /navigate\('\/onboarding'/)
+})
+
+test('human-verification choice survives Google OAuth and resumes once', () => {
+  assert.match(auth, /SIGNUP_CHOICE_KEY = 'alphatekx:signup-choice'/)
+  assert.match(auth, /rememberSignupChoice\(verifyAfterSignIn \? HUMAN_VERIFICATION_CHOICE : null\)/)
+  assert.match(auth, /pendingSignupChoice\(\) !== HUMAN_VERIFICATION_CHOICE/)
+  assert.match(auth, /rememberSignupChoice\(null\)[\s\S]*void verifyHuman\(\)/)
+  assert.match(auth, /!welcomeSettled \|\| verifying/)
 })
 
 test('FingerprintJS is isolated behind one cached helper', () => {
@@ -86,10 +94,11 @@ test('service-role device claim and credit award are durable and idempotent', ()
   assert.doesNotMatch(server, /credits need the fingerprint-credits database migration/)
 })
 
-test('shared inputs use visible dark text on white surfaces', () => {
-  assert.match(css, /\.field,[\s\S]*background: #FFFFFF/)
-  assert.match(css, /color: #0B0F19/)
-  assert.match(css, /textarea, select/)
+test('shared inputs keep readable text on wet-glass surfaces', () => {
+  assert.match(css, /\.field,[\s\S]*background:\s*rgba\(59,130,246,.10\)/)
+  assert.match(css, /\.field,[\s\S]*color:\s*#FFFFFF/)
+  assert.match(css, /input:not\(\[type='checkbox'\]\)[\s\S]*textarea,\s*select/)
+  assert.match(css, /background-color:\s*rgba\(255,255,255,.06\)\s*!important/)
   assert.match(settings, /Signed in securely with Google/)
   assert.match(settings, /Connected login method[\s\S]*Google/)
   assert.doesNotMatch(settings, /text-white\/55|Email \/ Password/)
@@ -103,4 +112,4 @@ test('Firebase runtime and environment contracts are removed', () => {
   assert.equal(fs.existsSync(path.resolve(root, 'server/firebasePhoneAuth.mjs')), false)
 })
 
-if (!process.exitCode) process.stdout.write(`\n${passed}/9 auth device-bonus checks passed.\n`)
+if (!process.exitCode) process.stdout.write(`\n${passed}/10 auth device-bonus checks passed.\n`)

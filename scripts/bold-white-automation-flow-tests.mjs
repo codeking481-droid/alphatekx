@@ -35,6 +35,11 @@ test('onboarding routes verified platforms into Command Centre', () => {
   assert.match(source, /What do you want to automate today\?/)
   assert.match(source, /Go to Command Centre/)
   for (const platform of ['Twitter', 'Instagram', 'LinkedIn', 'Gmail', 'YouTube']) assert.match(source, new RegExp(platform))
+  assert.match(source, /role="radiogroup"/)
+  assert.match(source, /role="radio"/)
+  assert.match(source, /aria-checked=\{active\}/)
+  assert.match(source, /Ready to connect/)
+  assert.doesNotMatch(source, /<select|<option/)
 })
 test('guided flow asks one scheduling decision at a time', () => {
   const source = read('src/pages/Agents.tsx')

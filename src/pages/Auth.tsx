@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { CheckCircle2, Chrome, LoaderCircle, ShieldCheck, Sparkles } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
@@ -7,6 +7,8 @@ import { supabase } from '../lib/supabase'
 
 const SITE_URL_HELP = 'Auth is blocked by the Supabase Site URL setting. Set Supabase Site URL to https://alphatekx.name.ng and add https://alphatekx.name.ng/auth as an allowed redirect URL.'
 const OAUTH_STATE_HELP = 'Google sign-in expired or was started from an old tab. Close old AlphaTekx login tabs, then try Continue with Google again.'
+const SIGNUP_CHOICE_KEY = 'alphatekx:signup-choice'
+const HUMAN_VERIFICATION_CHOICE = 'human-verification'
 
 type VerificationResult = {
   ok?: boolean
@@ -49,12 +51,28 @@ function authMessage(message: string) {
   return /site url|redirect/i.test(text) ? SITE_URL_HELP : text || 'Authentication failed. Please try again.'
 }
 
+function rememberSignupChoice(choice: string | null) {
+  try {
+    if (choice) sessionStorage.setItem(SIGNUP_CHOICE_KEY, choice)
+    else sessionStorage.removeItem(SIGNUP_CHOICE_KEY)
+  } catch {}
+}
+
+function pendingSignupChoice() {
+  try {
+    return sessionStorage.getItem(SIGNUP_CHOICE_KEY)
+  } catch {
+    return null
+  }
+}
+
 export default function Auth() {
   const { user, session, configured, refreshProfile } = useAuth()
   const [pending, setPending] = useState(false)
   const [verifying, setVerifying] = useState(false)
   const [notice, setNotice] = useState('')
   const [result, setResult] = useState<VerificationResult | null>(null)
+  const [welcomeSettled, setWelcomeSettled] = useState(false)
   const welcomeCreditStarted = useRef(false)
   const location = useLocation()
   const navigate = useNavigate()
@@ -65,6 +83,7 @@ export default function Auth() {
     const description = query.get('error_description') || query.get('error') || ''
     if (!code && !description) return
     const text = `${code} ${description}`
+    rememberSignupChoice(null)
     setNotice(/bad_oauth_state|state.*expired|state.*not.*found/i.test(text) ? OAUTH_STATE_HELP : authMessage(description || code))
     navigate(location.pathname, { replace: true })
   }, [location.pathname, location.search, navigate])
@@ -89,11 +108,12 @@ export default function Auth() {
         setNotice(error instanceof Error ? error.message : 'Your Google signup credit could not be activated.')
       } finally {
         setPending(false)
+        setWelcomeSettled(true)
       }
     })()
   }, [refreshProfile, session?.access_token, user])
 
-  const verifyHuman = async () => {
+  const verifyHuman = useCallback(async () => {
     if (!user || !session?.access_token || verifying) return
     setVerifying(true)
     setNotice('')
@@ -117,10 +137,19 @@ export default function Auth() {
     } finally {
       setVerifying(false)
     }
-  }
+  }, [navigate, refreshProfile, session?.access_token, user, verifying])
 
-  const google = async () => {
+  useEffect(() => {
+    if (!user || !session?.access_token || !welcomeSettled || verifying) return
+    if (pendingSignupChoice() !== HUMAN_VERIFICATION_CHOICE) return
+    // Consume before starting so React Strict Mode or a refresh cannot submit twice.
+    rememberSignupChoice(null)
+    void verifyHuman()
+  }, [session?.access_token, user, verifyHuman, verifying, welcomeSettled])
+
+  const google = async (verifyAfterSignIn = false) => {
     if (!supabase) return
+    rememberSignupChoice(verifyAfterSignIn ? HUMAN_VERIFICATION_CHOICE : null)
     setPending(true)
     setNotice('')
     try {
@@ -134,10 +163,17 @@ export default function Auth() {
           queryParams: { prompt: 'select_account' },
         },
       })
-      if (error) setNotice(authMessage(error.message))
-      else if (!data.url) setNotice('Google did not return a fresh sign-in URL. Please try again.')
+      if (error) {
+        rememberSignupChoice(null)
+        setNotice(authMessage(error.message))
+      }
+      else if (!data.url) {
+        rememberSignupChoice(null)
+        setNotice('Google did not return a fresh sign-in URL. Please try again.')
+      }
       else window.location.replace(data.url)
     } catch (error) {
+      rememberSignupChoice(null)
       setNotice(authMessage(error instanceof Error ? error.message : 'Google sign-in failed.'))
     } finally {
       setPending(false)
@@ -169,7 +205,7 @@ export default function Auth() {
         <section className="mt-8 rounded-2xl border-2 border-violet-400/20 bg-violet-500/10 p-4 shadow-[0_10px_25px_rgba(15,23,42,.07)]">
           <h2 className="font-black text-white">Google signup · 1 credit</h2>
           <p className="mt-1 text-sm font-semibold text-slate-400">Sign in and get one credit to run your first automation.</p>
-        <button onClick={() => void google()} disabled={blocked} className="mt-4 flex min-h-14 w-full items-center justify-center gap-3 rounded-xl border-2 border-violet-400/20 bg-violet-500/10 px-4 font-black text-white shadow-[0_10px_25px_rgba(15,23,42,.07)] transition hover:border-violet-300 hover:bg-violet-500/10 disabled:cursor-not-allowed disabled:opacity-50">
+        <button onClick={() => void google(false)} disabled={blocked} className="mt-4 flex min-h-14 w-full items-center justify-center gap-3 rounded-xl border-2 border-violet-400/20 bg-violet-500/10 px-4 font-black text-white shadow-[0_10px_25px_rgba(15,23,42,.07)] transition hover:border-violet-300 hover:bg-violet-500/10 disabled:cursor-not-allowed disabled:opacity-50">
           {pending ? <LoaderCircle className="animate-spin" size={18}/> : <><Chrome size={19} className="text-violet-300"/> Sign in with Google <span className="text-xs text-slate-400">— 1 credit</span></>}
         </button>
         </section>
@@ -177,7 +213,7 @@ export default function Auth() {
         <section className="relative mt-4 rounded-2xl border-2 border-violet-200 bg-violet-500/10 p-4 shadow-[0_15px_35px_rgba(109,40,217,.14)]">
           <h2 className="font-black text-white">Human verification · 10 credits</h2>
           <p className="mt-1 text-sm font-semibold text-slate-400">After Google sign-in, choose this option to verify and unlock ten credits.</p>
-        <button onClick={() => user ? void verifyHuman() : void google()} disabled={!configured || pending || verifying} className="relative mt-3 flex min-h-16 w-full items-center justify-center gap-3 rounded-xl bg-[#6D28D9] px-4 font-black text-white shadow-[0_15px_35px_rgba(109,40,217,.3)] transition hover:-translate-y-0.5 hover:bg-[#5B21B6] disabled:cursor-not-allowed disabled:opacity-60">
+        <button onClick={() => user ? void verifyHuman() : void google(true)} disabled={!configured || pending || verifying} className="relative mt-3 flex min-h-16 w-full items-center justify-center gap-3 rounded-xl bg-[#6D28D9] px-4 font-black text-white shadow-[0_15px_35px_rgba(109,40,217,.3)] transition hover:-translate-y-0.5 hover:bg-[#5B21B6] disabled:cursor-not-allowed disabled:opacity-60">
           {verifying ? <LoaderCircle className="animate-spin" size={20}/> : <ShieldCheck size={20}/>}
           {verifying ? "Verifying you're human…" : user ? 'Verify human & unlock 10 credits' : 'Sign in & verify human — 10 credits'}
           <span className="absolute -right-2 -top-2 rounded-full bg-violet-500/10 px-2.5 py-1 text-[9px] font-black tracking-wide text-[#5B21B6]">RECOMMENDED</span>

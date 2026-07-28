@@ -305,6 +305,9 @@ function persistenceConfig() {
 
 function accountBelongsToUser(account, user) {
   const accountUser = String(account?.userId || account?.user_id || '').toLowerCase()
+  // Composio is deprecating user_id in list responses. The list request is already
+  // scoped by userIds, so a missing echoed owner is not an ownership failure.
+  if (!accountUser) return true
   return composioUserIds(user).some(id => id.toLowerCase() === accountUser) ||
     alphaUserIdFromComposio(accountUser) === user.id
 }
@@ -649,26 +652,35 @@ export async function disconnectProvider(user, providerId) {
   if (!pid) throw new Error(`Unknown provider: ${providerId}`)
 
   const config = await resolveProviderConfig(pid)
-  if (!config || !config.authConfigId) {
-    throw new Error(`Provider ${providerId} has no auth config`)
-  }
-
   if (!user || !user.id) throw new Error('Authentication required')
 
-  // Find the user's connected account for this provider
-  const accounts = await listUserAccounts(user, config)
-
-  if (accounts.items && accounts.items.length > 0) {
-    const account = accounts.items[0]
-    // Verify ownership before deleting
+  // A connection must remain removable even if its Auth Config was later disabled.
+  // Fall back to the provider's toolkit slug while retaining the authenticated
+  // user's server-side Composio identity filter.
+  const def = PROVIDER_DEFS[pid]
+  const accounts = await composioClient.connectedAccounts.list({
+    userIds: composioUserIds(user),
+    authConfigIds: config?.authConfigId ? [config.authConfigId] : undefined,
+    toolkitSlugs: config?.authConfigId ? undefined : (def.composioAppNames || [def.composioAppName]),
+  })
+  const items = Array.isArray(accounts?.items) ? accounts.items : []
+  let deletedAccounts = 0
+  for (const account of items) {
     if (!accountBelongsToUser(account, user)) {
       throw new Error('You do not own this connection')
     }
     await composioClient.connectedAccounts.delete(account.id)
-    await persistConnection(user, pid, account, 'disconnected')
+    deletedAccounts += 1
+    try {
+      await persistConnection(user, pid, account, 'disconnected')
+    } catch (error) {
+      // Provider deletion already succeeded. Do not falsely tell the user it failed
+      // because optional local connection-history persistence is unavailable.
+      console.error('[AlphaTekX] Disconnected provider but could not persist connector history', sanitizeError(error))
+    }
   }
 
-  return { success: true, provider: pid }
+  return { success: true, disconnected: true, provider: pid, deletedAccounts }
 }
 
 /**

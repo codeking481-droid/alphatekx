@@ -52,6 +52,7 @@ export default function Connectors() {
   const [composio, setComposio] = useState<Record<string, ConnectedAppStatus>>({})
   const [loading, setLoading] = useState(true)
   const [connecting, setConnecting] = useState<string | null>(null)
+  const [disconnecting, setDisconnecting] = useState<string | null>(null)
   const [slow, setSlow] = useState(false)
   const [notice, setNotice] = useState('')
   const [wabaReady, setWabaReady] = useState(false)
@@ -149,17 +150,30 @@ export default function Connectors() {
 
   const disconnect = async (id: string) => {
     if (!window.confirm(`Disconnect ${releasedPlatforms.find(item => item.id === id)?.name || id}?`)) return
-    setConnecting(id)
+    setDisconnecting(id)
+    setNotice('')
     try {
-      if (id === 'linkedin') await deleteIntegration('linkedin', session?.access_token)
-      else await disconnectProvider(id, session?.access_token)
+      if (id === 'linkedin') {
+        await deleteIntegration('linkedin', session?.access_token)
+        setNative(current => ({ ...current, linkedin: { connected: false, ready: false } }))
+      } else {
+        await disconnectProvider(id, session?.access_token)
+        setComposio(current => ({
+          ...current,
+          [id]: {
+            ...(current[id] || { provider: id }),
+            connected: false,
+            status: 'disconnected',
+            connectionId: undefined,
+          },
+        }))
+      }
       try { localStorage.removeItem(CACHE_KEY) } catch {}
-      await load()
-      setNotice('Connection removed.')
+      setNotice(`${releasedPlatforms.find(item => item.id === id)?.name || id} disconnected successfully.`)
     } catch (error) {
       console.error('[Composio]', error)
       setNotice(error instanceof Error ? error.message : 'Disconnect failed.')
-    } finally { setConnecting(null) }
+    } finally { setDisconnecting(null) }
   }
 
   useEffect(() => {
@@ -184,13 +198,14 @@ export default function Connectors() {
         {releasedPlatforms.map(item => {
           const connected = status[item.id]
           const busy = connecting === item.id
+          const removing = disconnecting === item.id
           const connector = getConnector(item.id) || fallbackConnector(item.id, item.name)
           return <article id={`platform-${item.id}`} key={item.id} className="liquid-glass min-w-0 rounded-[20px] p-4 sm:p-5">
             <div className="flex items-center gap-3"><span className="grid size-12 place-items-center rounded-full text-white" style={{ background: item.id === 'instagram' ? 'linear-gradient(135deg,#F58529,#DD2A7B,#8134AF)' : item.color }}><ConnectorIcon connector={connector}/></span><div><h2 className="font-black">{item.name}</h2><span className={`mt-1 inline-flex rounded-full border px-2 py-1 text-[11px] font-bold ${connected ? 'border-emerald-300/25 bg-emerald-300/10 text-emerald-200' : 'border-violet-400/20 bg-violet-500/10 text-slate-300'}`}>{connected ? '● Connected' : '○ Not connected'}</span></div></div>
             <p className="mt-4 min-h-10 text-xs font-semibold text-slate-300">{item.description}</p>
             {item.id === 'whatsapp' && <div className="mt-3 text-xs text-slate-300"><p>Requires an approved 15-digit WABA ID from Meta Business Suite. Regular WhatsApp sellers can skip this.</p>{wabaReady && <a href="https://business.facebook.com/settings/whatsapp-business-accounts" target="_blank" rel="noreferrer" className="mt-2 inline-block text-violet-300 underline">How to get a WABA ID</a>}</div>}
             {item.id === 'whatsapp' && !connected && !wabaReady ? <div className="mt-4 grid gap-2"><button onClick={() => setWabaReady(true)} className="min-h-11 rounded-xl bg-[#7C3AED] px-3 text-sm font-black">I have WABA ID — Connect</button><button onClick={() => { setNotice('WhatsApp skipped. Instagram and Facebook are ready.'); document.getElementById('platform-instagram')?.scrollIntoView({ behavior: 'smooth' }) }} className="min-h-11 rounded-xl border border-violet-400/20 bg-violet-500/10 px-3 text-sm font-bold">I don’t have one — Skip</button></div> :
-              <div className="mt-4 flex min-w-0 gap-2"><button onClick={() => void connect(item.id, item.name)} disabled={Boolean(connecting)} className="flex min-h-11 min-w-0 flex-1 items-center justify-center gap-2 rounded-xl bg-[#7C3AED] px-3 text-sm font-black disabled:opacity-50">{busy ? <LoaderCircle className="shrink-0 animate-spin" size={16}/> : connected ? <RefreshCw className="shrink-0" size={16}/> : <CheckCircle2 className="shrink-0" size={16}/>}{busy ? 'Connecting…' : connected ? 'Reconnect' : 'Connect'}</button>{connected && <button onClick={() => void disconnect(item.id)} disabled={Boolean(connecting)} aria-label={`Disconnect ${item.name}`} className="grid size-11 shrink-0 place-items-center rounded-xl border border-violet-400/20 bg-violet-500/10 text-rose-300"><Unplug size={16}/></button>}</div>}
+              <div className={`mt-4 grid min-w-0 gap-2 ${connected ? 'grid-cols-2' : 'grid-cols-1'}`}><button onClick={() => void connect(item.id, item.name)} disabled={Boolean(connecting || disconnecting)} className="flex min-h-11 min-w-0 items-center justify-center gap-2 rounded-xl bg-[#7C3AED] px-3 text-sm font-black disabled:opacity-50">{busy ? <LoaderCircle className="shrink-0 animate-spin" size={16}/> : connected ? <RefreshCw className="shrink-0" size={16}/> : <CheckCircle2 className="shrink-0" size={16}/>}{busy ? 'Connecting…' : connected ? 'Reconnect' : 'Connect'}</button>{connected && <button onClick={() => void disconnect(item.id)} disabled={Boolean(connecting || disconnecting)} aria-label={`Disconnect ${item.name}`} className="flex min-h-11 min-w-0 items-center justify-center gap-2 rounded-xl border border-rose-300/20 bg-rose-300/10 px-3 text-sm font-black text-rose-200 transition hover:bg-rose-300/15 disabled:opacity-50">{removing ? <LoaderCircle className="shrink-0 animate-spin" size={16}/> : <Unplug className="shrink-0" size={16}/>}<span>{removing ? 'Disconnecting…' : 'Disconnect'}</span></button>}</div>}
           </article>
         })}
       </section>}

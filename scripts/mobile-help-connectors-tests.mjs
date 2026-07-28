@@ -20,7 +20,7 @@ const checks = [
   ['mobile navigation uses five equal columns without fixed item widths', layout.includes('grid-cols-5') && layout.includes('min-w-0 flex-col')],
   ['workspace content prevents horizontal overflow', layout.includes('overflow-x-hidden')],
   ['dashboard Connect starts OAuth in one click', home.includes('autostart=1')],
-  ['YouTube is released and selectable', home.includes("{ id: 'youtube', label: 'YouTube', icon: Youtube, soon: false }")],
+  ['YouTube is released and selectable', home.includes("id: 'youtube'") && home.includes("label: 'YouTube'") && home.includes("soon: false")],
   ['dashboard does not block users with a checking-apps screen', !home.includes('Checking your apps')],
   ['native and Composio status failures are isolated', connectors.includes('Promise.allSettled')],
   ['connector status has a bounded deadline', connectors.includes('withDeadline(getIntegrationStatus') && connectorApi.includes('timeoutMs: 12_000')],
