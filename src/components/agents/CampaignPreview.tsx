@@ -301,6 +301,10 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
                     <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-white/60">{post.status === 'posted' ? 'Published' : post.status === 'pending_approval' ? 'Awaiting Approval' : post.status === 'scheduled' ? 'Scheduled' : post.status === 'publishing' ? 'Publishing' : post.status === 'failed' ? 'Failed' : post.status === 'cancelled' ? 'Cancelled' : 'Draft'}</span>
                   </div>
                   <p className="mt-1 text-xs text-white/70">{post.topic}</p>
+                  {post.imageUrl && <figure className="mt-3 overflow-hidden rounded-xl border border-white/10 bg-white/5">
+                    <img src={post.imageUrl} alt={`Generated visual for ${post.topic}`} className="aspect-video w-full object-cover" loading="lazy" />
+                    <figcaption className="px-3 py-2 text-[10px] text-white/45">Matched automatically by Alpha · {post.imageSource || 'premium image provider'}</figcaption>
+                  </figure>}
                   <div className="mt-2 space-y-2">
                     {post.platforms.map(platform => (
                       <div key={platform} className="rounded-lg border border-white/[.06] bg-black/20 p-2">

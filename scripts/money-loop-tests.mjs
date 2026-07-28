@@ -19,6 +19,7 @@ const checks = [
   ['lead updates are owner-filtered', service.includes('&user_id=eq.${encodeURIComponent(user.id)}')],
   ['Money Loop UI never claims invented leads', page.includes('Alpha will never invent leads or send unapproved messages')],
   ['Money Loop has honest loading and empty states', page.includes('animate-spin') && page.includes('No captured leads yet')],
+  ['missing Money Loop schema returns an empty setup state instead of a raw database error', service.includes('isMissingMoneyLoopSchema') && server.includes('setupRequired: true')],
   ['founder legacy route is public and linked', app.includes('path="/founders-legacy"') && landing.includes('Built with grind at 6AM')],
   ['founder legacy contains the requested permanent marker', legacy.includes('6:53AM on 28/07/2026') && legacy.includes('9f78c3f569ae5ea8416b2f6a89634ce7cb008009')],
   ['hook registry is used by the existing brain', engine.includes('selectHookExamples') && hookPatternCount() >= 20],

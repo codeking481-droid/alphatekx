@@ -27,6 +27,10 @@ function headers(config, extra = {}) {
   return supabaseServiceHeaders(config.service, extra)
 }
 
+export function isMissingMoneyLoopSchema(error) {
+  return error?.code === 'DB_ERROR' && /content_insights|leads|schema cache|relation|does not exist/i.test(String(error?.message || ''))
+}
+
 export async function listLeads(config, user, { status = '', limit = 100 } = {}) {
   assertConfig(config)
   const safeLimit = Math.min(250, Math.max(1, Number(limit) || 100))

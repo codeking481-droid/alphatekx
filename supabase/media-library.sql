@@ -103,3 +103,6 @@ create policy "media_objects_delete_own" on storage.objects
     bucket_id = 'media-library'
     and (storage.foldername(name))[1] = auth.uid()::text
   );
+
+-- Make newly-created relations visible to PostgREST immediately.
+notify pgrst, 'reload schema';

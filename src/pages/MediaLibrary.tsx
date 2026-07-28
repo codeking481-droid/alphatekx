@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarClock, CheckCircle2, FileVideo2, Image, LoaderCircle, Play, Trash2, UploadCloud, X } from 'lucide-react'
 import { getCredits } from '../lib/creditStore'
-import { deleteMedia, listMedia, updateMedia, uploadMedia, type MediaItem } from '../lib/mediaLibrary'
+import { deleteMedia, listMedia, publishMedia, updateMedia, uploadMedia, type MediaItem } from '../lib/mediaLibrary'
 
 const MAX_FILES = 20
 const MAX_BYTES = 500 * 1024 * 1024
@@ -14,6 +14,7 @@ export default function MediaLibrary() {
   const [progress, setProgress] = useState('')
   const [notice, setNotice] = useState('')
   const [scheduleOpen, setScheduleOpen] = useState(false)
+  const [setupRequired, setSetupRequired] = useState(false)
   const [startDate, setStartDate] = useState(() => new Date(Date.now() + 86400000).toISOString().slice(0, 10))
   const [time, setTime] = useState('09:00')
 
@@ -22,7 +23,8 @@ export default function MediaLibrary() {
     try {
       const response = await listMedia()
       setItems(response.items)
-      setNotice('')
+      setSetupRequired(response.setupRequired === true)
+      setNotice(response.setupRequired ? 'Media Library setup is required. Ask the administrator to apply the production content migration.' : '')
     } catch (error) { setNotice(error instanceof Error ? error.message : 'Could not load your Media Library.') }
     finally { setLoading(false) }
   }
@@ -63,6 +65,20 @@ export default function MediaLibrary() {
       setItems(current => current.filter(entry => entry.id !== item.id))
       setNotice('Media deleted.')
     } catch (error) { setNotice(error instanceof Error ? error.message : 'Delete failed.') }
+    finally { setBusy(false) }
+  }
+
+  const publishNow = async (item: MediaItem) => {
+    if (!window.confirm(`Publish ${item.title || item.file_name} to your connected YouTube account now? One credit is charged only after YouTube confirms the video ID.`)) return
+    setBusy(true)
+    setNotice('Alpha is securely sending your video to YouTube…')
+    try {
+      const result = await publishMedia(item.id)
+      setItems(current => current.map(entry => entry.id === item.id ? {
+        ...entry, status: 'published', provider_id: result.providerId, published_at: new Date().toISOString(),
+      } : entry))
+      setNotice(`Published successfully. YouTube video ID: ${result.providerId}`)
+    } catch (error) { setNotice(error instanceof Error ? error.message : 'YouTube publication failed. No credit was charged.') }
     finally { setBusy(false) }
   }
 
@@ -110,7 +126,7 @@ export default function MediaLibrary() {
       onClick={() => input.current?.click()}
       onDragOver={event => event.preventDefault()}
       onDrop={event => { event.preventDefault(); void addFiles(event.dataTransfer.files) }}
-      disabled={busy}
+      disabled={busy || setupRequired}
       className="mt-6 grid min-h-44 w-full place-items-center rounded-2xl border-2 border-dashed border-violet-300 bg-[#FAFBFF] p-6 text-center transition hover:border-[#6D28D9] disabled:opacity-60"
     >
       {busy ? <LoaderCircle className="animate-spin text-[#6D28D9]" size={32}/> : <UploadCloud className="text-[#6D28D9]" size={34}/>}
@@ -126,7 +142,7 @@ export default function MediaLibrary() {
           {item.file_type === 'image' && item.file_url ? <img src={item.file_url} alt="" className="h-full w-full object-cover"/> : item.file_url ? <video src={item.file_url} className="h-full w-full object-cover" preload="metadata"/> : item.file_type === 'video' ? <FileVideo2 className="text-slate-400"/> : <Image className="text-slate-400"/>}
           <span className={`absolute right-3 top-3 rounded-full border px-2.5 py-1 text-[10px] font-black uppercase ${item.status === 'published' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : item.status === 'scheduled' ? 'border-violet-200 bg-violet-50 text-violet-700' : 'border-slate-200 bg-white text-slate-600'}`}>{item.status}</span>
         </div>
-        <div className="p-4"><h2 className="truncate font-black">{item.title || item.file_name}</h2><p className="mt-1 text-xs font-semibold text-slate-500">{(item.file_size / 1048576).toFixed(1)}MB {item.scheduled_for ? `· ${new Date(item.scheduled_for).toLocaleString()}` : ''}</p><div className="mt-4 flex gap-2">{item.file_url && <a href={item.file_url} target="_blank" rel="noreferrer" className="action bg-white text-slate-700"><Play size={15}/>Preview</a>}<button onClick={() => void remove(item)} disabled={busy} className="action bg-white text-rose-700"><Trash2 size={15}/>Delete</button></div></div>
+        <div className="p-4"><h2 className="truncate font-black">{item.title || item.file_name}</h2><p className="mt-1 text-xs font-semibold text-slate-500">{(item.file_size / 1048576).toFixed(1)}MB {item.scheduled_for ? `· ${new Date(item.scheduled_for).toLocaleString()}` : ''}</p><div className="mt-4 flex flex-wrap gap-2">{item.file_url && <a href={item.file_url} target="_blank" rel="noreferrer" className="action bg-white text-slate-700"><Play size={15}/>Preview</a>}{item.file_type === 'video' && ['ready', 'failed'].includes(item.status) && <button onClick={() => void publishNow(item)} disabled={busy} className="action bg-[#6D28D9] text-white"><UploadCloud size={15}/>Publish now</button>}<button onClick={() => void remove(item)} disabled={busy} className="action bg-white text-rose-700"><Trash2 size={15}/>Delete</button></div></div>
       </article>)}</section>}
 
     {scheduleOpen && <div className="fixed inset-0 z-50 grid place-items-end bg-slate-950/35 sm:place-items-center" onClick={() => setScheduleOpen(false)}><section className="w-full rounded-t-3xl bg-white p-6 text-slate-900 shadow-2xl sm:max-w-md sm:rounded-3xl" onClick={event => event.stopPropagation()}><div className="flex items-center justify-between"><div><h2 className="text-xl font-black">Daily YouTube queue</h2><p className="mt-1 text-sm font-semibold text-slate-500">One ready video per day · Africa/Lagos</p></div><button onClick={() => setScheduleOpen(false)} className="grid size-10 place-items-center rounded-full bg-slate-100"><X size={18}/></button></div><div className="mt-6 grid gap-4"><label className="text-sm font-bold">Start date<input type="date" value={startDate} min={new Date().toISOString().slice(0,10)} onChange={event => setStartDate(event.target.value)} className="mt-1 h-12 w-full rounded-xl border border-slate-200 px-3 text-slate-900"/></label><label className="text-sm font-bold">Time<input type="time" value={time} onChange={event => setTime(event.target.value)} className="mt-1 h-12 w-full rounded-xl border border-slate-200 px-3 text-slate-900"/></label><div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-bold text-emerald-800"><CheckCircle2 className="mr-1 inline" size={15}/>No credits are charged while scheduling. Each confirmed publication costs one credit.</div><button onClick={() => void scheduleReady()} disabled={busy} className="min-h-12 rounded-xl bg-[#6D28D9] px-5 font-black text-white disabled:opacity-50">{busy ? 'Scheduling…' : 'Confirm queue'}</button></div></section></div>}

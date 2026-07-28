@@ -1178,14 +1178,23 @@ Total posts: ${totalPosts}.`
           const batch = posts.slice(index, index + 3)
           const images = await Promise.all(batch.map(post => {
             const content = [post.topic, ...Object.values(post.captions || {})].filter(Boolean).join('\n')
-            return getSmartImage({ id: conversation.userId, email: conversation.userEmail }, content)
+            return getSmartImage(
+              { id: conversation.userId, email: conversation.userEmail },
+              content,
+              String(known.mission || known.outcome || conversation.currentGoal || conversation.originalRequest),
+              String(post.platforms?.[0] || platforms[0] || ''),
+            )
           }))
           images.forEach((image, offset) => {
+            if (!image?.image_url || !image?.image_storage_path) throw new Error('Image provider did not return a durable verified image.')
             posts[index + offset].imageUrl = image.image_url
+            posts[index + offset].imageStoragePath = image.image_storage_path
             posts[index + offset].imagePrompt = image.image_prompt
+            posts[index + offset].imageKeywords = image.image_keywords
             posts[index + offset].imageSource = image.image_source
           })
         }
+        if (posts.some(post => !post.imageUrl || !post.imageStoragePath)) throw new Error('At least one post is missing its durable matched image.')
       } catch (error) {
         conversation.conversationStage = 'blocked'
         addMessage(conversation, 'alpha', `Alpha prepared the content but could not attach a confirmed image, so nothing was scheduled and no credits were charged. ${error instanceof Error ? error.message : 'Please retry.'}`)

@@ -41,6 +41,10 @@ function fileKind(mime) {
   return String(mime).startsWith('video/') ? 'video' : 'image'
 }
 
+export function isMissingMediaSchema(error) {
+  return error?.code === 'DB_ERROR' && /media_library|schema cache|relation|does not exist/i.test(String(error?.message || ''))
+}
+
 async function signedUrl(config, storagePath, expiresIn = 3600) {
   const response = await fetch(`${config.url}/storage/v1/object/sign/${BUCKET}/${storagePath}`, {
     method: 'POST',
@@ -163,15 +167,32 @@ export async function deleteMedia(config, user, id) {
 }
 
 const STOP_WORDS = new Set(['about', 'after', 'again', 'also', 'and', 'because', 'business', 'create', 'every', 'from', 'have', 'into', 'post', 'social', 'that', 'the', 'their', 'this', 'with', 'your'])
-function keywordsFor(content) {
+function keywordsFor(content, objective = '', platform = '') {
   const counts = new Map()
-  for (const word of String(content || '').toLowerCase().match(/[a-z0-9]{3,}/g) || []) {
+  const combined = `${objective} ${content}`.toLowerCase()
+  for (const word of combined.match(/[a-z0-9]{3,}/g) || []) {
     if (!STOP_WORDS.has(word)) counts.set(word, (counts.get(word) || 0) + 1)
   }
-  return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([word]) => word)
+  const base = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([word]) => word)
+  const context = String(platform || 'social').replace('twitter', 'x')
+  return base.map((word, index) => index === 0 ? `${word} premium real-world scene` : index === 1 ? `${word} professional commercial setting` : `${word} authentic ${context} campaign`)
 }
 
-async function downloadImage(url) {
+export function generateAdvancedImagePrompt(content, objective = '', platform = '') {
+  const keywords = keywordsFor(content, objective, platform)
+  if (!keywords.length) throw new Error('Add a clear topic before Alpha selects an image.')
+  return {
+    keywords,
+    advancedPrompt: `professional photograph of ${keywords.join(', ')}, 4k photorealistic, sharp focus, professional studio lighting, DSLR, ultra detailed, vibrant colors, premium commercial photography, 8k, high-end`,
+    negativePrompt: 'cartoon, illustration, painting, drawing, blurry, low quality, distorted, deformed, text, watermark, logo, amateur, bad anatomy, extra fingers',
+  }
+}
+
+export function pollinationsImageUrl(advancedPrompt, negativePrompt, seed = `${Date.now()}-${Math.floor(Math.random() * 100000)}`) {
+  return `https://image.pollinations.ai/prompt/${encodeURIComponent(advancedPrompt)}?model=flux&width=1024&height=1024&enhance=true&nologo=true&negative=${encodeURIComponent(negativePrompt)}&seed=${encodeURIComponent(seed)}`
+}
+
+async function downloadImage(url, minimumBytes = 50 * 1024) {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 45_000)
   try {
@@ -180,7 +201,7 @@ async function downloadImage(url) {
     const mime = String(response.headers.get('content-type') || 'image/jpeg').split(';')[0]
     if (!ALLOWED_TYPES.has(mime) || !mime.startsWith('image/')) throw new Error('Image provider did not return a supported image.')
     const bytes = Buffer.from(await response.arrayBuffer())
-    if (!bytes.length || bytes.length > 15 * 1024 * 1024) throw new Error('Generated image was empty or too large.')
+    if (bytes.length < minimumBytes || bytes.length > 15 * 1024 * 1024) throw new Error('Generated image failed the quality-size check.')
     return { bytes, mime }
   } finally { clearTimeout(timeout) }
 }
@@ -197,34 +218,45 @@ async function persistGenerated(config, user, bytes, mime, metadata) {
   const cache = await fetch(`${config.url}/rest/v1/image_cache`, {
     method: 'POST',
     headers: headers(config.service, { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=representation' }),
-    body: JSON.stringify({ user_id: user.id, storage_path: storagePath, ...metadata }),
+    body: JSON.stringify({
+      user_id: user.id,
+      storage_path: storagePath,
+      query_hash: metadata.query_hash,
+      query: metadata.query,
+      prompt: metadata.prompt,
+      source: metadata.source,
+    }),
   })
   await responseJson(cache)
-  return { image_url: await signedUrl(config, storagePath, 86400), image_prompt: metadata.prompt, image_source: metadata.source }
+  return {
+    image_url: await signedUrl(config, storagePath, 86400),
+    image_storage_path: storagePath,
+    image_prompt: metadata.prompt,
+    image_keywords: metadata.keywords || [],
+    image_source: metadata.source,
+  }
 }
 
-export async function findSmartImage(config, user, content) {
+export async function findSmartImage(config, user, content, objective = '', platform = '') {
   assertConfig(config)
-  const keywords = keywordsFor(content)
-  if (!keywords.length) throw new Error('Add a clear topic before Alpha selects an image.')
+  const { keywords, advancedPrompt, negativePrompt } = generateAdvancedImagePrompt(content, objective, platform)
   const query = keywords.join(' ')
-  const queryHash = createHash('sha256').update(query).digest('hex')
+  const queryHash = createHash('sha256').update(`${platform}:${query}`).digest('hex')
 
   const vault = await fetch(
     `${config.url}/rest/v1/media_library?user_id=eq.${encodeURIComponent(user.id)}&file_type=eq.image&tags=ov.{${keywords.map(encodeURIComponent).join(',')}}&select=storage_path&limit=1`,
     { headers: headers(config.service) },
   )
   const vaultRows = await responseJson(vault).catch(() => [])
-  if (vaultRows?.[0]) return { image_url: await signedUrl(config, vaultRows[0].storage_path, 86400), image_prompt: query, image_source: 'vault' }
+  if (vaultRows?.[0]) return { image_url: await signedUrl(config, vaultRows[0].storage_path, 86400), image_storage_path: vaultRows[0].storage_path, image_prompt: advancedPrompt, image_keywords: keywords, image_source: 'vault' }
 
   const cached = await fetch(
     `${config.url}/rest/v1/image_cache?user_id=eq.${encodeURIComponent(user.id)}&query_hash=eq.${queryHash}&select=*&limit=1`,
     { headers: headers(config.service) },
   )
   const cachedRows = await responseJson(cached).catch(() => [])
-  if (cachedRows?.[0]) return { image_url: await signedUrl(config, cachedRows[0].storage_path, 86400), image_prompt: cachedRows[0].prompt, image_source: cachedRows[0].source }
+  if (cachedRows?.[0]) return { image_url: await signedUrl(config, cachedRows[0].storage_path, 86400), image_storage_path: cachedRows[0].storage_path, image_prompt: cachedRows[0].prompt, image_keywords: keywords, image_source: cachedRows[0].source }
 
-  const prompt = `professional photograph of ${keywords.join(', ')}, 4k photorealistic, sharp focus, professional studio lighting, DSLR, ultra detailed, vibrant colors, premium commercial photography`
   let source = 'pollinations'
   let remoteUrl = ''
   if (process.env.PEXELS_API_KEY) {
@@ -234,12 +266,23 @@ export async function findSmartImage(config, user, content) {
     remoteUrl = pexels?.photos?.[0]?.src?.large2x || ''
     if (remoteUrl) source = 'pexels'
   }
-  if (!remoteUrl) {
-    const negative = 'cartoon, illustration, painting, drawing, blurry, low quality, distorted, text, watermark, logo'
-    remoteUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?model=flux&width=1024&height=1024&enhance=true&nologo=true&negative=${encodeURIComponent(negative)}&seed=${Date.now()}`
+  let downloaded = null
+  if (remoteUrl) downloaded = await downloadImage(remoteUrl).catch(() => null)
+  if (!downloaded) {
+    source = 'pollinations'
+    for (let attempt = 0; attempt < 3 && !downloaded; attempt += 1) {
+      remoteUrl = pollinationsImageUrl(advancedPrompt, negativePrompt, `${Date.now()}-${attempt}-${Math.floor(Math.random() * 100000)}`)
+      downloaded = await downloadImage(remoteUrl).catch(() => null)
+    }
   }
-  const { bytes, mime } = await downloadImage(remoteUrl)
-  return persistGenerated(config, user, bytes, mime, { query_hash: queryHash, query, prompt, source })
+  if (!downloaded) throw new Error('Alpha could not fetch a premium image after three verified attempts.')
+  return persistGenerated(config, user, downloaded.bytes, downloaded.mime, { query_hash: queryHash, query, prompt: advancedPrompt, keywords, source })
+}
+
+export async function refreshMediaUrl(config, user, storagePath, expiresIn = 3600) {
+  assertConfig(config)
+  if (!String(storagePath || '').startsWith(`${user.id}/`)) throw new Error('Media ownership could not be verified.')
+  return signedUrl(config, storagePath, expiresIn)
 }
 
 async function patchQueueItem(config, id, patch, query = '') {
@@ -249,6 +292,61 @@ async function patchQueueItem(config, id, patch, query = '') {
     body: JSON.stringify({ ...patch, updated_at: new Date().toISOString() }),
   })
   return responseJson(response)
+}
+
+async function executeMediaItem(config, item, executeProviderAction, user) {
+  if (item.file_type !== 'video') throw new Error('Only videos can be published from the Media Library.')
+  const executionKey = item.execution_key || `vault:${item.id}:${item.scheduled_for || 'publish-now'}`
+  const videoUrl = await signedUrl(config, item.storage_path, 3600)
+  if (!videoUrl) throw new Error('Alpha could not create a secure video URL.')
+  const title = String(item.title || item.file_name).slice(0, 100)
+  const result = await executeProviderAction(user, 'youtube', 'upload_video', {
+    title,
+    description: String(item.description || `${title}\n\nPublished by AlphaTekx after explicit Media Library approval.`),
+    tags: Array.isArray(item.tags) ? item.tags.slice(0, 20) : [],
+    privacyStatus: 'public',
+    video_url: videoUrl,
+    idempotencyKey: executionKey,
+    approvalId: `vault:${item.id}`,
+  })
+  if (!result?.providerId) throw new Error('YouTube did not return a confirmed video ID. No credit was charged.')
+  await patchQueueItem(config, item.id, {
+    status: 'published',
+    published_at: new Date().toISOString(),
+    provider_id: result.providerId,
+    execution_key: executionKey,
+    last_error: null,
+  })
+  return { id: item.id, status: 'published', providerId: result.providerId }
+}
+
+export async function publishMediaNow(config, user, id, executeProviderAction) {
+  assertConfig(config)
+  const response = await fetch(
+    `${config.url}/rest/v1/media_library?id=eq.${encodeURIComponent(id)}&user_id=eq.${encodeURIComponent(user.id)}&select=*&limit=1`,
+    { headers: headers(config.service) },
+  )
+  const item = (await responseJson(response))?.[0]
+  if (!item) throw new Error('Media item was not found.')
+  if (item.status === 'published' && item.provider_id) {
+    return { id: item.id, status: 'published', providerId: item.provider_id, duplicate: true }
+  }
+  if (!['ready', 'failed'].includes(item.status)) throw new Error('This video is already scheduled or being processed.')
+  const executionKey = item.execution_key || `vault:${item.id}:publish-now`
+  const claimed = await patchQueueItem(config, item.id, {
+    status: 'processing', claimed_at: new Date().toISOString(), execution_key: executionKey, last_error: null,
+  }, `&user_id=eq.${encodeURIComponent(user.id)}&status=in.(ready,failed)`)
+  if (!claimed?.[0]) throw new Error('This video is already being published.')
+  try {
+    return await executeMediaItem(config, { ...item, execution_key: executionKey }, executeProviderAction, user)
+  } catch (error) {
+    await patchQueueItem(config, item.id, {
+      status: 'failed',
+      claimed_at: new Date().toISOString(),
+      last_error: String(error instanceof Error ? error.message : error).slice(0, 1000),
+    })
+    throw error
+  }
 }
 
 export async function runDueMedia(config, executeProviderAction, now = new Date()) {
@@ -272,30 +370,12 @@ export async function runDueMedia(config, executeProviderAction, now = new Date(
       )
       const profile = (await responseJson(profileResponse))?.[0]
       if (!profile?.email) throw new Error('The owner profile has no email for its connected account.')
-      const videoUrl = await signedUrl(config, item.storage_path, 3600)
-      if (!videoUrl) throw new Error('Alpha could not create a secure video URL.')
-      const title = String(item.title || item.file_name).slice(0, 100)
-      const result = await executeProviderAction(
+      results.push(await executeMediaItem(
+        config,
+        { ...item, execution_key: executionKey },
+        executeProviderAction,
         { id: item.user_id, email: profile.email },
-        'youtube',
-        'upload_video',
-        {
-          title,
-          description: String(item.description || `${title}\n\nPublished by AlphaTekx after explicit vault scheduling approval.`),
-          tags: Array.isArray(item.tags) ? item.tags.slice(0, 20) : [],
-          privacyStatus: 'public',
-          video_url: videoUrl,
-          idempotencyKey: executionKey,
-          approvalId: `vault:${item.id}`,
-        },
-      )
-      await patchQueueItem(config, item.id, {
-        status: 'published',
-        published_at: new Date().toISOString(),
-        provider_id: result.providerId,
-        last_error: null,
-      })
-      results.push({ id: item.id, status: 'published', providerId: result.providerId })
+      ))
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       const waiting = /insufficient credits/i.test(message)
