@@ -234,7 +234,7 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
     finally { setActivating(false) }
   }
 
-  return <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 p-0 sm:items-center sm:p-4" onClick={onClose} role="dialog" aria-modal="true" aria-label="Review and approve automation">
+  return <div className="fixed inset-0 z-50 flex items-end justify-center bg-[#0A0F1E]/90 p-0 sm:items-center sm:p-4" onClick={onClose} role="dialog" aria-modal="true" aria-label="Review and approve automation">
     <div className="max-h-[94dvh] w-full max-w-3xl overflow-y-auto rounded-t-3xl border border-white/[.12] bg-background p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl sm:rounded-3xl sm:p-6" onClick={e => e.stopPropagation()}>
       <div className="flex items-start justify-between gap-4">
         <div>
@@ -310,7 +310,7 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
                   </figure>}
                   <div className="mt-2 space-y-2">
                     {post.platforms.map(platform => (
-                      <div key={platform} className="rounded-lg border border-white/[.06] bg-black/20 p-2">
+                      <div key={platform} className="rounded-lg border border-white/[.06] bg-[#0A0F1E]/45 p-2">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5 text-[10px] font-medium text-white/50"><ConnectorIcon connector={getConnector(platform) || { id: platform, name: platformNames[platform] || platform, icon: 'bot', color: '#6366f1', authType: 'apiKey', description: '', triggers: [], actions: [], permissions: [] }}/> {platformNames[platform] || platform}</div>
                           {editing?.postId === post.id && editing?.platform === platform ? null : <button onClick={() => startEditPost(post.id, platform, post.captions[platform] || '')} className="text-[10px] text-indigo-300 hover:text-white">Edit</button>}

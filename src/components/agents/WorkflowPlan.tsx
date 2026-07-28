@@ -154,7 +154,7 @@ export default function WorkflowPlan({ agent, integrationStatus, credits, isAdmi
   }
 
   if (isUnsupported) {
-    return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={onClose}>
+    return <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0A0F1E]/90 p-4" onClick={onClose}>
       <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-white/[.12] bg-background p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -174,7 +174,7 @@ export default function WorkflowPlan({ agent, integrationStatus, credits, isAdmi
     </div>
   }
 
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={onClose}>
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0A0F1E]/90 p-4" onClick={onClose}>
     <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-white/[.12] bg-background p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
       <div className="flex items-start justify-between gap-4">
         <div>

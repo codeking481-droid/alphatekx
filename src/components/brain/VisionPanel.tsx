@@ -76,7 +76,7 @@ export default function VisionPanel() {
           onDragLeave={() => setDrag(false)}
           onDrop={drop}
           onClick={() => fileRef.current?.click()}
-          className={`mt-4 grid cursor-pointer place-items-center rounded-2xl border-2 border-dashed p-8 text-center transition ${drag ? 'border-indigo-500 bg-indigo-500/10' : 'border-white/10 bg-black/20 hover:border-white/30'}`}
+          className={`mt-4 grid cursor-pointer place-items-center rounded-2xl border-2 border-dashed p-8 text-center transition ${drag ? 'border-indigo-500 bg-indigo-500/10' : 'border-white/10 bg-[#0A0F1E]/45 hover:border-white/30'}`}
         >
           <ImagePlus size={32} className="text-white/40" />
           <p className="mt-3 text-sm text-white/70">Drop an image, click to upload, or paste one (Ctrl+V)</p>
@@ -87,11 +87,11 @@ export default function VisionPanel() {
         </div>
       ) : (
         <div className="mt-4 space-y-3">
-          <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-black/20">
+          <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-[#0A0F1E]/45">
             <img src={preview} alt="Preview" className="max-h-[400px] w-full object-contain" />
-            <button onClick={remove} className="absolute right-3 top-3 grid size-9 place-items-center rounded-full bg-black/60 text-white/80 backdrop-blur"><X size={16}/></button>
+            <button onClick={remove} className="absolute right-3 top-3 grid size-9 place-items-center rounded-full bg-[#0A0F1E]/75 text-white/80 backdrop-blur"><X size={16}/></button>
           </div>
-          <input value={question} onChange={e => setQuestion(e.target.value)} onKeyDown={e => e.key === 'Enter' && !busy && analyze()} placeholder="Ask about this image (e.g. 'Find bugs', 'Read text', 'Describe UI')" className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-2 text-sm outline-none focus:border-indigo-500" />
+          <input value={question} onChange={e => setQuestion(e.target.value)} onKeyDown={e => e.key === 'Enter' && !busy && analyze()} placeholder="Ask about this image (e.g. 'Find bugs', 'Read text', 'Describe UI')" className="w-full rounded-xl border border-white/10 bg-[#0A0F1E]/45 px-4 py-2 text-sm outline-none focus:border-indigo-500" />
           <button onClick={analyze} disabled={busy} className="flex min-h-11 items-center gap-2 rounded-xl btn-alpha px-5 text-sm text-white disabled:opacity-50">{busy ? <Loader2 className="animate-spin" size={16}/> : <Upload size={16}/>} Analyze</button>
         </div>
       )}
@@ -99,7 +99,7 @@ export default function VisionPanel() {
       {error && <div className="mt-4 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-200">{error}</div>}
 
       {result && (
-        <div className="mt-4 rounded-xl border border-white/10 bg-black/30 p-4 text-sm">
+        <div className="mt-4 rounded-xl border border-white/10 bg-[#0A0F1E]/55 p-4 text-sm">
           <p className="font-medium text-indigo-300">Document type: {String(result.documentType || result.document_type || 'unknown')}</p>
           <p className="mt-2 whitespace-pre-wrap text-white/80">{String(result.extractedText || result.extracted_text || result.answer || result.suggestedAction || result.suggested_action || '')}</p>
           {result.suggestedAction && <p className="mt-3 text-xs text-white/60">Suggested action: {String(result.suggestedAction)}</p>}

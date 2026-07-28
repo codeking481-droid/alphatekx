@@ -97,7 +97,7 @@ export const connectors: Connector[] = [
     icon: 'twitter',
     authType: 'oauth',
     category: 'Social Media',
-    color: '#000',
+    color: '#0A0F1E',
     description: 'Publish posts and threads.',
     triggers: [],
     actions: [{ id: 'tweet', label: 'Publish post', description: 'Publish a post to X.', params: ['text'] }],
@@ -160,7 +160,7 @@ export const connectors: Connector[] = [
     icon: 'file-text',
     authType: 'oauth',
     category: 'Productivity',
-    color: '#000',
+    color: '#0A0F1E',
     description: 'Create pages and databases.',
     triggers: [],
     actions: [

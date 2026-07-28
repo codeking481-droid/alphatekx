@@ -74,7 +74,6 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
   const isHome = location.pathname === '/dashboard'
 
   return <div className="workspace-living-bg relative flex min-h-[100dvh] flex-col overflow-hidden text-white">
-    <div className="aurora-blob aurora-blob-one"/><div className="aurora-blob aurora-blob-two"/><div className="aurora-blob aurora-blob-three"/>
     <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center justify-between border-b border-white/10 bg-[#0A0F1E]/85 px-4 shadow-[0_8px_25px_rgba(3,7,18,.28)] backdrop-blur-xl">
       <button onClick={() => setOpen(true)} className="grid size-11 place-items-center rounded-xl border border-white/10 bg-white/5 text-white shadow-sm" aria-label="Open menu"><Menu size={20}/></button>
       <NavLink to="/dashboard" className="text-sm font-black tracking-[.14em] text-white">ALPHATEKX</NavLink>
@@ -84,8 +83,8 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
       </button>
     </header>
     {open && <button className="fixed inset-0 z-40 bg-slate-950/30" onClick={() => setOpen(false)} aria-label="Close menu"/>}
-    <aside className={`fixed inset-y-0 left-0 z-50 flex w-[300px] max-w-[88vw] flex-col border-r border-slate-200 bg-white shadow-[20px_0_50px_rgba(15,23,42,.12)] transition-transform duration-200 ${open ? 'translate-x-0' : '-translate-x-full'}`}>
-      <div className="flex h-16 items-center justify-between border-b border-slate-200 px-5"><span className="text-sm font-black tracking-[.14em]">ALPHATEKX</span><button onClick={() => setOpen(false)} className="grid size-10 place-items-center rounded-xl hover:bg-slate-100" aria-label="Close menu"><X size={19}/></button></div>
+    <aside className={`liquid-glass fixed inset-y-0 left-0 z-50 flex w-[300px] max-w-[88vw] flex-col border-r border-white/10 text-white shadow-[20px_0_50px_rgba(3,7,18,.35)] transition-transform duration-200 ${open ? 'translate-x-0' : '-translate-x-full'}`}>
+      <div className="flex h-16 items-center justify-between border-b border-white/10 px-5"><span className="text-sm font-black tracking-[.14em]">ALPHATEKX</span><button onClick={() => setOpen(false)} className="grid size-10 place-items-center rounded-xl hover:bg-white/10" aria-label="Close menu"><X size={19}/></button></div>
       <nav className="flex-1 space-y-1 overflow-y-auto p-3">
         {primary.map(([label, to, Icon]) => <NavLink key={label} to={to} title={label} onClick={() => setOpen(false)} className={({ isActive }) => `flex min-h-12 items-center gap-3 rounded-xl px-4 text-sm font-bold ${isActive ? 'bg-violet-100 text-[#6D28D9]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}><Icon size={18}/>{label}{label === 'Running Automations' && running > 0 && <span className="ml-auto flex h-2 w-2 rounded-full bg-emerald-500" />}</NavLink>)}
         <div className="my-3 border-t border-slate-200" />

@@ -111,7 +111,7 @@ function ChatWidget({ message }: { message: GeneralChatMessage }) {
     return (
       <div className="mt-3 w-full max-w-4xl space-y-4">
         {message.videos.map(video => (
-          <div key={video.id} className="w-full overflow-hidden rounded-2xl border border-white/10 bg-black shadow-lg">
+          <div key={video.id} className="w-full overflow-hidden rounded-2xl border border-white/10 bg-[#0A0F1E] shadow-lg">
             <div className="aspect-video w-full">
               <iframe className="h-full w-full" src={`https://www.youtube.com/embed/${video.id}?rel=0&modestbranding=1`} title={video.title || 'YouTube video'} loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen />
             </div>

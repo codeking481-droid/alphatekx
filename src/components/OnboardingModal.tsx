@@ -65,7 +65,7 @@ export default function OnboardingModal({ open, onComplete, onClose }: { open: b
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0A0F1E]/80 p-4 backdrop-blur-sm">
       <div className="w-full max-w-md overflow-hidden rounded-3xl border border-white/[0.12] bg-background p-6 shadow-2xl">
         <div className="flex items-center justify-between">
           <div className="flex gap-2">

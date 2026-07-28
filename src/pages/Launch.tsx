@@ -217,7 +217,7 @@ export default function Launch() {
       </div> : <div className="mt-6 rounded-xl border border-dashed border-white/[.15] p-10 text-center"><div className="mx-auto grid size-12 place-items-center rounded-full bg-white/[0.05]"><UploadCloud size={20} className="text-white/40"/></div><h2 className="mt-4 font-semibold">No creation selected</h2><p className="mt-2 text-sm text-white/55">Build a mission first, then return here to launch it.</p></div>}
     </section>
 
-    {pasteOpen && <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/60 p-4" onMouseDown={() => !pasteDeploying && setPasteOpen(false)}>
+    {pasteOpen && <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-[#0A0F1E]/75 p-4" onMouseDown={() => !pasteDeploying && setPasteOpen(false)}>
       <div className="my-6 w-full max-w-2xl rounded-2xl border border-white/[.12] liquid-glass p-6 shadow-xl sm:p-8" onMouseDown={event => event.stopPropagation()}>
         <div className="flex items-start justify-between gap-4"><div><h2 className="text-lg font-semibold">Deploy pasted HTML</h2><p className="mt-1 text-sm text-white/55">Paste one complete HTML file. AlphaTekX will publish it as a standalone app.</p></div><button onClick={() => setPasteOpen(false)} disabled={pasteDeploying} className="grid size-11 shrink-0 place-items-center rounded-lg hover:bg-white/[.08] disabled:opacity-40" aria-label="Close pasted code deployment"><X size={18}/></button></div>
         <div className="mt-6 grid gap-4 sm:grid-cols-2">

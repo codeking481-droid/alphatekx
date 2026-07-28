@@ -42,7 +42,11 @@ function LandingRoute() {
 
 export default function App() {
   return (
-    <Routes>
+    <>
+      <div className="aurora-blob aurora-blob-one" aria-hidden="true"/>
+      <div className="aurora-blob aurora-blob-two" aria-hidden="true"/>
+      <div className="aurora-blob aurora-blob-three" aria-hidden="true"/>
+      <Routes>
       <Route path="/" element={<LandingRoute />} />
       <Route path="/about" element={<About />} />
       <Route path="/auth" element={suspended(<AuthRoute />)} />
@@ -104,6 +108,7 @@ export default function App() {
       <Route path="/settings/api-keys" element={toSettings} />
 
       <Route path="*" element={toDashboard} />
-    </Routes>
+      </Routes>
+    </>
   )
 }

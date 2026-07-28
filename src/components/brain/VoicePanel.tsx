@@ -171,7 +171,7 @@ export default function VoicePanel({ user }: Props) {
         )}
         <div className="ml-auto flex items-center gap-2">
           <Languages size={14} className="text-white/40" />
-          <select value={language} onChange={e => setLanguage(e.target.value)} className="rounded-lg border border-white/[.12] bg-black/20 px-2 py-1 text-sm outline-none">
+          <select value={language} onChange={e => setLanguage(e.target.value)} className="rounded-lg border border-white/[.12] bg-[#0A0F1E]/45 px-2 py-1 text-sm outline-none">
             <option value="en-US">English (US)</option>
             <option value="en-GB">English (UK)</option>
             <option value="es-ES">Spanish</option>
@@ -186,7 +186,7 @@ export default function VoicePanel({ user }: Props) {
         </div>
       </div>
 
-      <div className="mt-4 min-h-[120px] rounded-xl border border-white/10 bg-black/20 p-4 text-sm">
+      <div className="mt-4 min-h-[120px] rounded-xl border border-white/10 bg-[#0A0F1E]/45 p-4 text-sm">
         {transcript || interim ? (
           <p className="whitespace-pre-wrap">{transcript}<span className="text-white/40">{interim}</span></p>
         ) : (
@@ -195,7 +195,7 @@ export default function VoicePanel({ user }: Props) {
       </div>
 
       {result && (
-        <div className="mt-4 rounded-xl border border-white/10 bg-black/30 p-4 text-sm">
+        <div className="mt-4 rounded-xl border border-white/10 bg-[#0A0F1E]/55 p-4 text-sm">
           <pre className="max-h-64 overflow-auto whitespace-pre-wrap">{answerText}</pre>
           <div className="mt-3 flex gap-2">
             <button onClick={() => answerText && speak(answerText)} disabled={speaking} className="flex min-h-9 items-center gap-2 rounded-lg border border-white/[.12] px-3 text-xs transition hover:bg-white/[0.06] disabled:opacity-50">{speaking ? <VolumeX size={14}/> : <Volume2 size={14}/>} {speaking ? 'Speaking...' : 'Read aloud'}</button>
@@ -207,7 +207,7 @@ export default function VoicePanel({ user }: Props) {
       {voices.length > 0 && (
         <div className="mt-4 flex items-center gap-2 text-xs text-white/55">
           <span>Voice:</span>
-          <select value={voice?.name || ''} onChange={e => setVoice(voices.find(v => v.name === e.target.value) || null)} className="rounded border border-white/[.12] bg-black/20 px-2 py-1 text-xs outline-none">
+          <select value={voice?.name || ''} onChange={e => setVoice(voices.find(v => v.name === e.target.value) || null)} className="rounded border border-white/[.12] bg-[#0A0F1E]/45 px-2 py-1 text-xs outline-none">
             <option value="">Default</option>
             {voices.map(v => <option key={v.name} value={v.name}>{v.name} ({v.lang})</option>)}
           </select>

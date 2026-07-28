@@ -60,7 +60,7 @@ export const PROVIDER_REGISTRY: ConnectorProvider[] = [
     description: 'Post tweets, threads, and engage.',
     authType: 'oauth',
     icon: 'twitter',
-    color: '#000000',
+    color: '#0A0F1E',
     category: 'Social Media',
     composioAppName: 'twitter',
     actions: [
@@ -121,7 +121,7 @@ export const PROVIDER_REGISTRY: ConnectorProvider[] = [
     description: 'Create pages, databases, and search.',
     authType: 'oauth',
     icon: 'notion',
-    color: '#000000',
+    color: '#0A0F1E',
     category: 'Productivity',
     composioAppName: 'notion',
     actions: [

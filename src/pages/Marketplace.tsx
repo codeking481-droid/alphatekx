@@ -145,7 +145,7 @@ export default function Marketplace() {
               <article key={product.id} className="group flex flex-col overflow-hidden rounded-2xl border border-white/[.12] liquid-glass transition-all hover:-translate-y-1 hover:border-indigo-400/30 hover:shadow-xl">
                 <Link to={`/marketplace/${product.id}`} className="relative aspect-[16/10] overflow-hidden bg-white/[.04]">
                   {product.thumbnail ? <img src={product.thumbnail} alt={product.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" /> : <LayoutGrid className="absolute inset-0 m-auto text-white/20" size={48} />}
-                  <span className="absolute left-3 top-3 rounded-full bg-black/50 px-2.5 py-1 text-[10px] font-medium backdrop-blur-md">{product.category}</span>
+                  <span className="absolute left-3 top-3 rounded-full bg-[#0A0F1E]/70 px-2.5 py-1 text-[10px] font-medium backdrop-blur-md">{product.category}</span>
                 </Link>
                 <div className="flex flex-1 flex-col p-5">
                   <Link to={`/marketplace/${product.id}`} className="text-base font-semibold leading-tight hover:text-indigo-300">{product.title}</Link>
