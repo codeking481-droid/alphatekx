@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { buildCapabilityPlan, detectCapability, isSupportedAction } from '../automation/capabilityRegistry.mjs'
 import { calendarHasDuplicates } from '../automation/contentMemory.mjs'
 import { listImageProviders } from '../automation/imageGateway.mjs'
+import { selectHookExamples } from '../automation/viralHooks.mjs'
 import { connectorFeatureAccess, unavailableConnectorMessage, unavailablePromptConnector } from '../featureAccess.mjs'
 import { classifyIntent, clarificationResponse, conversationalResponse, helpResponse, INTENT_CATEGORIES } from './intentClassifier.mjs'
 
@@ -1074,6 +1075,7 @@ Return JSON:
       durationSource: known.durationSource,
       scheduleSource: known.scheduleSource,
     }
+    const hookExamples = selectHookExamples(String(known.mission || known.outcome || business), 3)
 
     const system = `You are Alpha, a creative social media copywriter.
 Generate original, engaging posts for the following brand and campaign.
@@ -1081,6 +1083,8 @@ Brand name: "${brand.business || businessType}".
 Business type: ${businessType}.
 Audience: ${audience}.
 Original request: ${conversation.originalRequest}
+Useful hook directions (adapt them; never invent claims):
+${hookExamples.map(item => `- ${item.type}: ${item.text}`).join('\n')}
 Stay focused on this product/service and audience. Do not replace the brand with AlphaTekx or drift into unrelated topics.
 Each post should be unique, sound natural, and match the platform's style.
 Return strict JSON with shape:

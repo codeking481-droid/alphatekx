@@ -16,6 +16,8 @@ const Privacy = lazy(() => import('./pages/Privacy'))
 const Terms = lazy(() => import('./pages/Terms'))
 const ContentPage = lazy(() => import('./pages/ContentPage'))
 const MediaLibrary = lazy(() => import('./pages/MediaLibrary'))
+const Leads = lazy(() => import('./pages/Leads'))
+const FoundersLegacy = lazy(() => import('./pages/FoundersLegacy'))
 const Admin = lazy(() => import('./pages/Admin'))
 const AdminAgents = lazy(() => import('./pages/AdminAgents'))
 const AdminWithdrawals = lazy(() => import('./pages/AdminWithdrawals'))
@@ -55,6 +57,7 @@ export default function App() {
       <Route path="/connected-apps" element={protectedPage(<Connectors />)} />
       <Route path="/connectors" element={protectedPage(<Connectors />)} />
       <Route path="/media-library" element={protectedPage(<MediaLibrary />)} />
+      <Route path="/leads" element={protectedPage(<Leads />)} />
       <Route path="/settings" element={protectedPage(<Settings />)} />
       <Route path="/help" element={<ContentPage slug="help" />} />
 
@@ -71,6 +74,7 @@ export default function App() {
       <Route path="/status" element={<ContentPage slug="status" />} />
       <Route path="/cookie-policy" element={<ContentPage slug="cookie-policy" />} />
       <Route path="/updates" element={<ContentPage slug="updates" />} />
+      <Route path="/founders-legacy" element={suspended(<FoundersLegacy />)} />
 
       {/* Backward-compatible redirect: /agents -> /automations */}
       <Route path="/agents" element={toAutomations} />

@@ -23,6 +23,7 @@ import { allowedWhatsAppRecipients, applyWhatsAppStatusEvent, executeApprovedWha
 import { connectorFeatureAccess, featureStatusForUser, refreshFeatureConfig, unavailableConnectorMessage, unavailablePromptConnector } from './server/featureAccess.mjs'
 import * as alphaConnector from './server/composioConnectorService.mjs'
 import * as mediaLibrary from './server/mediaLibraryService.mjs'
+import * as moneyLoop from './server/moneyLoopService.mjs'
 
 function loadEnv() {
   for (const filename of ['.env.local', '.env']) {
@@ -6199,6 +6200,42 @@ const server = http.createServer(async (req, res) => {
     } catch (error) {
       const code = error?.code || 'MEDIA_ERROR'
       return json(res, code === 'DB_ERROR' ? 503 : 500, { error: error instanceof Error ? error.message : 'Could not load Media Library.', code })
+    }
+  }
+  if (String(req.url || '').startsWith('/api/money-loop/leads') && req.method === 'GET') {
+    try {
+      const config = supabaseConfig()
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      if (!user) return json(res, 401, { error: 'Authentication required' })
+      const url = new URL(req.url, 'http://localhost')
+      return json(res, 200, { leads: await moneyLoop.listLeads(config, user, { status: url.searchParams.get('status') || '', limit: url.searchParams.get('limit') || 100 }) })
+    } catch (error) {
+      const code = error?.code || 'MONEY_LOOP_ERROR'
+      return json(res, code === 'DB_ERROR' ? 503 : 400, { error: error instanceof Error ? error.message : 'Could not load leads.', code })
+    }
+  }
+  if (req.url === '/api/money-loop/stats' && req.method === 'GET') {
+    try {
+      const config = supabaseConfig()
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      if (!user) return json(res, 401, { error: 'Authentication required' })
+      const [stats, insights] = await Promise.all([moneyLoop.getMoneyLoopStats(config, user), moneyLoop.listInsights(config, user)])
+      return json(res, 200, { stats, insights })
+    } catch (error) {
+      const code = error?.code || 'MONEY_LOOP_ERROR'
+      return json(res, code === 'DB_ERROR' ? 503 : 400, { error: error instanceof Error ? error.message : 'Could not load Money Loop stats.', code })
+    }
+  }
+  if (/^\/api\/money-loop\/leads\/[0-9a-f-]+$/i.test(req.url || '') && req.method === 'PATCH') {
+    try {
+      const config = supabaseConfig()
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      if (!user) return json(res, 401, { error: 'Authentication required' })
+      const leadId = String(req.url).split('/').pop()
+      return json(res, 200, { lead: await moneyLoop.updateLead(config, user, leadId, await readBody(req)) })
+    } catch (error) {
+      const code = error?.code || 'MONEY_LOOP_ERROR'
+      return json(res, code === 'DB_ERROR' ? 503 : 400, { error: error instanceof Error ? error.message : 'Could not update lead.', code })
     }
   }
   if (req.url === '/api/media/upload' && req.method === 'POST') {

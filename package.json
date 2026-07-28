@@ -36,7 +36,8 @@
     "test:bold-white-flow": "node scripts/bold-white-automation-flow-tests.mjs",
     "test:premium-landing": "node scripts/premium-landing-tests.mjs",
     "test:production-perfection": "node scripts/production-perfection-tests.mjs",
-    "test:media-library": "node scripts/media-library-tests.mjs"
+    "test:media-library": "node scripts/media-library-tests.mjs",
+    "test:money-loop": "node scripts/money-loop-tests.mjs"
   },
   "engines": {
     "node": ">=22.0.0"

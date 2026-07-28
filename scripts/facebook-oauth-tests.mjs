@@ -137,7 +137,7 @@ try {
     assert.match(destination.searchParams.get('reason'), /denied/i)
   })
 
-  await test('Admin Publish Now confirms an ID, preserves unlimited credits, writes history, and does not duplicate', async () => {
+  await test('Facebook campaigns require the released Composio connection instead of using the retired native publisher', async () => {
     const agentId = `facebook-agent-${randomUUID()}`
     const scheduledAt = new Date(Date.now() + 60_000).toISOString()
     const agent = {
@@ -160,25 +160,14 @@ try {
     const before = (await (await fetch(`http://127.0.0.1:${appPort}/api/credits/balance`, { headers })).json()).credits
     const response = await fetch(`http://127.0.0.1:${appPort}/api/agents/campaign/${agentId}/activate`, { method: 'POST', headers, body: JSON.stringify({ autoPublish: true, postingOption: 'now', timezone: 'UTC' }) })
     const result = await response.json()
-    assert.equal(response.status, 200, JSON.stringify(result))
-    const post = result.agent.campaign.posts[0]
-    assert.match(post.providerPostId, /^page-123_/)
-    assert.equal(post.status, 'posted')
-    assert.equal(post.charged, true)
-    assert.equal(post.result.facebook.pageId, 'page-123')
-    assert.equal(post.result.facebook.pageName, 'AlphaTekx Test Page')
-    assert.equal(result.agent.executionHistory[0].status, 'success')
-    assert.equal(result.agent.executionHistory[0].steps[0].content, 'Edited and explicitly approved Facebook Page post.')
+    assert.equal(response.status, 409, JSON.stringify(result))
+    assert.equal(result.code, 'RECONNECT_NEEDED')
     const after = (await (await fetch(`http://127.0.0.1:${appPort}/api/credits/balance`, { headers })).json()).credits
     assert.equal(before - after, 0, 'the verified admin account has unlimited credits')
-    const callsAfterSuccess = publishCalls
-    await fetch(`http://127.0.0.1:${appPort}/api/agents/campaign/${agentId}/activate`, { method: 'POST', headers, body: JSON.stringify({ autoPublish: true, postingOption: 'now', timezone: 'UTC' }) })
-    assert.equal(publishCalls, callsAfterSuccess)
-    const afterDuplicate = (await (await fetch(`http://127.0.0.1:${appPort}/api/credits/balance`, { headers })).json()).credits
-    assert.equal(afterDuplicate, after)
+    assert.equal(publishCalls, 0, 'the retired native Facebook publisher must not be called')
   })
 
-  await test('Missing Facebook post ID is a failure and never charges', async () => {
+  await test('Unavailable Composio Facebook execution never charges', async () => {
     const agentId = `facebook-no-id-${randomUUID()}`
     const scheduledAt = new Date(Date.now() + 60_000).toISOString()
     const agent = {
@@ -190,12 +179,14 @@ try {
     await fetch(`http://127.0.0.1:${appPort}/api/agents`, { method: 'POST', headers, body: JSON.stringify({ agent }) })
     const before = (await (await fetch(`http://127.0.0.1:${appPort}/api/credits/balance`, { headers })).json()).credits
     const response = await fetch(`http://127.0.0.1:${appPort}/api/agents/campaign/${agentId}/activate`, { method: 'POST', headers, body: JSON.stringify({ autoPublish: true, postingOption: 'now', timezone: 'UTC' }) })
-    assert.equal(response.status, 502)
+    const result = await response.json()
+    assert.equal(response.status, 409)
+    assert.equal(result.code, 'RECONNECT_NEEDED')
     const saved = (await (await fetch(`http://127.0.0.1:${appPort}/api/agents`, { headers })).json()).agents.find(item => item.id === agentId)
-    assert.equal(saved.campaign.posts[0].charged, false)
-    assert.equal(saved.executionHistory[0].status, 'error')
+    assert.notEqual(saved.campaign.posts[0].charged, true)
     const after = (await (await fetch(`http://127.0.0.1:${appPort}/api/credits/balance`, { headers })).json()).credits
     assert.equal(after, before)
+    assert.equal(publishCalls, 0, 'the retired native Facebook publisher must not be called')
   })
 } finally {
   app.kill('SIGTERM')

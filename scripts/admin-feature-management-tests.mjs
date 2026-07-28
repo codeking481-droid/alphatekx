@@ -30,10 +30,10 @@ await test('released native tools remain public', () => {
   }
 })
 
-await test('Composio and Meta beta tools are limited to trusted testers', () => {
+await test('released Composio tools are available to public users and admins', () => {
   for (const platform of ['facebook', 'instagram', 'whatsapp', 'x', 'youtube']) {
-    assert.equal(connectorFeatureAccess(publicUser, platform).enabled, false, `${platform} should not be public`)
-    assert.equal(connectorFeatureAccess(admin, platform).enabled, true, `${platform} should be available to admin beta testing`)
+    assert.equal(connectorFeatureAccess(publicUser, platform).enabled, true, `${platform} should be public`)
+    assert.equal(connectorFeatureAccess(admin, platform).enabled, true, `${platform} should be available to admin`)
   }
 })
 
@@ -50,7 +50,7 @@ await test('feature update API is retired for launch', async () => {
     updateFeature({}, 'facebook', { state: 'disabled', stopExisting: true }, admin),
     /Feature management is disabled for launch/
   )
-  assert.equal(connectorFeatureAccess(publicUser, 'facebook').enabled, false)
+  assert.equal(connectorFeatureAccess(publicUser, 'facebook').enabled, true)
   assert.equal(unavailableConnectorMessage('tiktok'), 'TikTok integration is coming soon. LinkedIn is available now.')
 })
 
