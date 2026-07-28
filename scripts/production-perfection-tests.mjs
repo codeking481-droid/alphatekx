@@ -7,6 +7,7 @@ const connectors = read('src/pages/Connectors.tsx')
 const main = read('src/main.tsx')
 const composio = read('server/composioConnectorService.mjs')
 const server = read('server.mjs')
+const atomicCredits = read('supabase/atomic-credit-execution.sql')
 
 const checks = [
   ['first-load error boundary is visible on white', () => {
@@ -29,9 +30,23 @@ const checks = [
     assert.match(engine, /You have 0 credits/)
   }],
   ['Composio execution is confirmed before charging', () => {
-    assert.ok(composio.indexOf('confirmedProviderId(responseData)') < composio.indexOf('chargeConfirmedExecution(user, 1'))
+    assert.ok(composio.indexOf('const confirmedId = confirmedProviderId(responseData)') < composio.lastIndexOf('chargeConfirmedExecution(user, 1'))
     assert.match(server, /req\.url === '\/api\/composio\/status'/)
     assert.match(server, /req\.url === '\/api\/composio\/execute'/)
+  }],
+  ['LinkedIn remains on the native AlphaTekx publishing path', () => {
+    assert.match(server, /const composioPublishingPlatforms = new Set\(\['youtube', 'instagram', 'x', 'twitter', 'facebook', 'whatsapp'\]\)/)
+    assert.doesNotMatch(server, /composioPublishingPlatforms = new Set\([^)]*linkedin/)
+    assert.match(server, /postToSocial\(platform, user/)
+    assert.match(server, /publishLinkedInTextPost/)
+  }],
+  ['Composio credits settle atomically and remain recoverable', () => {
+    assert.match(atomicCredits, /for update/)
+    assert.match(atomicCredits, /idx_credit_transactions_execution_idempotency/)
+    assert.match(atomicCredits, /profiles_credits_non_negative/)
+    assert.match(atomicCredits, /provider_confirmed/)
+    assert.match(composio, /previous\?\.status === 'provider_confirmed'/)
+    assert.match(composio, /rest\/v1\/rpc\/deduct_credit_atomic/)
   }],
 ]
 

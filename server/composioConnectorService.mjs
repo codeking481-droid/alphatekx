@@ -391,43 +391,30 @@ async function getCreditBalance(userId) {
 async function chargeConfirmedExecution(user, amount, metadata) {
   const config = persistenceConfig()
   if (!config) throw new Error('Database not ready, contact admin')
-  const current = await getCreditBalance(user.id)
-  if (current < amount) throw new Error('Insufficient credits')
-  const next = current - amount
-  const update = await fetch(`${config.url}/rest/v1/profiles?id=eq.${encodeURIComponent(user.id)}&credits=eq.${current}`, {
-    method: 'PATCH',
-    headers: supabaseServiceHeaders(config.service, { Prefer: 'return=representation' }),
-    body: JSON.stringify({ credits: next }),
-  })
-  const updated = update.ok ? await update.json().catch(() => []) : []
-  if (!update.ok || !Array.isArray(updated) || updated.length !== 1) {
-    console.error('[AlphaTekX] Composio credit update failed', update.status, update.ok ? 'concurrent update' : await update.text().catch(() => ''))
-    throw new Error(update.ok ? 'Credit balance changed; retry safely' : 'Database not ready, contact admin')
-  }
-  const transaction = {
-    user_id: user.id,
-    type: 'execution',
-    credits_removed: amount,
-    balance_after: next,
-    reference: metadata.idempotencyKey,
-    reason: metadata.description,
-    metadata,
-  }
-  const history = await fetch(`${config.url}/rest/v1/credit_transactions`, {
+  const response = await fetch(`${config.url}/rest/v1/rpc/deduct_credit_atomic`, {
     method: 'POST',
-    headers: supabaseServiceHeaders(config.service, { Prefer: 'return=minimal' }),
-    body: JSON.stringify(transaction),
+    headers: supabaseServiceHeaders(config.service),
+    body: JSON.stringify({
+      p_user_id: user.id,
+      p_amount: amount,
+      p_idempotency_key: metadata.idempotencyKey,
+      p_description: metadata.description,
+      p_platform: metadata.platform,
+      p_provider_id: metadata.providerId || null,
+    }),
   })
-  if (!history.ok) {
-    console.error('[AlphaTekX] Composio credit transaction failed', history.status, await history.text().catch(() => ''))
-    await fetch(`${config.url}/rest/v1/profiles?id=eq.${encodeURIComponent(user.id)}&credits=eq.${next}`, {
-      method: 'PATCH',
-      headers: supabaseServiceHeaders(config.service),
-      body: JSON.stringify({ credits: current }),
-    }).catch(() => null)
-    throw new Error('Database not ready, contact admin')
+  const raw = await response.text()
+  let result = null
+  try { result = raw ? JSON.parse(raw) : null } catch {}
+  if (!response.ok) {
+    console.error('[AlphaTekX] Atomic credit settlement failed', response.status, raw)
+    const missingRpc = response.status === 404 || /deduct_credit_atomic|schema cache|function/i.test(raw)
+    throw new Error(missingRpc ? 'Atomic credit migration is not installed; publication was confirmed but billing is pending. Contact admin.' : 'Database not ready, contact admin')
   }
-  return next
+  if (result?.status === 'insufficient') throw new Error('Insufficient credits')
+  if (result?.status === 'error') throw new Error(result.message || 'Atomic credit settlement failed')
+  if (!['success', 'already_processed'].includes(result?.status)) throw new Error('Atomic credit settlement returned an invalid result')
+  return Number.isFinite(Number(result.new_balance)) ? Number(result.new_balance) : getCreditBalance(user.id)
 }
 
 function confirmedProviderId(value, depth = 0) {
@@ -756,6 +743,31 @@ export async function executeProviderAction(user, providerId, actionId, payload)
       replayed: true,
     }
   }
+  if (previous?.status === 'provider_confirmed' && previous.provider_execution_id) {
+    const pendingBalance = await chargeConfirmedExecution(user, 1, {
+      idempotencyKey,
+      description: `${pid}.${actionId}`,
+      platform: pid,
+      action: actionId,
+      providerId: previous.provider_execution_id,
+    })
+    await finishExecution(user.id, idempotencyKey, {
+      status: 'succeeded',
+      provider_execution_id: previous.provider_execution_id,
+      result_metadata: { ...(previous.result_metadata || {}), confirmed: true, providerId: previous.provider_execution_id, balance: pendingBalance },
+      credits_charged: 1,
+    })
+    return {
+      success: true,
+      executionId: previous.id,
+      providerId: previous.provider_execution_id,
+      creditsCharged: 1,
+      balance: pendingBalance,
+      result: previous.result_metadata || { billingRecovered: true },
+      executionTimeMs: 0,
+      replayed: true,
+    }
+  }
   if (previous) throw new Error(previous.status === 'claimed' ? 'This approved action is already in progress' : 'This idempotency key already has a recorded failed execution')
   if (await getCreditBalance(user.id) < 1) throw new Error('Insufficient credits')
   const actionArguments = { ...(payload || {}) }
@@ -824,6 +836,12 @@ export async function executeProviderAction(user, providerId, actionId, payload)
     await finishExecution(user.id, idempotencyKey, { status: 'failed', error_code: 'missing_provider_id' })
     throw new Error('Provider completed without returning a confirmed post or message ID')
   }
+  await finishExecution(user.id, idempotencyKey, {
+    status: 'provider_confirmed',
+    provider_execution_id: confirmedId,
+    result_metadata: { confirmed: true, providerId: confirmedId, billingPending: true },
+    credits_charged: 0,
+  })
   const balance = await chargeConfirmedExecution(user, 1, {
     idempotencyKey,
     description: `${pid}.${actionId}`,
