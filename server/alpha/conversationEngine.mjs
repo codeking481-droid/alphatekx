@@ -187,7 +187,7 @@ function heuristicParseRequest(prompt) {
     { id: 'youtube', test: /\byoutube\b/ },
   ]
   const platforms = platformList.filter(p => p.test.test(lower)).map(p => p.id === 'twitter' ? 'x' : p.id)
-  if (!hasPost || platforms.length === 0) return result
+  if (!hasPost) return result
   result.intent = 'social_content'
   result.knownFields.platforms = platforms
 
@@ -229,6 +229,10 @@ function heuristicParseRequest(prompt) {
   if (endMatch) result.knownFields.endDate = endMatch[1]
   const runMatch = prompt.match(/\b(?:for|stop\s+after)\s+(\d+)\s+(?:posts?|runs?)\b/i)
   if (runMatch) result.knownFields.totalPosts = Number(runMatch[1])
+  if (/\buntil\s+paused\b/i.test(prompt)) {
+    result.knownFields.endCondition = 'until_paused'
+    result.knownFields.durationSource = 'user_explicit'
+  }
   const ctaMatch = prompt.match(/\b(?:cta|call to action)\s*[:=]\s*([^\n.]+)/i)
   if (ctaMatch) result.knownFields.callToAction = ctaMatch[1].trim()
 
@@ -302,6 +306,9 @@ Always respond in valid JSON when asked.`
 function requiredMissingFields(intent, knownFields) {
   const missing = []
   if (SOCIAL_CONTENT_INTENTS.has(intent)) {
+    if (!knownFields.platforms || !knownFields.platforms.length) missing.push({ field: 'platforms', question: 'Which platforms should Alpha post to? I will show which ones are connected before creating anything.', reason: 'Alpha must never assume a publishing platform.', required: true })
+    const untilPaused = knownFields.endCondition === 'until_paused'
+    if (untilPaused && !knownFields.untilPausedConfirmed) missing.push({ field: 'untilPausedConfirmation', question: 'This schedule runs until paused. Should Alpha auto-pause when your credits finish, set a fixed limit, or wait while you buy more credits?', reason: 'Infinite schedules require an explicit credit-safety choice.', required: true })
     const linkedinOnly = Array.isArray(knownFields.platforms) && knownFields.platforms.length === 1 && knownFields.platforms[0] === 'linkedin'
     const mode = knownFields.publishingMode || ''
     const recurring = linkedinOnly && mode === 'recurring'
@@ -316,8 +323,7 @@ function requiredMissingFields(intent, knownFields) {
     if (!knownFields.business) missing.push({ field: 'business', question: 'What does your business offer, or what is it about?', reason: 'I need this to generate relevant, original posts.', required: true })
     if (!knownFields.audience) missing.push({ field: 'audience', question: 'Who is your target customer or audience?', reason: 'I need this to make the posts persuasive.', required: true })
     if (!knownFields.tone) missing.push({ field: 'tone', question: 'What tone should the posts use? (e.g. professional, friendly, playful, bold, persuasive)', reason: 'This determines how the content sounds.', required: true })
-    if (!linkedinOnly && !knownFields.durationDays && !knownFields.duration_days && !knownFields.totalPosts && !knownFields.total_posts) missing.push({ field: 'durationDays', question: 'For how many days should I create posts?', reason: 'This determines how many posts to generate.', required: true })
-    if (!knownFields.platforms || !knownFields.platforms.length) missing.push({ field: 'platforms', question: 'Which platform(s) should the posts be for? (Facebook, LinkedIn, X, Instagram, etc.)', reason: 'Each platform has a different style.', required: true })
+    if (!untilPaused && !linkedinOnly && !knownFields.durationDays && !knownFields.duration_days && !knownFields.totalPosts && !knownFields.total_posts) missing.push({ field: 'durationDays', question: 'For how many days should I create posts?', reason: 'This determines how many posts to generate.', required: true })
     return missing
   }
 
@@ -472,7 +478,7 @@ export function createConversationEngine(deps) {
       }
       return
     }
-    if (SOCIAL_CONTENT_INTENTS.has(fastHeuristic.intent) && requiredMissingFields(fastHeuristic.intent, fastHeuristic.knownFields).length === 0) {
+    if (SOCIAL_CONTENT_INTENTS.has(fastHeuristic.intent)) {
       conversation.intent = fastHeuristic.intent
       conversation.confidence = 0.9
       conversation.currentGoal = fastHeuristic.knownFields.topic || prompt
@@ -703,6 +709,18 @@ Do not return placeholder text. Use the words the user actually provided.`
     }
     const next = remaining[0]
     conversation.askedFields.push(next.field)
+    if (next.field === 'untilPausedConfirmation') {
+      const credits = Math.max(0, Number(await getUserCredits({ id: conversation.userId, email: conversation.userEmail })) || 0)
+      const platforms = Math.max(1, conversation.knownFields.platforms?.length || 1)
+      const runsPerWeek = conversation.knownFields.frequency === 'daily' ? 7 : conversation.knownFields.frequency === 'weekdays' ? 5 : 1
+      const weeklyCost = platforms * runsPerWeek
+      const weeks = weeklyCost ? Math.floor(credits / weeklyCost) : 0
+      conversation.lastQuestion = next.field
+      addMessage(conversation, 'alpha', credits < 1
+        ? 'You have 0 credits. An until-paused automation needs at least 1 credit to start. Buy credits first, or choose a fixed plan after topping up.'
+        : `You said “until paused,” so this can keep running. You have ${credits} credits, which covers about ${weeks} week${weeks === 1 ? '' : 's'} at ${weeklyCost} credit${weeklyCost === 1 ? '' : 's'} per week. Choose: A) run until paused and auto-pause when credits finish (recommended), B) set a fixed number of weeks, or C) buy more credits first.`, { field: next.field, credits, weeklyCost, estimatedWeeks: weeks })
+      return
+    }
 
     const system = `${ALPHA_SYSTEM_IDENTITY}
 
@@ -817,6 +835,38 @@ Return JSON:
       if (duration || count || date || /\buntil\s+paused\b/i.test(text)) extracted.durationSource = 'user_confirmed'
       extracted.endCondition = text.trim()
     }
+    if (field === 'untilPausedConfirmation') {
+      const choice = text.trim().toLowerCase()
+      if (/^(?:a|option a)\b|auto.?pause|run until paused/.test(choice)) {
+        const credits = Math.max(0, Number(await getUserCredits({ id: conversation.userId, email: conversation.userEmail })) || 0)
+        if (credits < 1) {
+          addMessage(conversation, 'alpha', 'You need at least 1 credit before an until-paused automation can start. Buy credits first; nothing has been created or charged.')
+          return
+        }
+        const platformCount = Math.max(1, conversation.knownFields.platforms?.length || 1)
+        const runsPerWeek = conversation.knownFields.frequency === 'daily' ? 7 : conversation.knownFields.frequency === 'weekdays' ? 5 : 1
+        const totalRuns = Math.max(1, Math.floor(credits / platformCount))
+        extracted.untilPausedConfirmed = true
+        extracted.autoPauseOnCreditExhaustion = true
+        extracted.endCondition = 'until_paused'
+        extracted.totalPosts = totalRuns
+        extracted.durationDays = Math.max(7, Math.ceil(totalRuns / runsPerWeek) * 7)
+        extracted.durationSource = 'credit_bounded_until_paused'
+      } else if (/^(?:b|option b)\b|fixed|weeks?/.test(choice)) {
+        const weeks = Number(choice.match(/\b(\d+)\b/)?.[1] || 0)
+        if (!weeks) {
+          addMessage(conversation, 'alpha', 'How many weeks should the fixed schedule run?')
+          return
+        }
+        extracted.untilPausedConfirmed = true
+        extracted.endCondition = 'fixed_duration'
+        extracted.durationDays = weeks * 7
+        extracted.durationSource = 'user_confirmed'
+      } else {
+        addMessage(conversation, 'alpha', 'No automation has been created. Top up your credits, then choose A to run with automatic low-credit pausing or B for a fixed duration.')
+        return
+      }
+    }
 
     if (clarification) {
       addMessage(conversation, 'alpha', clarification)
@@ -874,6 +924,12 @@ Return JSON:
       if (count) extracted.totalPosts = Number(count[1])
       if (date) extracted.endDate = date[1]
       extracted.endCondition = text.trim()
+    } else if (field === 'untilPausedConfirmation') {
+      if (/^(?:a|option a)\b|auto.?pause|run until paused/.test(lower)) {
+        extracted.untilPausedConfirmed = true
+        extracted.autoPauseOnCreditExhaustion = true
+        extracted.endCondition = 'until_paused'
+      }
     } else {
       extracted[field] = text.trim()
     }
@@ -938,7 +994,13 @@ Return JSON:
       return
     }
     const isSinglePost = publishingMode === 'once_now' || publishingMode === 'once_later'
-    const platforms = Array.isArray(known.platforms) && known.platforms.length ? known.platforms : ['facebook']
+    const platforms = Array.isArray(known.platforms) ? known.platforms.filter(Boolean) : []
+    if (!platforms.length) {
+      conversation.conversationStage = 'gathering_information'
+      conversation.missingFields = requiredMissingFields(conversation.intent, known)
+      await askNextQuestion(conversation)
+      return
+    }
     const businessName = known.business || known.businessName || ''
     const businessType = known.businessType || known.description || known.business || 'your business'
     const audience = known.audience || 'your audience'
@@ -1126,6 +1188,11 @@ Total posts: ${totalPosts}.`
       permissions: platforms,
       creditsNeeded: totalCredits,
       creditsPerRun: 0,
+      endCondition: known.endCondition === 'until_paused'
+        ? { type: 'until_paused', autoPauseOnCreditExhaustion: true }
+        : { type: known.endDate ? 'until_date' : 'num_executions', value: known.endDate || totalPosts, autoPauseOnCreditExhaustion: true },
+      expectedExecutions: known.endCondition === 'until_paused' ? 'until paused (auto-pause when credits finish)' : totalPosts,
+      estimatedCreditsFirstMonth: Math.min(totalCredits, Number(known.monthlyCreditEstimate || totalCredits)),
       executionsDone: 0,
       executionsTotal: totalPosts,
       generationMode,

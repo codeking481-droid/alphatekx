@@ -3214,7 +3214,7 @@ function getConversationEngine() {
     callLLMForRole,
     saveServerAgent,
     getServerAgent,
-    getUserCredits,
+    getUserCredits: user => getUserCredits(user, supabaseConfig()),
     spendUserCredits,
     getIntegrationStatus: async (userId, provider) => {
       const integration = await getUserIntegration(userId, provider, supabaseConfig()).catch(() => null)

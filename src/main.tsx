@@ -16,14 +16,15 @@ class ErrorBoundary extends React.Component<React.PropsWithChildren, { error: Er
   render() {
     if (this.state.error) {
       return (
-        <main className="grid min-h-screen place-items-center bg-background p-6">
-          <div className="text-center">
-            <p className="text-sm text-white/60">Alpha ran into an issue.</p>
+        <main className="grid min-h-screen place-items-center bg-white p-6 text-[#0B0F19]">
+          <div className="max-w-md rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-xl">
+            <p className="text-lg font-black">Something went wrong. Please refresh.</p>
+            <p className="mt-2 text-sm font-semibold text-slate-600">Your work is still safe.</p>
             <button
               onClick={() => window.location.reload()}
-              className="mt-4 rounded-xl bg-white/10 px-4 py-2 text-sm text-white transition hover:bg-white/15"
+              className="mt-5 rounded-xl bg-[#6D28D9] px-5 py-3 text-sm font-black text-white transition hover:bg-[#5B21B6]"
             >
-              Reload
+              Refresh AlphaTekx
             </button>
           </div>
         </main>
