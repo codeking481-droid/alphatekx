@@ -15,6 +15,7 @@ const Settings = lazy(() => import('./pages/Settings'))
 const Privacy = lazy(() => import('./pages/Privacy'))
 const Terms = lazy(() => import('./pages/Terms'))
 const ContentPage = lazy(() => import('./pages/ContentPage'))
+const MediaLibrary = lazy(() => import('./pages/MediaLibrary'))
 const Admin = lazy(() => import('./pages/Admin'))
 const AdminAgents = lazy(() => import('./pages/AdminAgents'))
 const AdminWithdrawals = lazy(() => import('./pages/AdminWithdrawals'))
@@ -53,6 +54,7 @@ export default function App() {
       <Route path="/history" element={protectedPage(<History />)} />
       <Route path="/connected-apps" element={protectedPage(<Connectors />)} />
       <Route path="/connectors" element={protectedPage(<Connectors />)} />
+      <Route path="/media-library" element={protectedPage(<MediaLibrary />)} />
       <Route path="/settings" element={protectedPage(<Settings />)} />
       <Route path="/help" element={<ContentPage slug="help" />} />
 

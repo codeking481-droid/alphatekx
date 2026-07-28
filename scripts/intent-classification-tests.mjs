@@ -56,6 +56,19 @@ for (const [index, prompt] of ['How do I connect LinkedIn?', 'How do credits wor
 assert.equal(modelCalls, 0)
 assert.equal(creditCharges, 0)
 
+const missingPlatform = await engine.start({ id: 'missing-platform', email: 'owner@example.com' }, 'Post every Monday at 9AM')
+assert.equal(missingPlatform.conversationStage, 'gathering_information')
+assert.equal(missingPlatform.lastQuestion, 'platforms')
+assert.match(missingPlatform.messages.at(-1).text, /Which platforms/i)
+
+const untilPaused = await engine.start(
+  { id: 'until-paused', email: 'iamdan4live@gmail.com' },
+  'Post about my thrift store on X and Instagram every Monday at 9AM Africa/Lagos until paused'
+)
+assert.equal(untilPaused.conversationStage, 'gathering_information')
+assert.equal(untilPaused.lastQuestion, 'untilPausedConfirmation')
+assert.match(untilPaused.messages.at(-1).text, /10 week|until paused|auto-pause/i)
+
 for (const relative of [
   '../server/alpha/conversationEngine.mjs',
   '../src/pages/Agents.tsx',

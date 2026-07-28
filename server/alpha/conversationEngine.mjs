@@ -28,6 +28,7 @@ const PLATFORM_NAMES = {
   x: 'X',
   twitter: 'X',
   whatsapp: 'WhatsApp',
+  youtube: 'YouTube',
   telegram: 'Telegram',
   slack: 'Slack',
   discord: 'Discord',
@@ -44,6 +45,8 @@ const SOCIAL_CONTENT_INTENTS = new Set([
   'linkedin',
   'x',
   'instagram',
+  'youtube',
+  'whatsapp',
 ])
 
 function nowIso() { return new Date().toISOString() }
@@ -187,7 +190,7 @@ function heuristicParseRequest(prompt) {
     { id: 'youtube', test: /\byoutube\b/ },
   ]
   const platforms = platformList.filter(p => p.test.test(lower)).map(p => p.id === 'twitter' ? 'x' : p.id)
-  if (!hasPost || platforms.length === 0) return result
+  if (!hasPost) return result
   result.intent = 'social_content'
   result.knownFields.platforms = platforms
 
@@ -229,6 +232,10 @@ function heuristicParseRequest(prompt) {
   if (endMatch) result.knownFields.endDate = endMatch[1]
   const runMatch = prompt.match(/\b(?:for|stop\s+after)\s+(\d+)\s+(?:posts?|runs?)\b/i)
   if (runMatch) result.knownFields.totalPosts = Number(runMatch[1])
+  if (/\buntil\s+paused\b/i.test(prompt)) {
+    result.knownFields.endCondition = 'until_paused'
+    result.knownFields.durationSource = 'user_explicit'
+  }
   const ctaMatch = prompt.match(/\b(?:cta|call to action)\s*[:=]\s*([^\n.]+)/i)
   if (ctaMatch) result.knownFields.callToAction = ctaMatch[1].trim()
 
@@ -276,14 +283,15 @@ function normalizePlatform(name) {
   if (n.includes('telegram')) return 'telegram'
   if (n.includes('slack')) return 'slack'
   if (n.includes('whatsapp')) return 'whatsapp'
+  if (n.includes('youtube')) return 'youtube'
   if (n.includes('discord')) return 'discord'
   return n
 }
 
 function computePostCredits(platforms, includeImage = false) {
-  let credits = 2 + platforms.length
-  if (includeImage) credits += 2
-  return credits
+  void includeImage
+  if (platforms.length === 1 && platforms[0] === 'linkedin') return 3
+  return Math.max(1, platforms.length)
 }
 
 function buildCron(timeDisplay, fallbackHour = 8) {
@@ -302,6 +310,9 @@ Always respond in valid JSON when asked.`
 function requiredMissingFields(intent, knownFields) {
   const missing = []
   if (SOCIAL_CONTENT_INTENTS.has(intent)) {
+    if (!knownFields.platforms || !knownFields.platforms.length) missing.push({ field: 'platforms', question: 'Which platforms should Alpha post to? I will show which ones are connected before creating anything.', reason: 'Alpha must never assume a publishing platform.', required: true })
+    const untilPaused = knownFields.endCondition === 'until_paused'
+    if (untilPaused && !knownFields.untilPausedConfirmed) missing.push({ field: 'untilPausedConfirmation', question: 'This schedule runs until paused. Should Alpha auto-pause when your credits finish, set a fixed limit, or wait while you buy more credits?', reason: 'Infinite schedules require an explicit credit-safety choice.', required: true })
     const linkedinOnly = Array.isArray(knownFields.platforms) && knownFields.platforms.length === 1 && knownFields.platforms[0] === 'linkedin'
     const mode = knownFields.publishingMode || ''
     const recurring = linkedinOnly && mode === 'recurring'
@@ -316,8 +327,7 @@ function requiredMissingFields(intent, knownFields) {
     if (!knownFields.business) missing.push({ field: 'business', question: 'What does your business offer, or what is it about?', reason: 'I need this to generate relevant, original posts.', required: true })
     if (!knownFields.audience) missing.push({ field: 'audience', question: 'Who is your target customer or audience?', reason: 'I need this to make the posts persuasive.', required: true })
     if (!knownFields.tone) missing.push({ field: 'tone', question: 'What tone should the posts use? (e.g. professional, friendly, playful, bold, persuasive)', reason: 'This determines how the content sounds.', required: true })
-    if (!linkedinOnly && !knownFields.durationDays && !knownFields.duration_days && !knownFields.totalPosts && !knownFields.total_posts) missing.push({ field: 'durationDays', question: 'For how many days should I create posts?', reason: 'This determines how many posts to generate.', required: true })
-    if (!knownFields.platforms || !knownFields.platforms.length) missing.push({ field: 'platforms', question: 'Which platform(s) should the posts be for? (Facebook, LinkedIn, X, Instagram, etc.)', reason: 'Each platform has a different style.', required: true })
+    if (!untilPaused && !linkedinOnly && !knownFields.durationDays && !knownFields.duration_days && !knownFields.totalPosts && !knownFields.total_posts) missing.push({ field: 'durationDays', question: 'For how many days should I create posts?', reason: 'This determines how many posts to generate.', required: true })
     return missing
   }
 
@@ -358,6 +368,7 @@ export function createConversationEngine(deps) {
     getUserCredits,
     spendUserCredits,
     getIntegrationStatus,
+    getSmartImage,
   } = deps
 
   async function saveConversation(conversation) {
@@ -472,7 +483,7 @@ export function createConversationEngine(deps) {
       }
       return
     }
-    if (SOCIAL_CONTENT_INTENTS.has(fastHeuristic.intent) && requiredMissingFields(fastHeuristic.intent, fastHeuristic.knownFields).length === 0) {
+    if (SOCIAL_CONTENT_INTENTS.has(fastHeuristic.intent)) {
       conversation.intent = fastHeuristic.intent
       conversation.confidence = 0.9
       conversation.currentGoal = fastHeuristic.knownFields.topic || prompt
@@ -703,6 +714,18 @@ Do not return placeholder text. Use the words the user actually provided.`
     }
     const next = remaining[0]
     conversation.askedFields.push(next.field)
+    if (next.field === 'untilPausedConfirmation') {
+      const credits = Math.max(0, Number(await getUserCredits({ id: conversation.userId, email: conversation.userEmail })) || 0)
+      const platforms = Math.max(1, conversation.knownFields.platforms?.length || 1)
+      const runsPerWeek = conversation.knownFields.frequency === 'daily' ? 7 : conversation.knownFields.frequency === 'weekdays' ? 5 : 1
+      const weeklyCost = platforms * runsPerWeek
+      const weeks = weeklyCost ? Math.floor(credits / weeklyCost) : 0
+      conversation.lastQuestion = next.field
+      addMessage(conversation, 'alpha', credits < 1
+        ? 'You have 0 credits. An until-paused automation needs at least 1 credit to start. Buy credits first, or choose a fixed plan after topping up.'
+        : `You said “until paused,” so this can keep running. You have ${credits} credits, which covers about ${weeks} week${weeks === 1 ? '' : 's'} at ${weeklyCost} credit${weeklyCost === 1 ? '' : 's'} per week. Choose: A) run until paused and auto-pause when credits finish (recommended), B) set a fixed number of weeks, or C) buy more credits first.`, { field: next.field, credits, weeklyCost, estimatedWeeks: weeks })
+      return
+    }
 
     const system = `${ALPHA_SYSTEM_IDENTITY}
 
@@ -817,6 +840,38 @@ Return JSON:
       if (duration || count || date || /\buntil\s+paused\b/i.test(text)) extracted.durationSource = 'user_confirmed'
       extracted.endCondition = text.trim()
     }
+    if (field === 'untilPausedConfirmation') {
+      const choice = text.trim().toLowerCase()
+      if (/^(?:a|option a)\b|auto.?pause|run until paused/.test(choice)) {
+        const credits = Math.max(0, Number(await getUserCredits({ id: conversation.userId, email: conversation.userEmail })) || 0)
+        if (credits < 1) {
+          addMessage(conversation, 'alpha', 'You need at least 1 credit before an until-paused automation can start. Buy credits first; nothing has been created or charged.')
+          return
+        }
+        const platformCount = Math.max(1, conversation.knownFields.platforms?.length || 1)
+        const runsPerWeek = conversation.knownFields.frequency === 'daily' ? 7 : conversation.knownFields.frequency === 'weekdays' ? 5 : 1
+        const totalRuns = Math.max(1, Math.floor(credits / platformCount))
+        extracted.untilPausedConfirmed = true
+        extracted.autoPauseOnCreditExhaustion = true
+        extracted.endCondition = 'until_paused'
+        extracted.totalPosts = totalRuns
+        extracted.durationDays = Math.max(7, Math.ceil(totalRuns / runsPerWeek) * 7)
+        extracted.durationSource = 'credit_bounded_until_paused'
+      } else if (/^(?:b|option b)\b|fixed|weeks?/.test(choice)) {
+        const weeks = Number(choice.match(/\b(\d+)\b/)?.[1] || 0)
+        if (!weeks) {
+          addMessage(conversation, 'alpha', 'How many weeks should the fixed schedule run?')
+          return
+        }
+        extracted.untilPausedConfirmed = true
+        extracted.endCondition = 'fixed_duration'
+        extracted.durationDays = weeks * 7
+        extracted.durationSource = 'user_confirmed'
+      } else {
+        addMessage(conversation, 'alpha', 'No automation has been created. Top up your credits, then choose A to run with automatic low-credit pausing or B for a fixed duration.')
+        return
+      }
+    }
 
     if (clarification) {
       addMessage(conversation, 'alpha', clarification)
@@ -874,6 +929,12 @@ Return JSON:
       if (count) extracted.totalPosts = Number(count[1])
       if (date) extracted.endDate = date[1]
       extracted.endCondition = text.trim()
+    } else if (field === 'untilPausedConfirmation') {
+      if (/^(?:a|option a)\b|auto.?pause|run until paused/.test(lower)) {
+        extracted.untilPausedConfirmed = true
+        extracted.autoPauseOnCreditExhaustion = true
+        extracted.endCondition = 'until_paused'
+      }
     } else {
       extracted[field] = text.trim()
     }
@@ -922,8 +983,21 @@ Return JSON:
     if (!Array.isArray(calendar) || calendar.length < expectedTotal) return false
     return calendar.every(p => {
       const caps = p.captions || {}
-      const hasCaption = typeof caps === 'object' && Object.keys(caps).some(k => typeof caps[k] === 'string' && caps[k].trim().length > 0)
-      return Number.isInteger(p.day) && p.day > 0 && Array.isArray(p.platforms) && p.platforms.length > 0 && hasCaption
+      const captionEntries = typeof caps === 'object' ? Object.entries(caps) : []
+      const quality = captionEntries.length > 0 && captionEntries.every(([platform, value]) => {
+        const text = typeof value === 'string' ? value.trim() : ''
+        const words = text.split(/\s+/).filter(Boolean).length
+        const normalized = normalizePlatform(platform)
+        if (normalized === 'x') return text.length >= 180 && text.length <= 850
+        if (normalized === 'instagram') return words >= 150
+        if (normalized === 'facebook') return words >= 200
+        if (normalized === 'linkedin') return words >= 1
+        if (normalized === 'whatsapp') return words >= 100
+        if (normalized === 'youtube') return words >= 300
+        return words >= 40
+      })
+      const expected = expectedPlatforms.every(platform => captionEntries.some(([key]) => normalizePlatform(key) === normalizePlatform(platform)))
+      return Number.isInteger(p.day) && p.day > 0 && Array.isArray(p.platforms) && p.platforms.length > 0 && quality && expected
     })
   }
 
@@ -938,7 +1012,13 @@ Return JSON:
       return
     }
     const isSinglePost = publishingMode === 'once_now' || publishingMode === 'once_later'
-    const platforms = Array.isArray(known.platforms) && known.platforms.length ? known.platforms : ['facebook']
+    const platforms = Array.isArray(known.platforms) ? known.platforms.filter(Boolean) : []
+    if (!platforms.length) {
+      conversation.conversationStage = 'gathering_information'
+      conversation.missingFields = requiredMissingFields(conversation.intent, known)
+      await askNextQuestion(conversation)
+      return
+    }
     const businessName = known.business || known.businessName || ''
     const businessType = known.businessType || known.description || known.business || 'your business'
     const audience = known.audience || 'your audience'
@@ -960,8 +1040,9 @@ Return JSON:
     }
     const postsPerDay = Math.max(1, Math.ceil(totalPosts / durationDays))
     const dontPost = Array.isArray(known.dontPost) ? known.dontPost : []
-    const imageRequested = Boolean(known.includeImages || known.include_images)
-    const includeImages = imageRequested && listImageProviders().length > 0
+    const automaticImagePlatforms = platforms.some(platform => ['facebook', 'instagram', 'x', 'twitter'].includes(platform))
+    const imageRequested = Boolean(known.includeImages || known.include_images || automaticImagePlatforms)
+    const includeImages = imageRequested && (typeof getSmartImage === 'function' || listImageProviders().length > 0)
 
     const business = businessName || businessType
     const brand = { business, businessType, audience, tone, website: known.website || '', dontPost }
@@ -1021,11 +1102,13 @@ Mix: 40% educational, 30% product, 20% story, 10% CTA.
 Include a CTA in ~70% of posts.
 Avoid repeating the same opening sentence across posts.
 Do not invent customer names, testimonials, or facts you cannot verify.
-Platform style:
-- Facebook: short, friendly, 2-3 relevant hashtags
-- LinkedIn: professional, 3-5 hashtags
-- X: concise, punchy, 1-2 hashtags
-- Instagram: visual, emoji-friendly, longer caption
+Platform minimum quality:
+- Facebook: at least 200 words; conversational hook, useful story, three lessons, a closing question, and 3-5 relevant hashtags.
+- LinkedIn: at least 180 words; professional hook, concrete value, clear CTA, and 3-5 relevant hashtags.
+- X: 180-280 characters with hook, value, CTA, and 1-2 hashtags. If the idea needs more space, return a concise 2-3 part thread separated with new lines.
+- Instagram: at least 150 words; hook, short story, three useful bullets, CTA question, and 10-15 relevant hashtags.
+- WhatsApp: at least 100 words, friendly and useful, with a clear next step.
+- YouTube: title 50-70 characters and a description of at least 300 words with searchable keywords and a CTA.
 
 Avoid: ${dontPost.join(', ') || 'nothing specific'}.
 Total posts: ${totalPosts}.`
@@ -1079,6 +1162,32 @@ Total posts: ${totalPosts}.`
         return
       }
     }
+    if (!validateCalendar(posts, platforms, totalPosts)) {
+      conversation.conversationStage = 'blocked'
+      addMessage(conversation, 'alpha', 'Alpha refused to schedule low-quality or incomplete content. Your plan is saved, nothing was published, and no credits were charged. Please regenerate when the content provider is available.')
+      return
+    }
+
+    if (includeImages && typeof getSmartImage === 'function') {
+      try {
+        for (let index = 0; index < posts.length; index += 3) {
+          const batch = posts.slice(index, index + 3)
+          const images = await Promise.all(batch.map(post => {
+            const content = [post.topic, ...Object.values(post.captions || {})].filter(Boolean).join('\n')
+            return getSmartImage({ id: conversation.userId, email: conversation.userEmail }, content)
+          }))
+          images.forEach((image, offset) => {
+            posts[index + offset].imageUrl = image.image_url
+            posts[index + offset].imagePrompt = image.image_prompt
+            posts[index + offset].imageSource = image.image_source
+          })
+        }
+      } catch (error) {
+        conversation.conversationStage = 'blocked'
+        addMessage(conversation, 'alpha', `Alpha prepared the content but could not attach a confirmed image, so nothing was scheduled and no credits were charged. ${error instanceof Error ? error.message : 'Please retry.'}`)
+        return
+      }
+    }
 
     const totalCredits = generationMode === 'model' ? posts.reduce((s, p) => s + p.credits, 0) : 0
 
@@ -1126,6 +1235,11 @@ Total posts: ${totalPosts}.`
       permissions: platforms,
       creditsNeeded: totalCredits,
       creditsPerRun: 0,
+      endCondition: known.endCondition === 'until_paused'
+        ? { type: 'until_paused', autoPauseOnCreditExhaustion: true }
+        : { type: known.endDate ? 'until_date' : 'num_executions', value: known.endDate || totalPosts, autoPauseOnCreditExhaustion: true },
+      expectedExecutions: known.endCondition === 'until_paused' ? 'until paused (auto-pause when credits finish)' : totalPosts,
+      estimatedCreditsFirstMonth: Math.min(totalCredits, Number(known.monthlyCreditEstimate || totalCredits)),
       executionsDone: 0,
       executionsTotal: totalPosts,
       generationMode,
@@ -1148,7 +1262,7 @@ Total posts: ${totalPosts}.`
     conversation.pendingConnections = []
     conversation.selectedCapabilities = platforms.map(p => `generate_${p}_content`)
 
-    const status = await checkPublishingCapabilities(platforms, conversation.userId)
+    const status = await checkPublishingCapabilities(platforms, conversation.userId, conversation.userEmail)
     if (!status.allReady) {
       conversation.automationDraft.missing = [{ field: 'connection', step: 'Publishing', connector: status.missing.join(', '), reason: `I can generate the posts, but direct publishing to ${status.missing.join(', ')} is not available. You can copy the posts manually or connect the app later.` }]
     }
@@ -1274,10 +1388,10 @@ Total posts: ${totalPosts}.`
     return `Day ${day}: Big moves only. If you're part of ${audience}, this is for you. ${cta}. #CallToAction #${business.replace(/\s+/g, '')}`
   }
 
-  async function checkPublishingCapabilities(platforms, userId) {
+  async function checkPublishingCapabilities(platforms, userId, userEmail) {
     const missing = []
     for (const p of platforms) {
-      const status = await getIntegrationStatus(userId, p)
+      const status = await getIntegrationStatus(userId, p, userEmail)
       if (!status?.ready) missing.push(p)
     }
     return { allReady: missing.length === 0, missing }

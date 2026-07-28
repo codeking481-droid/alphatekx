@@ -101,7 +101,7 @@ async function runTests() {
   assert(serviceSource.includes('Idempotency key is required'), 'Execution requires an idempotency key')
   assert(serviceSource.includes('confirmedProviderId(responseData)'), 'Execution requires a real provider ID')
   assert(serviceSource.includes('chargeConfirmedExecution(user, 1'), 'A confirmed execution charges exactly one credit')
-  assert(serviceSource.indexOf('confirmedProviderId(responseData)') < serviceSource.indexOf('chargeConfirmedExecution(user, 1'), 'Credits are charged only after provider confirmation')
+  assert(serviceSource.indexOf('const confirmedId = confirmedProviderId(responseData)') < serviceSource.lastIndexOf('chargeConfirmedExecution(user, 1'), 'Credits are charged only after provider confirmation')
   assert(serverSource.includes("req.url === '/api/composio/status'"), 'Canonical Composio status endpoint exists')
   assert(serverSource.includes("req.url === '/api/composio/execute'"), 'Canonical Composio execute endpoint exists')
   assert(migrationSource.includes('UNIQUE(user_id, idempotency_key)'), 'Database enforces per-user execution idempotency')

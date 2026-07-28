@@ -34,7 +34,9 @@
     "test:thorough": "node scripts/thorough-test.mjs",
     "test:composio": "node scripts/composio-connector-tests.mjs",
     "test:bold-white-flow": "node scripts/bold-white-automation-flow-tests.mjs",
-    "test:premium-landing": "node scripts/premium-landing-tests.mjs"
+    "test:premium-landing": "node scripts/premium-landing-tests.mjs",
+    "test:production-perfection": "node scripts/production-perfection-tests.mjs",
+    "test:media-library": "node scripts/media-library-tests.mjs"
   },
   "engines": {
     "node": ">=22.0.0"

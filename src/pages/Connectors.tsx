@@ -25,6 +25,13 @@ const releasedPlatforms = [
   { id: 'telegram', name: 'Telegram', description: 'Send Telegram messages.' },
   { id: 'discord', name: 'Discord', description: 'Send Discord messages.' },
 ]
+const productionPlatforms = [
+  { id: 'youtube', name: 'YouTube', color: '#FF0000' },
+  { id: 'instagram', name: 'Instagram', color: '#C13584' },
+  { id: 'x', name: 'X', color: '#000000' },
+  { id: 'facebook', name: 'Facebook', color: '#1877F2' },
+  { id: 'whatsapp', name: 'WhatsApp', color: '#25D366' },
+]
 
 function fieldConfig(id: string) {
   if (id === 'discord') return { key: 'Webhook URL', keyPlaceholder: 'https://discord.com/api/webhooks/...', identifier: '' }
@@ -65,10 +72,12 @@ export default function Connectors() {
   const [key, setKey] = useState('')
   const [identifier, setIdentifier] = useState('')
   const [busy, setBusy] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [notice, setNotice] = useState('')
   const returnTo = searchParams.get('returnTo') || ''
 
   const load = async () => {
+    setLoading(true)
     try {
       const [nativeStatus, connectorData] = await Promise.all([
         getIntegrationStatus(session?.access_token),
@@ -89,7 +98,7 @@ export default function Connectors() {
       setStatus(nativeStatus)
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Could not load connected apps.')
-    }
+    } finally { setLoading(false) }
   }
 
   useEffect(() => {
@@ -111,6 +120,10 @@ export default function Connectors() {
     if (connected === 'linkedin') setNotice('LinkedIn connected successfully and is ready to publish.')
     else if (connected === 'facebook') setNotice('Facebook connected successfully and is ready to publish to the selected Page.')
     else if (connected === 'google' || connected === 'gmail') setNotice('Google connected successfully.')
+    else if (connected === 'checking' || connected === 'success') {
+      const provider = searchParams.get('provider')
+      setNotice(`${getConnector(provider || '')?.name || provider || 'Platform'} connection completed. Verifying it now…`)
+    }
     else if (connected === 'error') setNotice(searchParams.get('reason') || searchParams.get('error') || 'Connection was not completed.')
     if (connected && returnTo && connected !== 'error') {
       window.setTimeout(() => window.location.assign(returnTo), 700)
@@ -223,6 +236,22 @@ export default function Connectors() {
     finally { setBusy(false) }
   }
 
+  const connectProductionPlatform = async (id: string, name: string, connectedNow: boolean) => {
+    if (busy) return
+    setBusy(true)
+    setNotice(`Redirecting to ${name} to connect…`)
+    try {
+      const result = connectedNow
+        ? await reconnectProvider(id, session?.access_token)
+        : await connectProvider(id, session?.access_token)
+      if (!result.authUrl) throw new Error(`${name} did not return a secure connection URL.`)
+      window.location.assign(result.authUrl)
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : `${name} connection failed.`)
+      setBusy(false)
+    }
+  }
+
   const disconnect = async (id: string) => {
     if (serverManagedProviders.has(id)) {
       setNotice(`${getConnector(id)?.name || id} is managed securely by the Render server credentials. Remove or replace those credentials on Render to disconnect it.`)
@@ -254,22 +283,43 @@ export default function Connectors() {
   const selectedConnected = selected ? Boolean((service(selected).connected && service(selected).ready) || (selected === 'google' && service('gmail').connected && service('gmail').ready)) : false
   const config = selected ? fieldConfig(selected) : null
 
-  return <main className="mx-auto min-h-[calc(100dvh-8rem)] w-full max-w-5xl px-4 py-8 sm:px-6">
-    <header className="flex flex-col gap-4 border-b border-white/[.08] pb-6 sm:flex-row sm:items-end sm:justify-between">
+  return <main className="mx-auto min-h-[calc(100dvh-8rem)] w-full max-w-5xl bg-white px-4 py-8 text-[#0B0F19] sm:px-6">
+    <section>
+      <p className="text-xs font-black uppercase tracking-[.18em] text-[#6D28D9]">AlphaTekx Connections</p>
+      <h1 className="mt-2 text-2xl font-black text-[#0B0F19]">Connect Your Platforms</h1>
+      <p className="mt-2 text-sm font-semibold text-slate-600">Connect once, review every action, and publish through AlphaTekx.</p>
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {productionPlatforms.map(item => {
+          const current = connectorStatus[item.id]
+          const isConnected = current?.connected === true
+          return <article key={item.id} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition hover:shadow-md">
+            <div className="flex items-center gap-3">
+              <span className="grid size-12 place-items-center rounded-full text-white" style={{ background: item.id === 'instagram' ? 'linear-gradient(135deg,#F58529,#DD2A7B,#8134AF)' : item.color }}><ConnectorIcon connector={getConnector(item.id) || fallbackConnector(item.id, item.name)}/></span>
+              <div><h2 className="font-semibold text-gray-900">{item.name}</h2><span className={`mt-1 inline-flex rounded-full border px-2.5 py-1 text-xs font-bold ${isConnected ? 'border-green-200 bg-green-50 text-green-700' : 'border-red-200 bg-red-50 text-red-700'}`}>{isConnected ? '● Connected' : '○ Not Connected'}</span></div>
+            </div>
+            <button onClick={() => void connectProductionPlatform(item.id, item.name, isConnected)} disabled={busy} className={`mt-5 min-h-11 w-full rounded-xl px-4 text-sm font-black disabled:cursor-not-allowed disabled:opacity-60 ${isConnected ? 'bg-gray-100 text-gray-700' : 'bg-gray-900 text-white'}`}>{isConnected ? 'Reconnect' : 'Connect'}</button>
+          </article>
+        })}
+      </div>
+      {loading && <div className="mt-4 grid gap-3 sm:grid-cols-2"><div className="h-24 animate-pulse rounded-2xl bg-slate-100"/><div className="h-24 animate-pulse rounded-2xl bg-slate-100"/></div>}
+      <p className="mt-4 text-center text-xs font-semibold text-slate-500">Secured by AlphaTekx • Powered by Composio</p>
+    </section>
+    <div id="connection-action" />
+    <header className="hidden">
       <div><p className="text-xs uppercase tracking-[.18em] text-violet-300">Connections</p><h1 className="mt-2 text-3xl font-semibold">Connected Apps</h1><p className="mt-2 max-w-2xl text-sm text-white/55">Connect the apps Alpha can use, then approve automations with confidence.</p></div>
       <span className="w-fit rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-200">Public tools active - build {BUILD_ID}</span>
     </header>
-    {notice && <div role="status" className="mt-5 rounded-xl border border-violet-400/20 bg-violet-500/10 p-3 text-sm">{notice}</div>}
-    <button onClick={() => setSelectorOpen(true)} className="mt-7 flex min-h-14 w-full items-center justify-between rounded-xl border border-white/10 bg-white/[.045] px-5 text-left hover:border-violet-400/30"><span className="flex items-center gap-3"><Plug size={18} className="text-violet-300"/><span><span className="block text-sm font-medium">Select or add a platform</span><span className="text-xs text-white/45">Search available, released, and connected apps</span></span></span><ChevronRight size={18}/></button>
+    {notice && <div role="status" className="mt-5 rounded-xl border border-violet-200 bg-violet-50 p-3 text-sm font-semibold text-[#0B0F19]">{notice}</div>}
+    <button onClick={() => setSelectorOpen(true)} className="mt-7 flex min-h-14 w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-5 text-left text-[#0B0F19] shadow-sm hover:border-violet-300"><span className="flex items-center gap-3"><Plug size={18} className="text-[#6D28D9]"/><span><span className="block text-sm font-black">Select or add a platform</span><span className="text-xs text-slate-500">Search available, released, and connected apps</span></span></span><ChevronRight size={18}/></button>
 
-    {selected && <section className="mt-5 rounded-xl border border-violet-400/20 bg-violet-500/[.055] p-5">
-      <div className="flex items-start justify-between gap-3"><div className="flex items-center gap-3">{selectedConnector && <span className="grid size-11 place-items-center rounded-lg bg-white/[.07]"><ConnectorIcon connector={selectedConnector}/></span>}<div><h2 className="font-semibold">{selected === 'google' ? 'Google' : selectedConnector?.name}</h2><p className="mt-1 text-xs text-white/50">{selectedConnected ? 'Connected and verified by backend status.' : 'Complete this connection to continue.'}</p></div></div><button onClick={() => setSelected(null)} aria-label="Close connection details"><X size={18}/></button></div>
-      {!selectedConnected && manualConnectionAvailable.has(selected) && config && <div className="mt-5 grid gap-3">{config.key && <label className="text-xs text-white/55">{config.key}<input type="password" value={key} onChange={event => setKey(event.target.value)} placeholder={config.keyPlaceholder} className="field mt-1"/></label>}{selected === 'telegram' && <p className="text-sm text-white/60">Send a message to the AlphaTekx Telegram bot first, then enter that chat ID. AlphaTekx protects the bot token.</p>}{config.identifier && <label className="text-xs text-white/55">{config.identifier}<input value={identifier} onChange={event => setIdentifier(event.target.value)} placeholder={selected === 'telegram' ? 'For example: 123456789' : undefined} className="field mt-1"/></label>}</div>}
-      <div className="mt-5 flex flex-wrap gap-2">{selectedConnected ? <><button onClick={() => void verify(selected)} disabled={busy} className="action">{busy ? <LoaderCircle className="animate-spin" size={16}/> : <CheckCircle2 size={16}/>}Verify</button><button onClick={() => void connect()} disabled={busy} className="action"><RefreshCw size={16}/>Reconnect</button><button onClick={() => void disconnect(selected)} disabled={busy} className="action text-rose-300"><Unplug size={16}/>Disconnect</button></> : <button onClick={() => void connect()} disabled={busy || (apiKeyAvailable.has(selected) && !key.trim()) || (selected === 'telegram' && !identifier.trim())} className="flex min-h-11 items-center gap-2 rounded-xl btn-alpha px-5 text-sm disabled:opacity-40">{busy ? <LoaderCircle className="animate-spin" size={16}/> : <Plug size={16}/>}Connect {selected === 'google' ? 'Google' : selectedConnector?.name}</button>}</div>
+    {selected && <section className="mt-5 rounded-xl border border-violet-200 bg-violet-50 p-5 text-[#0B0F19]">
+      <div className="flex items-start justify-between gap-3"><div className="flex items-center gap-3">{selectedConnector && <span className="grid size-11 place-items-center rounded-lg bg-white shadow-sm"><ConnectorIcon connector={selectedConnector}/></span>}<div><h2 className="font-black text-[#0B0F19]">{selected === 'google' ? 'Google' : selectedConnector?.name}</h2><p className="mt-1 text-xs font-semibold text-slate-600">{selectedConnected ? 'Connected and verified by backend status.' : 'Complete this connection to continue.'}</p></div></div><button onClick={() => setSelected(null)} aria-label="Close connection details" className="text-slate-700"><X size={18}/></button></div>
+      {!selectedConnected && manualConnectionAvailable.has(selected) && config && <div className="mt-5 grid gap-3">{config.key && <label className="text-xs font-bold text-slate-700">{config.key}<input type="password" value={key} onChange={event => setKey(event.target.value)} placeholder={config.keyPlaceholder} className="field mt-1 bg-white text-slate-900"/></label>}{selected === 'telegram' && <p className="text-sm font-semibold text-slate-600">Send a message to the AlphaTekx Telegram bot first, then enter that chat ID. AlphaTekx protects the bot token.</p>}{config.identifier && <label className="text-xs font-bold text-slate-700">{config.identifier}<input value={identifier} onChange={event => setIdentifier(event.target.value)} placeholder={selected === 'telegram' ? 'For example: 123456789' : undefined} className="field mt-1 bg-white text-slate-900"/></label>}</div>}
+      <div className="mt-5 flex flex-wrap gap-2">{selectedConnected ? <><button onClick={() => void verify(selected)} disabled={busy} className="action bg-white text-slate-800">{busy ? <LoaderCircle className="animate-spin" size={16}/> : <CheckCircle2 size={16}/>}Verify</button><button onClick={() => void connect()} disabled={busy} className="action bg-white text-slate-800"><RefreshCw size={16}/>Reconnect</button><button onClick={() => void disconnect(selected)} disabled={busy} className="action bg-white text-rose-700"><Unplug size={16}/>Disconnect</button></> : <button onClick={() => void connect()} disabled={busy || (apiKeyAvailable.has(selected) && !key.trim()) || (selected === 'telegram' && !identifier.trim())} className="flex min-h-11 items-center gap-2 rounded-xl btn-alpha px-5 text-sm text-white disabled:opacity-40">{busy ? <LoaderCircle className="animate-spin" size={16}/> : <Plug size={16}/>}Connect {selected === 'google' ? 'Google' : selectedConnector?.name}</button>}</div>
     </section>}
 
-    <section className="mt-10"><h2 className="text-sm font-medium text-white/70">Your connected apps</h2>{connected.length === 0 ? <div className="mt-4 rounded-xl border border-dashed border-white/15 p-8 text-center"><p className="font-medium">No apps connected yet.</p><p className="mt-2 text-sm text-white/50">Choose a platform to connect.</p></div> : <div className="mt-4 grid gap-3 md:grid-cols-2">{connected.map(item => <button key={item.id} onClick={() => setSelected(item.id)} className="flex w-full items-center gap-4 rounded-xl border border-white/[.09] bg-white/[.035] p-4 text-left hover:border-violet-400/25"><span className="grid size-11 shrink-0 place-items-center rounded-lg bg-white/[.06]"><ConnectorIcon connector={item.connector}/></span><span className="min-w-0 flex-1"><span className="flex items-center gap-2 font-medium">{item.name}<Check size={14} className="text-emerald-300"/></span><span className="mt-1 block truncate text-xs text-white/55">{item.account}</span><span className="mt-1 block text-xs text-white/40">{item.capabilities}</span></span><ChevronRight size={17} className="text-white/35"/></button>)}</div>}</section>
+    <section className="mt-10"><h2 className="text-sm font-black text-slate-800">Your connected apps</h2>{connected.length === 0 ? <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center"><p className="font-bold text-slate-900">No apps connected yet.</p><p className="mt-2 text-sm font-semibold text-slate-500">Choose a platform to connect.</p></div> : <div className="mt-4 grid gap-3 md:grid-cols-2">{connected.map(item => <button key={item.id} onClick={() => setSelected(item.id)} className="flex w-full items-center gap-4 rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm hover:border-violet-300 hover:shadow-md"><span className="grid size-11 shrink-0 place-items-center rounded-lg bg-violet-50"><ConnectorIcon connector={item.connector}/></span><span className="min-w-0 flex-1"><span className="flex items-center gap-2 font-bold text-slate-900">{item.name}<Check size={14} className="text-emerald-600"/></span><span className="mt-1 block truncate text-xs font-semibold text-slate-600">{item.account}</span><span className="mt-1 block text-xs text-slate-500">{item.capabilities}</span></span><ChevronRight size={17} className="text-slate-400"/></button>)}</div>}</section>
 
-    {selectorOpen && <div className="fixed inset-0 z-50 flex items-end bg-black/60 p-0 sm:items-center sm:justify-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="platform-selector-title" onClick={() => setSelectorOpen(false)}><section className="max-h-[85dvh] w-full overflow-hidden rounded-t-2xl border border-white/10 bg-[#160923] sm:max-w-xl sm:rounded-2xl" onClick={event => event.stopPropagation()}><div className="flex items-center justify-between border-b border-white/[.08] p-5"><div><h2 id="platform-selector-title" className="font-semibold">Choose a platform</h2><p className="mt-1 text-xs text-white/45">Only backend-enabled connections can start OAuth.</p></div><button onClick={() => setSelectorOpen(false)} className="grid size-10 place-items-center rounded-full hover:bg-white/[.06]" aria-label="Close platform selector"><X size={18}/></button></div><div className="p-4"><label className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[.04] px-3"><Search size={16} className="text-white/40"/><span className="sr-only">Search platforms</span><input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder="Search platforms" className="h-11 flex-1 bg-transparent text-sm outline-none"/></label><div className="mt-3 max-h-[55dvh] space-y-1 overflow-y-auto">{choices.map(item => <button key={item.id} onClick={() => choose(item.id, item.availability)} className={`flex w-full items-center gap-3 rounded-xl p-3 text-left hover:bg-white/[.05] ${item.availability === 'Coming Soon' ? 'opacity-60' : ''}`}>{item.connector ? <span className="grid size-10 place-items-center rounded-lg bg-white/[.06]"><ConnectorIcon connector={item.connector}/></span> : <span className="grid size-10 place-items-center rounded-lg bg-white/[.04]"><Plug size={17}/></span>}<span className="min-w-0 flex-1"><span className="block text-sm font-medium">{item.name}</span><span className="block truncate text-xs text-white/45">{item.description}</span></span><span className="rounded-full border border-white/10 px-2 py-1 text-[10px]">{item.availability}</span></button>)}</div></div></section></div>}
+    {selectorOpen && <div className="fixed inset-0 z-50 flex items-end bg-slate-950/35 p-0 sm:items-center sm:justify-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="platform-selector-title" onClick={() => setSelectorOpen(false)}><section className="max-h-[85dvh] w-full overflow-hidden rounded-t-2xl border border-slate-200 bg-white text-slate-900 shadow-2xl sm:max-w-xl sm:rounded-2xl" onClick={event => event.stopPropagation()}><div className="flex items-center justify-between border-b border-slate-200 p-5"><div><h2 id="platform-selector-title" className="font-black">Choose a platform</h2><p className="mt-1 text-xs font-semibold text-slate-500">Only backend-enabled connections can start OAuth.</p></div><button onClick={() => setSelectorOpen(false)} className="grid size-10 place-items-center rounded-full hover:bg-slate-100" aria-label="Close platform selector"><X size={18}/></button></div><div className="p-4"><label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3"><Search size={16} className="text-slate-400"/><span className="sr-only">Search platforms</span><input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder="Search platforms" className="h-11 flex-1 bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400"/></label><div className="mt-3 max-h-[55dvh] space-y-1 overflow-y-auto">{choices.map(item => <button key={item.id} onClick={() => choose(item.id, item.availability)} className={`flex w-full items-center gap-3 rounded-xl p-3 text-left hover:bg-slate-50 ${item.availability === 'Coming Soon' ? 'opacity-60' : ''}`}>{item.connector ? <span className="grid size-10 place-items-center rounded-lg bg-violet-50"><ConnectorIcon connector={item.connector}/></span> : <span className="grid size-10 place-items-center rounded-lg bg-slate-100"><Plug size={17}/></span>}<span className="min-w-0 flex-1"><span className="block text-sm font-bold text-slate-900">{item.name}</span><span className="block truncate text-xs font-semibold text-slate-500">{item.description}</span></span><span className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold text-slate-600">{item.availability}</span></button>)}</div></div></section></div>}
   </main>
 }

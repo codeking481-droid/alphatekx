@@ -24,6 +24,8 @@ The API runs on port 3001 and Vite proxies `/api/*` to it.
 1. Create a Supabase project.
 2. Open the SQL editor and run [`supabase/schema.sql`](supabase/schema.sql).
    Run [`supabase/fingerprint-credits.sql`](supabase/fingerprint-credits.sql) to enable the Google-only, one-device human-verification welcome bonus.
+   Run [`supabase/media-library.sql`](supabase/media-library.sql) to create the private Media Library bucket, ownership policies, image cache, and durable vault publishing queue.
+   Run [`supabase/atomic-credit-execution.sql`](supabase/atomic-credit-execution.sql) to enable atomic, idempotent credit settlement for confirmed Composio executions. LinkedIn remains on AlphaTekx's native publishing and billing path.
    Existing Phase 3 projects should run [`supabase/phase4.sql`](supabase/phase4.sql) instead to add marketplace revenue safely.
    Existing live AlphaTekX projects should also run [`supabase/upgrade-workspace-history-workers-payments.sql`](supabase/upgrade-workspace-history-workers-payments.sql) for chat history, BYOK workers, and atomic Paystack credit purchases.
    Run [`supabase/path-deploy.sql`](supabase/path-deploy.sql) to add public app slugs and creation ownership fields required by `/app/:slug` publishing.
@@ -33,6 +35,7 @@ The API runs on port 3001 and Vite proxies `/api/*` to it.
 
 Set `DEVICE_FINGERPRINT_SECRET` to a stable random server-only value in production. AlphaTekx HMAC-hashes the browser fingerprint before its atomic claim check; raw fingerprints are never stored.
 Set `SUPER_ADMIN_EMAILS` to a comma-separated list of trusted Google accounts that should receive the supervisor credit bypass without consuming a device claim.
+Set `PEXELS_API_KEY` to enable licensed stock-photo matching. If it is omitted, Alpha uses the configured Pollinations fallback and still stores the selected image in the private Media Library.
 
 RLS restricts Missions, Messages, Activities, Creations, Workers, and Profiles to their owners. Marketplace items are publicly readable. Credit deductions use the atomic `spend_credits` database function.
 
