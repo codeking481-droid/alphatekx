@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarClock, CheckCircle2, FileVideo2, Image, LoaderCircle, Play, Trash2, UploadCloud, X } from 'lucide-react'
 import { getCredits } from '../lib/creditStore'
-import { deleteMedia, listMedia, publishMedia, updateMedia, uploadMedia, type MediaItem } from '../lib/mediaLibrary'
+import { createSmartImage, deleteMedia, listMedia, publishMedia, updateMedia, uploadMedia, type MediaItem } from '../lib/mediaLibrary'
 
 const MAX_FILES = 20
 const MAX_BYTES = 500 * 1024 * 1024
@@ -15,6 +15,7 @@ export default function MediaLibrary() {
   const [notice, setNotice] = useState('')
   const [scheduleOpen, setScheduleOpen] = useState(false)
   const [setupRequired, setSetupRequired] = useState(false)
+  const [imagePrompt, setImagePrompt] = useState('')
   const [startDate, setStartDate] = useState(() => new Date(Date.now() + 86400000).toISOString().slice(0, 10))
   const [time, setTime] = useState('09:00')
 
@@ -110,6 +111,22 @@ export default function MediaLibrary() {
     finally { setBusy(false) }
   }
 
+  const generateImage = async () => {
+    const prompt = imagePrompt.trim()
+    if (!prompt) { setNotice('Describe the image you want Alpha to create.'); return }
+    setBusy(true)
+    setNotice('Alpha is creating your premium image…')
+    try {
+      const result = await createSmartImage(prompt, prompt, 'social')
+      if (!result.image_url || !result.image_storage_path) throw new Error('The image provider did not return a verified saved image.')
+      await load()
+      setImagePrompt('')
+      setNotice('Premium image created, verified, and saved to your Media Library.')
+    } catch (error) {
+      setNotice(error instanceof Error ? `${error.message} You can retry safely.` : 'Image generation needs another try. Nothing was charged.')
+    } finally { setBusy(false) }
+  }
+
   return <main className="mx-auto min-h-[calc(100dvh-8rem)] w-full min-w-0 max-w-6xl overflow-x-hidden bg-violet-500/10 px-4 pb-28 pt-7 text-white sm:px-6 sm:py-8">
     <header className="flex flex-wrap items-end justify-between gap-4">
       <div><p className="text-xs font-black uppercase tracking-[.18em] text-violet-300">Content vault</p><h1 className="mt-2 text-3xl font-black">Your Media Library</h1><p className="mt-2 max-w-2xl text-sm font-semibold text-slate-400">Upload up to 20 videos at once. Alpha keeps the files private and prepares an honest publishing queue.</p></div>
@@ -121,6 +138,17 @@ export default function MediaLibrary() {
     </section>
 
     {notice && <div role="status" className="mt-5 rounded-xl border border-violet-200 bg-violet-500/10 p-3 text-sm font-bold text-white">{notice}</div>}
+
+    <section className="mt-6 rounded-2xl border border-violet-400/20 bg-violet-500/10 p-4 sm:p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+        <label className="min-w-0 flex-1 text-sm font-black text-white">Generate image with Alpha
+          <span className="mt-1 block text-xs font-semibold text-slate-400">Describe the scene. Alpha creates, verifies, and saves a private 1024×1024 image.</span>
+          <input value={imagePrompt} onChange={event => setImagePrompt(event.target.value)} placeholder="e.g. thrift gown in Lagos, premium editorial photograph" className="field mt-3" disabled={busy || setupRequired}/>
+        </label>
+        <button onClick={() => void generateImage()} disabled={busy || setupRequired || !imagePrompt.trim()} className="btn-alpha min-h-12 shrink-0 rounded-xl px-5 text-sm font-black disabled:opacity-50">{busy ? 'Alpha is creating…' : 'Generate image'}</button>
+      </div>
+      {busy && <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/5"><div className="skeleton h-full w-full"/></div>}
+    </section>
 
     <button
       onClick={() => input.current?.click()}

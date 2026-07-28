@@ -797,14 +797,32 @@ export async function executeProviderAction(user, providerId, actionId, payload)
 
   // Execute through Composio SDK tools
   let result
+  let retryCount = 0
   try {
     const version = String(process.env[`COMPOSIO_TOOLKIT_VERSION_${pid.toUpperCase()}`] || TOOLKIT_VERSIONS[pid] || '').trim()
-    result = await composioClient.tools.execute(toolSlug, {
-      connectedAccountId: account.id,
-      userId: uid,
-      version,
-      arguments: actionArguments,
-    })
+    const retryDelays = [0, 2_000, 5_000, 10_000]
+    let lastProviderError
+    for (let attempt = 0; attempt < retryDelays.length; attempt += 1) {
+      if (retryDelays[attempt]) await new Promise(resolve => setTimeout(resolve, retryDelays[attempt]))
+      try {
+        result = await Promise.race([
+          composioClient.tools.execute(toolSlug, {
+            connectedAccountId: account.id,
+            userId: uid,
+            version,
+            arguments: actionArguments,
+          }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Provider request timed out')), 30_000)),
+        ])
+        retryCount = attempt
+        break
+      } catch (error) {
+        lastProviderError = error
+        if (/connection.*not found|connected account|not connected|unauthorized|forbidden|permission/i.test(String(error?.message || error))) throw error
+        if (attempt === retryDelays.length - 1) throw error
+      }
+    }
+    if (!result && lastProviderError) throw lastProviderError
   } catch (error) {
     await finishExecution(user.id, idempotencyKey, { status: 'failed', error_code: 'provider_error' })
     if (/connection.*not found|connected account|not connected|unauthorized/i.test(String(error?.message || error))) {
@@ -839,7 +857,7 @@ export async function executeProviderAction(user, providerId, actionId, payload)
   await finishExecution(user.id, idempotencyKey, {
     status: 'provider_confirmed',
     provider_execution_id: confirmedId,
-    result_metadata: { confirmed: true, providerId: confirmedId, billingPending: true },
+    result_metadata: { confirmed: true, providerId: confirmedId, billingPending: true, retryCount },
     credits_charged: 0,
   })
   const balance = await chargeConfirmedExecution(user, 1, {
@@ -851,7 +869,7 @@ export async function executeProviderAction(user, providerId, actionId, payload)
   })
   await finishExecution(user.id, idempotencyKey, {
     status: 'succeeded',
-    provider_execution_id: confirmedId, result_metadata: { confirmed: true, providerId: confirmedId, balance },
+    provider_execution_id: confirmedId, result_metadata: { confirmed: true, providerId: confirmedId, balance, retryCount },
     credits_charged: 1,
   })
   return {
@@ -862,6 +880,7 @@ export async function executeProviderAction(user, providerId, actionId, payload)
     balance,
     result: responseData,
     executionTimeMs,
+    retryCount,
   }
 }
 

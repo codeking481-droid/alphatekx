@@ -2866,13 +2866,13 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
             idempotencyKey: `${existing.id}:${post.id}:${platform}`,
           })
           providerCreditsUsed += Number(result.creditsCharged || 0)
-          result = { id: result.providerId, providerId: result.providerId, replayed: result.replayed === true }
+          result = { id: result.providerId, providerId: result.providerId, replayed: result.replayed === true, retryCount: result.retryCount || 0 }
         } else {
           result = await postToSocial(platform, user, { text: caption, image_url: post.imageUrl || '', _skipFreeLimit: true })
           nativeSuccessCount += 1
         }
         if (!result.id && !result.message_id) throw new Error(`${platform} did not return a confirmed provider identifier`)
-        postResults[platform] = { status: 'success', id: result.id || result.message_id, link: result.link || result.permalink || result.url || '', pageId: result.pageId || null, pageName: result.pageName || null, replayed: result.replayed === true, log: `Posted to ${platform}` }
+        postResults[platform] = { status: 'success', id: result.id || result.message_id, link: result.link || result.permalink || result.url || '', pageId: result.pageId || null, pageName: result.pageName || null, replayed: result.replayed === true, retryCount: result.retryCount || 0, log: `Posted to ${platform}${result.retryCount ? ` after ${result.retryCount} retry attempt${result.retryCount === 1 ? '' : 's'}` : ''}` }
         postSuccess++
         await addAgentLog({ agentId: existing.id, connectorType: platform, content: caption.slice(0, 500), status: 'success', response: JSON.stringify(result) })
       } catch (error) {
