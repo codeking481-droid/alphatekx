@@ -162,13 +162,13 @@ export default function WorkflowPlan({ agent, integrationStatus, credits, isAdmi
             <h2 className="mt-1 text-xl font-semibold">Unsupported automation</h2>
             <p className="mt-1 text-sm text-white/55">{agent.description}</p>
           </div>
-          <button onClick={onClose} className="rounded-lg p-2 hover:bg-white/[.08]"><X size={18}/></button>
+          <button onClick={onClose} className="rounded-lg p-2 hover:bg-white/[.04]"><X size={18}/></button>
         </div>
         <div className="mt-6 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
           {agent.missing?.find(m => m.field === 'unsupported')?.reason || 'Try a different request.'}
         </div>
         <div className="mt-6 flex justify-end">
-          <button onClick={onClose} className="rounded-xl border border-white/[.12] bg-white/[.04] px-5 py-2.5 text-sm font-medium text-white hover:bg-white/[.08]">Close</button>
+          <button onClick={onClose} className="rounded-xl border border-white/[.12] bg-white/[.04] px-5 py-2.5 text-sm font-medium text-white hover:bg-white/[.04]">Close</button>
         </div>
       </div>
     </div>
@@ -182,7 +182,7 @@ export default function WorkflowPlan({ agent, integrationStatus, credits, isAdmi
           <h2 className="mt-1 text-xl font-semibold">{draft.title || draft.name}</h2>
           <p className="mt-1 text-sm text-white/55">{draft.description}</p>
         </div>
-        <button onClick={onClose} className="rounded-lg p-2 hover:bg-white/[.08]"><X size={18}/></button>
+        <button onClick={onClose} className="rounded-lg p-2 hover:bg-white/[.04]"><X size={18}/></button>
       </div>
 
       <div className="mt-4 flex gap-3">
@@ -319,7 +319,7 @@ export default function WorkflowPlan({ agent, integrationStatus, credits, isAdmi
       </div>}
 
       <div className="mt-6 flex justify-end gap-3">
-        <button onClick={onClose} className="rounded-xl border border-white/[.12] bg-white/[.04] px-5 py-2.5 text-sm font-medium text-white hover:bg-white/[.08]">Cancel</button>
+        <button onClick={onClose} className="rounded-xl border border-white/[.12] bg-white/[.04] px-5 py-2.5 text-sm font-medium text-white hover:bg-white/[.04]">Cancel</button>
         <button onClick={handleApprove} disabled={approveDisabled} className="btn-alpha rounded-xl px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50">Approve & Activate</button>
       </div>
     </div>

@@ -66,7 +66,7 @@ export default function VisionPanel() {
   }
 
   return (
-    <section className="rounded-2xl border border-white/10 bg-white/[0.05] p-5">
+    <section className="rounded-2xl border border-white/10 bg-white/[.04] p-5">
       <h2 className="flex items-center gap-2 text-lg font-medium"><Camera size={18} className="text-indigo-400"/>Vision to Action</h2>
       <p className="mt-1 text-sm text-white/55">Upload, paste, drag, or capture an image. Alpha extracts text, describes UI, finds errors, and suggests actions.</p>
 
@@ -83,7 +83,7 @@ export default function VisionPanel() {
           <p className="mt-1 text-xs text-white/40">PNG, JPG, WebP, GIF up to {MAX_SIZE_MB}MB</p>
           <input ref={fileRef} type="file" accept={ACCEPT} className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) loadImage(f) }} />
           <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleCamera} />
-          <button onClick={e => { e.stopPropagation(); openCamera() }} className="mt-4 flex items-center gap-2 rounded-lg border border-white/[.12] px-4 py-2 text-xs transition hover:bg-white/[0.06]"><Camera size={14}/> Use camera</button>
+          <button onClick={e => { e.stopPropagation(); openCamera() }} className="mt-4 flex items-center gap-2 rounded-lg border border-white/[.12] px-4 py-2 text-xs transition hover:bg-white/[.04]"><Camera size={14}/> Use camera</button>
         </div>
       ) : (
         <div className="mt-4 space-y-3">

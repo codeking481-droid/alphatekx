@@ -11,7 +11,7 @@ export default function Terms() {
       </header>
       <main className="mx-auto max-w-3xl px-4 pt-28 pb-20">
         <h1 className="text-3xl font-semibold">Terms of Service</h1>
-        <p className="mt-2 text-sm text-zinc-500">Last updated: {new Date().toLocaleDateString()}</p>
+        <p className="mt-2 text-sm text-slate-400">Last updated: {new Date().toLocaleDateString()}</p>
 
         <section className="mt-8 space-y-6 text-sm leading-7 text-zinc-300">
           <p>

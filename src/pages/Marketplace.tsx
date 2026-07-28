@@ -109,7 +109,7 @@ export default function Marketplace() {
           <div className="relative z-10">
             <h1 className="text-2xl font-bold md:text-4xl">Sell what you build</h1>
             <p className="mt-2 max-w-xl text-sm text-white/70 md:text-base">From idea to income. List apps, templates, tools and SaaS kits built in AlphaTekX. Buyers get instant access.</p>
-            <Link to="/marketplace/new" className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-xl bg-white px-5 text-sm font-semibold text-black transition-transform hover:scale-[1.02]">
+            <Link to="/marketplace/new" className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-xl bg-white/[.04] px-5 text-sm font-semibold text-white transition-transform hover:scale-[1.02]">
               <Sparkles size={16}/> List your creation
             </Link>
           </div>
@@ -137,7 +137,7 @@ export default function Marketplace() {
 
         {loading ? (
           <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {[1,2,3,4,5,6].map(i => <div key={i} className="h-80 animate-pulse rounded-2xl bg-white/[.08]" />)}
+            {[1,2,3,4,5,6].map(i => <div key={i} className="h-80 animate-pulse rounded-2xl bg-white/[.04]" />)}
           </div>
         ) : filtered.length ? (
           <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3">

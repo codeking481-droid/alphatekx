@@ -242,7 +242,7 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
           <h2 className="mt-1 text-xl font-semibold">{campaign.name}</h2>
           <p className="mt-1 text-sm text-white/55">{campaign.description}</p>
         </div>
-        <button onClick={onClose} className="rounded-lg p-2 text-white/50 hover:bg-white/[.08]"><X size={18}/></button>
+        <button onClick={onClose} className="rounded-lg p-2 text-white/50 hover:bg-white/[.04]"><X size={18}/></button>
       </div>
 
       {notice && <div className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200">{notice}</div>}
@@ -256,7 +256,7 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
         <div className="liquid-glass rounded-xl p-4">
           <div className="text-xs text-white/55">Platforms</div>
           <div className="mt-1 flex flex-wrap gap-1">
-            {platformIds.map(id => <span key={id} className="rounded-md bg-white/5 px-2 py-1 text-xs">{platformNames[id] || id}</span>)}
+            {platformIds.map(id => <span key={id} className="rounded-md bg-white/[.04] px-2 py-1 text-xs">{platformNames[id] || id}</span>)}
           </div>
         </div>
         <div className="liquid-glass rounded-xl p-4">
@@ -268,25 +268,25 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
 
       <div className="mt-6 flex gap-2 border-b border-white/[.08] pb-2">
         {(['calendar', 'cost', 'brand'] as const).map(t => (
-          <button key={t} onClick={() => setTab(t)} className={`rounded-lg px-3 py-1.5 text-xs font-medium ${tab === t ? 'bg-indigo-500 text-white' : 'text-white/60 hover:bg-white/[.05]'}`}>
+          <button key={t} onClick={() => setTab(t)} className={`rounded-lg px-3 py-1.5 text-xs font-medium ${tab === t ? 'bg-indigo-500 text-white' : 'text-white/60 hover:bg-white/[.04]'}`}>
             {t[0].toUpperCase() + t.slice(1)}
           </button>
         ))}
       </div>
 
       {tab === 'calendar' && <div className="mt-4 space-y-4">
-        <div className="grid gap-3 rounded-2xl border border-white/[.08] bg-white/[.03] p-4 sm:grid-cols-2">
+        <div className="grid gap-3 rounded-2xl border border-white/[.08] bg-white/[.04] p-4 sm:grid-cols-2">
           <div><p className="text-xs text-white/45">Publishing mode</p><p className="mt-1 text-sm font-medium">{postingOption === 'now' ? 'Once now' : postingOption === 'later' ? 'Once later' : 'Recurring'}</p></div>
           {postingOption === 'recurring' && <><div><p className="text-xs text-white/45">Frequency</p><p className="mt-1 text-sm font-medium">{campaign.meta.frequencyText}</p></div><div><p className="text-xs text-white/45">Timezone</p><p className="mt-1 text-sm font-medium">{campaign.meta.timezone}</p></div><div><p className="text-xs text-white/45">End condition</p><p className="mt-1 text-sm font-medium">{campaign.meta.endDate || `${campaign.meta.totalPosts} posts`}</p></div><div><p className="text-xs text-white/45">Estimated executions</p><p className="mt-1 text-sm font-medium">{campaign.meta.totalPosts}</p></div></>}
         </div>
-        <div className="rounded-2xl border border-white/[.08] bg-white/[.03] p-4">
+        <div className="rounded-2xl border border-white/[.08] bg-white/[.04] p-4">
           <label className="flex items-center gap-2 text-sm font-medium text-white/80"><CalendarClock size={16} className="text-indigo-400"/> Posting option</label>
           <div className="mt-3 grid gap-2 sm:grid-cols-3">
-            {([['now', 'Publish Now'], ['later', 'Schedule for Later'], ['recurring', 'Recurring Schedule']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => { setPostingOption(value); setStartError('') }} className={`rounded-xl border px-3 py-2 text-xs ${postingOption === value ? 'border-indigo-400 bg-indigo-500/20 text-white' : 'border-white/10 text-white/60 hover:bg-white/5'}`}>{label}</button>)}
+            {([['now', 'Publish Now'], ['later', 'Schedule for Later'], ['recurring', 'Recurring Schedule']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => { setPostingOption(value); setStartError('') }} className={`rounded-xl border px-3 py-2 text-xs ${postingOption === value ? 'border-indigo-400 bg-indigo-500/20 text-white' : 'border-white/10 text-white/60 hover:bg-white/[.04]'}`}>{label}</button>)}
           </div>
           {postingOption !== 'now' && <div className="mt-4 grid gap-3 sm:grid-cols-3">
-            <label className="text-xs text-white/55">Date<input type="date" value={scheduleDate} onChange={e => { setScheduleDate(e.target.value); setStartError('') }} className="mt-1 w-full rounded-xl bg-white/[.05] px-3 py-2 text-sm text-white outline-none" /></label>
-            <label className="text-xs text-white/55">Exact time<input type="time" step="60" value={scheduleTime} onChange={e => { setScheduleTime(e.target.value); setStartError('') }} className="mt-1 w-full rounded-xl bg-white/[.05] px-3 py-2 text-sm text-white outline-none" /></label>
+            <label className="text-xs text-white/55">Date<input type="date" value={scheduleDate} onChange={e => { setScheduleDate(e.target.value); setStartError('') }} className="mt-1 w-full rounded-xl bg-white/[.04] px-3 py-2 text-sm text-white outline-none" /></label>
+            <label className="text-xs text-white/55">Exact time<input type="time" step="60" value={scheduleTime} onChange={e => { setScheduleTime(e.target.value); setStartError('') }} className="mt-1 w-full rounded-xl bg-white/[.04] px-3 py-2 text-sm text-white outline-none" /></label>
             <label className="text-xs text-white/55">Timezone<select value={timezone} onChange={e => setTimezone(e.target.value)} className="mt-1 w-full rounded-xl bg-zinc-900 px-3 py-2 text-sm text-white outline-none">{Array.from(new Set([timezone, 'Africa/Lagos', 'UTC', 'Europe/London', 'America/New_York', 'America/Los_Angeles', 'Asia/Dubai', 'Asia/Kolkata'])).map(zone => <option key={zone} value={zone}>{zone}</option>)}</select></label>
           </div>}
           {postingOption === 'recurring' && <p className="mt-3 text-xs text-white/50">The selected weekdays, start/end condition, and post count from your approved plan remain unchanged. This sets their exact local publishing time.</p>}
@@ -294,17 +294,17 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
           {startError && <p className="mt-2 text-xs text-amber-300">{startError}</p>}
         </div>
         {Object.entries(groupedPosts).map(([day, posts]) => (
-          <div key={day} className="rounded-2xl border border-white/[.08] bg-white/[.03] p-4">
+          <div key={day} className="rounded-2xl border border-white/[.08] bg-white/[.04] p-4">
             <h3 className="text-sm font-semibold text-white/80">{day}</h3>
             <div className="mt-3 space-y-3">
               {posts.map(post => (
                 <div key={post.id} className="rounded-xl bg-white/[.04] p-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-medium text-indigo-300">{post.slot} · {new Date(post.scheduledAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</span>
-                    <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-white/60">{post.status === 'posted' ? 'Published' : post.status === 'pending_approval' ? 'Awaiting Approval' : post.status === 'scheduled' ? 'Scheduled' : post.status === 'publishing' ? 'Publishing' : post.status === 'failed' ? 'Failed' : post.status === 'cancelled' ? 'Cancelled' : 'Draft'}</span>
+                    <span className="rounded-full bg-white/[.04] px-2 py-0.5 text-[10px] text-white/60">{post.status === 'posted' ? 'Published' : post.status === 'pending_approval' ? 'Awaiting Approval' : post.status === 'scheduled' ? 'Scheduled' : post.status === 'publishing' ? 'Publishing' : post.status === 'failed' ? 'Failed' : post.status === 'cancelled' ? 'Cancelled' : 'Draft'}</span>
                   </div>
                   <p className="mt-1 text-xs text-white/70">{post.topic}</p>
-                  {post.imageUrl && <figure className="mt-3 overflow-hidden rounded-xl border border-white/10 bg-white/5">
+                  {post.imageUrl && <figure className="mt-3 overflow-hidden rounded-xl border border-white/10 bg-white/[.04]">
                     <img src={post.imageUrl} alt={`Generated visual for ${post.topic}`} className="aspect-video w-full object-cover" loading="lazy" />
                     <figcaption className="px-3 py-2 text-[10px] text-white/45">Matched automatically by Alpha · {post.imageSource || 'premium image provider'}</figcaption>
                   </figure>}
@@ -317,9 +317,9 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
                         </div>
                         {editing?.postId === post.id && editing?.platform === platform ? (
                           <div className="mt-2 space-y-2">
-                            <textarea value={editing.text} onChange={e => updatePostText(e.target.value)} className="min-h-[80px] w-full rounded-lg bg-white/[.05] p-2 text-xs text-white/90 outline-none placeholder:text-white/30" />
+                            <textarea value={editing.text} onChange={e => updatePostText(e.target.value)} className="min-h-[80px] w-full rounded-lg bg-white/[.04] p-2 text-xs text-white/90 outline-none placeholder:text-white/30" />
                             <div className="flex justify-end gap-2">
-                              <button onClick={cancelEditPost} className="rounded-md border border-white/[.12] px-2 py-1 text-[10px] text-white/70 hover:bg-white/[.05]">Cancel</button>
+                              <button onClick={cancelEditPost} className="rounded-md border border-white/[.12] px-2 py-1 text-[10px] text-white/70 hover:bg-white/[.04]">Cancel</button>
                               <button onClick={savePostEdit} disabled={savingPost} className="rounded-md bg-indigo-500 px-2 py-1 text-[10px] text-white hover:bg-indigo-400 disabled:opacity-50">{savingPost ? 'Saving...' : 'Save'}</button>
                             </div>
                           </div>
@@ -334,8 +334,8 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
                               ['expand', 'Expand'],
                               ['add_hashtags', 'Add hashtags'],
                               ['remove_hashtags', 'Remove hashtags'],
-                            ].map(([action, label]) => <button key={action} disabled={Boolean(reviewingPost)} onClick={() => reviewPost(post.id, action)} className="rounded-md border border-white/[.1] px-2 py-1 text-[10px] text-white/65 hover:bg-white/[.06] disabled:opacity-40">{reviewingPost === `${post.id}:${action}` ? 'Working...' : label}</button>)}
-                            <button disabled={Boolean(reviewingPost)} onClick={() => { const tone = window.prompt('What tone should Alpha use?', brand.tone || 'professional'); if (tone) reviewPost(post.id, 'change_tone', tone) }} className="rounded-md border border-white/[.1] px-2 py-1 text-[10px] text-white/65 hover:bg-white/[.06] disabled:opacity-40">Change tone</button>
+                            ].map(([action, label]) => <button key={action} disabled={Boolean(reviewingPost)} onClick={() => reviewPost(post.id, action)} className="rounded-md border border-white/[.1] px-2 py-1 text-[10px] text-white/65 hover:bg-white/[.04] disabled:opacity-40">{reviewingPost === `${post.id}:${action}` ? 'Working...' : label}</button>)}
+                            <button disabled={Boolean(reviewingPost)} onClick={() => { const tone = window.prompt('What tone should Alpha use?', brand.tone || 'professional'); if (tone) reviewPost(post.id, 'change_tone', tone) }} className="rounded-md border border-white/[.1] px-2 py-1 text-[10px] text-white/65 hover:bg-white/[.04] disabled:opacity-40">Change tone</button>
                           </div>}
                         </>}
                       </div>
@@ -349,7 +349,7 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
       </div>}
 
       {tab === 'cost' && <div className="mt-4 space-y-3 text-sm text-white/70">
-        <div className="rounded-xl border border-white/[.08] bg-white/[.03] p-4">
+        <div className="rounded-xl border border-white/[.08] bg-white/[.04] p-4">
           <p>AI writing: 3 credits × {campaign.meta.totalPosts} posts = {3 * campaign.meta.totalPosts}</p>
           {campaign.meta.includeImages && <p>Image generation: 2 credits × {campaign.meta.totalPosts} = {2 * campaign.meta.totalPosts}</p>}
           {campaign.meta.imageRequested && !campaign.meta.includeImages && <p className="text-amber-300">Image generation is not configured. This automation will publish text only and will not charge image credits.</p>}
@@ -363,15 +363,15 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
 
       {tab === 'brand' && <div className="mt-4 space-y-3">
         <p className="text-sm text-white/60">Tell Alpha about your business so the posts sound like you.</p>
-        <input value={brand.business} onChange={e => setBrand({ ...brand, business: e.target.value })} placeholder="Business name" className="w-full rounded-xl bg-white/[.05] px-3 py-2 text-sm outline-none placeholder:text-white/30" />
-        <input value={brand.audience} onChange={e => setBrand({ ...brand, audience: e.target.value })} placeholder="Target audience" className="w-full rounded-xl bg-white/[.05] px-3 py-2 text-sm outline-none placeholder:text-white/30" />
-        <input value={brand.tone} onChange={e => setBrand({ ...brand, tone: e.target.value })} placeholder="Tone (e.g. professional, playful, bold)" className="w-full rounded-xl bg-white/[.05] px-3 py-2 text-sm outline-none placeholder:text-white/30" />
-        <input value={brand.website} onChange={e => setBrand({ ...brand, website: e.target.value })} placeholder="Website (optional)" className="w-full rounded-xl bg-white/[.05] px-3 py-2 text-sm outline-none placeholder:text-white/30" />
-        <input value={brand.dontPost} onChange={e => setBrand({ ...brand, dontPost: e.target.value })} placeholder="Topics to avoid, separated by commas" className="w-full rounded-xl bg-white/[.05] px-3 py-2 text-sm outline-none placeholder:text-white/30" />
+        <input value={brand.business} onChange={e => setBrand({ ...brand, business: e.target.value })} placeholder="Business name" className="w-full rounded-xl bg-white/[.04] px-3 py-2 text-sm outline-none placeholder:text-white/30" />
+        <input value={brand.audience} onChange={e => setBrand({ ...brand, audience: e.target.value })} placeholder="Target audience" className="w-full rounded-xl bg-white/[.04] px-3 py-2 text-sm outline-none placeholder:text-white/30" />
+        <input value={brand.tone} onChange={e => setBrand({ ...brand, tone: e.target.value })} placeholder="Tone (e.g. professional, playful, bold)" className="w-full rounded-xl bg-white/[.04] px-3 py-2 text-sm outline-none placeholder:text-white/30" />
+        <input value={brand.website} onChange={e => setBrand({ ...brand, website: e.target.value })} placeholder="Website (optional)" className="w-full rounded-xl bg-white/[.04] px-3 py-2 text-sm outline-none placeholder:text-white/30" />
+        <input value={brand.dontPost} onChange={e => setBrand({ ...brand, dontPost: e.target.value })} placeholder="Topics to avoid, separated by commas" className="w-full rounded-xl bg-white/[.04] px-3 py-2 text-sm outline-none placeholder:text-white/30" />
         <button onClick={saveBrand} disabled={savingBrand} className="rounded-lg bg-indigo-500 px-4 py-2 text-sm text-white hover:bg-indigo-400 disabled:opacity-50">{savingBrand ? 'Saving...' : 'Save brand profile'}</button>
       </div>}
 
-      <div className="mt-6 rounded-xl border border-white/[.08] bg-white/[.03] p-4">
+      <div className="mt-6 rounded-xl border border-white/[.08] bg-white/[.04] p-4">
         <h3 className="text-sm font-semibold">Required connections</h3>
         <div className="mt-2 space-y-2">
           {platformIds.map(id => {

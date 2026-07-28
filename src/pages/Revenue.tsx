@@ -127,7 +127,7 @@ export default function Revenue() {
                   <label className="block text-xs text-white/55">Account number</label>
                   <div className="flex gap-2">
                     <input value={accountNumber} onChange={e => setAccountNumber(e.target.value)} className="min-h-11 flex-1 rounded-xl border border-white/[.12] bg-background px-4 text-sm outline-none focus:border-indigo-500" placeholder="0123456789" />
-                    <button onClick={() => void verify()} disabled={verifying || !bankCode || accountNumber.length < 10} className="min-h-11 rounded-xl bg-white px-4 text-sm font-semibold text-black disabled:opacity-50">
+                    <button onClick={() => void verify()} disabled={verifying || !bankCode || accountNumber.length < 10} className="min-h-11 rounded-xl bg-white/[.04] px-4 text-sm font-semibold text-white disabled:opacity-50">
                       {verifying ? <LoaderCircle className="animate-spin" size={14}/> : 'Verify'}
                     </button>
                   </div>

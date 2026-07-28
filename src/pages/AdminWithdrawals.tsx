@@ -46,11 +46,11 @@ export default function AdminWithdrawals() {
         <button onClick={() => void load()} className="flex min-h-10 items-center gap-2 rounded-lg border border-white/[.15] px-3 text-sm transition-colors hover:bg-white/[.04]"><RefreshCw size={14} /> Refresh</button>
       </div>
       <p className="mt-2 text-sm text-white/55">Review and approve seller payouts.</p>
-      {error && <p className="mt-5 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+      {error && <p className="mt-5 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-rose-300">{error}</p>}
       {loading ? (
         <div className="grid min-h-64 place-items-center"><LoaderCircle className="animate-spin" size={28} /></div>
       ) : (
-        <div className="mt-6 overflow-hidden rounded-2xl border border-white/[.12] bg-white/[.03]">
+        <div className="mt-6 overflow-hidden rounded-2xl border border-white/[.12] bg-white/[.04]">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] text-left text-sm">
               <thead className="bg-white/[.04] text-xs text-white/55"><tr><th className="px-5 py-3">Date</th><th className="px-5 py-3">Seller</th><th className="px-5 py-3">Amount</th><th className="px-5 py-3">Bank</th><th className="px-5 py-3">Account</th><th className="px-5 py-3">Status</th><th className="px-5 py-3">Action</th></tr></thead>

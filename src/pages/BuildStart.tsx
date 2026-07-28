@@ -36,7 +36,7 @@ export default function BuildStart() {
     <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-5 py-12">
       <div className="mt-8 text-center">
         <BookAnimation />
-        <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/[0.12] bg-white/[0.05] px-4 py-1.5 text-xs font-medium text-zinc-300 shadow-premium backdrop-blur-md">
+        <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/[0.12] bg-white/[.04] px-4 py-1.5 text-xs font-medium text-zinc-300 shadow-premium backdrop-blur-md">
           <Sparkles size={13} className="text-indigo-400" /> Alpha Creation OS
         </div>
         <h1 className="text-4xl font-extrabold leading-tight tracking-[-0.02em] md:text-5xl">
@@ -48,13 +48,13 @@ export default function BuildStart() {
       </div>
 
       <div className="mx-auto mt-8 w-full max-w-2xl">
-        <div className="rounded-3xl border border-white/[0.12] bg-white/[0.04] p-3 shadow-[0_25px_60px_-12px_rgba(0,0,0,0.5)] ring-1 ring-inset ring-white/[0.06] backdrop-blur-[24px]">
+        <div className="rounded-3xl border border-white/[0.12] bg-white/[.04] p-3 shadow-[0_25px_60px_-12px_rgba(0,0,0,0.5)] ring-1 ring-inset ring-white/[0.06] backdrop-blur-[24px]">
           <textarea
             autoFocus
             value={idea}
             onChange={event => setIdea(event.target.value)}
             onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); start() } }}
-            className="h-28 w-full resize-none bg-transparent p-4 text-base text-zinc-100 outline-none placeholder:text-zinc-500"
+            className="h-28 w-full resize-none bg-transparent p-4 text-base text-zinc-100 outline-none placeholder:text-slate-400"
             placeholder="For example: a barber booking app with services and WhatsApp confirmation"
           />
           <div className="flex justify-end px-2 pb-2">
@@ -74,7 +74,7 @@ export default function BuildStart() {
           <button
             key={type}
             onClick={() => setSelectedType(type)}
-            className={`rounded-full px-4 py-1.5 text-xs font-medium transition-colors ${selectedType === type ? 'bg-white text-black' : 'border border-white/[0.08] bg-white/[0.03] text-zinc-400 hover:bg-white/[0.06] hover:text-white'}`}
+            className={`rounded-full px-4 py-1.5 text-xs font-medium transition-colors ${selectedType === type ? 'bg-white/[.04] text-white' : 'border border-white/[0.08] bg-white/[.04] text-zinc-400 hover:bg-white/[.04] hover:text-white'}`}
           >
             {type}
           </button>
@@ -86,19 +86,19 @@ export default function BuildStart() {
           <button
             key={t.name}
             onClick={() => start(t.prompt)}
-            className="group flex flex-col items-start rounded-2xl border border-white/[0.08] bg-white/[0.03] p-5 text-left transition-all hover:scale-[1.02] hover:border-indigo-400/30 hover:bg-white/[0.06] hover:shadow-glow-indigo"
+            className="group flex flex-col items-start rounded-2xl border border-white/[0.08] bg-white/[.04] p-5 text-left transition-all hover:scale-[1.02] hover:border-indigo-400/30 hover:bg-white/[.04] hover:shadow-glow-indigo"
           >
             <span className="grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-pink-500 text-white shadow-lg">
               <t.icon size={20} />
             </span>
             <h3 className="mt-4 text-base font-semibold">{t.name}</h3>
-            <p className="mt-1 text-sm text-zinc-500">Tap to start with this idea.</p>
+            <p className="mt-1 text-sm text-slate-400">Tap to start with this idea.</p>
             <span className="mt-4 inline-flex items-center gap-1 text-xs font-medium text-indigo-300 group-hover:text-indigo-200">Build with this prompt <ArrowRight size={12} /></span>
           </button>
         ))}
       </div>
 
-      <div className="mt-12 text-center text-sm text-zinc-500">
+      <div className="mt-12 text-center text-sm text-slate-400">
         Tip: the more details you give, the better Alpha builds.
       </div>
     </div>

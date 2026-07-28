@@ -360,11 +360,11 @@ export default function Builder() {
   const appLike = previewMode === 'phone' || (previewMode === 'auto' && autoAppLike)
   const previewFrameClass = previewMode === 'phone' ? 'w-full max-w-[414px]' : previewMode === 'tablet' ? 'w-full max-w-[820px]' : 'w-full'
   const chats = mission?.messages.filter(message => message.type === 'chat') ?? []
-  if (!mission) return <div className="grid min-h-screen place-items-center bg-background p-6 text-center"><div><h1 className="text-xl font-semibold">Mission not found</h1><Link to="/workspace" className="mt-5 inline-flex rounded-lg bg-white px-5 py-3 text-sm text-black transition-all hover:bg-zinc-100">Return to dashboard</Link></div></div>
+  if (!mission) return <div className="grid min-h-screen place-items-center bg-background p-6 text-center"><div><h1 className="text-xl font-semibold">Mission not found</h1><Link to="/workspace" className="mt-5 inline-flex rounded-lg bg-white/[.04] px-5 py-3 text-sm text-white transition-all hover:bg-white/[.05]">Return to dashboard</Link></div></div>
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background">
-      <header className="flex min-h-16 flex-wrap items-center justify-between gap-3 border-b border-white/[.12] bg-white/[0.04] px-5 py-3 ">
+      <header className="flex min-h-16 flex-wrap items-center justify-between gap-3 border-b border-white/[.12] bg-white/[.04] px-5 py-3 ">
         <div className="flex min-w-0 items-center gap-3">
           <span className="relative flex h-2.5 w-2.5">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-30" />
@@ -380,7 +380,7 @@ export default function Builder() {
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className={`flex min-h-9 flex-shrink-0 items-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-all ${tab === t.id ? 'bg-white text-black' : 'border border-white/10 bg-white/[0.04] text-zinc-300 hover:bg-white/[0.08]'}`}
+              className={`flex min-h-9 flex-shrink-0 items-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-all ${tab === t.id ? 'bg-white/[.04] text-white' : 'border border-white/10 bg-white/[.04] text-zinc-300 hover:bg-white/[.04]'}`}
             >
               <t.icon size={14} className="sm:mr-1.5" /> <span className="hidden sm:inline">{t.label}</span>
             </button>
@@ -392,21 +392,21 @@ export default function Builder() {
           )}
           {creation && !building && (
             <>
-              <button onClick={undoBuild} disabled={!creation.versions || creation.versions.length < 2 || (creation.versionIndex ?? creation.versions.length - 1) === 0} title="Undo last change" className="flex min-h-9 flex-shrink-0 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-xs font-medium text-zinc-300 transition-all hover:bg-white/[0.08] disabled:opacity-40"><Undo2 size={14}/> <span className="hidden sm:inline">Undo</span></button>
-              <button onClick={redoBuild} disabled={!creation.versions || (creation.versionIndex ?? creation.versions.length - 1) >= creation.versions.length - 1} title="Redo" className="flex min-h-9 flex-shrink-0 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-xs font-medium text-zinc-300 transition-all hover:bg-white/[0.08] disabled:opacity-40"><Redo2 size={14}/> <span className="hidden sm:inline">Redo</span></button>
+              <button onClick={undoBuild} disabled={!creation.versions || creation.versions.length < 2 || (creation.versionIndex ?? creation.versions.length - 1) === 0} title="Undo last change" className="flex min-h-9 flex-shrink-0 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[.04] px-3 text-xs font-medium text-zinc-300 transition-all hover:bg-white/[.04] disabled:opacity-40"><Undo2 size={14}/> <span className="hidden sm:inline">Undo</span></button>
+              <button onClick={redoBuild} disabled={!creation.versions || (creation.versionIndex ?? creation.versions.length - 1) >= creation.versions.length - 1} title="Redo" className="flex min-h-9 flex-shrink-0 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[.04] px-3 text-xs font-medium text-zinc-300 transition-all hover:bg-white/[.04] disabled:opacity-40"><Redo2 size={14}/> <span className="hidden sm:inline">Redo</span></button>
             </>
           )}
-          <button onClick={() => void runBuild()} disabled={building} className="flex min-h-9 flex-shrink-0 items-center gap-1.5 rounded-lg bg-white px-4 text-xs font-semibold text-black transition-all hover:bg-zinc-100 disabled:opacity-50">
+          <button onClick={() => void runBuild()} disabled={building} className="flex min-h-9 flex-shrink-0 items-center gap-1.5 rounded-lg bg-white/[.04] px-4 text-xs font-semibold text-white transition-all hover:bg-white/[.05] disabled:opacity-50">
             {building ? <LoaderCircle className="animate-spin" size={14}/> : <Rocket size={14}/>} <span className="hidden sm:inline">{building ? 'Engineering...' : 'Build'}</span>
           </button>
         </div>
       </header>
 
-      {notice && <div className="border-b border-white/[.12] bg-white/[0.04] px-5 py-3 text-center text-sm text-white/80">{notice}</div>}
+      {notice && <div className="border-b border-white/[.12] bg-white/[.04] px-5 py-3 text-center text-sm text-white/80">{notice}</div>}
 
-      <div className="grid grid-cols-2 border-b border-white/[.12] bg-white/[0.04] p-2 lg:hidden">
-        <button onClick={() => setMobileView('chat')} className={`flex min-h-11 items-center justify-center gap-2 rounded-lg text-sm ${mobileView === 'chat' ? 'bg-white text-black' : 'text-white/55'}`}><MessageCircle size={16}/> Alpha Log</button>
-        <button onClick={() => setMobileView('preview')} className={`flex min-h-11 items-center justify-center gap-2 rounded-lg text-sm ${mobileView === 'preview' ? 'bg-white text-black' : 'text-white/55'}`}><Eye size={16}/> Workspace</button>
+      <div className="grid grid-cols-2 border-b border-white/[.12] bg-white/[.04] p-2 lg:hidden">
+        <button onClick={() => setMobileView('chat')} className={`flex min-h-11 items-center justify-center gap-2 rounded-lg text-sm ${mobileView === 'chat' ? 'bg-white/[.04] text-white' : 'text-white/55'}`}><MessageCircle size={16}/> Alpha Log</button>
+        <button onClick={() => setMobileView('preview')} className={`flex min-h-11 items-center justify-center gap-2 rounded-lg text-sm ${mobileView === 'preview' ? 'bg-white/[.04] text-white' : 'text-white/55'}`}><Eye size={16}/> Workspace</button>
       </div>
 
       <div className="grid min-h-0 flex-1 min-w-0 grid-cols-1 md:grid-cols-[minmax(0,420px)_4px_minmax(0,1fr)] lg:grid-cols-[minmax(0,420px)_4px_minmax(0,1fr)]" style={{ gridTemplateColumns: isMobile ? undefined : `minmax(0, ${leftWidth}px) 4px minmax(0, 1fr)` }}>
@@ -417,7 +417,7 @@ export default function Builder() {
               <span className="text-white/60">Tell me what to change, or say “build” when you are ready.</span>
               <div className="mt-3 flex flex-wrap gap-2">
                 {['Make it blue', 'Add dark mode toggle', 'Add a contact form', 'Add charts and analytics'].map(s => (
-                  <button key={s} onClick={() => void send(s)} className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs text-zinc-300 transition-all hover:border-indigo-400/40 hover:bg-white/[0.10] hover:text-white">{s}</button>
+                  <button key={s} onClick={() => void send(s)} className="rounded-full border border-white/10 bg-white/[.04] px-3 py-1.5 text-xs text-zinc-300 transition-all hover:border-indigo-400/40 hover:bg-white/[.04] hover:text-white">{s}</button>
                 ))}
               </div>
             </AssistantMessage>
@@ -426,41 +426,41 @@ export default function Builder() {
                 {message.role === 'assistant' && (
                   <div className="grid h-8 w-8 flex-shrink-0 place-items-center rounded-full bg-gradient-to-br from-indigo-500 to-pink-500 text-white"><Bot size={14} /></div>
                 )}
-                <div className={`max-w-[85%] rounded-2xl px-5 py-3 text-sm leading-7 ${message.role === 'user' ? 'bg-white/[0.12] text-white' : 'border border-white/[.08] bg-white/[0.04] text-white/90 '}`}>
+                <div className={`max-w-[85%] rounded-2xl px-5 py-3 text-sm leading-7 ${message.role === 'user' ? 'bg-white/[.04] text-white' : 'border border-white/[.08] bg-white/[.04] text-white/90 '}`}>
                   {message.content}
                 </div>
               </div>
             ))}
             {pending && <div className="flex items-center gap-2 text-sm text-white/55"><LoaderCircle className="animate-spin" size={16}/> Alpha is responding...</div>}
           </div>
-          <div className="border-t border-white/[.12] bg-white/[0.04] p-4">
-            <div className="rounded-xl border border-white/[.15] bg-white/[0.04] p-2 focus-within:border-white/30">
-              <textarea value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} className="h-20 w-full resize-none bg-transparent px-2 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 outline-none" placeholder="Message Alpha..." />
-              <div className="flex justify-end"><button onClick={() => void send()} disabled={pending || !input.trim()} className="grid size-11 place-items-center rounded-lg bg-white text-black transition-all hover:bg-zinc-100 disabled:opacity-30" aria-label="Send"><ArrowUp size={18}/></button></div>
+          <div className="border-t border-white/[.12] bg-white/[.04] p-4">
+            <div className="rounded-xl border border-white/[.15] bg-white/[.04] p-2 focus-within:border-white/30">
+              <textarea value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} className="h-20 w-full resize-none bg-transparent px-2 py-2 text-sm text-zinc-100 placeholder:text-slate-400 outline-none" placeholder="Message Alpha..." />
+              <div className="flex justify-end"><button onClick={() => void send()} disabled={pending || !input.trim()} className="grid size-11 place-items-center rounded-lg bg-white/[.04] text-white transition-all hover:bg-white/[.05] disabled:opacity-30" aria-label="Send"><ArrowUp size={18}/></button></div>
             </div>
           </div>
-          <div className="border-t border-white/[.12] bg-white/[0.04]"><button onClick={() => {}} className="flex min-h-12 w-full items-center justify-between px-5 text-sm font-medium"><span>Build progress</span><span className="text-xs text-white/55">{activities.length} updates</span></button><ActivityFeedPanel activities={activities} building={building} /> {isMentorMission(mission.goal) && <MentorPanel mission={mission} />}</div>
+          <div className="border-t border-white/[.12] bg-white/[.04]"><button onClick={() => {}} className="flex min-h-12 w-full items-center justify-between px-5 text-sm font-medium"><span>Build progress</span><span className="text-xs text-white/55">{activities.length} updates</span></button><ActivityFeedPanel activities={activities} building={building} /> {isMentorMission(mission.goal) && <MentorPanel mission={mission} />}</div>
         </section>
 
         <div
           onMouseDown={() => { resizingRef.current = true; document.body.style.userSelect = 'none'; document.body.style.cursor = 'col-resize' }}
-          className="hidden cursor-col-resize bg-white/5 hover:bg-white/10 active:bg-white/20 md:block"
+          className="hidden cursor-col-resize bg-white/[.04] hover:bg-white/[.04] active:bg-white/[.04] md:block"
           style={{ width: 4 }}
           aria-label="Resize panels"
         />
 
         <section className={`${mobileView === 'preview' ? 'flex' : 'hidden'} min-h-0 min-w-0 flex-1 flex-col bg-background p-3 sm:p-4 md:p-6 md:flex`}>
           {tab === 'preview' && (
-            <div className="flex h-full min-h-0 flex-col rounded-2xl border border-white/[.12] bg-white/[0.04] p-3 ">
+            <div className="flex h-full min-h-0 flex-col rounded-2xl border border-white/[.12] bg-white/[.04] p-3 ">
               <div className="flex min-h-11 flex-wrap items-center gap-2 rounded-t-xl border-b border-white/[.12] px-4 pb-3">
                 <span className="flex gap-1.5"><i className="size-2.5 rounded-full bg-red-500/80" /><i className="size-2.5 rounded-full bg-amber-500/80" /><i className="size-2.5 rounded-full bg-emerald-500/80" /></span>
-                <div className="min-w-0 flex-1 truncate rounded-lg border border-white/[.10] bg-white/[0.04] px-3 py-1.5 text-center text-xs text-white/60">{previewUrl ? previewUrl.replace(/^.*\/preview\//, 'preview/') : (appLike ? 'phone.alphatekx.app' : 'preview.alphatekx.app')}</div>
-                <div className="flex items-center gap-1 rounded-lg border border-white/[.10] bg-white/[0.04] p-0.5">
-                  <button onClick={() => setPreviewMode('desktop')} title="Desktop" className={`grid size-7 place-items-center rounded-md ${previewMode === 'desktop' ? 'bg-white text-black' : 'text-white/60 hover:text-white'}`}><Monitor size={14} /></button>
-                  <button onClick={() => setPreviewMode('tablet')} title="Tablet" className={`grid size-7 place-items-center rounded-md ${previewMode === 'tablet' ? 'bg-white text-black' : 'text-white/60 hover:text-white'}`}><Tablet size={14} /></button>
-                  <button onClick={() => setPreviewMode('phone')} title="Phone" className={`grid size-7 place-items-center rounded-md ${previewMode === 'phone' ? 'bg-white text-black' : 'text-white/60 hover:text-white'}`}><Smartphone size={14} /></button>
+                <div className="min-w-0 flex-1 truncate rounded-lg border border-white/[.10] bg-white/[.04] px-3 py-1.5 text-center text-xs text-white/60">{previewUrl ? previewUrl.replace(/^.*\/preview\//, 'preview/') : (appLike ? 'phone.alphatekx.app' : 'preview.alphatekx.app')}</div>
+                <div className="flex items-center gap-1 rounded-lg border border-white/[.10] bg-white/[.04] p-0.5">
+                  <button onClick={() => setPreviewMode('desktop')} title="Desktop" className={`grid size-7 place-items-center rounded-md ${previewMode === 'desktop' ? 'bg-white/[.04] text-white' : 'text-white/60 hover:text-white'}`}><Monitor size={14} /></button>
+                  <button onClick={() => setPreviewMode('tablet')} title="Tablet" className={`grid size-7 place-items-center rounded-md ${previewMode === 'tablet' ? 'bg-white/[.04] text-white' : 'text-white/60 hover:text-white'}`}><Tablet size={14} /></button>
+                  <button onClick={() => setPreviewMode('phone')} title="Phone" className={`grid size-7 place-items-center rounded-md ${previewMode === 'phone' ? 'bg-white/[.04] text-white' : 'text-white/60 hover:text-white'}`}><Smartphone size={14} /></button>
                 </div>
-                <div className="flex items-center gap-1 rounded-lg border border-white/[.10] bg-white/[0.04] p-0.5">
+                <div className="flex items-center gap-1 rounded-lg border border-white/[.10] bg-white/[.04] p-0.5">
                   <button onClick={refreshPreview} disabled={!creation || previewLoading} title="Refresh preview" className="grid size-7 place-items-center rounded-md text-white/60 hover:text-white disabled:opacity-40"><RefreshCw size={14} className={previewLoading ? 'animate-spin' : ''} /></button>
                   <button onClick={restartPreview} title="Restart preview" className="grid size-7 place-items-center rounded-md text-white/60 hover:text-white"><RotateCcw size={14} /></button>
                   <button onClick={openNewTab} disabled={!previewUrl} title="Open in new tab" className="grid size-7 place-items-center rounded-md text-white/60 hover:text-white disabled:opacity-40"><ExternalLink size={14} /></button>
@@ -468,13 +468,13 @@ export default function Builder() {
                 </div>
                 {creation && (
                   <div className="relative">
-                    <button onClick={() => setPagesOpen(v => !v)} className="flex min-h-7 items-center gap-1.5 rounded-lg border border-white/[.10] bg-white/[0.04] px-2 text-xs text-white/70 hover:bg-white/[0.08]">
+                    <button onClick={() => setPagesOpen(v => !v)} className="flex min-h-7 items-center gap-1.5 rounded-lg border border-white/[.10] bg-white/[.04] px-2 text-xs text-white/70 hover:bg-white/[.04]">
                       <LayoutGrid size={12}/> {filePages.length ? `${filePages.length} pages` : `${fileList.length} files`} <ChevronDown size={12} className={`transition-transform ${pagesOpen ? 'rotate-180' : ''}`}/>
                     </button>
                     {pagesOpen && (
                       <div className="absolute right-0 top-full z-50 mt-1 max-h-64 w-56 overflow-y-auto rounded-xl border border-white/[.12] bg-[#151515] p-1 shadow-xl">
                         {filePages.length ? filePages.map(p => (
-                          <button key={p.path} onClick={() => { setPagesOpen(false); previewIframeRef.current?.contentWindow?.postMessage({ type: 'alpha-navigate', view: p.name.toLowerCase() }, '*') }} className="w-full rounded-lg px-3 py-2 text-left text-xs text-zinc-300 hover:bg-white/[0.08]">{p.name}</button>
+                          <button key={p.path} onClick={() => { setPagesOpen(false); previewIframeRef.current?.contentWindow?.postMessage({ type: 'alpha-navigate', view: p.name.toLowerCase() }, '*') }} className="w-full rounded-lg px-3 py-2 text-left text-xs text-zinc-300 hover:bg-white/[.04]">{p.name}</button>
                         )) : (
                           <div className="px-3 py-2 text-xs text-white/40">No pages detected</div>
                         )}
@@ -491,7 +491,7 @@ export default function Builder() {
                   <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-b-xl bg-[#0A0F1E]/90 p-6 text-center">
                     <p className="text-sm text-red-300">Preview failed to load</p>
                     <p className="max-w-md text-xs text-zinc-400">{previewError}</p>
-                    <button onClick={refreshPreview} className="rounded-lg bg-white px-4 py-2 text-xs font-semibold text-black hover:bg-zinc-100">Try again</button>
+                    <button onClick={refreshPreview} className="rounded-lg bg-white/[.04] px-4 py-2 text-xs font-semibold text-white hover:bg-white/[.05]">Try again</button>
                   </div>
                 )}
                 {previewLoading && (
@@ -510,7 +510,7 @@ export default function Builder() {
           )}
 
           {tab === 'store' && (
-            <div className="flex h-full min-h-0 flex-col rounded-2xl border border-white/[.12] bg-white/[0.04] p-4 ">
+            <div className="flex h-full min-h-0 flex-col rounded-2xl border border-white/[.12] bg-white/[.04] p-4 ">
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-lg font-semibold">Store</h2>
@@ -522,7 +522,7 @@ export default function Builder() {
                 {storeLoading ? (
                   <div className="flex items-center gap-2 text-sm text-white/55"><LoaderCircle className="animate-spin" size={16}/> Loading...</div>
                 ) : storeItems.length ? storeItems.map(item => (
-                  <button key={item.id} onClick={() => setInput(prev => prev ? `${prev}\n${item.content}` : item.content)} className="w-full rounded-xl border border-white/[.08] bg-white/[.04] p-3 text-left transition-colors hover:bg-white/[.08]">
+                  <button key={item.id} onClick={() => setInput(prev => prev ? `${prev}\n${item.content}` : item.content)} className="w-full rounded-xl border border-white/[.08] bg-white/[.04] p-3 text-left transition-colors hover:bg-white/[.04]">
                     <div className="flex items-center gap-2 text-sm font-medium">{itemIcon(item.type)} {item.title}</div>
                     <p className="mt-1 line-clamp-2 text-xs text-white/55">{item.content}</p>
                   </button>
@@ -532,7 +532,7 @@ export default function Builder() {
           )}
 
           {tab === 'code' && (
-            <div className="flex h-full min-h-0 flex-col rounded-2xl border border-white/[.12] bg-white/[0.04] p-4 ">
+            <div className="flex h-full min-h-0 flex-col rounded-2xl border border-white/[.12] bg-white/[.04] p-4 ">
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-lg font-semibold">Project code</h2>
@@ -541,12 +541,12 @@ export default function Builder() {
                 <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-indigo-500 to-pink-500 px-2 py-1 text-[10px] font-semibold text-white">🔥 Full App</span>
                 {creation && (
                   <div className="flex items-center gap-2">
-                    <button onClick={() => navigator.clipboard.writeText(creation.code)} className="flex min-h-9 items-center gap-2 rounded-lg border border-white/15 bg-white/[0.05] px-3 text-xs transition-all hover:bg-white/[0.08]"><Copy size={13} /> Copy entry</button>
-                    <button onClick={() => void exportCreationZip(creation)} className="flex min-h-9 items-center gap-2 rounded-lg border border-white/15 bg-white/[0.05] px-3 text-xs transition-all hover:bg-white/[0.08]"><Download size={13} /> Project ZIP</button>
+                    <button onClick={() => navigator.clipboard.writeText(creation.code)} className="flex min-h-9 items-center gap-2 rounded-lg border border-white/15 bg-white/[.04] px-3 text-xs transition-all hover:bg-white/[.04]"><Copy size={13} /> Copy entry</button>
+                    <button onClick={() => void exportCreationZip(creation)} className="flex min-h-9 items-center gap-2 rounded-lg border border-white/15 bg-white/[.04] px-3 text-xs transition-all hover:bg-white/[.04]"><Download size={13} /> Project ZIP</button>
                   </div>
                 )}
               </div>
-              <div className="mt-3 min-h-0 flex-1 overflow-hidden rounded-xl border border-white/[.12] bg-[#111] flex">
+              <div className="mt-3 min-h-0 flex-1 overflow-hidden rounded-xl border border-white/[.12] bg-[#0A0F1E] flex">
                 <div className="w-52 border-r border-white/[.12] overflow-y-auto p-2">
                   {fileList.map((file) => {
                     const isFolder = file.path.endsWith('/')
@@ -556,7 +556,7 @@ export default function Builder() {
                       <button
                         key={file.path}
                         onClick={() => setSelectedFile(file.path)}
-                        className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs ${selectedFile === file.path ? 'bg-white/[0.10] text-white' : 'text-zinc-400 hover:bg-white/[0.05] hover:text-zinc-200'}`}
+                        className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs ${selectedFile === file.path ? 'bg-white/[.04] text-white' : 'text-zinc-400 hover:bg-white/[.04] hover:text-zinc-200'}`}
                       >
                         <Icon size={12}/> {file.path}
                       </button>
@@ -569,7 +569,7 @@ export default function Builder() {
           )}
 
           {tab === 'logs' && (
-            <div className="flex h-full min-h-0 flex-col rounded-2xl border border-white/[.12] bg-white/[0.04] p-4 ">
+            <div className="flex h-full min-h-0 flex-col rounded-2xl border border-white/[.12] bg-white/[.04] p-4 ">
               <h2 className="text-lg font-semibold">Alpha log</h2>
               {previewSteps.length > 0 && (
                 <div className="mt-3 space-y-1 rounded-xl bg-[#0A0F1E]/55 p-3">
@@ -594,19 +594,19 @@ export default function Builder() {
           )}
 
           {tab === 'ai' && (
-            <div className="flex h-full min-h-0 flex-col rounded-2xl border border-white/[.12] bg-white/[0.04] p-5 ">
+            <div className="flex h-full min-h-0 flex-col rounded-2xl border border-white/[.12] bg-white/[.04] p-5 ">
               <h2 className="text-lg font-semibold">AI</h2>
               <p className="text-sm text-white/55">Turn this mission into an automation. Connect apps and let Alpha work for you.</p>
 
               {aiNotice && <div className="mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200">{aiNotice}</div>}
 
-              <div className="mt-4 rounded-xl border border-white/[.12] bg-white/[0.04] p-3">
+              <div className="mt-4 rounded-xl border border-white/[.12] bg-white/[.04] p-3">
                 <textarea
                   value={aiInput}
                   onChange={e => setAiInput(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void planAgent() } }}
                   placeholder="Every morning at 8 AM post an AI tip to Facebook, LinkedIn and X for 1 week..."
-                  className="h-28 w-full resize-none bg-transparent px-2 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 outline-none"
+                  className="h-28 w-full resize-none bg-transparent px-2 py-2 text-sm text-zinc-100 placeholder:text-slate-400 outline-none"
                 />
                 <div className="flex flex-col items-end gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="text-xs text-white/40">{getCredits()} credits available. Each run costs 1 credit.</div>
@@ -619,7 +619,7 @@ export default function Builder() {
               {suggestions.length > 0 && (
                 <div className="mt-4 flex flex-wrap gap-2">
                   {suggestions.map(s => (
-                    <button key={s.title} onClick={() => { setAiInput(s.description); void planAgent() }} className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs text-zinc-300 transition-all hover:border-indigo-400/40 hover:bg-white/[0.10] hover:text-white">
+                    <button key={s.title} onClick={() => { setAiInput(s.description); void planAgent() }} className="rounded-full border border-white/10 bg-white/[.04] px-3 py-1.5 text-xs text-zinc-300 transition-all hover:border-indigo-400/40 hover:bg-white/[.04] hover:text-white">
                       {s.title}
                     </button>
                   ))}
@@ -627,21 +627,21 @@ export default function Builder() {
               )}
 
               {aiDraft && (
-                <div className="mt-6 rounded-xl border border-white/[.12] bg-white/[0.04] p-4">
+                <div className="mt-6 rounded-xl border border-white/[.12] bg-white/[.04] p-4">
                   <div className="flex items-center gap-2">
                     <Bot size={16} className="text-indigo-300" />
                     <h3 className="font-semibold">{aiDraft.name}</h3>
                   </div>
                   <p className="mt-1 text-sm text-white/55">{aiDraft.description}</p>
                   <div className="mt-3 flex flex-wrap gap-2 text-xs text-white/55">
-                    <span className="rounded-lg bg-white/[.05] px-2 py-1">Trigger: {aiDraft.trigger.type === 'schedule' ? (aiDraft.trigger.cron || 'Daily') : aiDraft.trigger.type}</span>
-                    <span className="rounded-lg bg-white/[.05] px-2 py-1">Cost: {aiDraft.creditsNeeded || aiDraft.creditsPerRun || 1} credit(s)</span>
+                    <span className="rounded-lg bg-white/[.04] px-2 py-1">Trigger: {aiDraft.trigger.type === 'schedule' ? (aiDraft.trigger.cron || 'Daily') : aiDraft.trigger.type}</span>
+                    <span className="rounded-lg bg-white/[.04] px-2 py-1">Cost: {aiDraft.creditsNeeded || aiDraft.creditsPerRun || 1} credit(s)</span>
                   </div>
                   <div className="mt-4 space-y-2">
                     {aiDraft.actions.map((a, i) => {
                       const c = getConnector(a.connector)
                       return (
-                        <div key={i} className="flex items-center gap-2 rounded-xl border border-white/[.08] bg-white/[0.03] p-3 text-sm">
+                        <div key={i} className="flex items-center gap-2 rounded-xl border border-white/[.08] bg-white/[.04] p-3 text-sm">
                           {c ? <ConnectorIcon connector={c} /> : <Bot size={16} />}
                           <span className="flex-1">{a.label || a.action}</span>
                           {integrationStatus && (integrationStatus[a.connector]?.connected || integrationStatus[a.connector]?.ready) && <CheckCircle2 size={14} className="text-emerald-400" />}
@@ -653,10 +653,10 @@ export default function Builder() {
                     <p className="mt-3 text-xs text-amber-300">Some actions need a connector. <Link to="/connectors" className="underline">Connect them first</Link> or the agent will pause.</p>
                   )}
                   <div className="mt-4 flex gap-2">
-                    <button onClick={() => void approveAndSaveAgent()} className="flex min-h-10 flex-1 items-center justify-center gap-2 rounded-lg bg-white px-4 text-sm font-semibold text-black transition-all hover:bg-zinc-100">
+                    <button onClick={() => void approveAndSaveAgent()} className="flex min-h-10 flex-1 items-center justify-center gap-2 rounded-lg bg-white/[.04] px-4 text-sm font-semibold text-white transition-all hover:bg-white/[.05]">
                       <Plus size={16}/> Create & run
                     </button>
-                    <button onClick={() => setAiDraft(null)} className="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-white/[.15] px-4 text-sm text-white transition-all hover:bg-white/5">
+                    <button onClick={() => setAiDraft(null)} className="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-white/[.15] px-4 text-sm text-white transition-all hover:bg-white/[.04]">
                       Cancel
                     </button>
                   </div>
@@ -664,13 +664,13 @@ export default function Builder() {
               )}
 
               {!aiDraft && (
-                <div className="mt-6 rounded-xl border border-white/[.12] bg-white/[0.04] p-4">
+                <div className="mt-6 rounded-xl border border-white/[.12] bg-white/[.04] p-4">
                   <h3 className="text-sm font-semibold">Connected services</h3>
                   <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
                     {connectors.filter(c => c.id !== 'calendar').map(c => {
                       const status = integrationStatus?.[c.id] || { connected: false, ready: false }
                       return (
-                        <Link key={c.id} to={`/connectors?service=${c.id}`} className="rounded-xl border border-white/[.08] bg-white/[0.03] p-3 transition-all hover:bg-white/[0.05]">
+                        <Link key={c.id} to={`/connectors?service=${c.id}`} className="rounded-xl border border-white/[.08] bg-white/[.04] p-3 transition-all hover:bg-white/[.04]">
                           <div className="flex items-center gap-2">
                             <ConnectorIcon connector={c} />
                             <span className="text-xs font-medium">{c.name}</span>
@@ -686,15 +686,15 @@ export default function Builder() {
           )}
 
           {tab === 'deploy' && (
-            <div className="flex h-full min-h-0 flex-col rounded-2xl border border-white/[.12] bg-white/[0.04] p-5 ">
+            <div className="flex h-full min-h-0 flex-col rounded-2xl border border-white/[.12] bg-white/[.04] p-5 ">
               <h2 className="text-lg font-semibold">Deploy</h2>
               <p className="text-sm text-white/55">Choose a unique app address and publish to the world.</p>
 
               {creation ? (
-                <div className="mt-6 rounded-xl border border-white/[.12] bg-white/[0.04] p-4">
+                <div className="mt-6 rounded-xl border border-white/[.12] bg-white/[.04] p-4">
                   <label className="block text-xs font-medium text-white/70" htmlFor="deploy-slug">App address</label>
                   <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-                    <div className={`flex min-h-11 min-w-0 flex-1 items-center rounded-lg border bg-white/[0.04] px-3 text-sm ${availability?.available === false ? 'border-red-500/50' : availability?.available === true ? 'border-emerald-500/50' : 'border-white/[.15]'}`}>
+                    <div className={`flex min-h-11 min-w-0 flex-1 items-center rounded-lg border bg-white/[.04] px-3 text-sm ${availability?.available === false ? 'border-red-500/50' : availability?.available === true ? 'border-emerald-500/50' : 'border-white/[.15]'}`}>
                       <span className="hidden text-white/45 sm:inline">https://</span>
                       <input id="deploy-slug" value={deploySlug} onChange={e => { setDeploySlug(slugifyCreation(e.target.value)); setAvailability(null) }} className="min-w-0 flex-1 bg-transparent outline-none" />
                       <span className="hidden text-white/45 sm:inline">.alphatekx.name.ng</span>
@@ -713,7 +713,7 @@ export default function Builder() {
                         {availability.suggestions && availability.suggestions.length > 0 && (
                           <span className="ml-2">
                             Try:{availability.suggestions.map(s => (
-                              <button key={s} onClick={() => setDeploySlug(s)} className="ml-2 rounded bg-white/10 px-1.5 py-0.5 text-emerald-300 hover:bg-white/15">{s}</button>
+                              <button key={s} onClick={() => setDeploySlug(s)} className="ml-2 rounded bg-white/[.04] px-1.5 py-0.5 text-emerald-300 hover:bg-white/[.04]">{s}</button>
                             ))}
                           </span>
                         )}
@@ -724,7 +724,7 @@ export default function Builder() {
                   </div>
 
                   {deploySlug && (
-                    <div className="mt-4 rounded-lg border border-white/[.08] bg-white/[0.03] p-3 text-xs text-white/70">
+                    <div className="mt-4 rounded-lg border border-white/[.08] bg-white/[.04] p-3 text-xs text-white/70">
                       <p>Your app will be live at:</p>
                       <p className="mt-1 font-mono text-emerald-300">https://alphatekx.name.ng/app/{deploySlug}</p>
                       <p className="mt-1 font-mono text-white/55">https://{deploySlug}.alphatekx.name.ng</p>
@@ -735,25 +735,25 @@ export default function Builder() {
                 <div className="mt-6 rounded-xl border border-dashed border-white/[.15] p-8 text-center text-sm text-white/55">Build the mission first to unlock deploy.</div>
               )}
 
-              <div className="mt-6 rounded-xl border border-white/[.12] bg-white/[0.04] p-4">
+              <div className="mt-6 rounded-xl border border-white/[.12] bg-white/[.04] p-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="text-sm font-semibold">Deploy pasted code</h3>
                     <p className="text-xs text-white/55">Paste any complete HTML page and get a alphatekx.name.ng/app/... link.</p>
                   </div>
-                  <button onClick={() => { setPasteMode(v => !v); setPasteResult(null); setNotice('') }} className="rounded-lg border border-white/[.15] px-3 py-1.5 text-xs text-white transition-all hover:bg-white/5">
+                  <button onClick={() => { setPasteMode(v => !v); setPasteResult(null); setNotice('') }} className="rounded-lg border border-white/[.15] px-3 py-1.5 text-xs text-white transition-all hover:bg-white/[.04]">
                     {pasteMode ? 'Hide' : 'Paste code'}
                   </button>
                 </div>
                 {pasteMode && (
                   <div className="mt-4 space-y-3">
-                    <input value={paste.title} onChange={e => setPaste(p => ({ ...p, title: e.target.value }))} className="w-full rounded-lg border border-white/[.15] bg-white/[0.04] px-3 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-500" placeholder="App name" />
-                    <div className={`flex min-h-11 min-w-0 items-center rounded-lg border bg-white/[0.04] px-3 text-sm ${pasteAvailability?.available === false ? 'border-red-500/50' : pasteAvailability?.available === true ? 'border-emerald-500/50' : 'border-white/[.15]'}`}>
+                    <input value={paste.title} onChange={e => setPaste(p => ({ ...p, title: e.target.value }))} className="w-full rounded-lg border border-white/[.15] bg-white/[.04] px-3 py-2 text-sm text-zinc-100 outline-none placeholder:text-slate-400" placeholder="App name" />
+                    <div className={`flex min-h-11 min-w-0 items-center rounded-lg border bg-white/[.04] px-3 text-sm ${pasteAvailability?.available === false ? 'border-red-500/50' : pasteAvailability?.available === true ? 'border-emerald-500/50' : 'border-white/[.15]'}`}>
                       <span className="hidden text-white/45 sm:inline">https://</span>
                       <input value={paste.slug} onChange={e => setPaste(p => ({ ...p, slug: slugifyCreation(e.target.value) }))} className="min-w-0 flex-1 bg-transparent outline-none" placeholder="my-app" />
                       <span className="hidden text-white/45 sm:inline">.alphatekx.name.ng</span>
                     </div>
-                    <textarea value={paste.html} onChange={e => setPaste(p => ({ ...p, html: e.target.value }))} className="h-48 w-full rounded-lg border border-white/[.15] bg-white/[0.04] p-3 text-xs font-mono text-zinc-100 outline-none placeholder:text-zinc-500" placeholder="<!DOCTYPE html>..." />
+                    <textarea value={paste.html} onChange={e => setPaste(p => ({ ...p, html: e.target.value }))} className="h-48 w-full rounded-lg border border-white/[.15] bg-white/[.04] p-3 text-xs font-mono text-zinc-100 outline-none placeholder:text-slate-400" placeholder="<!DOCTYPE html>..." />
                     <div className="min-h-[1.5rem] text-xs">
                       {pasteChecking && <span className="flex items-center gap-1.5 text-white/55"><LoaderCircle size={12} className="animate-spin" /> Checking global availability...</span>}
                       {!pasteChecking && pasteAvailability?.available === true && <span className="text-emerald-400">✅ alphatekx.name.ng/app/{pasteAvailability.name} is available.</span>}
@@ -768,7 +768,7 @@ export default function Builder() {
                   <div className="mt-4 rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-4">
                     <div className="flex items-center gap-2 text-sm font-medium text-emerald-100"><Globe size={16} /> Your app is live</div>
                     <a href={pasteResult.url || pasteResult.pathUrl || pasteResult.subdomainUrl} target="_blank" rel="noreferrer" className="mt-2 block break-all text-sm text-emerald-300 underline underline-offset-4">{pasteResult.url || pasteResult.pathUrl || pasteResult.subdomainUrl}</a>
-                    <button onClick={() => navigator.clipboard.writeText(pasteResult.url || pasteResult.pathUrl || pasteResult.subdomainUrl)} className="mt-2 flex min-h-9 items-center gap-2 rounded-lg bg-white px-3 text-xs font-medium text-black transition-all hover:bg-zinc-100"><Copy size={13} /> Copy URL</button>
+                    <button onClick={() => navigator.clipboard.writeText(pasteResult.url || pasteResult.pathUrl || pasteResult.subdomainUrl)} className="mt-2 flex min-h-9 items-center gap-2 rounded-lg bg-white/[.04] px-3 text-xs font-medium text-white transition-all hover:bg-white/[.05]"><Copy size={13} /> Copy URL</button>
                   </div>
                 )}
               </div>
@@ -778,8 +778,8 @@ export default function Builder() {
                   <div className="flex items-center gap-2 text-sm font-medium text-emerald-100"><Globe size={16} /> Your app is live</div>
                   <a href={deployResult.url} target="_blank" rel="noreferrer" className="mt-2 block break-all text-sm text-emerald-300 underline underline-offset-4">{deployResult.url}</a>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <button onClick={() => navigator.clipboard.writeText(deployResult.url)} className="flex min-h-9 items-center gap-2 rounded-lg bg-white px-3 text-xs font-medium text-black transition-all hover:bg-zinc-100"><Copy size={13} /> Copy URL</button>
-                    <Link to={`/marketplace/new?previewUrl=${encodeURIComponent(deployResult.url)}&title=${encodeURIComponent(creation?.title || 'My AlphaTekX creation')}`} className="flex min-h-9 items-center gap-2 rounded-lg border border-white/[.15] bg-white/[0.06] px-3 text-xs font-medium text-white transition-all hover:bg-white/[0.10]"><ShoppingBag size={13} /> List for sale</Link>
+                    <button onClick={() => navigator.clipboard.writeText(deployResult.url)} className="flex min-h-9 items-center gap-2 rounded-lg bg-white/[.04] px-3 text-xs font-medium text-white transition-all hover:bg-white/[.05]"><Copy size={13} /> Copy URL</button>
+                    <Link to={`/marketplace/new?previewUrl=${encodeURIComponent(deployResult.url)}&title=${encodeURIComponent(creation?.title || 'My AlphaTekX creation')}`} className="flex min-h-9 items-center gap-2 rounded-lg border border-white/[.15] bg-white/[.04] px-3 text-xs font-medium text-white transition-all hover:bg-white/[.04]"><ShoppingBag size={13} /> List for sale</Link>
                   </div>
                 </div>
               )}
@@ -795,7 +795,7 @@ function AssistantMessage({ children }: { children: ReactNode }) {
   return (
     <div className="flex gap-3">
       <div className="grid h-8 w-8 flex-shrink-0 place-items-center rounded-full bg-gradient-to-br from-indigo-500 to-pink-500 text-white"><Bot size={14} /></div>
-      <div className="max-w-[85%] rounded-2xl border border-white/[.08] bg-white/[0.04] px-5 py-3 text-sm leading-7 text-white/90 ">
+      <div className="max-w-[85%] rounded-2xl border border-white/[.08] bg-white/[.04] px-5 py-3 text-sm leading-7 text-white/90 ">
         {children}
       </div>
     </div>
@@ -810,7 +810,7 @@ function EmptyPreview({ building, onBuild }: { building: boolean; onBuild?: () =
         <h2 className="mt-4 text-xl font-semibold">{building ? 'Engineering your app...' : 'Your app will appear here'}</h2>
         <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-white/55">{building ? 'Alpha is writing, testing, and refining your software.' : 'Click Build and Alpha will plan the architecture, then build it automatically.'}</p>
         {!building && onBuild && (
-          <button onClick={onBuild} className="mt-5 rounded-xl bg-white px-5 py-2.5 text-sm font-semibold text-black transition-all hover:bg-zinc-100">Build</button>
+          <button onClick={onBuild} className="mt-5 rounded-xl bg-white/[.04] px-5 py-2.5 text-sm font-semibold text-white transition-all hover:bg-white/[.05]">Build</button>
         )}
       </div>
     </div>
@@ -822,13 +822,13 @@ function PlanPanel({ mission, building, onBuild }: { mission: Mission; building:
   if (!plan) return null
   return (
     <div className="grid h-full min-h-0 place-items-center p-6">
-      <div className="w-full max-w-lg rounded-2xl border border-white/[.12] bg-white/[0.04] p-6 ">
+      <div className="w-full max-w-lg rounded-2xl border border-white/[.12] bg-white/[.04] p-6 ">
         <h2 className="text-lg font-semibold">{plan.title}</h2>
         <p className="mt-1 text-sm text-white/55">{plan.description}</p>
         <div className="mt-4 space-y-2">
           {plan.modules.map((m, i) => (
-            <div key={m.id} className="flex items-start gap-3 rounded-xl border border-white/[.08] bg-white/[0.03] p-3">
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/10 text-xs font-bold">{i + 1}</span>
+            <div key={m.id} className="flex items-start gap-3 rounded-xl border border-white/[.08] bg-white/[.04] p-3">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/[.04] text-xs font-bold">{i + 1}</span>
               <div>
                 <p className="text-sm font-medium">{m.name}</p>
                 <p className="text-xs text-white/55">{m.purpose}</p>
@@ -837,7 +837,7 @@ function PlanPanel({ mission, building, onBuild }: { mission: Mission; building:
           ))}
         </div>
         <div className="mt-5">
-          <button onClick={onBuild} disabled={building} className="flex w-full items-center justify-center gap-2 rounded-xl bg-white py-2.5 text-sm font-semibold text-black transition-all hover:bg-zinc-100 disabled:opacity-50">
+          <button onClick={onBuild} disabled={building} className="flex w-full items-center justify-center gap-2 rounded-xl bg-white/[.04] py-2.5 text-sm font-semibold text-white transition-all hover:bg-white/[.05] disabled:opacity-50">
             {building ? <LoaderCircle className="animate-spin" size={14}/> : <Rocket size={14}/>} Build from this plan
           </button>
         </div>

@@ -14,7 +14,7 @@ export default function FreeLimitModal({ open, onClose, onAddKey, onUpgrade }: P
       <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#1A1A1A] p-6 shadow-2xl">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-lg font-semibold text-white">Free Limit Reached!</h3>
-          <button onClick={onClose} className="rounded p-1 text-white/50 hover:bg-white/10" aria-label="Close">
+          <button onClick={onClose} className="rounded p-1 text-white/50 hover:bg-white/[.04]" aria-label="Close">
             <X size={18} />
           </button>
         </div>
