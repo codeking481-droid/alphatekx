@@ -189,20 +189,17 @@ export function generateAdvancedImagePrompt(content, objective = '', platform = 
 }
 
 export function pollinationsImageUrl(advancedPrompt, negativePrompt, seed = `${Date.now()}-${Math.floor(Math.random() * 100000)}`, options = {}) {
-  const key = String(options.key ?? process.env.POLLINATIONS_API_KEY ?? '').trim()
-  const origin = options.backup ? 'https://api.pollinations.ai' : 'https://image.pollinations.ai'
+  if (options.backup) return `https://pollinations.ai/p/${encodeURIComponent(advancedPrompt)}`
   const params = new URLSearchParams({
-    model: key ? 'flux-pro' : 'flux',
+    model: 'flux',
     width: '1024',
     height: '1024',
     enhance: 'true',
     nologo: 'true',
-    private: 'true',
     negative: negativePrompt,
     seed: String(seed),
   })
-  if (key) params.set('key', key)
-  return `${origin}/prompt/${encodeURIComponent(advancedPrompt)}?${params.toString()}`
+  return `https://image.pollinations.ai/prompt/${encodeURIComponent(advancedPrompt)}?${params.toString()}`
 }
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
