@@ -118,16 +118,16 @@ export default function Launch() {
     <div className="flex flex-wrap items-start justify-between gap-4">
       <div>
         <h1 className="text-2xl font-semibold md:text-3xl">Launch</h1>
-        <p className="mt-2 text-sm text-white/55">Publish a finished creation to a real <code className="rounded bg-white/[.04] px-1.5 py-0.5 text-xs">*.alphatekx.name.ng</code> subdomain.</p>
+        <p className="mt-2 text-sm text-white/55">Publish a finished creation to a real <code className="rounded bg-violet-500/10 px-1.5 py-0.5 text-xs">*.alphatekx.name.ng</code> subdomain.</p>
       </div>
-      <button onClick={() => { setPasteOpen(true); setPasteNotice(''); setPasteResult(null) }} className="flex min-h-11 items-center gap-2 rounded-full border border-white/[.15] bg-white/[.04] px-4 text-sm font-medium transition-all hover:border-[#E56B2D] hover:bg-white/[.04]"><Code2 size={16}/>Deploy pasted code</button>
+      <button onClick={() => { setPasteOpen(true); setPasteNotice(''); setPasteResult(null) }} className="flex min-h-11 items-center gap-2 rounded-full border border-violet-400/20 bg-violet-500/10 px-4 text-sm font-medium transition-all hover:border-[#E56B2D] hover:bg-violet-500/10"><Code2 size={16}/>Deploy pasted code</button>
     </div>
 
     <div className="mt-8 grid grid-cols-3 gap-2 lg:grid-cols-6">
-      {stages.map((stage, index) => <div key={stage} className="flex min-h-14 items-center gap-2 rounded-xl border border-white/[.12] liquid-glass p-3 shadow-sm"><span className={`grid size-6 place-items-center rounded-full text-xs ${index === stages.length - 1 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/[.04]'}`}>{index === stages.length - 1 ? <Check size={13}/> : index + 1}</span><span className="text-xs font-medium">{stage}</span></div>)}
+      {stages.map((stage, index) => <div key={stage} className="flex min-h-14 items-center gap-2 rounded-xl border border-violet-400/20 liquid-glass p-3 shadow-sm"><span className={`grid size-6 place-items-center rounded-full text-xs ${index === stages.length - 1 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-violet-500/10'}`}>{index === stages.length - 1 ? <Check size={13}/> : index + 1}</span><span className="text-xs font-medium">{stage}</span></div>)}
     </div>
 
-    <section className="mt-6 rounded-2xl border border-white/[.12] liquid-glass p-5 shadow-sm md:p-8">
+    <section className="mt-6 rounded-2xl border border-violet-400/20 liquid-glass p-5 shadow-sm md:p-8">
       <label className="block text-xs font-medium text-white/70">Choose a creation</label>
       <select value={selected} onChange={event => setSelected(event.target.value)} className="field mt-2">
         <option value="">Select a creation</option>
@@ -140,12 +140,12 @@ export default function Launch() {
             <h2 className="text-xl font-semibold">{creation.title}</h2>
             <p className="mt-1 text-sm text-white/55">{creation.files.length} files generated</p>
           </div>
-          <span className={`rounded-full px-3 py-1 text-xs font-medium capitalize ${creation.status === 'live' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-white/[.04] text-zinc-300'}`}>{creation.status}</span>
+          <span className={`rounded-full px-3 py-1 text-xs font-medium capitalize ${creation.status === 'live' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-violet-500/10 text-zinc-300'}`}>{creation.status}</span>
         </div>
 
-        {notice && <p role="status" className="rounded-lg border border-white/[.12] bg-white/[.04] p-3 text-sm">{notice}</p>}
+        {notice && <p role="status" className="rounded-lg border border-violet-400/20 bg-violet-500/10 p-3 text-sm">{notice}</p>}
 
-        <div className="rounded-2xl border border-white/[.12] bg-white/[.04] p-5">
+        <div className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-5">
           <div className="flex items-start gap-4">
             <span className="grid size-12 shrink-0 place-items-center rounded-xl btn-alpha text-white"><UploadCloud size={20}/></span>
             <div className="min-w-0 flex-1">
@@ -156,7 +156,7 @@ export default function Launch() {
 
           <label className="mt-5 block text-xs font-medium text-white/70" htmlFor="creation-slug">App address</label>
           <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-            <div className="flex min-h-12 min-w-0 flex-1 items-center rounded-xl border border-white/[.15] bg-white/[.04] px-3 text-sm">
+            <div className="flex min-h-12 min-w-0 flex-1 items-center rounded-xl border border-violet-400/20 bg-violet-500/10 px-3 text-sm">
               <span className="hidden text-white/45 sm:inline">https://</span>
               <input id="creation-slug" value={slug} onChange={event => setSlug(slugifyCreation(event.target.value))} className="min-w-0 flex-1 bg-transparent px-1 text-zinc-100 outline-none" aria-label="Published app slug"/>
               <span className="hidden text-white/45 sm:inline">.alphatekx.name.ng</span>
@@ -181,11 +181,11 @@ export default function Launch() {
           )}
 
           {showDns && deployInfo && (
-            <div className="mt-5 rounded-xl border border-white/[.12] bg-white/[.04] p-4">
+            <div className="mt-5 rounded-xl border border-violet-400/20 bg-violet-500/10 p-4">
               <div className="flex items-center gap-2 text-sm font-semibold"><Globe size={16}/> Subdomain DNS setup</div>
-              <p className="mt-2 text-sm text-white/55">To make every slug a real subdomain, add this wildcard record at your DNS provider and add <code className="rounded bg-white/[.04] px-1">{deployInfo.wildcardDomain}</code> in your Render Dashboard.</p>
-              <div className="mt-3 overflow-x-auto rounded-lg border border-white/[.12]">
-                <table className="w-full text-left text-sm"><thead className="bg-white/[.04] text-xs text-white/55"><tr><th className="px-4 py-2">Type</th><th className="px-4 py-2">Name</th><th className="px-4 py-2">Value</th></tr></thead><tbody>{deployInfo.dnsRecords.map((record, i) => <tr key={i} className="border-t border-white/10"><td className="px-4 py-3 font-mono text-xs">{record.type}</td><td className="px-4 py-3 font-mono text-xs">{record.name}</td><td className="px-4 py-3 font-mono text-xs">{record.value}</td></tr>)}</tbody></table>
+              <p className="mt-2 text-sm text-white/55">To make every slug a real subdomain, add this wildcard record at your DNS provider and add <code className="rounded bg-violet-500/10 px-1">{deployInfo.wildcardDomain}</code> in your Render Dashboard.</p>
+              <div className="mt-3 overflow-x-auto rounded-lg border border-violet-400/20">
+                <table className="w-full text-left text-sm"><thead className="bg-violet-500/10 text-xs text-white/55"><tr><th className="px-4 py-2">Type</th><th className="px-4 py-2">Name</th><th className="px-4 py-2">Value</th></tr></thead><tbody>{deployInfo.dnsRecords.map((record, i) => <tr key={i} className="border-t border-violet-400/20"><td className="px-4 py-3 font-mono text-xs">{record.type}</td><td className="px-4 py-3 font-mono text-xs">{record.name}</td><td className="px-4 py-3 font-mono text-xs">{record.value}</td></tr>)}</tbody></table>
               </div>
               <button onClick={() => void copyLiveUrl(`CNAME * ${deployInfo.dnsRecords[0]?.value || ''}`)} className="launch-action mt-3 gap-2"><Copy size={15}/>Copy DNS record</button>
             </div>
@@ -201,32 +201,32 @@ export default function Launch() {
         <button onClick={() => void copyEnv()} className="launch-action w-full gap-2 justify-center"><Copy size={16}/>Copy environment template</button>
 
         <div className="grid gap-5 lg:grid-cols-2">
-          <div className="rounded-xl border border-white/[.12] p-5">
+          <div className="rounded-xl border border-violet-400/20 p-5">
             <h3 className="text-sm font-semibold">Database tables</h3>
             <p className="mt-2 text-xs text-white/55">Suggested tables for this creation.</p>
-            <div className="mt-4 flex flex-wrap gap-2">{tables.map(table => <span key={table} className="rounded-md bg-white/[.04] px-3 py-2 font-mono text-xs">{table}</span>)}</div>
+            <div className="mt-4 flex flex-wrap gap-2">{tables.map(table => <span key={table} className="rounded-md bg-violet-500/10 px-3 py-2 font-mono text-xs">{table}</span>)}</div>
           </div>
-          <div className="rounded-xl border border-white/[.12] p-5">
+          <div className="rounded-xl border border-violet-400/20 p-5">
             <h3 className="text-sm font-semibold">Custom domain</h3>
-            <div className="mt-4 flex gap-2"><input value={domain} onChange={event => setDomain(event.target.value)} className="min-h-11 min-w-0 flex-1 rounded-lg border border-white/[.15] bg-white/[.04] px-3 text-sm text-zinc-100 outline-none" placeholder="app.yourdomain.com"/><button onClick={saveDomain} className="rounded-lg btn-alpha px-4 text-sm font-medium text-white">Save</button></div>
+            <div className="mt-4 flex gap-2"><input value={domain} onChange={event => setDomain(event.target.value)} className="min-h-11 min-w-0 flex-1 rounded-lg border border-violet-400/20 bg-violet-500/10 px-3 text-sm text-zinc-100 outline-none" placeholder="app.yourdomain.com"/><button onClick={saveDomain} className="rounded-lg btn-alpha px-4 text-sm font-medium text-white">Save</button></div>
           </div>
         </div>
 
         <h3 className="text-sm font-semibold">Version history</h3>
-        <div className="mt-3 space-y-2">{(creation.versions ?? []).slice().reverse().map(version => <div key={version.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/[.12] p-4"><div><p className="text-sm font-medium">{version.label}</p><p className="mt-1 text-xs text-white/55">{new Date(version.createdAt).toLocaleString()}</p></div><button onClick={() => { rollbackCreation(creation.id, version.id); setNotice(`Restored ${version.label}.`) }} className="flex min-h-10 items-center gap-2 rounded-lg border border-white/[.15] px-3 text-xs transition-all hover:bg-white/[.04]"><RotateCcw size={14}/>Restore</button></div>)}</div>
-      </div> : <div className="mt-6 rounded-xl border border-dashed border-white/[.15] p-10 text-center"><div className="mx-auto grid size-12 place-items-center rounded-full bg-white/[.04]"><UploadCloud size={20} className="text-white/40"/></div><h2 className="mt-4 font-semibold">No creation selected</h2><p className="mt-2 text-sm text-white/55">Build a mission first, then return here to launch it.</p></div>}
+        <div className="mt-3 space-y-2">{(creation.versions ?? []).slice().reverse().map(version => <div key={version.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-violet-400/20 p-4"><div><p className="text-sm font-medium">{version.label}</p><p className="mt-1 text-xs text-white/55">{new Date(version.createdAt).toLocaleString()}</p></div><button onClick={() => { rollbackCreation(creation.id, version.id); setNotice(`Restored ${version.label}.`) }} className="flex min-h-10 items-center gap-2 rounded-lg border border-violet-400/20 px-3 text-xs transition-all hover:bg-violet-500/10"><RotateCcw size={14}/>Restore</button></div>)}</div>
+      </div> : <div className="mt-6 rounded-xl border border-dashed border-violet-400/20 p-10 text-center"><div className="mx-auto grid size-12 place-items-center rounded-full bg-violet-500/10"><UploadCloud size={20} className="text-white/40"/></div><h2 className="mt-4 font-semibold">No creation selected</h2><p className="mt-2 text-sm text-white/55">Build a mission first, then return here to launch it.</p></div>}
     </section>
 
     {pasteOpen && <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-[#0A0F1E]/75 p-4" onMouseDown={() => !pasteDeploying && setPasteOpen(false)}>
-      <div className="my-6 w-full max-w-2xl rounded-2xl border border-white/[.12] liquid-glass p-6 shadow-xl sm:p-8" onMouseDown={event => event.stopPropagation()}>
-        <div className="flex items-start justify-between gap-4"><div><h2 className="text-lg font-semibold">Deploy pasted HTML</h2><p className="mt-1 text-sm text-white/55">Paste one complete HTML file. AlphaTekX will publish it as a standalone app.</p></div><button onClick={() => setPasteOpen(false)} disabled={pasteDeploying} className="grid size-11 shrink-0 place-items-center rounded-lg hover:bg-white/[.04] disabled:opacity-40" aria-label="Close pasted code deployment"><X size={18}/></button></div>
+      <div className="my-6 w-full max-w-2xl rounded-2xl border border-violet-400/20 liquid-glass p-6 shadow-xl sm:p-8" onMouseDown={event => event.stopPropagation()}>
+        <div className="flex items-start justify-between gap-4"><div><h2 className="text-lg font-semibold">Deploy pasted HTML</h2><p className="mt-1 text-sm text-white/55">Paste one complete HTML file. AlphaTekX will publish it as a standalone app.</p></div><button onClick={() => setPasteOpen(false)} disabled={pasteDeploying} className="grid size-11 shrink-0 place-items-center rounded-lg hover:bg-violet-500/10 disabled:opacity-40" aria-label="Close pasted code deployment"><X size={18}/></button></div>
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
           <label className="text-xs font-medium text-white/70">App name<input value={paste.title} onChange={event => { const title = event.target.value; setPaste(current => ({ ...current, title, slug: slugifyCreation(title) })) }} className="field mt-2" placeholder="My portfolio"/></label>
           <label className="text-xs font-medium text-white/70">Subdomain<input value={paste.slug} onChange={event => setPaste(current => ({ ...current, slug: slugifyCreation(event.target.value) }))} className="field mt-2" placeholder="my-portfolio"/></label>
         </div>
-        <label className="mt-4 block text-xs font-medium text-white/70">Full HTML code<textarea value={paste.html} onChange={event => setPaste(current => ({ ...current, html: event.target.value }))} className="mt-2 min-h-72 w-full resize-y rounded-xl border border-white/[.15] bg-white/[.04] p-3 font-mono text-xs leading-5 text-zinc-100 outline-none focus:border-[#E56B2D]" placeholder={'<!doctype html>\n<html>\n  <head>...</head>\n  <body>...</body>\n</html>'} spellCheck={false}/></label>
+        <label className="mt-4 block text-xs font-medium text-white/70">Full HTML code<textarea value={paste.html} onChange={event => setPaste(current => ({ ...current, html: event.target.value }))} className="mt-2 min-h-72 w-full resize-y rounded-xl border border-violet-400/20 bg-violet-500/10 p-3 font-mono text-xs leading-5 text-zinc-100 outline-none focus:border-[#E56B2D]" placeholder={'<!doctype html>\n<html>\n  <head>...</head>\n  <body>...</body>\n</html>'} spellCheck={false}/></label>
         <p className="mt-2 text-xs text-white/45">Maximum 900 KB. HTML, CSS, and JavaScript may all be included in this one file.</p>
-        {pasteNotice && <p role="status" className="mt-4 rounded-lg border border-white/[.12] bg-white/[.04] p-3 text-sm">{pasteNotice}</p>}
+        {pasteNotice && <p role="status" className="mt-4 rounded-lg border border-violet-400/20 bg-violet-500/10 p-3 text-sm">{pasteNotice}</p>}
         {pasteResult && (
           <div className="mt-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4">
             <p className="text-sm font-medium text-emerald-300">Pasted code is live</p>

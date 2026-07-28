@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 export default function Terms() {
   return (
     <div className="min-h-screen bg-background text-zinc-100">
-      <header className="fixed top-0 left-0 right-0 z-50 border-b border-white/[.12] bg-background/80 backdrop-blur-xl">
+      <header className="fixed top-0 left-0 right-0 z-50 border-b border-violet-400/20 bg-background/80 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
           <Link to="/" className="text-sm font-semibold tracking-[0.12em]">ALPHATEKX</Link>
           <Link to="/" className="text-sm text-zinc-400 hover:text-white">Back home</Link>

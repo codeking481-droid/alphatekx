@@ -36,7 +36,7 @@ export default function BuildStart() {
     <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-5 py-12">
       <div className="mt-8 text-center">
         <BookAnimation />
-        <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/[0.12] bg-white/[.04] px-4 py-1.5 text-xs font-medium text-zinc-300 shadow-premium backdrop-blur-md">
+        <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-violet-400/20 bg-violet-500/10 px-4 py-1.5 text-xs font-medium text-zinc-300 shadow-premium backdrop-blur-md">
           <Sparkles size={13} className="text-indigo-400" /> Alpha Creation OS
         </div>
         <h1 className="text-4xl font-extrabold leading-tight tracking-[-0.02em] md:text-5xl">
@@ -48,7 +48,7 @@ export default function BuildStart() {
       </div>
 
       <div className="mx-auto mt-8 w-full max-w-2xl">
-        <div className="rounded-3xl border border-white/[0.12] bg-white/[.04] p-3 shadow-[0_25px_60px_-12px_rgba(0,0,0,0.5)] ring-1 ring-inset ring-white/[0.06] backdrop-blur-[24px]">
+        <div className="rounded-3xl border border-violet-400/20 bg-violet-500/10 p-3 shadow-[0_25px_60px_-12px_rgba(0,0,0,0.5)] ring-1 ring-inset ring-white/[0.06] backdrop-blur-[24px]">
           <textarea
             autoFocus
             value={idea}
@@ -74,7 +74,7 @@ export default function BuildStart() {
           <button
             key={type}
             onClick={() => setSelectedType(type)}
-            className={`rounded-full px-4 py-1.5 text-xs font-medium transition-colors ${selectedType === type ? 'bg-white/[.04] text-white' : 'border border-white/[0.08] bg-white/[.04] text-zinc-400 hover:bg-white/[.04] hover:text-white'}`}
+            className={`rounded-full px-4 py-1.5 text-xs font-medium transition-colors ${selectedType === type ? 'bg-violet-500/10 text-white' : 'border border-violet-400/20 bg-violet-500/10 text-zinc-400 hover:bg-violet-500/10 hover:text-white'}`}
           >
             {type}
           </button>
@@ -86,7 +86,7 @@ export default function BuildStart() {
           <button
             key={t.name}
             onClick={() => start(t.prompt)}
-            className="group flex flex-col items-start rounded-2xl border border-white/[0.08] bg-white/[.04] p-5 text-left transition-all hover:scale-[1.02] hover:border-indigo-400/30 hover:bg-white/[.04] hover:shadow-glow-indigo"
+            className="group flex flex-col items-start rounded-2xl border border-violet-400/20 bg-violet-500/10 p-5 text-left transition-all hover:scale-[1.02] hover:border-indigo-400/30 hover:bg-violet-500/10 hover:shadow-glow-indigo"
           >
             <span className="grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-pink-500 text-white shadow-lg">
               <t.icon size={20} />

@@ -90,44 +90,44 @@ export default function Revenue() {
         <h1 className="text-2xl font-bold md:text-3xl">Earnings</h1>
         <p className="text-sm text-white/55">Track sales, available balance, pending withdrawals and request payout.</p>
 
-        {notice && <div className="mt-5 rounded-xl border border-white/[.12] liquid-glass px-4 py-3 text-sm">{notice}</div>}
+        {notice && <div className="mt-5 rounded-xl border border-violet-400/20 liquid-glass px-4 py-3 text-sm">{notice}</div>}
 
         {loading ? (
           <div className="mt-8 flex items-center gap-2 text-sm text-white/55"><LoaderCircle className="animate-spin" size={18}/> Loading...</div>
         ) : wallet ? (
           <>
             <div className="mt-6 grid gap-4 md:grid-cols-3">
-              <div className="rounded-2xl border border-white/[.12] liquid-glass p-5">
+              <div className="rounded-2xl border border-violet-400/20 liquid-glass p-5">
                 <div className="flex items-center gap-2 text-sm text-white/55"><CircleDollarSign size={16}/> Total earned</div>
                 <div className="mt-2 text-2xl font-bold">${wallet.totalEarnings.toLocaleString()}</div>
                 <div className="mt-1 text-xs text-white/40">{wallet.sales || 0} sales</div>
               </div>
-              <div className="rounded-2xl border border-white/[.12] liquid-glass p-5">
+              <div className="rounded-2xl border border-violet-400/20 liquid-glass p-5">
                 <div className="flex items-center gap-2 text-sm text-emerald-400"><WalletCards size={16}/> Available</div>
                 <div className="mt-2 text-2xl font-bold">${wallet.balance.toLocaleString()}</div>
               </div>
-              <div className="rounded-2xl border border-white/[.12] liquid-glass p-5">
+              <div className="rounded-2xl border border-violet-400/20 liquid-glass p-5">
                 <div className="flex items-center gap-2 text-sm text-amber-400"><Banknote size={16}/> Pending</div>
                 <div className="mt-2 text-2xl font-bold">${wallet.pendingBalance.toLocaleString()}</div>
               </div>
             </div>
 
-            <div className="mt-6 grid gap-6 rounded-2xl border border-white/[.12] liquid-glass p-5 md:grid-cols-2 md:p-7">
+            <div className="mt-6 grid gap-6 rounded-2xl border border-violet-400/20 liquid-glass p-5 md:grid-cols-2 md:p-7">
               <div>
                 <h2 className="text-sm font-semibold">Withdraw</h2>
                 <p className="text-xs text-white/55">Minimum $10. 70% goes to you, 30% platform fee included.</p>
                 <div className="mt-4 space-y-3">
                   <label className="block text-xs text-white/55">Amount (USD)</label>
-                  <input type="number" min={10} value={amount} onChange={e => setAmount(e.target.value)} className="min-h-11 w-full rounded-xl border border-white/[.12] bg-background px-4 text-sm outline-none focus:border-indigo-500" placeholder="50" />
+                  <input type="number" min={10} value={amount} onChange={e => setAmount(e.target.value)} className="min-h-11 w-full rounded-xl border border-violet-400/20 bg-background px-4 text-sm outline-none focus:border-indigo-500" placeholder="50" />
                   <label className="block text-xs text-white/55">Bank</label>
-                  <select value={bankCode} onChange={e => { setBankCode(e.target.value); setAccountName('') }} className="min-h-11 w-full rounded-xl border border-white/[.12] bg-background px-4 text-sm outline-none">
+                  <select value={bankCode} onChange={e => { setBankCode(e.target.value); setAccountName('') }} className="min-h-11 w-full rounded-xl border border-violet-400/20 bg-background px-4 text-sm outline-none">
                     <option value="">Select bank</option>
                     {banks.map(b => <option key={b.code} value={b.code}>{b.name}</option>)}
                   </select>
                   <label className="block text-xs text-white/55">Account number</label>
                   <div className="flex gap-2">
-                    <input value={accountNumber} onChange={e => setAccountNumber(e.target.value)} className="min-h-11 flex-1 rounded-xl border border-white/[.12] bg-background px-4 text-sm outline-none focus:border-indigo-500" placeholder="0123456789" />
-                    <button onClick={() => void verify()} disabled={verifying || !bankCode || accountNumber.length < 10} className="min-h-11 rounded-xl bg-white/[.04] px-4 text-sm font-semibold text-white disabled:opacity-50">
+                    <input value={accountNumber} onChange={e => setAccountNumber(e.target.value)} className="min-h-11 flex-1 rounded-xl border border-violet-400/20 bg-background px-4 text-sm outline-none focus:border-indigo-500" placeholder="0123456789" />
+                    <button onClick={() => void verify()} disabled={verifying || !bankCode || accountNumber.length < 10} className="min-h-11 rounded-xl bg-violet-500/10 px-4 text-sm font-semibold text-white disabled:opacity-50">
                       {verifying ? <LoaderCircle className="animate-spin" size={14}/> : 'Verify'}
                     </button>
                   </div>
@@ -143,7 +143,7 @@ export default function Revenue() {
                 <h2 className="text-sm font-semibold">Withdrawal history</h2>
                 <div className="mt-4 max-h-80 overflow-y-auto space-y-2">
                   {withdrawals.length ? withdrawals.map(w => (
-                    <div key={w.id} className="flex items-center justify-between rounded-xl border border-white/[.08] bg-white/[.04] p-3 text-sm">
+                    <div key={w.id} className="flex items-center justify-between rounded-xl border border-violet-400/20 bg-violet-500/10 p-3 text-sm">
                       <div className="flex items-center gap-2"><Building2 size={14} className="text-white/40"/> <span className="truncate">{w.bankName}</span></div>
                       <div className="text-right">
                         <div className="font-medium">${w.amount}</div>

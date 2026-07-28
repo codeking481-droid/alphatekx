@@ -149,14 +149,14 @@ export default function Settings() {
   const renewalText = billing?.renewalDate ? new Date(billing.renewalDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
 
   return (
-    <div className="min-h-screen px-5 py-8 md:px-10">
+    <div className="min-h-screen px-5 py-8 text-white md:px-10">
       <div className="mx-auto max-w-3xl space-y-6">
         <div>
-          <h1 className="text-2xl font-semibold md:text-3xl">Settings</h1>
-          <p className="mt-2 text-sm font-medium text-slate-400">Manage your account, credits, and preferences.</p>
+          <h1 className="text-2xl font-black text-white md:text-3xl">Settings</h1>
+          <p className="mt-2 text-sm font-semibold text-slate-300">Manage your account, credits, and preferences.</p>
         </div>
 
-        <section className="rounded-2xl border border-white/[.10] bg-white/[.04] p-6 shadow-[0_12px_35px_rgba(15,23,42,.07)]">
+        <section className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-6 shadow-[0_12px_35px_rgba(15,23,42,.07)]">
           <div className="flex items-center gap-2 text-lg font-semibold"><User size={20} className="text-violet-400"/> Profile</div>
           <div className="mt-4 flex items-center gap-3">
             <span className="grid size-12 place-items-center rounded-full bg-[#6D28D9] text-white font-semibold">{(user?.email?.[0] || 'A').toUpperCase()}</span>
@@ -167,9 +167,9 @@ export default function Settings() {
           </div>
         </section>
 
-        <section ref={billingRef} className="rounded-2xl border border-white/[.10] bg-white/[.04] p-6 shadow-[0_12px_35px_rgba(15,23,42,.07)]">
-          <div className="flex items-center gap-2 text-lg font-semibold"><CreditCard size={20} className="text-violet-400"/> Billing & Credits</div>
-          <p className="mt-2 text-sm font-medium text-slate-400">Credits are consumed only when an automation performs work. Costs are always shown before you approve an automation.</p>
+        <section ref={billingRef} className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-6 shadow-[0_12px_35px_rgba(15,23,42,.07)]">
+          <div className="flex items-center gap-2 text-lg font-black text-white"><CreditCard size={20} className="text-cyan-300"/> Billing & Credits</div>
+          <p className="mt-2 text-sm font-semibold text-slate-300">Credits are consumed only when an automation performs work. Costs are always shown before you approve an automation.</p>
 
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <Stat label="Current Plan" value={currentPlan.name} sub={currentPlan.badge ? `Most Popular` : undefined} />
@@ -181,16 +181,16 @@ export default function Settings() {
           </div>
 
           <div className="mt-6">
-            <h3 className="flex items-center gap-2 font-semibold"><Sparkles size={16} className="text-violet-400"/> Upgrade plan</h3>
+            <h3 className="flex items-center gap-2 font-black text-white"><Sparkles size={16} className="text-cyan-300"/> Upgrade plan</h3>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               {Object.values(PLANS).map((plan) => {
                 const active = selectedPlan === plan.id || billing?.plan === plan.id
                 return (
-                  <button key={plan.id} onClick={() => selectPlan(plan.id)} disabled={billing?.plan === plan.id} className={`relative rounded-2xl border p-4 text-left text-white transition-all ${active ? 'border-violet-500 bg-violet-500/10' : 'border-white/[.10] bg-white/[.04] hover:border-violet-300'} ${billing?.plan === plan.id ? 'opacity-70' : ''}`}>
+                  <button key={plan.id} onClick={() => selectPlan(plan.id)} disabled={billing?.plan === plan.id} className={`relative rounded-2xl border p-4 text-left text-white shadow-[0_12px_30px_rgba(3,7,18,.24)] transition-all ${active ? 'border-cyan-300/60 bg-blue-500/20' : 'border-violet-400/30 bg-violet-500/15 hover:border-blue-300/60 hover:bg-blue-500/15'} ${billing?.plan === plan.id ? 'opacity-80' : ''}`}>
                     {plan.badge && <span className="absolute right-3 top-3 rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 px-2 py-0.5 text-[10px] font-semibold text-white">{plan.badge}</span>}
-                    <span className="font-semibold">{plan.name}</span>
-                    <p className="mt-2 text-2xl font-semibold">{plan.priceKobo === 0 ? 'Free' : `${formatCurrency(plan.priceKobo)}/mo`}</p>
-                    <ul className="mt-2 space-y-1 text-xs font-medium text-slate-400">
+                    <span className="font-black text-white">{plan.name}</span>
+                    <p className="mt-2 text-3xl font-black text-cyan-200">{plan.priceKobo === 0 ? 'Free' : `${formatCurrency(plan.priceKobo)}/mo`}</p>
+                    <ul className="mt-3 space-y-1.5 text-xs font-semibold text-slate-200">
                       {plan.features.map((f, i) => <li key={i} className="flex items-start gap-1.5"><Check size={12} className="mt-0.5 text-violet-400"/> {f}</li>)}
                     </ul>
                   </button>
@@ -200,17 +200,17 @@ export default function Settings() {
           </div>
 
           <div className="mt-6">
-            <h3 className="flex items-center gap-2 font-semibold"><Wallet size={16} className="text-violet-400"/> Buy credits</h3>
-            <p className="text-sm font-medium text-slate-400">Purchased credits never expire. Prices are shown in USD; Paystack may collect the configured local-currency equivalent.</p>
+            <h3 className="flex items-center gap-2 font-black text-white"><Wallet size={16} className="text-cyan-300"/> Buy credits</h3>
+            <p className="text-sm font-semibold text-slate-300">Purchased credits never expire. Prices are shown in USD; Paystack may collect the configured local-currency equivalent.</p>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               {CREDIT_PACKS.map((pack) => {
                 const active = selectedPack?.id === pack.id
                 return (
-                  <button key={pack.id} onClick={() => selectPack(pack)} className={`relative rounded-2xl border p-4 text-left text-white transition-all ${active ? 'border-violet-500 bg-violet-500/10' : 'border-white/[.10] bg-white/[.04] hover:border-violet-300'}`}>
+                  <button key={pack.id} onClick={() => selectPack(pack)} className={`relative rounded-2xl border p-4 text-left text-white shadow-[0_12px_30px_rgba(3,7,18,.24)] transition-all ${active ? 'border-cyan-300/60 bg-blue-500/20' : 'border-violet-400/30 bg-violet-500/15 hover:border-blue-300/60 hover:bg-blue-500/15'}`}>
                     {active && <span className="absolute right-3 top-3 grid size-5 place-items-center rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white"><Check size={12}/></span>}
-                    <span className="flex items-center gap-2 font-semibold"><WalletCards size={16}/>{pack.label}</span>
-                    <p className="mt-2 text-2xl font-semibold">{formatCurrency(pack.amountKobo)}</p>
-                    <p className="mt-1 text-xs font-medium text-slate-400">{pack.description}</p>
+                    <span className="flex items-center gap-2 font-black text-white"><WalletCards size={16}/>{pack.label}</span>
+                    <p className="mt-2 text-3xl font-black text-cyan-200">{formatCurrency(pack.amountKobo)}</p>
+                    <p className="mt-1 text-xs font-semibold text-slate-200">{pack.description}</p>
                   </button>
                 )
               })}
@@ -229,7 +229,7 @@ export default function Settings() {
             {loadingBilling ? <p className="mt-3 text-sm text-slate-400">Loading...</p> : !billing?.transactions?.length ? <p className="mt-3 text-sm text-slate-400">No transactions yet.</p> : (
               <div className="mt-3 space-y-2 max-h-64 overflow-y-auto pr-1">
                 {billing.transactions.map((t) => (
-                  <div key={t.id} className="flex items-center justify-between rounded-xl border border-white/[.10] bg-white/[.05] px-4 py-3 text-sm text-white">
+                  <div key={t.id} className="flex items-center justify-between rounded-xl border border-violet-400/20 bg-blue-500/10 px-4 py-3 text-sm text-white">
                     <div>
                       <p className="font-medium capitalize">{String(t.type).replace('_', ' ')}</p>
                       <p className="text-xs text-slate-400">{t.reason || '—'} • {new Date(t.createdAt).toLocaleString()}</p>
@@ -245,30 +245,30 @@ export default function Settings() {
           </div>
         </section>
 
-        <section className="rounded-2xl border border-white/[.10] bg-white/[.04] p-6 shadow-[0_12px_35px_rgba(15,23,42,.07)]">
+        <section className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-6 shadow-[0_12px_35px_rgba(15,23,42,.07)]">
           <div className="flex items-center gap-2 text-lg font-semibold"><Palette size={20} className="text-violet-400"/> Preferences</div>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <Pref label="Timezone" icon={<Globe size={16}/>} value="UTC / Local time" />
             <Pref label="Notifications" icon={<Zap size={16}/>} value="Email when automations fail" />
             <Pref label="Language" icon={<span className="text-xs">EN</span>} value="English" />
-            <Pref label="Appearance" icon={<Moon size={16}/>} value="Bold white" />
+            <Pref label="Appearance" icon={<Moon size={16}/>} value="Living indigo" />
           </div>
           <p className="mt-4 text-xs text-slate-400">More preference options will be added soon.</p>
         </section>
 
-        <section className="rounded-2xl border border-white/[.10] bg-white/[.04] p-6 shadow-[0_12px_35px_rgba(15,23,42,.07)]">
+        <section className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-6 shadow-[0_12px_35px_rgba(15,23,42,.07)]">
           <div className="flex items-center gap-2 text-lg font-semibold"><Shield size={20} className="text-violet-400"/> Security</div>
           <div className="mt-4 space-y-3">
-            <div className="flex items-center justify-between rounded-xl border border-white/[.10] bg-white/[.05] px-4 py-3">
+            <div className="flex items-center justify-between rounded-xl border border-violet-400/20 bg-blue-500/10 px-4 py-3">
               <span className="text-sm font-medium text-slate-400">Connected login method</span>
               <span className="text-sm font-black text-white">Google</span>
             </div>
-            <button onClick={() => void signOut()} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-white/[.10] bg-white/[.04] px-4 text-sm font-bold text-white transition-all hover:border-violet-500 hover:bg-violet-500/10"><LogOut size={16}/>Sign out</button>
+            <button onClick={() => void signOut()} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-violet-400/20 bg-violet-500/10 px-4 text-sm font-bold text-white transition-all hover:border-violet-500 hover:bg-violet-500/10"><LogOut size={16}/>Sign out</button>
           </div>
-          <div className="mt-6 border-t border-white/[.10] pt-6">
+          <div className="mt-6 border-t border-violet-400/20 pt-6">
             <h3 className="font-semibold text-rose-300">Danger zone</h3>
             <p className="mt-1 text-sm text-slate-400">Permanently delete your account and all data.</p>
-            <button onClick={deleteAccount} className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 text-sm font-bold text-rose-300 transition-all hover:bg-rose-100"><Trash2 size={16}/>Delete account</button>
+            <button onClick={deleteAccount} className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-500/10 px-4 text-sm font-bold text-rose-300 transition-all hover:bg-rose-500/10"><Trash2 size={16}/>Delete account</button>
           </div>
         </section>
       </div>
@@ -277,14 +277,14 @@ export default function Settings() {
 }
 
 function Pref({ label, icon, value }: { label: string; icon: React.ReactNode; value: string }) {
-  return <div className="flex items-center justify-between rounded-xl border border-white/[.10] bg-white/[.05] px-4 py-3">
+  return <div className="flex items-center justify-between rounded-xl border border-violet-400/20 bg-blue-500/10 px-4 py-3">
     <span className="flex items-center gap-2 text-sm font-medium text-slate-400">{icon}{label}</span>
     <span className="text-sm font-bold text-white">{value}</span>
   </div>
 }
 
 function Stat({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
-  return <div className="rounded-xl border border-white/[.10] bg-white/[.05] px-4 py-3">
+  return <div className="rounded-xl border border-violet-400/20 bg-blue-500/10 px-4 py-3">
     <p className="text-xs font-medium text-slate-400">{label}{sub ? <span className="ml-1.5 rounded-full bg-violet-500/10 px-1.5 py-0.5 text-[10px] text-violet-300">{sub}</span> : null}</p>
     <p className="mt-1 text-lg font-semibold text-white">{value}</p>
   </div>

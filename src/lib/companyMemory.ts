@@ -30,7 +30,7 @@ const MEMORY_KEY = 'alphatekx:company-memory'
 const defaultBrand: BrandMemory = {
   primary: '#0a0a0a',
   accent: '#E56B2D',
-  surface: 'rgba(255,255,255,0.07)',
+  surface: 'rgba(124,58,237,0.12)',
   text: '#ffffff',
 }
 

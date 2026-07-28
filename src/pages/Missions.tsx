@@ -135,7 +135,7 @@ export default function Missions() {
             <h1 className="mt-3 text-3xl font-semibold tracking-tight md:text-5xl">AI Creation Engine</h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">Pick a blueprint. AlphaTekX launches Planner, Builder, and Designer workers, writes real project files to `generated/[missionId]/`, then hands you a preview and deploy action.</p>
           </div>
-          <Link to="/workspace" className="rounded-xl border border-white/[.12] liquid-glass px-4 py-3 text-sm">General chat</Link>
+          <Link to="/workspace" className="rounded-xl border border-violet-400/20 liquid-glass px-4 py-3 text-sm">General chat</Link>
         </div>
 
         <section className="mt-8 grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
@@ -144,13 +144,13 @@ export default function Missions() {
             return <article key={item.id} className="liquid-glass rounded-2xl p-5 transition hover:-translate-y-0.5 hover:border-[#E56B2D]">
               <div className="flex items-start justify-between gap-3">
                 <span className="grid size-12 place-items-center rounded-xl btn-alpha"><Icon size={22}/></span>
-                <span className="rounded-full border border-white/[.12] px-3 py-1 text-xs text-white/65">{item.credits} credits</span>
+                <span className="rounded-full border border-violet-400/20 px-3 py-1 text-xs text-white/65">{item.credits} credits</span>
               </div>
               <h2 className="mt-5 text-lg font-semibold">{item.name}</h2>
               <p className="mt-2 min-h-12 text-sm leading-6 text-white/60">{item.description}</p>
               <div className="mt-5 grid grid-cols-2 gap-2 text-xs text-white/55">
-                <span className="rounded-lg bg-white/[.04] px-3 py-2">Difficulty: {item.difficulty}</span>
-                <span className="rounded-lg bg-white/[.04] px-3 py-2">Build: {item.time}</span>
+                <span className="rounded-lg bg-violet-500/10 px-3 py-2">Difficulty: {item.difficulty}</span>
+                <span className="rounded-lg bg-violet-500/10 px-3 py-2">Build: {item.time}</span>
               </div>
               <button onClick={() => void startMission(item)} disabled={status === 'queued' || status === 'building'} className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl btn-alpha text-sm font-semibold disabled:opacity-50">
                 {(status === 'queued' || status === 'building') && selected?.id === item.id ? <LoaderCircle className="animate-spin" size={17}/> : <PlaneTakeoff size={17}/>}
@@ -168,27 +168,27 @@ export default function Missions() {
               <p className="mt-2 text-sm text-white/60">{status === 'error' ? notice : `Status: ${status.toUpperCase()}`}</p>
             </div>
             <div className="flex gap-2">
-              {activeMission && <Link to={`/mission/${activeMission.id}`} className="rounded-xl border border-white/[.12] liquid-glass px-4 py-3 text-sm">Edit Mission</Link>}
+              {activeMission && <Link to={`/mission/${activeMission.id}`} className="rounded-xl border border-violet-400/20 liquid-glass px-4 py-3 text-sm">Edit Mission</Link>}
               {creation && <button onClick={deploy} className="rounded-xl btn-alpha px-5 py-3 text-sm font-semibold">Deploy</button>}
             </div>
           </div>
-          <div className="mt-5 h-2 overflow-hidden rounded-full bg-white/[.04]"><div className="h-full rounded-full bg-[#E56B2D] transition-all" style={{ width: `${progress}%` }}/></div>
+          <div className="mt-5 h-2 overflow-hidden rounded-full bg-violet-500/10"><div className="h-full rounded-full bg-[#E56B2D] transition-all" style={{ width: `${progress}%` }}/></div>
           <div className="mt-5 grid gap-3 md:grid-cols-3">
             {workerStages.map(worker => {
               const Icon = worker.icon
               const active = progress >= worker.progress - 25 && progress < worker.progress + 18 && status !== 'idle'
               const done = progress >= worker.progress
-              return <div key={worker.role} className="rounded-xl border border-white/[.12] bg-white/[.04] p-4">
-                <div className="flex items-center gap-3"><span className={`grid size-10 place-items-center rounded-xl ${done ? 'btn-alpha' : 'bg-white/[.04]'} ${active ? 'animate-pulse' : ''}`}><Icon size={18}/></span><strong>{worker.role}</strong></div>
+              return <div key={worker.role} className="rounded-xl border border-violet-400/20 bg-violet-500/10 p-4">
+                <div className="flex items-center gap-3"><span className={`grid size-10 place-items-center rounded-xl ${done ? 'btn-alpha' : 'bg-violet-500/10'} ${active ? 'animate-pulse' : ''}`}><Icon size={18}/></span><strong>{worker.role}</strong></div>
                 <p className="mt-3 text-sm leading-6 text-white/60">{worker.line}</p>
               </div>
             })}
           </div>
           <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-            <div className="min-h-[420px] overflow-hidden rounded-xl border border-white/[.12] bg-white/[.04]">
+            <div className="min-h-[420px] overflow-hidden rounded-xl border border-violet-400/20 bg-violet-500/10">
               {creation ? <iframe title="Mission preview" className="h-[520px] w-full" srcDoc={previewDocument(creation.code)} sandbox="allow-scripts allow-forms allow-modals allow-same-origin"/> : <div className="grid h-[420px] place-items-center p-8 text-center"><div><Sparkles className="mx-auto text-white/35"/><h3 className="mt-3 font-semibold">Preview appears after build</h3><p className="mt-2 text-sm text-white/55">The generated app will render here for review.</p></div></div>}
             </div>
-            <div className="rounded-xl border border-white/[.12] bg-white/[.04] p-4">
+            <div className="rounded-xl border border-violet-400/20 bg-violet-500/10 p-4">
               <h3 className="text-sm font-semibold">Live worker logs</h3>
               <div className="mt-3 max-h-[460px] space-y-2 overflow-y-auto text-sm text-white/65">
                 {activities.map(item => <p key={item.id} className="rounded-lg bg-[#0A0F1E]/45 p-3">{item.text}</p>)}
@@ -208,7 +208,7 @@ export default function Missions() {
             </div>
             <p className="mt-2 text-sm text-white/55">Alpha can run these in the background while you build and deploy.</p>
             <div className="mt-5 grid gap-4 md:grid-cols-3">
-              {suggestions.map((s, i) => <div key={i} className="rounded-xl border border-white/[.08] bg-white/[.04] p-4">
+              {suggestions.map((s, i) => <div key={i} className="rounded-xl border border-violet-400/20 bg-violet-500/10 p-4">
                 <h3 className="text-sm font-semibold">{s.title}</h3>
                 <p className="mt-1 text-xs text-white/55">{s.description}</p>
                 <button onClick={() => { const authUser = user ? { id: user.id, email: user.email } : getLocalUser(); saveAgent(createAgentFromNL(s.description, activeMission?.id, authUser || undefined)); window.location.href = '/agents' }} className="mt-4 flex items-center gap-1.5 rounded-lg btn-alpha px-3 py-2 text-xs text-white"><Plus size={14}/> Add agent</button>
@@ -221,7 +221,7 @@ export default function Missions() {
       <aside className="liquid-glass sticky top-20 h-fit rounded-2xl p-5">
         <h2 className="text-sm font-semibold">Codex history</h2>
         <div className="mt-4 space-y-3">
-          {codexHistory.map(item => <Link key={item.id} to={`/mission/${item.id}`} className="block rounded-xl border border-white/[.1] bg-white/[.04] p-3 hover:border-[#E56B2D]">
+          {codexHistory.map(item => <Link key={item.id} to={`/mission/${item.id}`} className="block rounded-xl border border-violet-400/20 bg-violet-500/10 p-3 hover:border-[#E56B2D]">
             <div className="flex items-center justify-between gap-3"><strong className="truncate text-sm">{item.title}</strong><span className="text-[10px] uppercase text-white/45">{item.status}</span></div>
             <p className="mt-2 line-clamp-2 text-xs leading-5 text-white/55">{item.goal}</p>
           </Link>)}
@@ -229,7 +229,7 @@ export default function Missions() {
         </div>
         <h3 className="mt-6 text-sm font-semibold">Recent creations</h3>
         <div className="mt-3 space-y-2">
-          {latestCreations.map(item => <Link key={item.id} to={`/mission/${item.missionId}`} className="flex items-center justify-between rounded-lg bg-white/[.04] px-3 py-2 text-xs"><span className="truncate">{item.title}</span><ExternalLink size={13}/></Link>)}
+          {latestCreations.map(item => <Link key={item.id} to={`/mission/${item.missionId}`} className="flex items-center justify-between rounded-lg bg-violet-500/10 px-3 py-2 text-xs"><span className="truncate">{item.title}</span><ExternalLink size={13}/></Link>)}
           {!latestCreations.length && <p className="text-xs text-white/45">Generated apps will appear here.</p>}
         </div>
       </aside>

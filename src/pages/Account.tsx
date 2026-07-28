@@ -48,9 +48,9 @@ export default function Account() {
     <h1 className="text-2xl font-semibold md:text-3xl">Account</h1>
     <p className="mt-2 text-sm text-white/55">Manage your AlphaTekX profile, credits and plan.</p>
 
-    <div className="mt-6 rounded-2xl border border-white/[.12] liquid-glass p-6 shadow-sm">
+    <div className="mt-6 rounded-2xl border border-violet-400/20 liquid-glass p-6 shadow-sm">
       <div className="flex items-center gap-3">
-        <span className="grid size-12 place-items-center rounded-full bg-white/[.04]"><ShieldCheck size={21}/></span>
+        <span className="grid size-12 place-items-center rounded-full bg-violet-500/10"><ShieldCheck size={21}/></span>
         <div>
           <p className="font-semibold">{user?.email || 'Guest'}</p>
           <p className="text-sm text-white/55">Signed in securely</p>
@@ -71,7 +71,7 @@ export default function Account() {
           const active = selectedPack?.id === pack.id
           const naira = `₦${(pack.amountKobo / 100).toLocaleString()}`
           const isBooster = pack.id === 'credits'
-          return <button key={pack.id} onClick={() => setSelectedPack(pack)} className={`relative rounded-2xl border p-4 text-left transition-all ${active ? 'border-indigo-500 bg-indigo-500/10' : 'border-white/[.12] bg-white/[.04] hover:border-white/[.25]'}`}>
+          return <button key={pack.id} onClick={() => setSelectedPack(pack)} className={`relative rounded-2xl border p-4 text-left transition-all ${active ? 'border-indigo-500 bg-indigo-500/10' : 'border-violet-400/20 bg-violet-500/10 hover:border-violet-400/20'}`}>
             {active && <span className="absolute right-3 top-3 grid size-5 place-items-center rounded-full bg-gradient-to-r from-indigo-500 to-pink-500 text-white"><Check size={12}/></span>}
             <span className="flex items-center gap-2 font-semibold">{isBooster ? <Zap size={16}/> : <WalletCards size={16}/>}{pack.label}</span>
             <p className="mt-2 text-2xl font-semibold">{naira}</p>
@@ -80,15 +80,15 @@ export default function Account() {
         })}
       </div>
 
-      {notice && <p role="status" className="mt-5 rounded-lg border border-white/[.12] bg-white/[.04] p-3 text-sm">{notice}</p>}
+      {notice && <p role="status" className="mt-5 rounded-lg border border-violet-400/20 bg-violet-500/10 p-3 text-sm">{notice}</p>}
 
       <button onClick={() => void buy()} disabled={pending || !selectedPack} className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl btn-alpha px-4 text-sm font-medium text-white transition-all disabled:opacity-50">
         {pending ? <LoaderCircle className="animate-spin" size={16}/> : <WalletCards size={16}/>} {selectedPack ? `Pay ${`₦${(selectedPack.amountKobo / 100).toLocaleString()}`} for ${selectedPack.label}` : 'Select a pack to pay'}
       </button>
 
-      <button onClick={() => void signOut()} className="mt-6 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-white/[.15] px-4 text-sm transition-all hover:border-indigo-500 hover:bg-white/[.04]"><LogOut size={16}/>Sign out</button>
+      <button onClick={() => void signOut()} className="mt-6 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-violet-400/20 px-4 text-sm transition-all hover:border-indigo-500 hover:bg-violet-500/10"><LogOut size={16}/>Sign out</button>
 
-      <div className="mt-8 border-t border-white/[.12] pt-6">
+      <div className="mt-8 border-t border-violet-400/20 pt-6">
         <h2 className="text-lg font-semibold text-rose-400">Danger zone</h2>
         <p className="mt-1 text-sm text-white/55">Permanently delete all missions, creations and marketplace history from this device and the cloud.</p>
         <button onClick={async () => { if (confirm('Delete all history? This cannot be undone.')) { await clearAllHistory(); setNotice('All history cleared.'); navigate('/workspace') } }} className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 text-sm text-rose-300 transition-all hover:bg-rose-500/20"><Trash2 size={16}/>Clear all history</button>
@@ -98,7 +98,7 @@ export default function Account() {
 }
 
 function Stat({ label, value, icon }: { label: string; value: string; icon: ReactNode }) {
-  return <div className="rounded-xl border border-white/[.12] bg-white/[.04] p-4">
+  return <div className="rounded-xl border border-violet-400/20 bg-violet-500/10 p-4">
     <dt className="flex items-center gap-2 text-xs text-white/55">{icon}{label}</dt>
     <dd className="mt-2 text-2xl font-semibold capitalize">{value}</dd>
   </div>

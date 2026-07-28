@@ -105,31 +105,31 @@ export default function Marketplace() {
   return (
     <div className="min-h-screen p-5 pb-28 md:p-8">
       <div className="mx-auto max-w-6xl">
-        <section className="relative overflow-hidden rounded-2xl border border-white/[.12] bg-gradient-to-br from-indigo-600/20 via-violet-600/20 to-pink-600/20 p-6 md:p-10">
+        <section className="relative overflow-hidden rounded-2xl border border-violet-400/20 bg-gradient-to-br from-indigo-600/20 via-violet-600/20 to-pink-600/20 p-6 md:p-10">
           <div className="relative z-10">
             <h1 className="text-2xl font-bold md:text-4xl">Sell what you build</h1>
             <p className="mt-2 max-w-xl text-sm text-white/70 md:text-base">From idea to income. List apps, templates, tools and SaaS kits built in AlphaTekX. Buyers get instant access.</p>
-            <Link to="/marketplace/new" className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-xl bg-white/[.04] px-5 text-sm font-semibold text-white transition-transform hover:scale-[1.02]">
+            <Link to="/marketplace/new" className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-xl bg-violet-500/10 px-5 text-sm font-semibold text-white transition-transform hover:scale-[1.02]">
               <Sparkles size={16}/> List your creation
             </Link>
           </div>
         </section>
 
-        {notice && <div className="mt-5 rounded-xl border border-white/[.12] liquid-glass px-4 py-3 text-sm">{notice}</div>}
+        {notice && <div className="mt-5 rounded-xl border border-violet-400/20 liquid-glass px-4 py-3 text-sm">{notice}</div>}
 
         <div className="mt-6 flex flex-col gap-3 md:flex-row md:items-center">
-          <label className="flex min-h-12 flex-1 items-center gap-3 rounded-xl border border-white/[.12] liquid-glass px-4 shadow-sm">
+          <label className="flex min-h-12 flex-1 items-center gap-3 rounded-xl border border-violet-400/20 liquid-glass px-4 shadow-sm">
             <Search size={16} className="text-white/45" />
             <input value={query} onChange={e => setQuery(e.target.value)} className="w-full bg-transparent text-sm outline-none" placeholder="Search apps, templates, tools..." />
           </label>
-          <select value={sort} onChange={e => setSort(e.target.value)} className="min-h-12 rounded-xl border border-white/[.12] bg-background px-3 text-sm outline-none">
+          <select value={sort} onChange={e => setSort(e.target.value)} className="min-h-12 rounded-xl border border-violet-400/20 bg-background px-3 text-sm outline-none">
             {sortOptions.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
           </select>
         </div>
 
         <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
           {CATEGORIES.map(c => (
-            <button key={c} onClick={() => setCategory(c)} className={`min-h-9 shrink-0 rounded-full px-4 text-sm transition-all ${category === c ? 'btn-alpha text-white' : 'border border-white/[.15] liquid-glass text-white/80'}`}>
+            <button key={c} onClick={() => setCategory(c)} className={`min-h-9 shrink-0 rounded-full px-4 text-sm transition-all ${category === c ? 'btn-alpha text-white' : 'border border-violet-400/20 liquid-glass text-white/80'}`}>
               {c}
             </button>
           ))}
@@ -137,13 +137,13 @@ export default function Marketplace() {
 
         {loading ? (
           <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {[1,2,3,4,5,6].map(i => <div key={i} className="h-80 animate-pulse rounded-2xl bg-white/[.04]" />)}
+            {[1,2,3,4,5,6].map(i => <div key={i} className="h-80 animate-pulse rounded-2xl bg-violet-500/10" />)}
           </div>
         ) : filtered.length ? (
           <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {filtered.map(product => (
-              <article key={product.id} className="group flex flex-col overflow-hidden rounded-2xl border border-white/[.12] liquid-glass transition-all hover:-translate-y-1 hover:border-indigo-400/30 hover:shadow-xl">
-                <Link to={`/marketplace/${product.id}`} className="relative aspect-[16/10] overflow-hidden bg-white/[.04]">
+              <article key={product.id} className="group flex flex-col overflow-hidden rounded-2xl border border-violet-400/20 liquid-glass transition-all hover:-translate-y-1 hover:border-indigo-400/30 hover:shadow-xl">
+                <Link to={`/marketplace/${product.id}`} className="relative aspect-[16/10] overflow-hidden bg-violet-500/10">
                   {product.thumbnail ? <img src={product.thumbnail} alt={product.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" /> : <LayoutGrid className="absolute inset-0 m-auto text-white/20" size={48} />}
                   <span className="absolute left-3 top-3 rounded-full bg-[#0A0F1E]/70 px-2.5 py-1 text-[10px] font-medium backdrop-blur-md">{product.category}</span>
                 </Link>
@@ -154,10 +154,10 @@ export default function Marketplace() {
                     <span className="flex items-center gap-1"><Star size={12} className="fill-amber-400 text-amber-400"/> {averageRating(product).toFixed(1)}</span>
                     <span className="flex items-center gap-1"><TrendingUp size={12}/> {product.sales || 0} sold</span>
                   </div>
-                  <div className="mt-5 flex items-center justify-between gap-3 border-t border-white/[.08] pt-4">
+                  <div className="mt-5 flex items-center justify-between gap-3 border-t border-violet-400/20 pt-4">
                     <strong className="text-lg font-bold">${product.priceUSD}</strong>
                     {isProductOwner(product) ? (
-                      <button onClick={() => void remove(product.id)} disabled={deletingId === product.id} className="flex min-h-10 items-center gap-2 rounded-xl border border-white/[.15] px-4 text-sm font-medium text-white transition-transform hover:scale-[1.02] hover:bg-red-500/10 hover:text-red-300 disabled:opacity-50">
+                      <button onClick={() => void remove(product.id)} disabled={deletingId === product.id} className="flex min-h-10 items-center gap-2 rounded-xl border border-violet-400/20 px-4 text-sm font-medium text-white transition-transform hover:scale-[1.02] hover:bg-red-500/10 hover:text-red-300 disabled:opacity-50">
                         {deletingId === product.id ? <LoaderCircle className="animate-spin" size={14}/> : <Trash2 size={14}/>}
                         {deletingId === product.id ? 'Deleting...' : 'Delete'}
                       </button>
@@ -173,13 +173,13 @@ export default function Marketplace() {
             ))}
           </div>
         ) : (
-          <div className="mt-16 grid min-h-72 place-items-center rounded-2xl border border-dashed border-white/[.15] liquid-glass text-center p-8">
+          <div className="mt-16 grid min-h-72 place-items-center rounded-2xl border border-dashed border-violet-400/20 liquid-glass text-center p-8">
             <div>
               <h2 className="text-xl font-semibold">Nothing here yet</h2>
               <p className="mt-3 text-sm text-white/55">Build an app in the AlphaTekX Builder, then list it here and earn 70% on every sale.</p>
               <div className="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
                 <Link to="/builder" className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-pink-500 px-5 text-sm font-semibold text-white shadow-lg transition-transform hover:scale-[1.02]">Build something</Link>
-                <Link to="/marketplace/new" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/[.15] px-5 text-sm font-semibold text-white">List a product</Link>
+                <Link to="/marketplace/new" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-violet-400/20 px-5 text-sm font-semibold text-white">List a product</Link>
               </div>
               <p className="mt-4 text-xs text-white/40">You keep 70% — AlphaTekX keeps 30%.</p>
             </div>
