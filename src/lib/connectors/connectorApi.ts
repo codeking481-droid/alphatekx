@@ -43,13 +43,46 @@ export type ConnectResponse = {
 export type ExecuteResponse = {
   success: boolean
   executionId: string
+  providerId?: string
+  creditsCharged?: number
+  balance?: number
   result: unknown
   executionTimeMs: number
+}
+
+export type ComposioStatusResponse = {
+  youtube: boolean
+  instagram: boolean
+  x: boolean
+  facebook: boolean
+  whatsapp: boolean
+  connections: Array<{ platform: string; connected: boolean; connectionId: string | null; status: string }>
 }
 
 // Get all providers with their connection status
 export async function getConnectedApps(token?: string): Promise<ConnectedAppsResponse> {
   return getJson<ConnectedAppsResponse>('/api/connected-apps', { token })
+}
+
+export async function getComposioStatus(token?: string): Promise<ComposioStatusResponse> {
+  return getJson<ComposioStatusResponse>('/api/composio/status', { token })
+}
+
+export async function executeComposioAction(
+  platform: string,
+  action: string,
+  params: Record<string, unknown>,
+  approvalId: string,
+  token?: string,
+  idempotencyKey = crypto.randomUUID()
+): Promise<{ success: boolean; provider_id: string; credits_charged: number; balance: number; execution_id: string; result: unknown }> {
+  return postJson('/api/composio/execute', {
+    platform,
+    action,
+    params,
+    approval_id: approvalId,
+    idempotency_key: idempotencyKey,
+  }, { token })
 }
 
 // Start OAuth connection for a provider

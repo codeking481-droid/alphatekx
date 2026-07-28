@@ -6094,6 +6094,48 @@ const server = http.createServer(async (req, res) => {
       return await selectFacebookPage(req, res)
     } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Could not select Facebook Page' }) }
   }
+  if (req.url === '/api/composio/status' && (req.method === 'GET' || req.method === 'POST')) {
+    try {
+      const config = supabaseConfig()
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      if (!user) return json(res, 401, { error: 'Authentication required' })
+      const result = await alphaConnector.getConnectedApps(user)
+      const status = { youtube: false, instagram: false, x: false, facebook: false, whatsapp: false }
+      const connections = result.providers.map(provider => {
+        const key = provider.provider === 'twitter' ? 'x' : provider.provider
+        if (key in status) status[key] = provider.connected === true
+        return { platform: key, connected: provider.connected === true, connectionId: provider.connectionId || null, status: provider.status }
+      })
+      return json(res, 200, { ...status, connections })
+    } catch (error) { return json(res, 502, { error: error instanceof Error ? error.message : 'Composio status failed' }) }
+  }
+  if (req.url === '/api/composio/execute' && req.method === 'POST') {
+    try {
+      const config = supabaseConfig()
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      if (!user) return json(res, 401, { error: 'Authentication required' })
+      const body = await readBody(req)
+      const idempotencyKey = String(body.idempotency_key || body.idempotencyKey || '').trim()
+      const approvalId = String(body.approval_id || body.approvalId || '').trim()
+      if (!idempotencyKey) return json(res, 400, { error: 'Idempotency key is required', code: 'IDEMPOTENCY_REQUIRED' })
+      if (!approvalId) return json(res, 400, { error: 'Explicit approval is required', code: 'APPROVAL_REQUIRED' })
+      const result = await alphaConnector.executeProviderAction(user, body.platform, body.action, {
+        ...(body.params || {}), idempotencyKey, approvalId,
+      })
+      return json(res, 200, {
+        success: true,
+        provider_id: result.providerId,
+        credits_charged: result.creditsCharged,
+        balance: result.balance,
+        execution_id: result.executionId,
+        result: result.result,
+      })
+    } catch (error) {
+      const code = error?.code || (/insufficient credits/i.test(String(error?.message || '')) ? 'INSUFFICIENT_CREDITS' : 'EXECUTION_FAILED')
+      const status = code === 'INSUFFICIENT_CREDITS' ? 402 : code === 'RECONNECT_NEEDED' ? 409 : 502
+      return json(res, status, { error: error instanceof Error ? error.message : 'Execution failed', code, charged: false })
+    }
+  }
   if (req.url === '/api/connected-apps' && req.method === 'GET') {
     try {
       const config = supabaseConfig()
@@ -6210,7 +6252,10 @@ const server = http.createServer(async (req, res) => {
         if (!user) return json(res, 401, { error: 'Authentication required' })
         const body = await readBody(req)
         return json(res, 200, await alphaConnector.executeProviderAction(user, match[1], match[2], body.params || {}))
-      } catch (error) { return json(res, 502, { error: error instanceof Error ? error.message : 'Execution failed' }) }
+      } catch (error) {
+        const code = error?.code || (/insufficient credits/i.test(String(error?.message || '')) ? 'INSUFFICIENT_CREDITS' : 'EXECUTION_FAILED')
+        return json(res, code === 'INSUFFICIENT_CREDITS' ? 402 : code === 'RECONNECT_NEEDED' ? 409 : 502, { error: error instanceof Error ? error.message : 'Execution failed', code, charged: false })
+      }
     }
   }
   if (req.url?.startsWith('/api/connected-apps/executions/') && req.method === 'GET') {
