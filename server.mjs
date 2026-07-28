@@ -6179,6 +6179,20 @@ const server = http.createServer(async (req, res) => {
       return await selectFacebookPage(req, res)
     } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Could not select Facebook Page' }) }
   }
+  if (req.method === 'GET' && req.url?.startsWith('/api/composio/callback')) {
+    // Custom OAuth apps may whitelist the AlphaTekx domain while Composio still
+    // needs to receive the authorization code. Keep this endpoint as a transparent
+    // browser redirect: AlphaTekx never reads or stores the provider token.
+    const incoming = new URL(req.url, publicAppUrl())
+    const destination = new URL('https://backend.composio.dev/api/v3.1/toolkits/auth/callback')
+    for (const [key, value] of incoming.searchParams) destination.searchParams.append(key, value)
+    res.writeHead(302, {
+      Location: destination.toString(),
+      'Cache-Control': 'no-store',
+      'Referrer-Policy': 'no-referrer',
+    })
+    return res.end()
+  }
   if (req.url === '/api/composio/status' && (req.method === 'GET' || req.method === 'POST')) {
     try {
       const config = supabaseConfig()
