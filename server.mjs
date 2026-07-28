@@ -3349,12 +3349,29 @@ async function ensureCreditProfile(user, config) {
     rows = await serviceRows(config, 'profiles', `id=eq.${encodeURIComponent(user.id)}&select=id,credits&limit=1`)
   }
   if (rows[0]) return rows[0]
-  const response = await fetch(`${config.url}/rest/v1/profiles`, {
-    method: 'POST',
-    headers: { ...serviceHeaders(config.service), Prefer: 'resolution=ignore-duplicates,return=representation' },
-    body: JSON.stringify({ id: user.id, email: authUserEmail(user), credits: 0, purchased_credits: 0, plan: 'free' }),
-  })
-  if (!response.ok && response.status !== 409) throw new Error(`Supabase profile setup failed (${response.status})`)
+  const profileCandidates = [
+    { id: user.id, email: authUserEmail(user), credits: 0, purchased_credits: 0, plan: 'free' },
+    { id: user.id, email: authUserEmail(user), credits: 0, plan: 'free' },
+    { id: user.id, email: authUserEmail(user), credits: 0 },
+    { id: user.id, email: authUserEmail(user) },
+    { id: user.id },
+  ]
+  let response
+  let failureDetail = ''
+  for (const candidate of profileCandidates) {
+    response = await fetch(`${config.url}/rest/v1/profiles`, {
+      method: 'POST',
+      headers: { ...serviceHeaders(config.service), Prefer: 'resolution=ignore-duplicates,return=minimal' },
+      body: JSON.stringify(candidate),
+    })
+    if (response.ok || response.status === 409) break
+    failureDetail = await response.text().catch(() => '')
+    if (response.status !== 400) break
+  }
+  if (!response?.ok && response?.status !== 409) {
+    const schemaHint = /column|schema cache|could not find/i.test(failureDetail) ? ' Check the production profiles schema.' : ''
+    throw new Error(`Supabase profile setup failed (${response?.status || 500}).${schemaHint}`)
+  }
   try {
     rows = await serviceRows(config, 'profiles', `id=eq.${encodeURIComponent(user.id)}&select=id,credits,purchased_credits&limit=1`)
   } catch {
