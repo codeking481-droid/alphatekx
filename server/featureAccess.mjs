@@ -10,10 +10,10 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const localFile = path.resolve(root, 'data', 'feature-management.json')
 const DEFAULT_FEATURES = [
   ['linkedin', 'LinkedIn', 'public', 'connector'],
-  ['facebook', 'Facebook', 'beta', 'connector'],
-  ['instagram', 'Instagram', 'beta', 'connector'],
-  ['whatsapp', 'WhatsApp', 'beta', 'connector'],
-  ['x', 'X', 'beta', 'connector'],
+  ['facebook', 'Facebook', 'public', 'connector'],
+  ['instagram', 'Instagram', 'public', 'connector'],
+  ['whatsapp', 'WhatsApp', 'public', 'connector'],
+  ['x', 'X', 'public', 'connector'],
   ['tiktok', 'TikTok', 'disabled', 'connector'],
   ['google', 'Google', 'public', 'connector'],
   ['gmail', 'Gmail', 'public', 'connector'],
@@ -21,7 +21,7 @@ const DEFAULT_FEATURES = [
   ['google_calendar', 'Google Calendar', 'public', 'connector'],
   ['google_drive', 'Google Drive', 'public', 'connector'],
   ['notion', 'Notion', 'beta', 'connector'],
-  ['youtube', 'YouTube', 'beta', 'connector'],
+  ['youtube', 'YouTube', 'public', 'connector'],
   ['telegram', 'Telegram', 'public', 'connector'],
   ['slack', 'Slack', 'beta', 'connector'],
   ['airtable', 'Airtable', 'beta', 'connector'],
@@ -135,7 +135,7 @@ export function connectorsInPrompt(prompt) {
   const text = String(prompt || '').toLowerCase()
   const matches = []
   const patterns = [
-    ['facebook', /\bfacebook\b/], ['instagram', /\binstagram\b/], ['whatsapp', /\bwhats\s*app\b|\bwhatsapp\b/],
+    ['facebook', /\bfacebook\b/], ['instagram', /\binstagram\b/], ['whatsapp', /\bwhats\s*app\b|\bwhatsapp\b/], ['youtube', /\byoutube\b/],
     ['x', /\btwitter\b|\bpost\s+(?:on|to)\s+x\b|\bx\s+(?:post|automation|account)\b/], ['linkedin', /\blinked\s*in\b|\blinkedin\b/],
     ['telegram', /\btelegram\b/], ['slack', /\bslack\b/], ['discord', /\bdiscord\b/], ['gmail', /\bgmail\b/],
     ['google_drive', /\bgoogle\s+drive\b/], ['google_calendar', /\bgoogle\s+calendar\b/], ['google_sheets', /\bgoogle\s+sheets?\b/],

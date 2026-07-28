@@ -22,6 +22,7 @@ import { normalizeLinkedInScopes, publishLinkedInTextPost } from './server/linke
 import { allowedWhatsAppRecipients, applyWhatsAppStatusEvent, executeApprovedWhatsAppMessage, sendWhatsAppText, verifyWhatsAppPhoneRegistration, verifyWhatsAppWebhookSignature, whatsappCredentials, whatsappWebhookEvents } from './server/whatsapp.mjs'
 import { connectorFeatureAccess, featureStatusForUser, refreshFeatureConfig, unavailableConnectorMessage, unavailablePromptConnector } from './server/featureAccess.mjs'
 import * as alphaConnector from './server/composioConnectorService.mjs'
+import * as mediaLibrary from './server/mediaLibraryService.mjs'
 
 function loadEnv() {
   for (const filename of ['.env.local', '.env']) {
@@ -67,8 +68,8 @@ const applyCors = (req, res) => {
   const origin = String(req.headers.origin || '')
   if (isAllowedOrigin(origin)) res.setHeader('Access-Control-Allow-Origin', origin)
   res.setHeader('Vary', 'Origin')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Local-User, X-Local-User-Id, X-Local-User-Email')
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Content-Length, Authorization, X-File-Name, X-Local-User, X-Local-User-Id, X-Local-User-Email')
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')
 }
 const securityHeaders = {
   'X-Content-Type-Options': 'nosniff',
@@ -2192,12 +2193,17 @@ async function activateCampaignHandler(req, res) {
   }
 
   const platforms = Array.from(new Set((agent.campaign.posts || []).flatMap(post => post.platforms || [])))
-  if (platforms.length !== 1 || !['linkedin', 'facebook'].includes(platforms[0])) return json(res, 400, { error: 'This release supports one publishing platform per automation: LinkedIn or Facebook Pages.' })
-  if (!requireConnectorFeature(req, res, user, platforms[0])) return
-  if (platforms[0] === 'facebook' && ((agent.campaign.posts || []).length !== 1 || postingOption === 'recurring')) {
-    return json(res, 400, { error: 'This release supports one Facebook Page text post only. Recurring Facebook campaigns are not available yet.' })
+  const supportedPublishing = new Set(['linkedin', 'facebook', 'instagram', 'x', 'twitter', 'youtube', 'whatsapp'])
+  if (!platforms.length || platforms.some(platform => !supportedPublishing.has(platform))) return json(res, 400, { error: 'This automation contains an unsupported publishing platform.' })
+  for (const platform of platforms) {
+    if (!requireConnectorFeature(req, res, user, platform)) return
+    if (composioPublishingPlatforms.has(platform)) {
+      const connection = await alphaConnector.getConnectionStatus(user, platform)
+      if (!connection.connected) return json(res, 409, { error: `Connect ${platform} before approval.`, code: 'RECONNECT_NEEDED' })
+    } else {
+      await getPostingCredentials(user, platform, { _skipFreeLimit: true })
+    }
   }
-  await getPostingCredentials(user, platforms[0], { _skipFreeLimit: true })
 
   const autoPublish = body.autoPublish === true || body.autoPublish === 'true'
   agent.campaign.approved = true
@@ -2230,7 +2236,7 @@ async function reviewCampaignPostHandler(req, res) {
   const post = agent.campaign.posts?.find(item => item.id === body.postId)
   if (!post) return json(res, 404, { error: 'Post not found' })
   const platform = String(body.platform || 'linkedin')
-  if (!['linkedin', 'facebook'].includes(platform) || !post.platforms?.includes(platform)) return json(res, 400, { error: 'Only LinkedIn or Facebook Page text-post review is supported here' })
+  if (!['linkedin', 'facebook', 'instagram', 'x', 'twitter', 'youtube', 'whatsapp'].includes(platform) || !post.platforms?.includes(platform)) return json(res, 400, { error: 'This platform is not part of the post being reviewed.' })
   const action = String(body.action || '')
   const current = String(post.captions?.[platform] || '')
   let text = String(body.text || '').trim()
@@ -2241,7 +2247,7 @@ async function reviewCampaignPostHandler(req, res) {
   } else {
     const instructions = {
       regenerate: 'Rewrite it from a fresh angle while preserving the truthful core message.',
-      improve_hook: `Replace the opening with a stronger, natural ${platform === 'facebook' ? 'Facebook' : 'LinkedIn'} hook. Keep the rest coherent.`,
+      improve_hook: `Replace the opening with a stronger, natural ${platform} hook. Keep the rest coherent.`,
       shorten: 'Make it substantially shorter without losing the main point or call to action.',
       expand: 'Expand it with useful detail, readable spacing, and no invented facts or experiences.',
       change_tone: `Rewrite it in this tone: ${String(body.tone || 'professional and natural')}.`,
@@ -2249,7 +2255,7 @@ async function reviewCampaignPostHandler(req, res) {
     }
     const instruction = instructions[action]
     if (!instruction) return json(res, 400, { error: 'Unsupported review action' })
-    const system = `You are Alpha, a professional ${platform === 'facebook' ? 'Facebook Page' : 'LinkedIn'} editor. ${instruction}
+    const system = `You are Alpha, a professional ${platform} editor. ${instruction}
 Return JSON with exactly {"text":"..."}. Preserve factual accuracy. Do not invent statistics, testimonials, or personal experiences. Produce one text post only.`
     const generated = await callLLMForRole('content', system, `Current post:\n${current}`, { jsonMode: true, maxTokens: 1400 })
     text = String(generated.result?.text || '').trim()
@@ -2637,10 +2643,9 @@ function buildCampaignPosts(brand, meta) {
 }
 
 function computeCampaignPostCredits(platforms, includeImages) {
-  const writing = 3
-  const image = includeImages ? 2 : 0
-  const publishing = platforms.length * 1
-  return writing + image + publishing
+  void includeImages
+  if (platforms.length === 1 && platforms[0] === 'linkedin') return 3
+  return Math.max(1, platforms.length)
 }
 
 function computeCampaignTotalCredits(posts) {
@@ -2693,6 +2698,30 @@ function campaignNextRun(campaign) {
   if (due.length) return now.toISOString()
   const next = pending.sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime())[0]
   return next?.scheduledAt
+}
+
+const composioPublishingPlatforms = new Set(['youtube', 'instagram', 'x', 'twitter', 'facebook', 'whatsapp'])
+function composioCampaignAction(platform, post, caption, campaign) {
+  const imageUrl = post.imageUrl || post.image_url || ''
+  if (platform === 'instagram') {
+    if (!imageUrl) throw new Error('Instagram requires a confirmed image. Regenerate this post before publishing.')
+    return { action: 'create_post', params: { image_url: imageUrl, caption } }
+  }
+  if (platform === 'facebook') return { action: 'create_page_post', params: { message: caption, ...(imageUrl ? { image_url: imageUrl } : {}) } }
+  if (platform === 'x' || platform === 'twitter') {
+    return { action: caption.length > 280 ? 'create_thread' : 'create_tweet', params: { text: caption, ...(imageUrl ? { image_url: imageUrl } : {}) } }
+  }
+  if (platform === 'whatsapp') {
+    const to = post.to || campaign.meta?.to || campaign.meta?.recipient || ''
+    if (!to) throw new Error('WhatsApp needs the recipient phone number with country code before publishing.')
+    return { action: 'send_message', params: { to, message: caption } }
+  }
+  if (platform === 'youtube') {
+    const videoUrl = post.videoUrl || post.video_url || ''
+    if (!videoUrl) throw new Error('YouTube needs a video selected from Media Library before publishing.')
+    return { action: 'upload_video', params: { title: String(post.title || post.topic || 'AlphaTekx video').slice(0, 100), description: caption, tags: post.tags || [], privacyStatus: post.privacyStatus || 'public', video_url: videoUrl } }
+  }
+  throw new Error(`No Composio publishing action exists for ${platform}.`)
 }
 
 async function runCampaignAgent(existing, trigger, executionId, user, admin) {
@@ -2748,6 +2777,8 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
     let postSuccess = 0
     let postFailed = 0
     let postSkipped = 0
+    let providerCreditsUsed = 0
+    let nativeSuccessCount = 0
 
     if (post.approved !== true || campaign.approved !== true) {
       postResults[post.platforms?.[0] || 'facebook'] = { status: 'skipped', log: 'Explicit approval is required' }
@@ -2778,8 +2809,11 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
     await saveServerAgent({ ...existing, campaign })
 
     for (const platform of (post.platforms || [])) {
+      const usesComposio = composioPublishingPlatforms.has(platform)
       const action = { connector: platform, action: 'post', params: { text: post.captions?.[platform] || '', _skipFreeLimit: true } }
-      const ready = await agentActionIsReady(user, action, config)
+      const ready = usesComposio
+        ? (await alphaConnector.getConnectionStatus(user, platform).catch(() => ({ connected: false }))).connected === true
+        : await agentActionIsReady(user, action, config)
       if (!ready) {
         postResults[platform] = { status: 'skipped', log: `${platform} not connected` }
         postSkipped++
@@ -2792,9 +2826,22 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
         continue
       }
       try {
-        const result = await postToSocial(platform, user, { text: caption, _skipFreeLimit: true })
-        if ((platform === 'linkedin' || platform === 'facebook') && !result.id) throw new Error(`${platform === 'facebook' ? 'Facebook' : 'LinkedIn'} did not return a confirmed post identifier`)
-        postResults[platform] = { status: 'success', id: result.id || result.message_id || '', link: result.link || result.permalink || result.url || '', pageId: result.pageId || null, pageName: result.pageName || null, log: `Posted to ${platform}` }
+        let result
+        if (usesComposio) {
+          const execution = composioCampaignAction(platform, post, caption, campaign)
+          result = await alphaConnector.executeProviderAction(user, platform, execution.action, {
+            ...execution.params,
+            approvalId: `campaign:${existing.id}`,
+            idempotencyKey: `${existing.id}:${post.id}:${platform}`,
+          })
+          providerCreditsUsed += Number(result.creditsCharged || 0)
+          result = { id: result.providerId, providerId: result.providerId, replayed: result.replayed === true }
+        } else {
+          result = await postToSocial(platform, user, { text: caption, image_url: post.imageUrl || '', _skipFreeLimit: true })
+          nativeSuccessCount += 1
+        }
+        if (!result.id && !result.message_id) throw new Error(`${platform} did not return a confirmed provider identifier`)
+        postResults[platform] = { status: 'success', id: result.id || result.message_id, link: result.link || result.permalink || result.url || '', pageId: result.pageId || null, pageName: result.pageName || null, replayed: result.replayed === true, log: `Posted to ${platform}` }
         postSuccess++
         await addAgentLog({ agentId: existing.id, connectorType: platform, content: caption.slice(0, 500), status: 'success', response: JSON.stringify(result) })
       } catch (error) {
@@ -2814,11 +2861,12 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
       post.providerUrl = postResults[publishedPlatform]?.link || ''
       post.lastError = ''
       await saveServerAgent({ ...existing, campaign })
-      const charged = admin || await spendUserCredits(user, postCost, { automationId: existing.id, reason: `Confirmed ${publishedPlatform} publication`, postId: post.id, providerPostId: post.providerPostId, idempotencyKey: `${existing.id}:${post.id}:${publishedPlatform}` })
+      const nativeCost = admin ? 0 : (post.platforms.length === 1 && post.platforms[0] === 'linkedin' ? postCost : nativeSuccessCount)
+      const charged = nativeCost === 0 || admin || await spendUserCredits(user, nativeCost, { automationId: existing.id, reason: `Confirmed ${publishedPlatform} publication`, postId: post.id, providerPostId: post.providerPostId, idempotencyKey: `${existing.id}:${post.id}:native` })
       if (charged) {
         post.charged = true
         post.chargedAt = new Date().toISOString()
-        creditsUsed += admin ? 0 : postCost
+        creditsUsed += admin ? 0 : nativeCost
       } else {
         post.chargeStatus = 'pending'
       }
@@ -2836,6 +2884,7 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
       } else post.status = 'failed'
       failedCount++
     }
+    creditsUsed += admin ? 0 : providerCreditsUsed
     const primaryPlatform = post.platforms?.[0] || 'linkedin'
     steps.push({ postId: post.id, day: post.day, slot: post.slot, platforms: post.platforms, content: post.captions?.[primaryPlatform] || '', pageId: primaryPlatform === 'facebook' ? postResults.facebook?.pageId || null : null, pageName: primaryPlatform === 'facebook' ? postResults.facebook?.pageName || null : null, scheduledAt: post.scheduledAt, scheduledTimezone: post.timezone || campaign.meta?.timezone || 'UTC', publishedAt: post.postedAt || null, providerPostId: postResults[primaryPlatform]?.id || null, linkedinAccount: postResults.linkedin?.account || user?.email || '', linkedinPostId: postResults.linkedin?.id || null, linkedinUrl: postResults.linkedin?.link || null, result: postResults, credits_used: post.charged ? postCost : 0, status: post.status, retry_count: post.retryCount || 0 })
     await saveServerAgent({ ...existing, campaign })
@@ -3216,7 +3265,12 @@ function getConversationEngine() {
     getServerAgent,
     getUserCredits: user => getUserCredits(user, supabaseConfig()),
     spendUserCredits,
-    getIntegrationStatus: async (userId, provider) => {
+    getSmartImage: (user, content) => mediaLibrary.findSmartImage(supabaseConfig(), user, content),
+    getIntegrationStatus: async (userId, provider, userEmail = '') => {
+      if (['youtube', 'instagram', 'x', 'twitter', 'facebook', 'whatsapp'].includes(provider)) {
+        const composioStatus = await alphaConnector.getConnectionStatus({ id: userId, email: userEmail }, provider).catch(() => null)
+        return { connected: composioStatus?.connected === true, ready: composioStatus?.connected === true, identifier: composioStatus?.connectionId || '' }
+      }
       const integration = await getUserIntegration(userId, provider, supabaseConfig()).catch(() => null)
       if (!integration) return { connected: false, ready: false }
       const tokens = integration.tokens || {}
@@ -6136,6 +6190,55 @@ const server = http.createServer(async (req, res) => {
       return json(res, status, { error: error instanceof Error ? error.message : 'Execution failed', code, charged: false })
     }
   }
+  if (req.url === '/api/media/list' && req.method === 'GET') {
+    try {
+      const config = supabaseConfig()
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      if (!user) return json(res, 401, { error: 'Authentication required' })
+      return json(res, 200, { items: await mediaLibrary.listMedia(config, user) })
+    } catch (error) {
+      const code = error?.code || 'MEDIA_ERROR'
+      return json(res, code === 'DB_ERROR' ? 503 : 500, { error: error instanceof Error ? error.message : 'Could not load Media Library.', code })
+    }
+  }
+  if (req.url === '/api/media/upload' && req.method === 'POST') {
+    try {
+      const config = supabaseConfig()
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      if (!user) return json(res, 401, { error: 'Authentication required' })
+      return json(res, 201, { item: await mediaLibrary.uploadMedia(config, user, req) })
+    } catch (error) {
+      const code = error?.code || 'MEDIA_ERROR'
+      return json(res, code === 'INVALID_MEDIA' ? 400 : code === 'DB_ERROR' ? 503 : 500, { error: error instanceof Error ? error.message : 'Upload failed.', code })
+    }
+  }
+  if (req.url === '/api/media/smart-image' && req.method === 'POST') {
+    try {
+      const config = supabaseConfig()
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      if (!user) return json(res, 401, { error: 'Authentication required' })
+      const body = await readBody(req)
+      const content = String(body.content || '').trim()
+      if (content.length < 10) return json(res, 400, { error: 'Add more detail so Alpha can select a relevant image.', code: 'INVALID_CONTENT' })
+      return json(res, 200, await mediaLibrary.findSmartImage(config, user, content))
+    } catch (error) {
+      const code = error?.code || 'IMAGE_PROVIDER_ERROR'
+      return json(res, code === 'DB_ERROR' ? 503 : 502, { error: error instanceof Error ? error.message : 'Alpha could not prepare an image.', code })
+    }
+  }
+  if (/^\/api\/media\/[0-9a-f-]+$/i.test(req.url || '') && ['PATCH', 'DELETE'].includes(req.method || '')) {
+    try {
+      const config = supabaseConfig()
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      if (!user) return json(res, 401, { error: 'Authentication required' })
+      const id = String(req.url).split('/').pop()
+      if (req.method === 'DELETE') return json(res, 200, await mediaLibrary.deleteMedia(config, user, id))
+      return json(res, 200, { item: await mediaLibrary.updateMedia(config, user, id, await readBody(req)) })
+    } catch (error) {
+      const code = error?.code || 'MEDIA_ERROR'
+      return json(res, code === 'DB_ERROR' ? 503 : 400, { error: error instanceof Error ? error.message : 'Could not update media.', code })
+    }
+  }
   if (req.url === '/api/connected-apps' && req.method === 'GET') {
     try {
       const config = supabaseConfig()
@@ -6820,6 +6923,11 @@ if (!process.env.VERCEL) {
       for (const agent of due) {
         try { await runAgent(agent, 'schedule') } catch (err) { process.stdout.write(`[cron] agent ${agent.id} run error: ${err instanceof Error ? err.message : err}\n`) }
       }
+      const mediaRuns = await mediaLibrary.runDueMedia(supabaseConfig(), alphaConnector.executeProviderAction, now).catch(err => {
+        process.stdout.write(`[cron] media queue error: ${err instanceof Error ? err.message : err}\n`)
+        return []
+      })
+      if (mediaRuns.length) process.stdout.write(`[MEDIA SCHEDULER] Processed ${mediaRuns.length} due item(s)\n`)
     } catch (err) { process.stdout.write(`[cron] error: ${err instanceof Error ? err.message : err}\n`) }
   })
 

@@ -364,6 +364,16 @@ async function finishExecution(userId, idempotencyKey, changes) {
   if (!response.ok) throw new Error('Execution result could not be saved')
 }
 
+async function findExecution(userId, idempotencyKey) {
+  const config = persistenceConfig()
+  if (!config) return null
+  const response = await fetch(`${config.url}/rest/v1/connector_executions?user_id=eq.${encodeURIComponent(userId)}&idempotency_key=eq.${encodeURIComponent(idempotencyKey)}&select=*&limit=1`, {
+    headers: supabaseServiceHeaders(config.service),
+  })
+  if (!response.ok) throw new Error('Execution history could not be read')
+  return (await response.json())?.[0] || null
+}
+
 async function getCreditBalance(userId) {
   const config = persistenceConfig()
   if (!config) throw new Error('Database not ready, contact admin')
@@ -733,6 +743,20 @@ export async function executeProviderAction(user, providerId, actionId, payload)
   const idempotencyKey = String(payload?.idempotencyKey || '').trim()
   if (!approvalId) throw new Error('Explicit approval is required')
   if (!idempotencyKey) throw new Error('Idempotency key is required')
+  const previous = await findExecution(user.id, idempotencyKey)
+  if (previous?.status === 'succeeded' && previous.provider_execution_id) {
+    return {
+      success: true,
+      executionId: previous.id,
+      providerId: previous.provider_execution_id,
+      creditsCharged: 0,
+      balance: await getCreditBalance(user.id),
+      result: previous.result_metadata || { replayed: true },
+      executionTimeMs: 0,
+      replayed: true,
+    }
+  }
+  if (previous) throw new Error(previous.status === 'claimed' ? 'This approved action is already in progress' : 'This idempotency key already has a recorded failed execution')
   if (await getCreditBalance(user.id) < 1) throw new Error('Insufficient credits')
   const actionArguments = { ...(payload || {}) }
   delete actionArguments.approvalId
@@ -741,7 +765,22 @@ export async function executeProviderAction(user, providerId, actionId, payload)
     user_id: user.id, toolkit_slug: pid, capability_id: actionId, status: 'claimed',
     approval_id: approvalId, idempotency_key: idempotencyKey, credits_charged: 0,
   })
-  if (!claimed) throw new Error('This approved action was already executed')
+  if (!claimed) {
+    const concurrent = await findExecution(user.id, idempotencyKey)
+    if (concurrent?.status === 'succeeded' && concurrent.provider_execution_id) {
+      return {
+        success: true,
+        executionId: concurrent.id,
+        providerId: concurrent.provider_execution_id,
+        creditsCharged: 0,
+        balance: await getCreditBalance(user.id),
+        result: concurrent.result_metadata || { replayed: true },
+        executionTimeMs: 0,
+        replayed: true,
+      }
+    }
+    throw new Error('This approved action is already in progress')
+  }
   const startTime = Date.now()
 
   // Execute through Composio SDK tools

@@ -28,6 +28,7 @@ const PLATFORM_NAMES = {
   x: 'X',
   twitter: 'X',
   whatsapp: 'WhatsApp',
+  youtube: 'YouTube',
   telegram: 'Telegram',
   slack: 'Slack',
   discord: 'Discord',
@@ -44,6 +45,8 @@ const SOCIAL_CONTENT_INTENTS = new Set([
   'linkedin',
   'x',
   'instagram',
+  'youtube',
+  'whatsapp',
 ])
 
 function nowIso() { return new Date().toISOString() }
@@ -280,14 +283,15 @@ function normalizePlatform(name) {
   if (n.includes('telegram')) return 'telegram'
   if (n.includes('slack')) return 'slack'
   if (n.includes('whatsapp')) return 'whatsapp'
+  if (n.includes('youtube')) return 'youtube'
   if (n.includes('discord')) return 'discord'
   return n
 }
 
 function computePostCredits(platforms, includeImage = false) {
-  let credits = 2 + platforms.length
-  if (includeImage) credits += 2
-  return credits
+  void includeImage
+  if (platforms.length === 1 && platforms[0] === 'linkedin') return 3
+  return Math.max(1, platforms.length)
 }
 
 function buildCron(timeDisplay, fallbackHour = 8) {
@@ -364,6 +368,7 @@ export function createConversationEngine(deps) {
     getUserCredits,
     spendUserCredits,
     getIntegrationStatus,
+    getSmartImage,
   } = deps
 
   async function saveConversation(conversation) {
@@ -978,8 +983,21 @@ Return JSON:
     if (!Array.isArray(calendar) || calendar.length < expectedTotal) return false
     return calendar.every(p => {
       const caps = p.captions || {}
-      const hasCaption = typeof caps === 'object' && Object.keys(caps).some(k => typeof caps[k] === 'string' && caps[k].trim().length > 0)
-      return Number.isInteger(p.day) && p.day > 0 && Array.isArray(p.platforms) && p.platforms.length > 0 && hasCaption
+      const captionEntries = typeof caps === 'object' ? Object.entries(caps) : []
+      const quality = captionEntries.length > 0 && captionEntries.every(([platform, value]) => {
+        const text = typeof value === 'string' ? value.trim() : ''
+        const words = text.split(/\s+/).filter(Boolean).length
+        const normalized = normalizePlatform(platform)
+        if (normalized === 'x') return text.length >= 180 && text.length <= 850
+        if (normalized === 'instagram') return words >= 150
+        if (normalized === 'facebook') return words >= 200
+        if (normalized === 'linkedin') return words >= 1
+        if (normalized === 'whatsapp') return words >= 100
+        if (normalized === 'youtube') return words >= 300
+        return words >= 40
+      })
+      const expected = expectedPlatforms.every(platform => captionEntries.some(([key]) => normalizePlatform(key) === normalizePlatform(platform)))
+      return Number.isInteger(p.day) && p.day > 0 && Array.isArray(p.platforms) && p.platforms.length > 0 && quality && expected
     })
   }
 
@@ -1022,8 +1040,9 @@ Return JSON:
     }
     const postsPerDay = Math.max(1, Math.ceil(totalPosts / durationDays))
     const dontPost = Array.isArray(known.dontPost) ? known.dontPost : []
-    const imageRequested = Boolean(known.includeImages || known.include_images)
-    const includeImages = imageRequested && listImageProviders().length > 0
+    const automaticImagePlatforms = platforms.some(platform => ['facebook', 'instagram', 'x', 'twitter'].includes(platform))
+    const imageRequested = Boolean(known.includeImages || known.include_images || automaticImagePlatforms)
+    const includeImages = imageRequested && (typeof getSmartImage === 'function' || listImageProviders().length > 0)
 
     const business = businessName || businessType
     const brand = { business, businessType, audience, tone, website: known.website || '', dontPost }
@@ -1083,11 +1102,13 @@ Mix: 40% educational, 30% product, 20% story, 10% CTA.
 Include a CTA in ~70% of posts.
 Avoid repeating the same opening sentence across posts.
 Do not invent customer names, testimonials, or facts you cannot verify.
-Platform style:
-- Facebook: short, friendly, 2-3 relevant hashtags
-- LinkedIn: professional, 3-5 hashtags
-- X: concise, punchy, 1-2 hashtags
-- Instagram: visual, emoji-friendly, longer caption
+Platform minimum quality:
+- Facebook: at least 200 words; conversational hook, useful story, three lessons, a closing question, and 3-5 relevant hashtags.
+- LinkedIn: at least 180 words; professional hook, concrete value, clear CTA, and 3-5 relevant hashtags.
+- X: 180-280 characters with hook, value, CTA, and 1-2 hashtags. If the idea needs more space, return a concise 2-3 part thread separated with new lines.
+- Instagram: at least 150 words; hook, short story, three useful bullets, CTA question, and 10-15 relevant hashtags.
+- WhatsApp: at least 100 words, friendly and useful, with a clear next step.
+- YouTube: title 50-70 characters and a description of at least 300 words with searchable keywords and a CTA.
 
 Avoid: ${dontPost.join(', ') || 'nothing specific'}.
 Total posts: ${totalPosts}.`
@@ -1138,6 +1159,32 @@ Total posts: ${totalPosts}.`
       } else {
         conversation.conversationStage = 'blocked'
         addMessage(conversation, 'alpha', 'Alpha’s content-generation models are temporarily unavailable. Your automation details have been saved, so you can continue without starting again.')
+        return
+      }
+    }
+    if (!validateCalendar(posts, platforms, totalPosts)) {
+      conversation.conversationStage = 'blocked'
+      addMessage(conversation, 'alpha', 'Alpha refused to schedule low-quality or incomplete content. Your plan is saved, nothing was published, and no credits were charged. Please regenerate when the content provider is available.')
+      return
+    }
+
+    if (includeImages && typeof getSmartImage === 'function') {
+      try {
+        for (let index = 0; index < posts.length; index += 3) {
+          const batch = posts.slice(index, index + 3)
+          const images = await Promise.all(batch.map(post => {
+            const content = [post.topic, ...Object.values(post.captions || {})].filter(Boolean).join('\n')
+            return getSmartImage({ id: conversation.userId, email: conversation.userEmail }, content)
+          }))
+          images.forEach((image, offset) => {
+            posts[index + offset].imageUrl = image.image_url
+            posts[index + offset].imagePrompt = image.image_prompt
+            posts[index + offset].imageSource = image.image_source
+          })
+        }
+      } catch (error) {
+        conversation.conversationStage = 'blocked'
+        addMessage(conversation, 'alpha', `Alpha prepared the content but could not attach a confirmed image, so nothing was scheduled and no credits were charged. ${error instanceof Error ? error.message : 'Please retry.'}`)
         return
       }
     }
@@ -1215,7 +1262,7 @@ Total posts: ${totalPosts}.`
     conversation.pendingConnections = []
     conversation.selectedCapabilities = platforms.map(p => `generate_${p}_content`)
 
-    const status = await checkPublishingCapabilities(platforms, conversation.userId)
+    const status = await checkPublishingCapabilities(platforms, conversation.userId, conversation.userEmail)
     if (!status.allReady) {
       conversation.automationDraft.missing = [{ field: 'connection', step: 'Publishing', connector: status.missing.join(', '), reason: `I can generate the posts, but direct publishing to ${status.missing.join(', ')} is not available. You can copy the posts manually or connect the app later.` }]
     }
@@ -1341,10 +1388,10 @@ Total posts: ${totalPosts}.`
     return `Day ${day}: Big moves only. If you're part of ${audience}, this is for you. ${cta}. #CallToAction #${business.replace(/\s+/g, '')}`
   }
 
-  async function checkPublishingCapabilities(platforms, userId) {
+  async function checkPublishingCapabilities(platforms, userId, userEmail) {
     const missing = []
     for (const p of platforms) {
-      const status = await getIntegrationStatus(userId, p)
+      const status = await getIntegrationStatus(userId, p, userEmail)
       if (!status?.ready) missing.push(p)
     }
     return { allReady: missing.length === 0, missing }
