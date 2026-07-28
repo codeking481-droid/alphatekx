@@ -70,10 +70,10 @@ export default function OnboardingModal({ open, onComplete, onClose }: { open: b
         <div className="flex items-center justify-between">
           <div className="flex gap-2">
             {steps.map((_, i) => (
-              <div key={i} className={`h-1.5 flex-1 rounded-full transition-all ${i <= step ? 'bg-gradient-to-r from-indigo-500 to-pink-500' : 'bg-white/10'}`} style={{ width: 40 }} />
+              <div key={i} className={`h-1.5 flex-1 rounded-full transition-all ${i <= step ? 'bg-gradient-to-r from-indigo-500 to-pink-500' : 'bg-white/[.04]'}`} style={{ width: 40 }} />
             ))}
           </div>
-          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full text-zinc-400 hover:bg-white/10"><X size={16} /></button>
+          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full text-zinc-400 hover:bg-white/[.04]"><X size={16} /></button>
         </div>
 
         <div className="mt-8 flex flex-col items-center text-center">
@@ -84,7 +84,7 @@ export default function OnboardingModal({ open, onComplete, onClose }: { open: b
 
         <div className="mt-8 flex gap-3">
           {step > 0 && (
-            <button onClick={() => setStep(s => Math.max(0, s - 1))} className="flex flex-1 min-h-11 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-sm font-semibold text-zinc-300 transition-all hover:bg-white/[0.08]">
+            <button onClick={() => setStep(s => Math.max(0, s - 1))} className="flex flex-1 min-h-11 items-center justify-center rounded-xl border border-white/10 bg-white/[.04] text-sm font-semibold text-zinc-300 transition-all hover:bg-white/[.04]">
               Back
             </button>
           )}
@@ -93,7 +93,7 @@ export default function OnboardingModal({ open, onComplete, onClose }: { open: b
           </button>
         </div>
 
-        <button onClick={onComplete} className="mt-4 w-full text-xs text-zinc-500 hover:text-zinc-300">
+        <button onClick={onComplete} className="mt-4 w-full text-xs text-slate-400 hover:text-zinc-300">
           Skip onboarding
         </button>
       </div>

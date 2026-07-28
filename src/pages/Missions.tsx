@@ -149,8 +149,8 @@ export default function Missions() {
               <h2 className="mt-5 text-lg font-semibold">{item.name}</h2>
               <p className="mt-2 min-h-12 text-sm leading-6 text-white/60">{item.description}</p>
               <div className="mt-5 grid grid-cols-2 gap-2 text-xs text-white/55">
-                <span className="rounded-lg bg-white/[.05] px-3 py-2">Difficulty: {item.difficulty}</span>
-                <span className="rounded-lg bg-white/[.05] px-3 py-2">Build: {item.time}</span>
+                <span className="rounded-lg bg-white/[.04] px-3 py-2">Difficulty: {item.difficulty}</span>
+                <span className="rounded-lg bg-white/[.04] px-3 py-2">Build: {item.time}</span>
               </div>
               <button onClick={() => void startMission(item)} disabled={status === 'queued' || status === 'building'} className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl btn-alpha text-sm font-semibold disabled:opacity-50">
                 {(status === 'queued' || status === 'building') && selected?.id === item.id ? <LoaderCircle className="animate-spin" size={17}/> : <PlaneTakeoff size={17}/>}
@@ -172,14 +172,14 @@ export default function Missions() {
               {creation && <button onClick={deploy} className="rounded-xl btn-alpha px-5 py-3 text-sm font-semibold">Deploy</button>}
             </div>
           </div>
-          <div className="mt-5 h-2 overflow-hidden rounded-full bg-white/[.08]"><div className="h-full rounded-full bg-[#E56B2D] transition-all" style={{ width: `${progress}%` }}/></div>
+          <div className="mt-5 h-2 overflow-hidden rounded-full bg-white/[.04]"><div className="h-full rounded-full bg-[#E56B2D] transition-all" style={{ width: `${progress}%` }}/></div>
           <div className="mt-5 grid gap-3 md:grid-cols-3">
             {workerStages.map(worker => {
               const Icon = worker.icon
               const active = progress >= worker.progress - 25 && progress < worker.progress + 18 && status !== 'idle'
               const done = progress >= worker.progress
               return <div key={worker.role} className="rounded-xl border border-white/[.12] bg-white/[.04] p-4">
-                <div className="flex items-center gap-3"><span className={`grid size-10 place-items-center rounded-xl ${done ? 'btn-alpha' : 'bg-white/[.08]'} ${active ? 'animate-pulse' : ''}`}><Icon size={18}/></span><strong>{worker.role}</strong></div>
+                <div className="flex items-center gap-3"><span className={`grid size-10 place-items-center rounded-xl ${done ? 'btn-alpha' : 'bg-white/[.04]'} ${active ? 'animate-pulse' : ''}`}><Icon size={18}/></span><strong>{worker.role}</strong></div>
                 <p className="mt-3 text-sm leading-6 text-white/60">{worker.line}</p>
               </div>
             })}

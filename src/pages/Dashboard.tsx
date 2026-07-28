@@ -34,7 +34,7 @@ export default function Dashboard() {
 
         <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {actions.map(a => (
-            <button key={a.label} onClick={() => navigate(a.to)} className="group rounded-2xl border border-white/10 bg-white/[0.04] p-5 text-left transition-all hover:border-indigo-500/40 hover:bg-white/[0.08]">
+            <button key={a.label} onClick={() => navigate(a.to)} className="group rounded-2xl border border-white/10 bg-white/[.04] p-5 text-left transition-all hover:border-indigo-500/40 hover:bg-white/[.04]">
               <span className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-pink-500 text-white shadow-lg"><a.icon size={20} /></span>
               <h3 className="mt-4 text-base font-semibold">{a.label}</h3>
               <p className="mt-1 text-xs text-zinc-400">{a.sub}</p>
@@ -43,7 +43,7 @@ export default function Dashboard() {
         </div>
 
         {insights.length > 0 && (
-          <div className="mt-8 rounded-2xl border border-white/[0.08] bg-white/[0.04] p-5">
+          <div className="mt-8 rounded-2xl border border-white/[0.08] bg-white/[.04] p-5">
             <div className="mb-3 flex items-center gap-2 text-sm font-semibold"><TrendingUp size={16} className="text-indigo-300"/>Alpha Insights</div>
             <div className="space-y-2">
               {insights.slice(0, 3).map(p => (
@@ -62,9 +62,9 @@ export default function Dashboard() {
             <h2 className="text-lg font-semibold">Your projects</h2>
             <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {creations.map(c => (
-                <button key={c.id} onClick={() => navigate(`/mission/${c.missionId}`)} className="group rounded-2xl border border-white/[0.08] bg-white/[0.03] p-5 text-left transition-all hover:border-indigo-400/30 hover:bg-white/[0.05]">
+                <button key={c.id} onClick={() => navigate(`/mission/${c.missionId}`)} className="group rounded-2xl border border-white/[0.08] bg-white/[.04] p-5 text-left transition-all hover:border-indigo-400/30 hover:bg-white/[.04]">
                   <h3 className="text-base font-semibold text-zinc-100">{c.title || 'Untitled project'}</h3>
-                  <p className="mt-1 truncate text-sm text-zinc-500">{c.slug ? `${c.slug}.alphatekx.name.ng` : 'Draft'}</p>
+                  <p className="mt-1 truncate text-sm text-slate-400">{c.slug ? `${c.slug}.alphatekx.name.ng` : 'Draft'}</p>
                 </button>
               ))}
             </div>
@@ -73,7 +73,7 @@ export default function Dashboard() {
 
         {creations.length === 0 && (
           <div className="mt-8 rounded-2xl border border-dashed border-white/10 p-8 text-center">
-            <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-white/[0.06]"><Plus size={22} className="text-zinc-400" /></div>
+            <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-white/[.04]"><Plus size={22} className="text-zinc-400" /></div>
             <h3 className="mt-3 text-base font-semibold">No projects yet</h3>
             <p className="mt-1 text-sm text-zinc-400">Tap “Build an app” and describe your idea. Alpha will build it.</p>
             <button onClick={() => navigate('/builder')} className="mt-4 inline-flex items-center gap-2 rounded-full bg-indigo-600 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-500"><Plus size={16} /> Start building</button>

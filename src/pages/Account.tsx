@@ -50,7 +50,7 @@ export default function Account() {
 
     <div className="mt-6 rounded-2xl border border-white/[.12] liquid-glass p-6 shadow-sm">
       <div className="flex items-center gap-3">
-        <span className="grid size-12 place-items-center rounded-full bg-white/[.08]"><ShieldCheck size={21}/></span>
+        <span className="grid size-12 place-items-center rounded-full bg-white/[.04]"><ShieldCheck size={21}/></span>
         <div>
           <p className="font-semibold">{user?.email || 'Guest'}</p>
           <p className="text-sm text-white/55">Signed in securely</p>
@@ -72,7 +72,7 @@ export default function Account() {
           const naira = `₦${(pack.amountKobo / 100).toLocaleString()}`
           const isBooster = pack.id === 'credits'
           return <button key={pack.id} onClick={() => setSelectedPack(pack)} className={`relative rounded-2xl border p-4 text-left transition-all ${active ? 'border-indigo-500 bg-indigo-500/10' : 'border-white/[.12] bg-white/[.04] hover:border-white/[.25]'}`}>
-            {active && <span className="absolute right-3 top-3 grid size-5 place-items-center rounded-full bg-gradient-to-r from-indigo-500 to-pink-500 text-black"><Check size={12}/></span>}
+            {active && <span className="absolute right-3 top-3 grid size-5 place-items-center rounded-full bg-gradient-to-r from-indigo-500 to-pink-500 text-white"><Check size={12}/></span>}
             <span className="flex items-center gap-2 font-semibold">{isBooster ? <Zap size={16}/> : <WalletCards size={16}/>}{pack.label}</span>
             <p className="mt-2 text-2xl font-semibold">{naira}</p>
             <p className="mt-1 text-xs text-white/55">{isBooster ? `${pack.credits} credits` : pack.id === 'pro' ? 'Unlimited generations' : `${pack.credits} credits`}</p>
@@ -86,7 +86,7 @@ export default function Account() {
         {pending ? <LoaderCircle className="animate-spin" size={16}/> : <WalletCards size={16}/>} {selectedPack ? `Pay ${`₦${(selectedPack.amountKobo / 100).toLocaleString()}`} for ${selectedPack.label}` : 'Select a pack to pay'}
       </button>
 
-      <button onClick={() => void signOut()} className="mt-6 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-white/[.15] px-4 text-sm transition-all hover:border-indigo-500 hover:bg-white/[0.04]"><LogOut size={16}/>Sign out</button>
+      <button onClick={() => void signOut()} className="mt-6 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-white/[.15] px-4 text-sm transition-all hover:border-indigo-500 hover:bg-white/[.04]"><LogOut size={16}/>Sign out</button>
 
       <div className="mt-8 border-t border-white/[.12] pt-6">
         <h2 className="text-lg font-semibold text-rose-400">Danger zone</h2>

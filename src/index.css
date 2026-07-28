@@ -192,8 +192,8 @@ pre, code { font-family: var(--font-mono); }
     color: #FFFFFF;
     box-shadow: 0 4px 18px rgba(3,7,18,.12);
   }
-  .field { @apply min-h-12 w-full rounded-xl px-4 outline-none placeholder:text-slate-500 focus:border-violet-500 focus:ring-4 focus:ring-violet-100; transition: border-color .15s, box-shadow .15s; }
-  .control { @apply min-h-12 w-full rounded-lg px-3 outline-none placeholder:text-slate-500 focus:border-violet-500 focus:ring-4 focus:ring-violet-100; transition: border-color .15s, box-shadow .15s; }
+  .field { @apply min-h-12 w-full rounded-xl px-4 outline-none placeholder:text-slate-400 focus:border-violet-500 focus:ring-4 focus:ring-violet-100; transition: border-color .15s, box-shadow .15s; }
+  .control { @apply min-h-12 w-full rounded-lg px-3 outline-none placeholder:text-slate-400 focus:border-violet-500 focus:ring-4 focus:ring-violet-100; transition: border-color .15s, box-shadow .15s; }
   .launch-action { @apply flex min-h-12 items-center justify-center gap-2 rounded-xl px-4 text-sm text-white/90 transition-colors hover:border-indigo-400/40; }
 
   .skeleton {
@@ -232,13 +232,16 @@ details > summary::-webkit-details-marker { display: none; }
   -webkit-backdrop-filter: blur(20px);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.1), 0 10px 30px rgba(3,7,18,.3), 0 0 20px rgba(124,58,237,.1);
 }
-:where(main, section, article, aside, dialog, div)[class~="bg-white"],
-:where(main, section, article, aside, dialog, div)[class*="bg-[#FAFBFF]"],
-:where(main, section, article, aside, dialog, div)[class*="bg-[#F9FAFB]"] {
+:where([class*="bg-white/"]) {
   background-color: var(--glass-bg) !important;
+  border-color: var(--glass-border);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
 }
-:where([class*="text-[#0B0F19]"], [class*="text-[#111827]"], .text-slate-900) { color: #FFFFFF !important; }
-:where(.text-slate-500, .text-slate-600, [class*="text-[#667085]"], [class*="text-[#475467]"]) { color: #94A3B8 !important; }
+:where([class*="bg-[#0A0F1E]"]) { background-color: #0A0F1E !important; }
+:where(.text-white) { color: #FFFFFF !important; }
+:where(.text-slate-400, [class*="text-slate-400"]) { color: #94A3B8 !important; }
+:where(.text-slate-200, [class*="text-slate-200"]) { color: #E2E8F0 !important; }
 :where(input, textarea, select) { background-color: rgba(255,255,255,.05); border-color: rgba(255,255,255,.10); color: #FFFFFF; }
 :where(input, textarea, select):focus { border-color: #7C3AED; }
 * { scrollbar-color: rgba(124,58,237,.45) #0A0F1E; }

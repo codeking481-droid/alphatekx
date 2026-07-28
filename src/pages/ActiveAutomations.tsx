@@ -102,11 +102,11 @@ export default function ActiveAutomations() {
     const nextRun = nextRunOf(selected)
     const lastRun = selected.lastRunAt || selected.executionHistory?.[0]?.at
     return <Page size="max-w-4xl">
-      <button onClick={() => navigate('/active-automations')} className="text-sm font-bold text-[#6D28D9] hover:text-violet-800">← Running Automations</button>
+      <button onClick={() => navigate('/active-automations')} className="text-sm font-bold text-violet-300 hover:text-violet-200">← Running Automations</button>
       {notice && <Notice>{notice}</Notice>}
-      <section className="mt-6 rounded-[2rem] border border-slate-200 bg-white p-5 shadow-[0_24px_70px_rgba(30,41,59,.14)] sm:p-8">
+      <section className="mt-6 rounded-[2rem] border border-white/[.10] bg-white/[.04] p-5 shadow-[0_24px_70px_rgba(30,41,59,.14)] sm:p-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div><p className="eyebrow">{displayStatus(selected)}</p><h1 className="mt-2 text-2xl font-black text-slate-900 sm:text-3xl">{selected.name}</h1><p className="mt-2 text-sm font-semibold capitalize text-slate-500">{platformNames(selected)}</p></div>
+          <div><p className="eyebrow">{displayStatus(selected)}</p><h1 className="mt-2 text-2xl font-black text-white sm:text-3xl">{selected.name}</h1><p className="mt-2 text-sm font-semibold capitalize text-slate-400">{platformNames(selected)}</p></div>
           <div className="flex flex-wrap gap-2">
             {selected.status === 'paused' ? <button onClick={() => void changeStatus(selected, 'running')} className="action-light"><Play size={16}/>Resume</button> : <button onClick={() => void changeStatus(selected, 'paused')} className="action-light"><Pause size={16}/>Pause</button>}
             <Link to={`/automations?id=${encodeURIComponent(selected.id)}`} className="action-light"><Pencil size={16}/>Edit schedule — free</Link>
@@ -130,7 +130,7 @@ export default function ActiveAutomations() {
             if (!window.confirm('Delete this automation? This removes it permanently.')) return
             try { await deleteAgent(selected.id); navigate('/active-automations') }
             catch (error) { setNotice(error instanceof Error ? error.message : 'Could not delete automation.') }
-          }} className="action-light text-rose-700"><Trash2 size={16}/>Delete</button>
+          }} className="action-light text-rose-300"><Trash2 size={16}/>Delete</button>
         </div>
       </section>
     </Page>
@@ -138,13 +138,13 @@ export default function ActiveAutomations() {
 
   return <Page>
     <header className="flex flex-wrap items-end justify-between gap-4">
-      <div><p className="eyebrow">Your work</p><h1 className="mt-2 text-3xl font-black text-slate-900 sm:text-4xl">Running Automations</h1><p className="mt-2 max-w-2xl text-sm font-medium text-slate-600">Track every approved automation, its next run, and its confirmed progress.</p></div>
+      <div><p className="eyebrow">Your work</p><h1 className="mt-2 text-3xl font-black text-white sm:text-4xl">Running Automations</h1><p className="mt-2 max-w-2xl text-sm font-medium text-slate-400">Track every approved automation, its next run, and its confirmed progress.</p></div>
       <Link to="/automations" className="primary-button"><Plus size={17}/>New automation</Link>
     </header>
     {notice && <Notice>{notice}</Notice>}
     <div className="mt-7 flex flex-wrap items-center justify-between gap-3">
-      <div className="flex gap-2 overflow-x-auto pb-2" aria-label="Automation filters">{filters.map(item => <button key={item} onClick={() => setFilter(item)} className={`whitespace-nowrap rounded-full px-3 py-2 text-xs font-bold ${filter === item ? 'bg-[#6D28D9] text-white shadow-lg shadow-violet-200' : 'border border-slate-200 bg-white text-slate-600'}`}>{item}</button>)}</div>
-      <div className="flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+      <div className="flex gap-2 overflow-x-auto pb-2" aria-label="Automation filters">{filters.map(item => <button key={item} onClick={() => setFilter(item)} className={`whitespace-nowrap rounded-full px-3 py-2 text-xs font-bold ${filter === item ? 'bg-[#6D28D9] text-white shadow-lg shadow-violet-200' : 'border border-white/[.10] bg-white/[.04] text-slate-400'}`}>{item}</button>)}</div>
+      <div className="flex rounded-xl border border-white/[.10] bg-white/[.04] p-1 shadow-sm">
         <button onClick={() => setView('list')} className={`view-button ${view === 'list' ? 'view-button-active' : ''}`}><List size={15}/>List</button>
         <button onClick={() => setView('calendar')} className={`view-button ${view === 'calendar' ? 'view-button-active' : ''}`}><CalendarDays size={15}/>Calendar</button>
       </div>
@@ -155,10 +155,10 @@ export default function ActiveAutomations() {
 
 function AutomationCard({ agent }: { agent: Agent }) {
   const nextRun = nextRunOf(agent)
-  return <Link to={`/active-automations/${agent.id}`} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_18px_45px_rgba(30,41,59,.10)] transition hover:-translate-y-1 hover:border-violet-300 hover:shadow-[0_24px_60px_rgba(109,40,217,.16)]">
-    <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-xs font-black uppercase tracking-[.16em] text-[#6D28D9]">{platformNames(agent)}</p><h2 className="mt-2 truncate text-lg font-black text-slate-900">{agent.name}</h2></div><span className="rounded-full bg-violet-50 px-3 py-1 text-[11px] font-black text-violet-700">{displayStatus(agent)}</span></div>
+  return <Link to={`/active-automations/${agent.id}`} className="rounded-3xl border border-white/[.10] bg-white/[.04] p-6 shadow-[0_18px_45px_rgba(30,41,59,.10)] transition hover:-translate-y-1 hover:border-violet-300 hover:shadow-[0_24px_60px_rgba(109,40,217,.16)]">
+    <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-xs font-black uppercase tracking-[.16em] text-violet-300">{platformNames(agent)}</p><h2 className="mt-2 truncate text-lg font-black text-white">{agent.name}</h2></div><span className="rounded-full bg-violet-500/10 px-3 py-1 text-[11px] font-black text-violet-200">{displayStatus(agent)}</span></div>
     <dl className="mt-6 grid grid-cols-2 gap-4 text-sm"><CardStat label="Schedule" value={agent.campaign?.meta?.frequencyText || agent.trigger?.cron || 'One time'} /><CardStat label="Progress" value={progress(agent)} /><CardStat label="Next run" value={nextRun ? new Date(nextRun).toLocaleString() : 'No future run'} /><CardStat label="Last result" value={lastResult(agent)} /></dl>
-    {displayStatus(agent) === 'Needs Attention' && <p className="mt-4 flex items-center gap-2 text-xs font-bold text-amber-700"><AlertCircle size={14}/>Open to see what needs attention.</p>}
+    {displayStatus(agent) === 'Needs Attention' && <p className="mt-4 flex items-center gap-2 text-xs font-bold text-amber-300"><AlertCircle size={14}/>Open to see what needs attention.</p>}
   </Link>
 }
 
@@ -167,8 +167,8 @@ function CalendarView({ agents }: { agents: Agent[] }) {
   const first = new Date(now.getFullYear(), now.getMonth(), 1)
   const days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
   const cells = [...Array(first.getDay()).fill(null), ...Array.from({ length: days }, (_, index) => index + 1)]
-  return <section className="mt-6 rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_18px_45px_rgba(30,41,59,.10)] sm:p-6">
-    <h2 className="text-xl font-black text-slate-900">{now.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</h2>
+  return <section className="mt-6 rounded-3xl border border-white/[.10] bg-white/[.04] p-4 shadow-[0_18px_45px_rgba(30,41,59,.10)] sm:p-6">
+    <h2 className="text-xl font-black text-white">{now.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</h2>
     <div className="mt-5 grid grid-cols-7 gap-1 text-center text-xs font-black uppercase text-slate-400">{['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(day => <div key={day}>{day}</div>)}</div>
     <div className="mt-2 grid grid-cols-7 gap-1">{cells.map((day, index) => {
       const scheduled = day ? agents.filter(agent => {
@@ -177,27 +177,27 @@ function CalendarView({ agents }: { agents: Agent[] }) {
         const date = new Date(value)
         return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === day
       }) : []
-      return <div key={`${day}-${index}`} className="min-h-20 rounded-xl border border-slate-100 p-1.5 sm:min-h-28 sm:p-2">{day && <><span className="text-xs font-black text-slate-700">{day}</span>{scheduled.slice(0, 2).map(agent => <Link key={agent.id} to={`/active-automations/${agent.id}`} className="mt-1 block truncate rounded bg-violet-100 px-1 py-1 text-[9px] font-bold text-violet-800 sm:text-[11px]">{agent.name}</Link>)}</>}</div>
+      return <div key={`${day}-${index}`} className="min-h-20 rounded-xl border border-white/[.10] p-1.5 sm:min-h-28 sm:p-2">{day && <><span className="text-xs font-black text-slate-400">{day}</span>{scheduled.slice(0, 2).map(agent => <Link key={agent.id} to={`/active-automations/${agent.id}`} className="mt-1 block truncate rounded bg-violet-500/10 px-1 py-1 text-[9px] font-bold text-violet-200 sm:text-[11px]">{agent.name}</Link>)}</>}</div>
     })}</div>
   </section>
 }
 
 function Page({ children, size = 'max-w-6xl' }: { children: ReactNode; size?: string }) {
-  return <main className={`mx-auto min-h-[calc(100dvh-8rem)] w-full ${size} bg-white px-4 py-10 text-slate-900 sm:px-6`}>{children}</main>
+  return <main className={`mx-auto min-h-[calc(100dvh-8rem)] w-full ${size} bg-white/[.04] px-4 py-10 text-white sm:px-6`}>{children}</main>
 }
 
 function Empty({ title, body, children }: { title: string; body: string; children?: ReactNode }) {
-  return <section className="mt-12 rounded-3xl border-2 border-dashed border-slate-200 bg-white p-10 text-center"><h2 className="font-black text-slate-900">{title}</h2><p className="mt-2 text-sm font-medium text-slate-500">{body}</p>{children && <div className="mt-6">{children}</div>}</section>
+  return <section className="mt-12 rounded-3xl border-2 border-dashed border-white/[.10] bg-white/[.04] p-10 text-center"><h2 className="font-black text-white">{title}</h2><p className="mt-2 text-sm font-medium text-slate-400">{body}</p>{children && <div className="mt-6">{children}</div>}</section>
 }
 
 function Notice({ children }: { children: ReactNode }) {
-  return <div role="status" className="mt-5 rounded-xl border border-violet-200 bg-violet-50 p-3 text-sm font-bold text-violet-800">{children}</div>
+  return <div role="status" className="mt-5 rounded-xl border border-violet-200 bg-violet-500/10 p-3 text-sm font-bold text-violet-200">{children}</div>
 }
 
 function Info({ label, value, icon }: { label: string; value: string; icon?: ReactNode }) {
-  return <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><div className="flex items-center gap-2 text-xs font-bold text-slate-500">{icon}{label}</div><p className="mt-2 text-sm font-semibold leading-6 text-slate-800">{value}</p></div>
+  return <div className="rounded-2xl border border-white/[.10] bg-white/[.05] p-4"><div className="flex items-center gap-2 text-xs font-bold text-slate-400">{icon}{label}</div><p className="mt-2 text-sm font-semibold leading-6 text-white">{value}</p></div>
 }
 
 function CardStat({ label, value }: { label: string; value: string }) {
-  return <div><dt className="text-xs font-bold text-slate-400">{label}</dt><dd className="mt-1 line-clamp-2 font-bold text-slate-700">{value}</dd></div>
+  return <div><dt className="text-xs font-bold text-slate-400">{label}</dt><dd className="mt-1 line-clamp-2 font-bold text-slate-400">{value}</dd></div>
 }
