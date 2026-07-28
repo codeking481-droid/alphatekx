@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import { generateAdvancedImagePrompt, pollinationsImageUrl } from '../server/mediaLibraryService.mjs'
 
 const server = fs.readFileSync('server.mjs', 'utf8')
 const service = fs.readFileSync('server/mediaLibraryService.mjs', 'utf8')
 const migration = fs.readFileSync('supabase/media-library.sql', 'utf8')
 const page = fs.readFileSync('src/pages/MediaLibrary.tsx', 'utf8')
+const preview = fs.readFileSync('src/components/agents/CampaignPreview.tsx', 'utf8')
 const engine = fs.readFileSync('server/alpha/conversationEngine.mjs', 'utf8')
 
 const tests = [
@@ -25,6 +27,17 @@ const tests = [
   ['Composio status is used by planning', server.includes('alphaConnector.getConnectionStatus') && engine.includes('conversation.userEmail')],
   ['premium content is rejected when incomplete', engine.includes('Alpha refused to schedule low-quality or incomplete content')],
   ['automatic image matching blocks honestly on failure', engine.includes('could not attach a confirmed image') && engine.includes('no credits were charged')],
+  ['advanced matcher enforces photorealistic quality and negative prompts', (() => {
+    const result = generateAdvancedImagePrompt('color blocking sales', 'thrift store promo Lagos', 'instagram')
+    return result.keywords.length === 3 && result.advancedPrompt.includes('DSLR') && result.advancedPrompt.includes('8k') && result.negativePrompt.includes('cartoon') && result.negativePrompt.includes('watermark')
+  })()],
+  ['Pollinations URL pins Flux quality controls without an API key', (() => {
+    const url = new URL(pollinationsImageUrl('premium photo', 'cartoon', 'fixed-seed'))
+    return url.searchParams.get('model') === 'flux' && url.searchParams.get('enhance') === 'true' && url.searchParams.get('nologo') === 'true' && url.searchParams.get('seed') === 'fixed-seed'
+  })()],
+  ['image fetch retries and rejects undersized provider output', service.includes('attempt < 3') && service.includes('50 * 1024')],
+  ['scheduled posts refresh private image URLs before provider execution', service.includes('refreshMediaUrl') && server.includes('post.imageStoragePath') && server.includes('IMAGE_REFRESH_FAILED')],
+  ['campaign review shows the matched image before approval', preview.includes('post.imageUrl') && preview.includes('Matched automatically by Alpha')],
 ]
 
 let passed = 0

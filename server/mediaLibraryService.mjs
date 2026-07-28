@@ -167,15 +167,32 @@ export async function deleteMedia(config, user, id) {
 }
 
 const STOP_WORDS = new Set(['about', 'after', 'again', 'also', 'and', 'because', 'business', 'create', 'every', 'from', 'have', 'into', 'post', 'social', 'that', 'the', 'their', 'this', 'with', 'your'])
-function keywordsFor(content) {
+function keywordsFor(content, objective = '', platform = '') {
   const counts = new Map()
-  for (const word of String(content || '').toLowerCase().match(/[a-z0-9]{3,}/g) || []) {
+  const combined = `${objective} ${content}`.toLowerCase()
+  for (const word of combined.match(/[a-z0-9]{3,}/g) || []) {
     if (!STOP_WORDS.has(word)) counts.set(word, (counts.get(word) || 0) + 1)
   }
-  return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([word]) => word)
+  const base = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([word]) => word)
+  const context = String(platform || 'social').replace('twitter', 'x')
+  return base.map((word, index) => index === 0 ? `${word} premium real-world scene` : index === 1 ? `${word} professional commercial setting` : `${word} authentic ${context} campaign`)
 }
 
-async function downloadImage(url) {
+export function generateAdvancedImagePrompt(content, objective = '', platform = '') {
+  const keywords = keywordsFor(content, objective, platform)
+  if (!keywords.length) throw new Error('Add a clear topic before Alpha selects an image.')
+  return {
+    keywords,
+    advancedPrompt: `professional photograph of ${keywords.join(', ')}, 4k photorealistic, sharp focus, professional studio lighting, DSLR, ultra detailed, vibrant colors, premium commercial photography, 8k, high-end`,
+    negativePrompt: 'cartoon, illustration, painting, drawing, blurry, low quality, distorted, deformed, text, watermark, logo, amateur, bad anatomy, extra fingers',
+  }
+}
+
+export function pollinationsImageUrl(advancedPrompt, negativePrompt, seed = `${Date.now()}-${Math.floor(Math.random() * 100000)}`) {
+  return `https://image.pollinations.ai/prompt/${encodeURIComponent(advancedPrompt)}?model=flux&width=1024&height=1024&enhance=true&nologo=true&negative=${encodeURIComponent(negativePrompt)}&seed=${encodeURIComponent(seed)}`
+}
+
+async function downloadImage(url, minimumBytes = 50 * 1024) {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 45_000)
   try {
@@ -184,7 +201,7 @@ async function downloadImage(url) {
     const mime = String(response.headers.get('content-type') || 'image/jpeg').split(';')[0]
     if (!ALLOWED_TYPES.has(mime) || !mime.startsWith('image/')) throw new Error('Image provider did not return a supported image.')
     const bytes = Buffer.from(await response.arrayBuffer())
-    if (!bytes.length || bytes.length > 15 * 1024 * 1024) throw new Error('Generated image was empty or too large.')
+    if (bytes.length < minimumBytes || bytes.length > 15 * 1024 * 1024) throw new Error('Generated image failed the quality-size check.')
     return { bytes, mime }
   } finally { clearTimeout(timeout) }
 }
@@ -201,34 +218,45 @@ async function persistGenerated(config, user, bytes, mime, metadata) {
   const cache = await fetch(`${config.url}/rest/v1/image_cache`, {
     method: 'POST',
     headers: headers(config.service, { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=representation' }),
-    body: JSON.stringify({ user_id: user.id, storage_path: storagePath, ...metadata }),
+    body: JSON.stringify({
+      user_id: user.id,
+      storage_path: storagePath,
+      query_hash: metadata.query_hash,
+      query: metadata.query,
+      prompt: metadata.prompt,
+      source: metadata.source,
+    }),
   })
   await responseJson(cache)
-  return { image_url: await signedUrl(config, storagePath, 86400), image_prompt: metadata.prompt, image_source: metadata.source }
+  return {
+    image_url: await signedUrl(config, storagePath, 86400),
+    image_storage_path: storagePath,
+    image_prompt: metadata.prompt,
+    image_keywords: metadata.keywords || [],
+    image_source: metadata.source,
+  }
 }
 
-export async function findSmartImage(config, user, content) {
+export async function findSmartImage(config, user, content, objective = '', platform = '') {
   assertConfig(config)
-  const keywords = keywordsFor(content)
-  if (!keywords.length) throw new Error('Add a clear topic before Alpha selects an image.')
+  const { keywords, advancedPrompt, negativePrompt } = generateAdvancedImagePrompt(content, objective, platform)
   const query = keywords.join(' ')
-  const queryHash = createHash('sha256').update(query).digest('hex')
+  const queryHash = createHash('sha256').update(`${platform}:${query}`).digest('hex')
 
   const vault = await fetch(
     `${config.url}/rest/v1/media_library?user_id=eq.${encodeURIComponent(user.id)}&file_type=eq.image&tags=ov.{${keywords.map(encodeURIComponent).join(',')}}&select=storage_path&limit=1`,
     { headers: headers(config.service) },
   )
   const vaultRows = await responseJson(vault).catch(() => [])
-  if (vaultRows?.[0]) return { image_url: await signedUrl(config, vaultRows[0].storage_path, 86400), image_prompt: query, image_source: 'vault' }
+  if (vaultRows?.[0]) return { image_url: await signedUrl(config, vaultRows[0].storage_path, 86400), image_storage_path: vaultRows[0].storage_path, image_prompt: advancedPrompt, image_keywords: keywords, image_source: 'vault' }
 
   const cached = await fetch(
     `${config.url}/rest/v1/image_cache?user_id=eq.${encodeURIComponent(user.id)}&query_hash=eq.${queryHash}&select=*&limit=1`,
     { headers: headers(config.service) },
   )
   const cachedRows = await responseJson(cached).catch(() => [])
-  if (cachedRows?.[0]) return { image_url: await signedUrl(config, cachedRows[0].storage_path, 86400), image_prompt: cachedRows[0].prompt, image_source: cachedRows[0].source }
+  if (cachedRows?.[0]) return { image_url: await signedUrl(config, cachedRows[0].storage_path, 86400), image_storage_path: cachedRows[0].storage_path, image_prompt: cachedRows[0].prompt, image_keywords: keywords, image_source: cachedRows[0].source }
 
-  const prompt = `professional photograph of ${keywords.join(', ')}, 4k photorealistic, sharp focus, professional studio lighting, DSLR, ultra detailed, vibrant colors, premium commercial photography`
   let source = 'pollinations'
   let remoteUrl = ''
   if (process.env.PEXELS_API_KEY) {
@@ -238,12 +266,23 @@ export async function findSmartImage(config, user, content) {
     remoteUrl = pexels?.photos?.[0]?.src?.large2x || ''
     if (remoteUrl) source = 'pexels'
   }
-  if (!remoteUrl) {
-    const negative = 'cartoon, illustration, painting, drawing, blurry, low quality, distorted, text, watermark, logo'
-    remoteUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?model=flux&width=1024&height=1024&enhance=true&nologo=true&negative=${encodeURIComponent(negative)}&seed=${Date.now()}`
+  let downloaded = null
+  if (remoteUrl) downloaded = await downloadImage(remoteUrl).catch(() => null)
+  if (!downloaded) {
+    source = 'pollinations'
+    for (let attempt = 0; attempt < 3 && !downloaded; attempt += 1) {
+      remoteUrl = pollinationsImageUrl(advancedPrompt, negativePrompt, `${Date.now()}-${attempt}-${Math.floor(Math.random() * 100000)}`)
+      downloaded = await downloadImage(remoteUrl).catch(() => null)
+    }
   }
-  const { bytes, mime } = await downloadImage(remoteUrl)
-  return persistGenerated(config, user, bytes, mime, { query_hash: queryHash, query, prompt, source })
+  if (!downloaded) throw new Error('Alpha could not fetch a premium image after three verified attempts.')
+  return persistGenerated(config, user, downloaded.bytes, downloaded.mime, { query_hash: queryHash, query, prompt: advancedPrompt, keywords, source })
+}
+
+export async function refreshMediaUrl(config, user, storagePath, expiresIn = 3600) {
+  assertConfig(config)
+  if (!String(storagePath || '').startsWith(`${user.id}/`)) throw new Error('Media ownership could not be verified.')
+  return signedUrl(config, storagePath, expiresIn)
 }
 
 async function patchQueueItem(config, id, patch, query = '') {

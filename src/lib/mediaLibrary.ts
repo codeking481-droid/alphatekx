@@ -80,8 +80,8 @@ export async function deleteMedia(id: string) {
   return mediaRequest<{ deleted: boolean }>(`/api/media/${id}`, { method: 'DELETE' })
 }
 
-export async function createSmartImage(content: string) {
-  return postJson<{ image_url: string; image_prompt: string; image_source: string }>('/api/media/smart-image', { content })
+export async function createSmartImage(content: string, objective = '', platform = '') {
+  return postJson<{ image_url: string; image_storage_path: string; image_prompt: string; image_keywords: string[]; image_source: string }>('/api/media/smart-image', { content, objective, platform })
 }
 
 export async function publishMedia(id: string) {

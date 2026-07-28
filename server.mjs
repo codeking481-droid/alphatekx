@@ -2809,6 +2809,20 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
     post.publishStartedAt = now.toISOString()
     await saveServerAgent({ ...existing, campaign })
 
+    if (post.imageStoragePath) {
+      try {
+        post.imageUrl = await mediaLibrary.refreshMediaUrl(config, user, post.imageStoragePath, 3600)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        post.status = 'scheduled'
+        post.lastError = `Image refresh failed: ${message}`
+        post.scheduledAt = new Date(now.getTime() + backoffMs(3)).toISOString()
+        failedCount++
+        steps.push({ postId: post.id, status: 'error', error_code: 'IMAGE_REFRESH_FAILED', credits_used: 0 })
+        continue
+      }
+    }
+
     for (const platform of (post.platforms || [])) {
       const usesComposio = composioPublishingPlatforms.has(platform)
       const action = { connector: platform, action: 'post', params: { text: post.captions?.[platform] || '', _skipFreeLimit: true } }
@@ -3266,7 +3280,7 @@ function getConversationEngine() {
     getServerAgent,
     getUserCredits: user => getUserCredits(user, supabaseConfig()),
     spendUserCredits,
-    getSmartImage: (user, content) => mediaLibrary.findSmartImage(supabaseConfig(), user, content),
+    getSmartImage: (user, content, objective, platform) => mediaLibrary.findSmartImage(supabaseConfig(), user, content, objective, platform),
     getIntegrationStatus: async (userId, provider, userEmail = '') => {
       if (['youtube', 'instagram', 'x', 'twitter', 'facebook', 'whatsapp'].includes(provider)) {
         const composioStatus = await alphaConnector.getConnectionStatus({ id: userId, email: userEmail }, provider).catch(() => null)
@@ -6263,7 +6277,13 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req)
       const content = String(body.content || '').trim()
       if (content.length < 10) return json(res, 400, { error: 'Add more detail so Alpha can select a relevant image.', code: 'INVALID_CONTENT' })
-      return json(res, 200, await mediaLibrary.findSmartImage(config, user, content))
+      return json(res, 200, await mediaLibrary.findSmartImage(
+        config,
+        user,
+        content,
+        String(body.objective || ''),
+        String(body.platform || ''),
+      ))
     } catch (error) {
       const code = error?.code || 'IMAGE_PROVIDER_ERROR'
       return json(res, code === 'DB_ERROR' ? 503 : 502, { error: error instanceof Error ? error.message : 'Alpha could not prepare an image.', code })
