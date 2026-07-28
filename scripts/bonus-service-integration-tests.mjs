@@ -7,6 +7,7 @@ const supabasePort = 4325
 const profiles = new Map()
 const transactions = []
 const claims = []
+let profileSchemaFallbacks = 0
 const users = {
   'normal-a': { id: '10000000-0000-0000-0000-000000000001', email: 'a@example.com' },
   'normal-b': { id: '10000000-0000-0000-0000-000000000002', email: 'b@example.com' },
@@ -44,6 +45,10 @@ const mock = http.createServer(async (req, res) => {
   }
   if (url.pathname === '/rest/v1/profiles' && req.method === 'POST') {
     const value = await body(req)
+    if ('purchased_credits' in value || 'plan' in value) {
+      profileSchemaFallbacks += 1
+      return json(res, 400, { code: 'PGRST204', message: 'Could not find an optional column in the schema cache' })
+    }
     if (!profiles.has(value.id)) profiles.set(value.id, { id: value.id, credits: value.credits || 0, purchased_credits: value.purchased_credits || 0 })
     return json(res, 201, [profiles.get(value.id)])
   }
@@ -137,7 +142,8 @@ try {
   assert.equal(claims.length, 3, 'unexpected claim count: two Google markers plus one human claim expected')
   assert.equal(claims.filter(item => item.email === users.supervisor.email).length, 0, 'supervisor created a device or Google marker')
   assert.equal(transactions.length, 0, 'credit_transactions should not be read or written')
-  process.stdout.write('BONUS_SERVICE_INTEGRATION_OK google=1 idempotent=1 human=10 duplicate=1 supervisor=10 claims=3 transactions=0\n')
+  assert.ok(profileSchemaFallbacks >= 2, 'profile creation did not recover from optional-column schema errors')
+  process.stdout.write('BONUS_SERVICE_INTEGRATION_OK google=1 idempotent=1 human=10 duplicate=1 supervisor=10 claims=3 transactions=0 schema_fallback=ok\n')
 } finally {
   child.kill('SIGTERM')
   await new Promise(resolve => mock.close(resolve))
