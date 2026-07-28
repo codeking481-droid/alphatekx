@@ -97,7 +97,7 @@ await test('profile refresh is bounded and admin authority requires verified ide
   assert.match(billing, /function userEmail/)
   assert.match(marketplace, /function userEmail/)
   assert.doesNotMatch(composio, /isAdminUser/)
-  assert.match(composio, /accountUserId !== user\.id/)
+  assert.match(composio, /if \(!accountBelongsToUser\(account, user\)\)/)
 })
 
 await test('auth page supports Google-only signup and canonical redirects', () => {

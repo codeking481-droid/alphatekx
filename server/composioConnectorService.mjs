@@ -34,7 +34,7 @@ const PROVIDER_DEFS = {
     authConfigEnv: 'COMPOSIO_WHATSAPP_AUTH_CONFIG_ID',
     enabled: false,
     stage: 'beta',
-    actions: ['send_message'],
+    actions: ['send_message', 'send_template'],
     isNative: false,
     category: 'Communication',
   },
@@ -46,7 +46,7 @@ const PROVIDER_DEFS = {
     authConfigEnv: 'COMPOSIO_FACEBOOK_AUTH_CONFIG_ID',
     enabled: false,
     stage: 'beta',
-    actions: ['create_page_post'],
+    actions: ['create_post', 'create_page_post', 'publish'],
     isNative: false,
     category: 'Social Media',
   },
@@ -58,7 +58,7 @@ const PROVIDER_DEFS = {
     authConfigEnv: 'COMPOSIO_INSTAGRAM_AUTH_CONFIG_ID',
     enabled: false,
     stage: 'beta',
-    actions: ['create_media_post'],
+    actions: ['create_media', 'create_post', 'create_media_post', 'publish_post', 'publish_reel', 'publish_story'],
     isNative: false,
     category: 'Social Media',
   },
@@ -70,7 +70,7 @@ const PROVIDER_DEFS = {
     authConfigEnv: 'COMPOSIO_TWITTER_AUTH_CONFIG_ID',
     enabled: false,
     stage: 'beta',
-    actions: ['create_post'],
+    actions: ['create_post', 'create_tweet', 'create_thread', 'create_media_tweet'],
     isNative: false,
     category: 'Social Media',
   },
@@ -82,7 +82,7 @@ const PROVIDER_DEFS = {
     authConfigEnv: 'COMPOSIO_YOUTUBE_AUTH_CONFIG_ID',
     enabled: false,
     stage: 'beta',
-    actions: ['upload_video'],
+    actions: ['upload_video', 'create_short', 'update_video', 'update_description'],
     isNative: false,
     category: 'Content',
   },
@@ -126,10 +126,32 @@ function resolveProviderAlias(idOrName) {
 /** Maps (providerId, actionId) → Composio tool slug */
 const ACTION_TOOL_MAP = {
   'whatsapp.send_message': process.env.COMPOSIO_WHATSAPP_SEND_MESSAGE_TOOL || 'WHATSAPP_SEND_MESSAGE',
-  'facebook.create_page_post': process.env.COMPOSIO_FACEBOOK_CREATE_PAGE_POST_TOOL || 'FACEBOOK_CREATE_PAGE_POST',
-  'instagram.create_media_post': process.env.COMPOSIO_INSTAGRAM_CREATE_MEDIA_POST_TOOL || 'INSTAGRAM_CREATE_MEDIA_POST',
-  'twitter.create_post': process.env.COMPOSIO_TWITTER_CREATE_POST_TOOL || 'TWITTER_CREATE_POST',
+  'whatsapp.send_template': process.env.COMPOSIO_WHATSAPP_SEND_TEMPLATE_TOOL || 'WHATSAPP_SEND_TEMPLATE_MESSAGE',
+  'facebook.create_post': process.env.COMPOSIO_FACEBOOK_CREATE_POST_TOOL || 'FACEBOOK_CREATE_POST',
+  'facebook.create_page_post': process.env.COMPOSIO_FACEBOOK_CREATE_PAGE_POST_TOOL || 'FACEBOOK_CREATE_POST',
+  'facebook.publish': process.env.COMPOSIO_FACEBOOK_PUBLISH_TOOL || 'FACEBOOK_CREATE_POST',
+  'instagram.create_media': process.env.COMPOSIO_INSTAGRAM_CREATE_MEDIA_TOOL || 'INSTAGRAM_POST_IG_USER_MEDIA',
+  'instagram.create_post': process.env.COMPOSIO_INSTAGRAM_CREATE_POST_TOOL || 'INSTAGRAM_CREATE_POST',
+  'instagram.create_media_post': process.env.COMPOSIO_INSTAGRAM_CREATE_MEDIA_POST_TOOL || 'INSTAGRAM_CREATE_POST',
+  'instagram.publish_post': process.env.COMPOSIO_INSTAGRAM_PUBLISH_POST_TOOL || 'INSTAGRAM_POST_IG_USER_MEDIA_PUBLISH',
+  'instagram.publish_reel': process.env.COMPOSIO_INSTAGRAM_PUBLISH_REEL_TOOL || 'INSTAGRAM_POST_IG_USER_MEDIA_PUBLISH',
+  'instagram.publish_story': process.env.COMPOSIO_INSTAGRAM_PUBLISH_STORY_TOOL || 'INSTAGRAM_POST_IG_USER_MEDIA_PUBLISH',
+  'twitter.create_post': process.env.COMPOSIO_TWITTER_CREATE_POST_TOOL || 'TWITTER_CREATION_OF_A_POST',
+  'twitter.create_tweet': process.env.COMPOSIO_TWITTER_CREATE_TWEET_TOOL || 'TWITTER_CREATION_OF_A_POST',
+  'twitter.create_thread': process.env.COMPOSIO_TWITTER_CREATE_THREAD_TOOL || 'TWITTER_CREATION_OF_A_POST',
+  'twitter.create_media_tweet': process.env.COMPOSIO_TWITTER_CREATE_MEDIA_TWEET_TOOL || 'TWITTER_CREATION_OF_A_POST',
   'youtube.upload_video': process.env.COMPOSIO_YOUTUBE_UPLOAD_VIDEO_TOOL || 'YOUTUBE_UPLOAD_VIDEO',
+  'youtube.create_short': process.env.COMPOSIO_YOUTUBE_CREATE_SHORT_TOOL || 'YOUTUBE_UPLOAD_VIDEO',
+  'youtube.update_video': process.env.COMPOSIO_YOUTUBE_UPDATE_VIDEO_TOOL || 'YOUTUBE_UPDATE_VIDEO',
+  'youtube.update_description': process.env.COMPOSIO_YOUTUBE_UPDATE_DESCRIPTION_TOOL || 'YOUTUBE_UPDATE_VIDEO',
+}
+
+const TOOLKIT_VERSIONS = {
+  whatsapp: '20260721_00',
+  facebook: '20260721_00',
+  instagram: '20260721_00',
+  twitter: '20260724_00',
+  youtube: '20260721_00',
 }
 
 // ---------------------------------------------------------------------------
@@ -140,6 +162,7 @@ const ACTION_TOOL_MAP = {
 let composioClient = null
 let initialized = false
 let initError = null
+let composioAppName = 'alphatekx'
 
 /** @type {Record<string, {authConfigId: string, enabled: boolean, error?: string}>} */
 const providerConfigs = {}
@@ -164,6 +187,7 @@ export function initialize() {
   }
 
   try {
+    composioAppName = String(process.env.COMPOSIO_APP_NAME || 'alphatekx').trim() || 'alphatekx'
     composioClient = new Composio({ apiKey })
     
     // Load provider configs from env vars
@@ -244,8 +268,17 @@ async function resolveProviderConfig(providerId) {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function composioUserId(alphaUserId) {
-  return `alphatekx:${alphaUserId}`
+export function getUserComposioId(alphaUserId, email) {
+  const normalizedEmail = String(email || '').trim().toLowerCase()
+  return normalizedEmail || `${composioAppName}:${alphaUserId}`
+}
+
+function composioUserIds(user) {
+  return [...new Set([getUserComposioId(user.id, user.email), `alphatekx:${user.id}`].filter(Boolean))]
+}
+
+function composioUserId(alphaUserId, email = '') {
+  return getUserComposioId(alphaUserId, email)
 }
 
 function alphaUserIdFromComposio(cuid) {
@@ -268,6 +301,20 @@ function persistenceConfig() {
   const url = String(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').replace(/\/$/, '')
   const service = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '')
   return url && service ? { url, service } : null
+}
+
+function accountBelongsToUser(account, user) {
+  const accountUser = String(account?.userId || account?.user_id || '').toLowerCase()
+  return composioUserIds(user).some(id => id.toLowerCase() === accountUser) ||
+    alphaUserIdFromComposio(accountUser) === user.id
+}
+
+async function listUserAccounts(user, config, statuses) {
+  return composioClient.connectedAccounts.list({
+    userIds: composioUserIds(user),
+    authConfigIds: config?.authConfigId ? [config.authConfigId] : undefined,
+    statuses,
+  })
 }
 
 async function persistConnection(user, provider, account, status) {
@@ -317,6 +364,83 @@ async function finishExecution(userId, idempotencyKey, changes) {
   if (!response.ok) throw new Error('Execution result could not be saved')
 }
 
+async function getCreditBalance(userId) {
+  const config = persistenceConfig()
+  if (!config) throw new Error('Database not ready, contact admin')
+  const response = await fetch(`${config.url}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=credits&limit=1`, {
+    headers: supabaseServiceHeaders(config.service),
+  })
+  if (!response.ok) {
+    console.error('[AlphaTekX] Composio profile read failed', response.status, await response.text().catch(() => ''))
+    throw new Error('Database not ready, contact admin')
+  }
+  const rows = await response.json()
+  return Number(rows?.[0]?.credits) || 0
+}
+
+async function chargeConfirmedExecution(user, amount, metadata) {
+  const config = persistenceConfig()
+  if (!config) throw new Error('Database not ready, contact admin')
+  const current = await getCreditBalance(user.id)
+  if (current < amount) throw new Error('Insufficient credits')
+  const next = current - amount
+  const update = await fetch(`${config.url}/rest/v1/profiles?id=eq.${encodeURIComponent(user.id)}&credits=eq.${current}`, {
+    method: 'PATCH',
+    headers: supabaseServiceHeaders(config.service, { Prefer: 'return=representation' }),
+    body: JSON.stringify({ credits: next }),
+  })
+  const updated = update.ok ? await update.json().catch(() => []) : []
+  if (!update.ok || !Array.isArray(updated) || updated.length !== 1) {
+    console.error('[AlphaTekX] Composio credit update failed', update.status, update.ok ? 'concurrent update' : await update.text().catch(() => ''))
+    throw new Error(update.ok ? 'Credit balance changed; retry safely' : 'Database not ready, contact admin')
+  }
+  const transaction = {
+    user_id: user.id,
+    type: 'execution',
+    credits_removed: amount,
+    balance_after: next,
+    reference: metadata.idempotencyKey,
+    reason: metadata.description,
+    metadata,
+  }
+  const history = await fetch(`${config.url}/rest/v1/credit_transactions`, {
+    method: 'POST',
+    headers: supabaseServiceHeaders(config.service, { Prefer: 'return=minimal' }),
+    body: JSON.stringify(transaction),
+  })
+  if (!history.ok) {
+    console.error('[AlphaTekX] Composio credit transaction failed', history.status, await history.text().catch(() => ''))
+    await fetch(`${config.url}/rest/v1/profiles?id=eq.${encodeURIComponent(user.id)}&credits=eq.${next}`, {
+      method: 'PATCH',
+      headers: supabaseServiceHeaders(config.service),
+      body: JSON.stringify({ credits: current }),
+    }).catch(() => null)
+    throw new Error('Database not ready, contact admin')
+  }
+  return next
+}
+
+function confirmedProviderId(value, depth = 0) {
+  if (!value || depth > 5) return ''
+  if (typeof value === 'string' || typeof value === 'number') return String(value)
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = confirmedProviderId(item, depth + 1)
+      if (found) return found
+    }
+    return ''
+  }
+  const preferred = ['provider_id', 'post_id', 'tweet_id', 'video_id', 'media_id', 'message_id', 'id']
+  for (const key of preferred) {
+    if (value[key] != null && ['string', 'number'].includes(typeof value[key])) return String(value[key])
+  }
+  for (const nested of ['data', 'response', 'result', 'post', 'tweet', 'video', 'media', 'message']) {
+    const found = confirmedProviderId(value[nested], depth + 1)
+    if (found) return found
+  }
+  return ''
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -343,11 +467,7 @@ export async function getConnectedApps(user) {
 
     if (init.ok && config.enabled && user) {
       try {
-        const uid = composioUserId(user.id)
-        const accounts = await composioClient.connectedAccounts.list({
-          userIds: [uid],
-          authConfigIds: [config.authConfigId],
-        })
+        const accounts = await listUserAccounts(user, config)
         if (accounts.items && accounts.items.length > 0) {
           const account = accounts.items[0]
           connected = account.status === 'ACTIVE' || account.status === 'CONNECTED'
@@ -408,7 +528,7 @@ export async function startConnection(user, providerId, callbackUrl) {
 
   if (!user || !user.id) throw new Error('Authentication required')
 
-  const uid = composioUserId(user.id)
+  const uid = composioUserId(user.id, user.email)
 
   // Use the current Composio SDK's connectedAccounts.link() for OAuth
   const connectionRequest = await composioClient.connectedAccounts.link(
@@ -455,13 +575,8 @@ export async function getConnectionStatus(user, providerId) {
     return { connected: false, status: 'unauthenticated', provider: pid }
   }
 
-  const uid = composioUserId(user.id)
-  
   try {
-    const accounts = await composioClient.connectedAccounts.list({
-      userIds: [uid],
-      authConfigIds: [config.authConfigId],
-    })
+    const accounts = await listUserAccounts(user, config)
 
     if (accounts.items && accounts.items.length > 0) {
       const account = accounts.items[0]
@@ -505,13 +620,8 @@ export async function reconnectProvider(user, providerId, callbackUrl) {
 
   if (!user || !user.id) throw new Error('Authentication required')
 
-  const uid = composioUserId(user.id)
-
   // Find existing connected account
-  const accounts = await composioClient.connectedAccounts.list({
-    userIds: [uid],
-    authConfigIds: [config.authConfigId],
-  })
+  const accounts = await listUserAccounts(user, config)
 
   if (accounts.items && accounts.items.length > 0) {
     const existing = accounts.items[0]
@@ -548,19 +658,13 @@ export async function disconnectProvider(user, providerId) {
 
   if (!user || !user.id) throw new Error('Authentication required')
 
-  const uid = composioUserId(user.id)
-
   // Find the user's connected account for this provider
-  const accounts = await composioClient.connectedAccounts.list({
-    userIds: [uid],
-    authConfigIds: [config.authConfigId],
-  })
+  const accounts = await listUserAccounts(user, config)
 
   if (accounts.items && accounts.items.length > 0) {
     const account = accounts.items[0]
     // Verify ownership before deleting
-    const accountUserId = alphaUserIdFromComposio(account.userId || account.user_id)
-    if (accountUserId !== user.id) {
+    if (!accountBelongsToUser(account, user)) {
       throw new Error('You do not own this connection')
     }
     await composioClient.connectedAccounts.delete(account.id)
@@ -609,22 +713,19 @@ export async function executeProviderAction(user, providerId, actionId, payload)
     throw new Error(`No known execution path for ${toolKey}`)
   }
 
-  const uid = composioUserId(user.id)
+  const uid = composioUserId(user.id, user.email)
 
   // Find the user's active connected account for this provider
-  const accounts = await composioClient.connectedAccounts.list({
-    userIds: [uid],
-    authConfigIds: [config.authConfigId],
-    statuses: ['ACTIVE'],
-  })
+  const accounts = await listUserAccounts(user, config, ['ACTIVE'])
 
   if (!accounts.items || accounts.items.length === 0) {
-    throw new Error(`${def.name} is not connected. Connect it first.`)
+    const error = new Error(`Please reconnect ${def.name} in AlphaTekx Connected Apps`)
+    error.code = 'RECONNECT_NEEDED'
+    throw error
   }
 
   const account = accounts.items[0]
-  const accountUserId = alphaUserIdFromComposio(account.userId || account.user_id)
-  if (accountUserId !== user.id) {
+  if (!accountBelongsToUser(account, user)) {
     throw new Error('You do not own this connection')
   }
 
@@ -632,6 +733,7 @@ export async function executeProviderAction(user, providerId, actionId, payload)
   const idempotencyKey = String(payload?.idempotencyKey || '').trim()
   if (!approvalId) throw new Error('Explicit approval is required')
   if (!idempotencyKey) throw new Error('Idempotency key is required')
+  if (await getCreditBalance(user.id) < 1) throw new Error('Insufficient credits')
   const actionArguments = { ...(payload || {}) }
   delete actionArguments.approvalId
   delete actionArguments.idempotencyKey
@@ -645,13 +747,20 @@ export async function executeProviderAction(user, providerId, actionId, payload)
   // Execute through Composio SDK tools
   let result
   try {
+    const version = String(process.env[`COMPOSIO_TOOLKIT_VERSION_${pid.toUpperCase()}`] || TOOLKIT_VERSIONS[pid] || '').trim()
     result = await composioClient.tools.execute(toolSlug, {
       connectedAccountId: account.id,
       userId: uid,
+      version,
       arguments: actionArguments,
     })
   } catch (error) {
     await finishExecution(user.id, idempotencyKey, { status: 'failed', error_code: 'provider_error' })
+    if (/connection.*not found|connected account|not connected|unauthorized/i.test(String(error?.message || error))) {
+      const reconnect = new Error(`Please reconnect ${def.name} in AlphaTekx Connected Apps`)
+      reconnect.code = 'RECONNECT_NEEDED'
+      throw reconnect
+    }
     throw error
   }
 
@@ -671,14 +780,29 @@ export async function executeProviderAction(user, providerId, actionId, payload)
     throw new Error('Provider did not confirm a successful execution')
   }
 
+  const confirmedId = confirmedProviderId(responseData)
+  if (!confirmedId) {
+    await finishExecution(user.id, idempotencyKey, { status: 'failed', error_code: 'missing_provider_id' })
+    throw new Error('Provider completed without returning a confirmed post or message ID')
+  }
+  const balance = await chargeConfirmedExecution(user, 1, {
+    idempotencyKey,
+    description: `${pid}.${actionId}`,
+    platform: pid,
+    action: actionId,
+    providerId: confirmedId,
+  })
   await finishExecution(user.id, idempotencyKey, {
     status: 'succeeded',
-    provider_execution_id: result.logId || null, result_metadata: { confirmed: true },
-    credits_charged: 0,
+    provider_execution_id: confirmedId, result_metadata: { confirmed: true, providerId: confirmedId, balance },
+    credits_charged: 1,
   })
   return {
     success: true,
     executionId: result.logId || `exec_${Date.now()}`,
+    providerId: confirmedId,
+    creditsCharged: 1,
+    balance,
     result: responseData,
     executionTimeMs,
   }
