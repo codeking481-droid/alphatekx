@@ -102,6 +102,8 @@ async function runTests() {
   assert(serviceSource.includes('confirmedProviderId(responseData)'), 'Execution requires a real provider ID')
   assert(serviceSource.includes('chargeConfirmedExecution(user, 1'), 'A confirmed execution charges exactly one credit')
   assert(serviceSource.indexOf('const confirmedId = confirmedProviderId(responseData)') < serviceSource.lastIndexOf('chargeConfirmedExecution(user, 1'), 'Credits are charged only after provider confirmation')
+  assert(serviceSource.includes('2_000') && serviceSource.includes('5_000') && serviceSource.includes('10_000'), 'Transient provider execution uses bounded 2s/5s/10s retries')
+  assert(serviceSource.includes('Provider request timed out'), 'Provider execution has a bounded timeout')
   assert(serverSource.includes("req.url === '/api/composio/status'"), 'Canonical Composio status endpoint exists')
   assert(serverSource.includes("req.url === '/api/composio/execute'"), 'Canonical Composio execute endpoint exists')
   assert(migrationSource.includes('UNIQUE(user_id, idempotency_key)'), 'Database enforces per-user execution idempotency')

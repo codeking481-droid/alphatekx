@@ -37,6 +37,12 @@ function progress(agent: Agent) {
   return total > 0 ? `${Math.min(done, total)}/${total} done` : `${done} completed`
 }
 
+function progressPercent(agent: Agent) {
+  const done = agent.executionsDone || 0
+  const total = agent.executionsTotal || agent.campaign?.posts?.length || 0
+  return total > 0 ? Math.max(0, Math.min(100, Math.round(done / total * 100))) : 0
+}
+
 function matchesFilter(agent: Agent, filter: Filter) {
   if (filter === 'All') return true
   const status = displayStatus(agent)
@@ -123,6 +129,21 @@ export default function ActiveAutomations() {
           <Info label="Approval" value={selected.approvalPolicy === 'implicit' ? 'Automatic after your approved plan' : 'Review before publishing'} />
           <Info label="Last result" value={lastResult(selected)} />
         </div>
+        <div className="mt-6 rounded-2xl border border-violet-400/20 bg-[#0A0F1E]/55 p-4">
+          <div className="flex items-center justify-between gap-3 text-xs font-black"><span className="text-slate-300">Verified progress</span><span className="text-violet-300">{progress(selected)}</span></div>
+          <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-white/[.06]"><div className="h-full rounded-full bg-gradient-to-r from-violet-500 via-blue-500 to-emerald-400 transition-[width] duration-500" style={{ width: `${progressPercent(selected)}%` }}/></div>
+          <p className="mt-3 text-xs font-semibold text-slate-400">Credits are charged only after a provider returns a confirmed post ID.</p>
+        </div>
+        <section className="mt-6">
+          <h2 className="text-sm font-black text-white">Recent verified activity</h2>
+          <div className="mt-3 space-y-2">
+            {(selected.executionHistory || []).slice(0, 5).map(run => <div key={run.id} className="flex items-start gap-3 rounded-xl border border-violet-400/15 bg-white/[.025] p-3">
+              {run.status === 'success' ? <CheckCircle2 className="mt-0.5 shrink-0 text-emerald-300" size={17}/> : <AlertCircle className="mt-0.5 shrink-0 text-rose-300" size={17}/>}
+              <div className="min-w-0 flex-1"><p className="text-xs font-bold text-slate-200">{run.log || (run.status === 'success' ? 'Provider confirmed the execution.' : 'Execution needs attention.')}</p><p className="mt-1 text-[11px] text-slate-500">{new Date(run.at).toLocaleString()}</p></div>
+            </div>)}
+            {!selected.executionHistory?.length && <p className="rounded-xl border border-dashed border-violet-400/20 p-4 text-xs font-semibold text-slate-400">No execution has been attempted yet.</p>}
+          </div>
+        </section>
         <div className="mt-8 flex flex-wrap gap-2">
           <Link to={`/history?automation=${encodeURIComponent(selected.id)}`} className="action-light"><History size={16}/>View history</Link>
           <Link to={`/automations?id=${encodeURIComponent(selected.id)}`} className="action-light"><CheckCircle2 size={16}/>Review content</Link>
@@ -158,6 +179,7 @@ function AutomationCard({ agent }: { agent: Agent }) {
   return <Link to={`/active-automations/${agent.id}`} className="rounded-3xl border border-violet-400/20 bg-violet-500/10 p-6 shadow-[0_18px_45px_rgba(30,41,59,.10)] transition hover:-translate-y-1 hover:border-violet-300 hover:shadow-[0_24px_60px_rgba(109,40,217,.16)]">
     <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-xs font-black uppercase tracking-[.16em] text-violet-300">{platformNames(agent)}</p><h2 className="mt-2 truncate text-lg font-black text-white">{agent.name}</h2></div><span className="rounded-full bg-violet-500/10 px-3 py-1 text-[11px] font-black text-violet-200">{displayStatus(agent)}</span></div>
     <dl className="mt-6 grid grid-cols-2 gap-4 text-sm"><CardStat label="Schedule" value={agent.campaign?.meta?.frequencyText || agent.trigger?.cron || 'One time'} /><CardStat label="Progress" value={progress(agent)} /><CardStat label="Next run" value={nextRun ? new Date(nextRun).toLocaleString() : 'No future run'} /><CardStat label="Last result" value={lastResult(agent)} /></dl>
+    <div className="mt-5 h-2 overflow-hidden rounded-full bg-white/[.06]"><div className="h-full rounded-full bg-gradient-to-r from-violet-500 to-blue-500" style={{ width: `${progressPercent(agent)}%` }}/></div>
     {displayStatus(agent) === 'Needs Attention' && <p className="mt-4 flex items-center gap-2 text-xs font-bold text-amber-300"><AlertCircle size={14}/>Open to see what needs attention.</p>}
   </Link>
 }

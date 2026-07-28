@@ -188,13 +188,25 @@ export function generateAdvancedImagePrompt(content, objective = '', platform = 
   }
 }
 
-export function pollinationsImageUrl(advancedPrompt, negativePrompt, seed = `${Date.now()}-${Math.floor(Math.random() * 100000)}`) {
-  return `https://image.pollinations.ai/prompt/${encodeURIComponent(advancedPrompt)}?model=flux&width=1024&height=1024&enhance=true&nologo=true&negative=${encodeURIComponent(negativePrompt)}&seed=${encodeURIComponent(seed)}`
+export function pollinationsImageUrl(advancedPrompt, negativePrompt, seed = `${Date.now()}-${Math.floor(Math.random() * 100000)}`, options = {}) {
+  if (options.backup) return `https://pollinations.ai/p/${encodeURIComponent(advancedPrompt)}`
+  const params = new URLSearchParams({
+    model: 'flux',
+    width: '1024',
+    height: '1024',
+    enhance: 'true',
+    nologo: 'true',
+    negative: negativePrompt,
+    seed: String(seed),
+  })
+  return `https://image.pollinations.ai/prompt/${encodeURIComponent(advancedPrompt)}?${params.toString()}`
 }
 
-async function downloadImage(url, minimumBytes = 50 * 1024) {
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
+
+async function downloadImage(url, minimumBytes = 50 * 1024, timeoutMs = 30_000) {
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 45_000)
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
   try {
     const response = await fetch(url, { signal: controller.signal, headers: { Accept: 'image/*' } })
     if (!response.ok) throw new Error(`Image provider returned HTTP ${response.status}.`)
@@ -215,6 +227,23 @@ async function persistGenerated(config, user, bytes, mime, metadata) {
     body: bytes,
   })
   await responseJson(upload)
+  const vault = await fetch(`${config.url}/rest/v1/media_library`, {
+    method: 'POST',
+    headers: headers(config.service, { 'Content-Type': 'application/json', Prefer: 'return=minimal' }),
+    body: JSON.stringify({
+      user_id: user.id,
+      storage_path: storagePath,
+      file_name: `alpha-${metadata.query_hash.slice(0, 12)}.${extension}`,
+      file_type: 'image',
+      mime_type: mime,
+      file_size: bytes.length,
+      title: metadata.query,
+      description: metadata.prompt,
+      tags: metadata.keywords || [],
+      status: 'ready',
+    }),
+  })
+  await responseJson(vault)
   const cache = await fetch(`${config.url}/rest/v1/image_cache`, {
     method: 'POST',
     headers: headers(config.service, { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=representation' }),
@@ -259,19 +288,25 @@ export async function findSmartImage(config, user, content, objective = '', plat
 
   let source = 'pollinations'
   let remoteUrl = ''
-  if (process.env.PEXELS_API_KEY) {
+  let downloaded = null
+  const delays = [0, 2_000, 5_000]
+  for (let attempt = 0; attempt < 3 && !downloaded; attempt += 1) {
+    if (delays[attempt]) await wait(delays[attempt])
+    remoteUrl = pollinationsImageUrl(advancedPrompt, negativePrompt, `${Date.now()}-${attempt}-${Math.floor(Math.random() * 100000)}`)
+    downloaded = await downloadImage(remoteUrl, 50 * 1024, 30_000).catch(() => null)
+  }
+  if (!downloaded) {
+    await wait(10_000)
+    remoteUrl = pollinationsImageUrl(advancedPrompt, negativePrompt, `${Date.now()}-backup`, { backup: true })
+    downloaded = await downloadImage(remoteUrl, 50 * 1024, 30_000).catch(() => null)
+  }
+  if (!downloaded && process.env.PEXELS_API_KEY) {
     const pexels = await fetch(`https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=1`, {
       headers: { Authorization: process.env.PEXELS_API_KEY },
     }).then(responseJson).catch(() => null)
     remoteUrl = pexels?.photos?.[0]?.src?.large2x || ''
-    if (remoteUrl) source = 'pexels'
-  }
-  let downloaded = null
-  if (remoteUrl) downloaded = await downloadImage(remoteUrl).catch(() => null)
-  if (!downloaded) {
-    source = 'pollinations'
-    for (let attempt = 0; attempt < 3 && !downloaded; attempt += 1) {
-      remoteUrl = pollinationsImageUrl(advancedPrompt, negativePrompt, `${Date.now()}-${attempt}-${Math.floor(Math.random() * 100000)}`)
+    if (remoteUrl) {
+      source = 'pexels'
       downloaded = await downloadImage(remoteUrl).catch(() => null)
     }
   }
