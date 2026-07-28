@@ -76,10 +76,10 @@ export default function MarketplaceDetail() {
     <div className="min-h-screen p-5 pb-28 md:p-8">
       <div className="mx-auto max-w-6xl">
         <button onClick={() => navigate(-1)} className="mb-4 flex items-center gap-2 text-sm text-white/55 hover:text-white"><ArrowLeft size={16}/> Back</button>
-        {notice && <div className="mb-5 rounded-xl border border-white/[.12] liquid-glass px-4 py-3 text-sm">{notice}</div>}
+        {notice && <div className="mb-5 rounded-xl border border-violet-400/20 liquid-glass px-4 py-3 text-sm">{notice}</div>}
         <div className="grid gap-6 lg:grid-cols-2">
-          <section className="rounded-2xl border border-white/[.12] liquid-glass p-3 shadow-sm">
-            <div className="relative aspect-[16/10] overflow-hidden rounded-xl bg-white/[.04]">
+          <section className="rounded-2xl border border-violet-400/20 liquid-glass p-3 shadow-sm">
+            <div className="relative aspect-[16/10] overflow-hidden rounded-xl bg-violet-500/10">
               {previewUrl ? (
                 <iframe src={previewUrl} title={product.title} className="h-full w-full border-none" sandbox="allow-scripts allow-same-origin" />
               ) : product.thumbnail ? (
@@ -88,7 +88,7 @@ export default function MarketplaceDetail() {
             </div>
           </section>
 
-          <section className="flex flex-col rounded-2xl border border-white/[.12] liquid-glass p-6 shadow-sm">
+          <section className="flex flex-col rounded-2xl border border-violet-400/20 liquid-glass p-6 shadow-sm">
             <div className="text-xs font-medium text-indigo-300">{product.category}</div>
             <h1 className="mt-2 text-2xl font-bold md:text-3xl">{product.title}</h1>
             <div className="mt-3 flex items-center gap-3 text-sm text-white/55">
@@ -97,7 +97,7 @@ export default function MarketplaceDetail() {
             </div>
             <p className="mt-4 whitespace-pre-line text-sm leading-6 text-white/70">{product.description}</p>
 
-            <div className="mt-6 rounded-xl bg-white/[.04] p-4">
+            <div className="mt-6 rounded-xl bg-violet-500/10 p-4">
               <h3 className="text-sm font-semibold">What you get</h3>
               <ul className="mt-3 space-y-2 text-sm text-white/70">
                 <li className="flex items-start gap-2"><CheckCircle size={15} className="mt-0.5 text-emerald-500"/> Full access to the live app</li>
@@ -118,11 +118,11 @@ export default function MarketplaceDetail() {
                   {buying ? 'Processing...' : 'Buy now'}
                 </button>
               )}
-              <button onClick={() => void share()} className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-white/[.15] text-sm font-medium transition-colors hover:bg-white/[.04]">
+              <button onClick={() => void share()} className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-violet-400/20 text-sm font-medium transition-colors hover:bg-violet-500/10">
                 <Share2 size={16}/> Share
               </button>
               {isOwner() && (
-                <button onClick={() => void remove()} disabled={deleting} className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-white/[.15] text-sm font-medium text-red-300 transition-colors hover:bg-red-500/10 disabled:opacity-50">
+                <button onClick={() => void remove()} disabled={deleting} className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-violet-400/20 text-sm font-medium text-red-300 transition-colors hover:bg-red-500/10 disabled:opacity-50">
                   {deleting ? <LoaderCircle className="animate-spin" size={16}/> : <Trash2 size={16}/>} Delete listing
                 </button>
               )}

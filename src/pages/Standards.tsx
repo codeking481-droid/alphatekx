@@ -1,7 +1,7 @@
 import { Check, ShieldCheck } from 'lucide-react'
 
 const standards = [
-  'Every app uses liquid-glass design: bg-white/[.04], backdrop-blur-xl, border-white/20, rounded-2xl.',
+  'Every app uses liquid-glass design: bg-violet-500/10, backdrop-blur-xl, border-violet-400/20, rounded-2xl.',
   'Every button, form, and screen has loading, error, empty, and success states.',
   'All generated apps are responsive and work on mobile, tablet, and desktop.',
   'User data is persisted locally where appropriate and never sent to untrusted endpoints.',
@@ -21,7 +21,7 @@ export default function Standards() {
         <p className="text-sm text-white/55">These principles guide every mission Alpha engineers.</p>
         <div className="mt-6 space-y-3">
           {standards.map((standard, i) => (
-            <div key={i} className="flex gap-3 rounded-xl border border-white/10 bg-white/[.04] p-4 backdrop-blur-2xl">
+            <div key={i} className="flex gap-3 rounded-xl border border-violet-400/20 bg-violet-500/10 p-4 backdrop-blur-2xl">
               <span className="mt-0.5 grid h-5 w-5 flex-shrink-0 place-items-center rounded-full bg-emerald-500/10 text-emerald-500"><Check size={12} /></span>
               <span className="text-sm leading-relaxed text-zinc-300">{standard}</span>
             </div>

@@ -43,21 +43,21 @@ export default function AdminWithdrawals() {
     <div className="mx-auto max-w-6xl px-4 py-10 sm:px-5">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-2"><ShieldCheck size={20} className="text-indigo-400" /><h1 className="text-xl font-semibold">Admin — Withdrawals</h1></div>
-        <button onClick={() => void load()} className="flex min-h-10 items-center gap-2 rounded-lg border border-white/[.15] px-3 text-sm transition-colors hover:bg-white/[.04]"><RefreshCw size={14} /> Refresh</button>
+        <button onClick={() => void load()} className="flex min-h-10 items-center gap-2 rounded-lg border border-violet-400/20 px-3 text-sm transition-colors hover:bg-violet-500/10"><RefreshCw size={14} /> Refresh</button>
       </div>
       <p className="mt-2 text-sm text-white/55">Review and approve seller payouts.</p>
-      {error && <p className="mt-5 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-rose-300">{error}</p>}
+      {error && <p className="mt-5 rounded-lg border border-red-200 bg-red-500/10 p-3 text-sm text-rose-300">{error}</p>}
       {loading ? (
         <div className="grid min-h-64 place-items-center"><LoaderCircle className="animate-spin" size={28} /></div>
       ) : (
-        <div className="mt-6 overflow-hidden rounded-2xl border border-white/[.12] bg-white/[.04]">
+        <div className="mt-6 overflow-hidden rounded-2xl border border-violet-400/20 bg-violet-500/10">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] text-left text-sm">
-              <thead className="bg-white/[.04] text-xs text-white/55"><tr><th className="px-5 py-3">Date</th><th className="px-5 py-3">Seller</th><th className="px-5 py-3">Amount</th><th className="px-5 py-3">Bank</th><th className="px-5 py-3">Account</th><th className="px-5 py-3">Status</th><th className="px-5 py-3">Action</th></tr></thead>
+              <thead className="bg-violet-500/10 text-xs text-white/55"><tr><th className="px-5 py-3">Date</th><th className="px-5 py-3">Seller</th><th className="px-5 py-3">Amount</th><th className="px-5 py-3">Bank</th><th className="px-5 py-3">Account</th><th className="px-5 py-3">Status</th><th className="px-5 py-3">Action</th></tr></thead>
               <tbody>
                 {withdrawals.length === 0 && <tr><td colSpan={7} className="px-5 py-10 text-center text-white/55">No withdrawals yet.</td></tr>}
                 {withdrawals.map(w => (
-                  <tr key={w.id} className="border-t border-white/10">
+                  <tr key={w.id} className="border-t border-violet-400/20">
                     <td className="px-5 py-4 text-white/70">{new Date(w.createdAt).toLocaleDateString()}</td>
                     <td className="px-5 py-4">{w.userId.slice(0, 8)}</td>
                     <td className="px-5 py-4 font-medium">${w.amount.toFixed(2)}</td>
@@ -67,7 +67,7 @@ export default function AdminWithdrawals() {
                     <td className="px-5 py-4">
                       {w.status === 'pending' ? (
                         <div className="flex items-center gap-2">
-                          <input value={proof[w.id] || ''} onChange={e => setProof(p => ({ ...p, [w.id]: e.target.value }))} placeholder="Transfer ref / proof" className="w-40 rounded-lg border border-white/[.15] bg-white/[.04] px-2 py-1.5 text-xs outline-none focus:border-indigo-400/50" />
+                          <input value={proof[w.id] || ''} onChange={e => setProof(p => ({ ...p, [w.id]: e.target.value }))} placeholder="Transfer ref / proof" className="w-40 rounded-lg border border-violet-400/20 bg-violet-500/10 px-2 py-1.5 text-xs outline-none focus:border-indigo-400/50" />
                           <button onClick={() => void markPaid(w.id)} className="flex items-center gap-1 rounded-lg bg-emerald-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-emerald-500"><CheckCircle size={12} /> Mark paid</button>
                         </div>
                       ) : (

@@ -186,14 +186,14 @@ export default function AlphaBrain() {
         </div>
 
         <div className="mb-8 grid grid-cols-2 gap-3 md:grid-cols-4">
-          {summary.map(s => <div key={s.label} className="rounded-2xl border border-white/10 bg-white/[.04] p-4"><div className="flex items-center gap-2 text-xs text-white/55"><s.icon size={14}/>{s.label}</div><div className="mt-2 text-2xl font-semibold">{s.value}</div></div>)}
+          {summary.map(s => <div key={s.label} className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-4"><div className="flex items-center gap-2 text-xs text-white/55"><s.icon size={14}/>{s.label}</div><div className="mt-2 text-2xl font-semibold">{s.value}</div></div>)}
         </div>
 
         <div className="mb-6 flex flex-wrap gap-2">
           {tabs.map(t => {
             const Icon = t.icon
             return (
-              <button key={t.id} onClick={() => setTab(t.id)} className={`flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-medium transition ${tab===t.id?'border-indigo-500/50 bg-indigo-500/15 text-indigo-200':'border-white/10 bg-white/[.04] text-white/70 hover:bg-white/[.04]'}`}>
+              <button key={t.id} onClick={() => setTab(t.id)} className={`flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-medium transition ${tab===t.id?'border-indigo-500/50 bg-indigo-500/15 text-indigo-200':'border-violet-400/20 bg-violet-500/10 text-white/70 hover:bg-violet-500/10'}`}>
                 <Icon size={16}/>{t.label}
               </button>
             )
@@ -217,7 +217,7 @@ export default function AlphaBrain() {
                     <p className="mt-1 text-sm opacity-90">{p.description}</p>
                     <p className="mt-2 text-xs opacity-70">{new Date(p.created_at).toLocaleString()}</p>
                   </div>
-                  <button onClick={() => dismissInsight(p.id)} className="rounded-lg p-1 hover:bg-white/[.04]"><X size={14}/></button>
+                  <button onClick={() => dismissInsight(p.id)} className="rounded-lg p-1 hover:bg-violet-500/10"><X size={14}/></button>
                 </div>
               </div>
             ))}
@@ -226,46 +226,46 @@ export default function AlphaBrain() {
 
         {tab === 'memory' && (
           <section className="space-y-6">
-            <div className="rounded-2xl border border-white/10 bg-white/[.04] p-5">
+            <div className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-5">
               <label className="text-sm font-medium">Ask Alpha anything about your customers, payments, or workflows</label>
               <div className="mt-3 flex gap-2">
-                <input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => e.key==='Enter' && askMemory()} placeholder="Who is Chidi and why did we refund him?" className="flex-1 rounded-xl border border-white/10 bg-[#0A0F1E]/45 px-4 py-2 text-sm outline-none focus:border-indigo-500" />
+                <input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => e.key==='Enter' && askMemory()} placeholder="Who is Chidi and why did we refund him?" className="flex-1 rounded-xl border border-violet-400/20 bg-[#0A0F1E]/45 px-4 py-2 text-sm outline-none focus:border-indigo-500" />
                 <button onClick={askMemory} disabled={busy} className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50">{busy ? <Loader2 size={16} className="animate-spin"/> : 'Ask'}</button>
               </div>
-              {answer && <div className="mt-4 rounded-xl border border-white/10 bg-[#0A0F1E]/45 p-4 text-sm"><p className="font-medium text-white/90">{answer.answer}</p>{answer.sources && answer.sources.length > 0 && <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-white/60">{answer.sources.map((s,i) => <li key={i}>{s.summary} — {new Date(s.created_at).toLocaleDateString()}</li>)}</ul>}</div>}
+              {answer && <div className="mt-4 rounded-xl border border-violet-400/20 bg-[#0A0F1E]/45 p-4 text-sm"><p className="font-medium text-white/90">{answer.answer}</p>{answer.sources && answer.sources.length > 0 && <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-white/60">{answer.sources.map((s,i) => <li key={i}>{s.summary} — {new Date(s.created_at).toLocaleDateString()}</li>)}</ul>}</div>}
             </div>
 
-            <div className="rounded-2xl border border-white/10 bg-white/[.04] p-5">
+            <div className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-5">
               <h3 className="text-sm font-medium">Save a memory</h3>
               <div className="mt-3 flex flex-col gap-3 md:flex-row">
-                <textarea value={newMemory} onChange={e => setNewMemory(e.target.value)} onKeyDown={e => e.key==='Enter' && !e.shiftKey && (e.preventDefault(), addMemory())} placeholder="Important note, instruction, preference, or knowledge..." className="flex-1 rounded-xl border border-white/10 bg-[#0A0F1E]/45 p-3 text-sm outline-none focus:border-indigo-500" />
+                <textarea value={newMemory} onChange={e => setNewMemory(e.target.value)} onKeyDown={e => e.key==='Enter' && !e.shiftKey && (e.preventDefault(), addMemory())} placeholder="Important note, instruction, preference, or knowledge..." className="flex-1 rounded-xl border border-violet-400/20 bg-[#0A0F1E]/45 p-3 text-sm outline-none focus:border-indigo-500" />
                 <div className="flex flex-col gap-2 md:w-48">
-                  <select value={newCategory} onChange={e => setNewCategory(e.target.value)} className="rounded-xl border border-white/10 bg-[#0A0F1E]/45 px-3 py-2 text-sm outline-none focus:border-indigo-500">
+                  <select value={newCategory} onChange={e => setNewCategory(e.target.value)} className="rounded-xl border border-violet-400/20 bg-[#0A0F1E]/45 px-3 py-2 text-sm outline-none focus:border-indigo-500">
                     <option value="note">Note</option><option value="knowledge">Knowledge</option><option value="instruction">Instruction</option><option value="preference">Preference</option><option value="project_context">Project context</option><option value="document">Document</option>
                   </select>
-                  <label className="flex items-center gap-2 text-xs text-white/70"><input type="checkbox" checked={newPinned} onChange={e => setNewPinned(e.target.checked)} className="rounded border-white/20 bg-[#0A0F1E]/45" /> Pin important</label>
+                  <label className="flex items-center gap-2 text-xs text-white/70"><input type="checkbox" checked={newPinned} onChange={e => setNewPinned(e.target.checked)} className="rounded border-violet-400/20 bg-[#0A0F1E]/45" /> Pin important</label>
                   <button onClick={addMemory} disabled={busy || !newMemory.trim()} className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50">{busy ? 'Saving...' : <><Plus size={14}/> Save</>}</button>
                 </div>
               </div>
             </div>
 
-            <div className="rounded-2xl border border-white/10 bg-white/[.04] p-5">
+            <div className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-5">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <h3 className="text-sm font-medium">Your Brain</h3>
                 <div className="flex flex-1 flex-col gap-2 md:flex-row md:justify-end">
                   <div className="relative">
                     <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
-                    <input value={memoryFilter} onChange={e => setMemoryFilter(e.target.value)} placeholder="Search memories..." className="w-full rounded-xl border border-white/10 bg-[#0A0F1E]/45 py-2 pl-8 pr-3 text-sm outline-none focus:border-indigo-500 md:w-64" />
+                    <input value={memoryFilter} onChange={e => setMemoryFilter(e.target.value)} placeholder="Search memories..." className="w-full rounded-xl border border-violet-400/20 bg-[#0A0F1E]/45 py-2 pl-8 pr-3 text-sm outline-none focus:border-indigo-500 md:w-64" />
                   </div>
-                  <select value={memoryCategory} onChange={e => setMemoryCategory(e.target.value)} className="rounded-xl border border-white/10 bg-[#0A0F1E]/45 px-3 py-2 text-sm outline-none focus:border-indigo-500">
+                  <select value={memoryCategory} onChange={e => setMemoryCategory(e.target.value)} className="rounded-xl border border-violet-400/20 bg-[#0A0F1E]/45 px-3 py-2 text-sm outline-none focus:border-indigo-500">
                     <option value="all">All</option><option value="note">Notes</option><option value="knowledge">Knowledge</option><option value="instruction">Instructions</option><option value="preference">Preferences</option><option value="project_context">Project context</option><option value="document">Documents</option>
                   </select>
-                  <button onClick={clearAllMemory} className="rounded-xl border border-white/10 bg-white/[.04] px-3 py-2 text-xs font-medium text-white/70 hover:bg-white/[.04]">Clear all</button>
+                  <button onClick={clearAllMemory} className="rounded-xl border border-violet-400/20 bg-violet-500/10 px-3 py-2 text-xs font-medium text-white/70 hover:bg-violet-500/10">Clear all</button>
                 </div>
               </div>
               <div className="mt-4 space-y-3">
                 {[...memories.filter(m => m.pinned).sort((a,b) => new Date(b.created_at).getTime()-new Date(a.created_at).getTime()), ...memories.filter(m => !m.pinned).sort((a,b) => new Date(b.created_at).getTime()-new Date(a.created_at).getTime())].map(m => (
-                  <div key={m.id} className={`rounded-xl border p-4 ${m.pinned ? 'border-amber-500/30 bg-amber-500/5' : 'border-white/[0.08] bg-[#0A0F1E]/45'}`}>
+                  <div key={m.id} className={`rounded-xl border p-4 ${m.pinned ? 'border-amber-500/30 bg-amber-500/5' : 'border-violet-400/20 bg-[#0A0F1E]/45'}`}>
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 text-xs font-medium text-indigo-300"><Brain size={13}/>{m.event_type}{m.pinned && <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] text-amber-300">Pinned</span>}</div>
@@ -273,7 +273,7 @@ export default function AlphaBrain() {
                         <p className="text-[10px] text-white/40">{new Date(m.created_at).toLocaleString()}</p>
                       </div>
                       <div className="flex items-center gap-1">
-                        <button onClick={() => togglePinMemory(m.id, !!m.pinned)} title={m.pinned ? 'Unpin' : 'Pin'} className="rounded-lg p-2 hover:bg-white/[.04]"><Pin size={14} className={m.pinned ? 'fill-amber-400 text-amber-400' : 'text-white/50'} /></button>
+                        <button onClick={() => togglePinMemory(m.id, !!m.pinned)} title={m.pinned ? 'Unpin' : 'Pin'} className="rounded-lg p-2 hover:bg-violet-500/10"><Pin size={14} className={m.pinned ? 'fill-amber-400 text-amber-400' : 'text-white/50'} /></button>
                         <button onClick={() => removeMemory(m.id)} title="Delete" className="rounded-lg p-2 hover:bg-red-500/10"><Trash2 size={14} className="text-white/50 hover:text-red-300"/></button>
                       </div>
                     </div>
@@ -287,26 +287,26 @@ export default function AlphaBrain() {
 
         {tab === 'goals' && (
           <section className="space-y-6">
-            <div className="rounded-2xl border border-white/10 bg-white/[.04] p-5">
+            <div className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-5">
               <h3 className="text-sm font-medium">Create goal</h3>
               <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
-                <input value={goalText} onChange={e => setGoalText(e.target.value)} placeholder="Make 5M Naira this month" className="rounded-xl border border-white/10 bg-[#0A0F1E]/45 px-4 py-2 text-sm outline-none focus:border-indigo-500 md:col-span-2" />
-                <input value={goalTarget} onChange={e => setGoalTarget(e.target.value)} type="number" placeholder="Target value" className="rounded-xl border border-white/10 bg-[#0A0F1E]/45 px-4 py-2 text-sm outline-none focus:border-indigo-500" />
-                <input value={goalDeadline} onChange={e => setGoalDeadline(e.target.value)} type="date" className="rounded-xl border border-white/10 bg-[#0A0F1E]/45 px-4 py-2 text-sm outline-none focus:border-indigo-500" />
+                <input value={goalText} onChange={e => setGoalText(e.target.value)} placeholder="Make 5M Naira this month" className="rounded-xl border border-violet-400/20 bg-[#0A0F1E]/45 px-4 py-2 text-sm outline-none focus:border-indigo-500 md:col-span-2" />
+                <input value={goalTarget} onChange={e => setGoalTarget(e.target.value)} type="number" placeholder="Target value" className="rounded-xl border border-violet-400/20 bg-[#0A0F1E]/45 px-4 py-2 text-sm outline-none focus:border-indigo-500" />
+                <input value={goalDeadline} onChange={e => setGoalDeadline(e.target.value)} type="date" className="rounded-xl border border-violet-400/20 bg-[#0A0F1E]/45 px-4 py-2 text-sm outline-none focus:border-indigo-500" />
               </div>
               <button onClick={createGoal} disabled={busy} className="mt-4 rounded-xl bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50">{busy ? 'Saving...' : 'Add goal'}</button>
             </div>
 
             <div className="space-y-3">
               {goals.map(g => (
-                <div key={g.id} className="rounded-2xl border border-white/10 bg-white/[.04] p-5">
+                <div key={g.id} className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-5">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2 font-medium"><Goal size={18} className="text-indigo-400"/>{g.goal_text}</div>
                     <div className="text-sm text-white/70">{g.current_value} / {g.target_value}</div>
                   </div>
-                  <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/[.04]"><div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-pink-500 transition-all" style={{ width: `${Math.min(100, g.progress_percent)}%` }}/></div>
+                  <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-violet-500/10"><div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-pink-500 transition-all" style={{ width: `${Math.min(100, g.progress_percent)}%` }}/></div>
                   <div className="mt-3 flex items-center gap-2">
-                    <input type="number" defaultValue={g.current_value} onBlur={e => updateGoal(g.id, Number(e.target.value))} className="w-28 rounded-lg border border-white/10 bg-[#0A0F1E]/45 px-3 py-1 text-sm outline-none" />
+                    <input type="number" defaultValue={g.current_value} onBlur={e => updateGoal(g.id, Number(e.target.value))} className="w-28 rounded-lg border border-violet-400/20 bg-[#0A0F1E]/45 px-3 py-1 text-sm outline-none" />
                     <span className="text-xs text-white/50">{g.progress_percent}%</span>
                     {g.deadline && <span className="ml-auto text-xs text-white/50">Deadline: {new Date(g.deadline).toLocaleDateString()}</span>}
                   </div>
@@ -322,11 +322,11 @@ export default function AlphaBrain() {
         {tab === 'vision' && <VisionPanel />}
 
         {tab === 'healing' && (
-          <section className="rounded-2xl border border-white/10 bg-white/[.04] p-5">
+          <section className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-5">
             <h2 className="flex items-center gap-2 text-lg font-medium"><Activity size={18} className="text-emerald-400"/>Self-Healing Logs</h2>
             {healing.length === 0 && <p className="mt-3 text-sm text-white/40">No healing events yet. Alpha logs repeated errors and suggests fixes.</p>}
             {healing.map(h => (
-              <div key={h.id} className="mt-4 rounded-xl border border-white/10 bg-[#0A0F1E]/45 p-4 text-sm">
+              <div key={h.id} className="mt-4 rounded-xl border border-violet-400/20 bg-[#0A0F1E]/45 p-4 text-sm">
                 <div className="flex items-center gap-2 text-xs font-medium text-amber-300"><ChevronRight size={12}/>{h.error_pattern}</div>
                 <p className="mt-1 text-white/70">Fix: {h.attempted_fix || '—'}</p>
                 <p className="mt-2 text-xs text-white/40">Status: {h.result} • Retries: {h.retries} • {new Date(h.created_at).toLocaleString()}</p>

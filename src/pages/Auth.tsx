@@ -157,7 +157,7 @@ export default function Auth() {
 
   return (
     <main className="grid min-h-screen place-items-center bg-[#0A0F1E] p-5 text-white">
-      <div className="w-full max-w-md rounded-[1.75rem] border border-white/[.10] bg-white/[.04] p-7 shadow-[0_30px_80px_rgba(15,23,42,.12)] sm:p-9">
+      <div className="w-full max-w-md rounded-[1.75rem] border border-violet-400/20 bg-violet-500/10 p-7 shadow-[0_30px_80px_rgba(15,23,42,.12)] sm:p-9">
         <Link to="/" className="flex items-center justify-center gap-2 text-sm font-black tracking-[.14em] text-white">
           <span className="grid size-9 place-items-center rounded-xl bg-[#6D28D9] text-white shadow-lg shadow-violet-200"><Sparkles size={17}/></span>
           ALPHATEKX
@@ -166,10 +166,10 @@ export default function Auth() {
         <h1 className="mt-7 text-center text-3xl font-black tracking-[-.04em] text-white">Join AlphaTekx</h1>
         <p className="mt-2 text-center text-sm font-bold text-slate-400">Choose how you want to get started.</p>
 
-        <section className="mt-8 rounded-2xl border-2 border-white/[.10] bg-white/[.04] p-4 shadow-[0_10px_25px_rgba(15,23,42,.07)]">
+        <section className="mt-8 rounded-2xl border-2 border-violet-400/20 bg-violet-500/10 p-4 shadow-[0_10px_25px_rgba(15,23,42,.07)]">
           <h2 className="font-black text-white">Google signup · 1 credit</h2>
           <p className="mt-1 text-sm font-semibold text-slate-400">Sign in and get one credit to run your first automation.</p>
-        <button onClick={() => void google()} disabled={blocked} className="mt-4 flex min-h-14 w-full items-center justify-center gap-3 rounded-xl border-2 border-white/[.10] bg-white/[.04] px-4 font-black text-white shadow-[0_10px_25px_rgba(15,23,42,.07)] transition hover:border-violet-300 hover:bg-violet-500/10 disabled:cursor-not-allowed disabled:opacity-50">
+        <button onClick={() => void google()} disabled={blocked} className="mt-4 flex min-h-14 w-full items-center justify-center gap-3 rounded-xl border-2 border-violet-400/20 bg-violet-500/10 px-4 font-black text-white shadow-[0_10px_25px_rgba(15,23,42,.07)] transition hover:border-violet-300 hover:bg-violet-500/10 disabled:cursor-not-allowed disabled:opacity-50">
           {pending ? <LoaderCircle className="animate-spin" size={18}/> : <><Chrome size={19} className="text-violet-300"/> Sign in with Google <span className="text-xs text-slate-400">— 1 credit</span></>}
         </button>
         </section>
@@ -185,7 +185,7 @@ export default function Auth() {
         {!user && <p className="mt-3 text-center text-xs font-bold text-slate-400">Sign in with Google first. Human verification starts only when you click this button.</p>}
         </section>
 
-        {!configured && <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-center text-xs font-bold text-amber-300">Authentication needs the public Supabase values configured.</p>}
+        {!configured && <p className="mt-4 rounded-xl border border-amber-200 bg-amber-500/10 p-3 text-center text-xs font-bold text-amber-300">Authentication needs the public Supabase values configured.</p>}
         {notice && <p role="alert" className="mt-4 rounded-xl border border-violet-200 bg-violet-500/10 p-3 text-sm font-bold text-white">{notice}</p>}
 
         {(verifying || result) && (

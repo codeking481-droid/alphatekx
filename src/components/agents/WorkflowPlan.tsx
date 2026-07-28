@@ -155,49 +155,49 @@ export default function WorkflowPlan({ agent, integrationStatus, credits, isAdmi
 
   if (isUnsupported) {
     return <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0A0F1E]/90 p-4" onClick={onClose}>
-      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-white/[.12] bg-background p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-violet-400/20 bg-background p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 text-xs font-medium text-amber-400"><AlertCircle size={12}/> Not available yet</div>
             <h2 className="mt-1 text-xl font-semibold">Unsupported automation</h2>
             <p className="mt-1 text-sm text-white/55">{agent.description}</p>
           </div>
-          <button onClick={onClose} className="rounded-lg p-2 hover:bg-white/[.04]"><X size={18}/></button>
+          <button onClick={onClose} className="rounded-lg p-2 hover:bg-violet-500/10"><X size={18}/></button>
         </div>
         <div className="mt-6 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
           {agent.missing?.find(m => m.field === 'unsupported')?.reason || 'Try a different request.'}
         </div>
         <div className="mt-6 flex justify-end">
-          <button onClick={onClose} className="rounded-xl border border-white/[.12] bg-white/[.04] px-5 py-2.5 text-sm font-medium text-white hover:bg-white/[.04]">Close</button>
+          <button onClick={onClose} className="rounded-xl border border-violet-400/20 bg-violet-500/10 px-5 py-2.5 text-sm font-medium text-white hover:bg-violet-500/10">Close</button>
         </div>
       </div>
     </div>
   }
 
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0A0F1E]/90 p-4" onClick={onClose}>
-    <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-white/[.12] bg-background p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+    <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-violet-400/20 bg-background p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 text-xs font-medium text-indigo-400"><Zap size={12}/> Workflow plan</div>
           <h2 className="mt-1 text-xl font-semibold">{draft.title || draft.name}</h2>
           <p className="mt-1 text-sm text-white/55">{draft.description}</p>
         </div>
-        <button onClick={onClose} className="rounded-lg p-2 hover:bg-white/[.04]"><X size={18}/></button>
+        <button onClick={onClose} className="rounded-lg p-2 hover:bg-violet-500/10"><X size={18}/></button>
       </div>
 
       <div className="mt-4 flex gap-3">
-        <div className="flex-1 rounded-2xl border border-white/[.08] bg-white/[.04] p-4">
+        <div className="flex-1 rounded-2xl border border-violet-400/20 bg-violet-500/10 p-4">
           <div className="text-xs text-white/45">You</div>
           <p className="mt-1 text-sm text-white/90">{agent.originalRequest || agent.description}</p>
         </div>
       </div>
 
-      <div className="mt-4 rounded-2xl border border-white/[.08] bg-white/[.04] p-4">
+      <div className="mt-4 rounded-2xl border border-violet-400/20 bg-violet-500/10 p-4">
         <div className="flex items-center gap-2 text-xs font-medium text-indigo-400"><Zap size={12}/> Alpha</div>
         <p className="mt-1 text-sm font-medium">{draft.interpretedGoal || draft.description}</p>
       </div>
 
-      <div className="mt-4 rounded-2xl border border-white/[.08] bg-white/[.04] p-4">
+      <div className="mt-4 rounded-2xl border border-violet-400/20 bg-violet-500/10 p-4">
         <div className="text-xs text-white/45">Trigger</div>
         <div className="mt-2 flex items-center gap-3">
           <TriggerIcon type={draft.trigger.type} />
@@ -210,22 +210,22 @@ export default function WorkflowPlan({ agent, integrationStatus, credits, isAdmi
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-4">
-        <div className="rounded-2xl border border-white/[.08] bg-white/[.04] p-4">
+        <div className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-4">
           <div className="text-xs text-white/45">Timezone</div>
           <p className="mt-1 text-sm font-medium">{draft.timezone || draft.schedule?.timezone || 'UTC'}</p>
         </div>
-        <div className="rounded-2xl border border-white/[.08] bg-white/[.04] p-4">
+        <div className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-4">
           <div className="text-xs text-white/45">Duration</div>
           <p className="mt-1 text-sm font-medium">{draft.duration || (draft.schedule?.durationDays ? `${draft.schedule.durationDays} days` : 'Until paused or deleted')}</p>
         </div>
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-4">
-        <div className="rounded-2xl border border-white/[.08] bg-white/[.04] p-4">
+        <div className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-4">
           <div className="text-xs text-white/45">Start date</div>
           <p className="mt-1 text-sm font-medium">{formatDate(draft.startDate || draft.schedule?.startDate)}</p>
         </div>
-        <div className="rounded-2xl border border-white/[.08] bg-white/[.04] p-4">
+        <div className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-4">
           <div className="text-xs text-white/45">End date</div>
           <p className="mt-1 text-sm font-medium">{formatDate(draft.endDate || draft.schedule?.endDate)}</p>
         </div>
@@ -234,7 +234,7 @@ export default function WorkflowPlan({ agent, integrationStatus, credits, isAdmi
       <div className="mt-4 space-y-2">
         {draft.actions.map((action, i) => {
           const c = getConnector(action.connector)
-          return <div key={i} className="rounded-2xl border border-white/[.08] bg-white/[.04] p-4">
+          return <div key={i} className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-4">
             <div className="flex items-center gap-3">
               {c ? <ConnectorIcon connector={c}/> : <Bot size={18} className="text-white/50"/>}
               <div className="min-w-0 flex-1">
@@ -271,13 +271,13 @@ export default function WorkflowPlan({ agent, integrationStatus, credits, isAdmi
         </div>
       </div>}
 
-      <div className="mt-4 rounded-2xl border border-white/[.08] bg-white/[.04] p-4">
+      <div className="mt-4 rounded-2xl border border-violet-400/20 bg-violet-500/10 p-4">
         <div className="text-xs text-white/45">Required connectors</div>
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
           {requiredConnectors.map(id => {
             const c = getConnector(id)
             const s = connectorStatus(id, integrationStatus)
-            return <div key={id} className="flex items-center gap-2 rounded-xl border border-white/[.08] bg-white/[.04] p-2">
+            return <div key={id} className="flex items-center gap-2 rounded-xl border border-violet-400/20 bg-violet-500/10 p-2">
               {c ? <ConnectorIcon connector={c}/> : <PlugZap size={14} className="text-white/50"/>}
               <span className="min-w-0 flex-1 truncate text-xs">{c?.name || id}</span>
               {s.connected ? <CheckCircle2 size={14} className="text-emerald-400"/> : s.ready ? <CheckCircle2 size={14} className="text-sky-400"/> : <AlertCircle size={14} className="text-amber-400"/>}
@@ -286,7 +286,7 @@ export default function WorkflowPlan({ agent, integrationStatus, credits, isAdmi
         </div>
       </div>
 
-      <div className="mt-4 rounded-2xl border border-white/[.08] bg-white/[.04] p-4">
+      <div className="mt-4 rounded-2xl border border-violet-400/20 bg-violet-500/10 p-4">
         <div className="flex items-center gap-2 text-xs text-white/45"><Wallet size={14}/> Credit estimate</div>
         <div className="mt-3 grid gap-3 sm:grid-cols-3">
           <div>
@@ -305,7 +305,7 @@ export default function WorkflowPlan({ agent, integrationStatus, credits, isAdmi
         <p className="mt-2 text-xs text-white/40">Credits are only charged when the automation actually runs. You will never be charged without this estimate.</p>
       </div>
 
-      {draft.creditsPerStep && draft.creditsPerStep.length > 0 && <div className="mt-4 rounded-2xl border border-white/[.08] bg-white/[.04] p-4">
+      {draft.creditsPerStep && draft.creditsPerStep.length > 0 && <div className="mt-4 rounded-2xl border border-violet-400/20 bg-violet-500/10 p-4">
         <div className="text-xs text-white/45">Cost breakdown</div>
         <div className="mt-2 space-y-1">
           {draft.creditsPerStep.map((s, i) => <div key={i} className="flex items-center justify-between text-xs"><span className="text-white/70">{s.step}</span><span className="font-medium">{s.cost} cr</span></div>)}
@@ -319,7 +319,7 @@ export default function WorkflowPlan({ agent, integrationStatus, credits, isAdmi
       </div>}
 
       <div className="mt-6 flex justify-end gap-3">
-        <button onClick={onClose} className="rounded-xl border border-white/[.12] bg-white/[.04] px-5 py-2.5 text-sm font-medium text-white hover:bg-white/[.04]">Cancel</button>
+        <button onClick={onClose} className="rounded-xl border border-violet-400/20 bg-violet-500/10 px-5 py-2.5 text-sm font-medium text-white hover:bg-violet-500/10">Cancel</button>
         <button onClick={handleApprove} disabled={approveDisabled} className="btn-alpha rounded-xl px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50">Approve & Activate</button>
       </div>
     </div>

@@ -66,14 +66,14 @@ export default function OnboardingModal({ open, onComplete, onClose }: { open: b
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0A0F1E]/80 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-md overflow-hidden rounded-3xl border border-white/[0.12] bg-background p-6 shadow-2xl">
+      <div className="w-full max-w-md overflow-hidden rounded-3xl border border-violet-400/20 bg-background p-6 shadow-2xl">
         <div className="flex items-center justify-between">
           <div className="flex gap-2">
             {steps.map((_, i) => (
-              <div key={i} className={`h-1.5 flex-1 rounded-full transition-all ${i <= step ? 'bg-gradient-to-r from-indigo-500 to-pink-500' : 'bg-white/[.04]'}`} style={{ width: 40 }} />
+              <div key={i} className={`h-1.5 flex-1 rounded-full transition-all ${i <= step ? 'bg-gradient-to-r from-indigo-500 to-pink-500' : 'bg-violet-500/10'}`} style={{ width: 40 }} />
             ))}
           </div>
-          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full text-zinc-400 hover:bg-white/[.04]"><X size={16} /></button>
+          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full text-zinc-400 hover:bg-violet-500/10"><X size={16} /></button>
         </div>
 
         <div className="mt-8 flex flex-col items-center text-center">
@@ -84,7 +84,7 @@ export default function OnboardingModal({ open, onComplete, onClose }: { open: b
 
         <div className="mt-8 flex gap-3">
           {step > 0 && (
-            <button onClick={() => setStep(s => Math.max(0, s - 1))} className="flex flex-1 min-h-11 items-center justify-center rounded-xl border border-white/10 bg-white/[.04] text-sm font-semibold text-zinc-300 transition-all hover:bg-white/[.04]">
+            <button onClick={() => setStep(s => Math.max(0, s - 1))} className="flex flex-1 min-h-11 items-center justify-center rounded-xl border border-violet-400/20 bg-violet-500/10 text-sm font-semibold text-zinc-300 transition-all hover:bg-violet-500/10">
               Back
             </button>
           )}

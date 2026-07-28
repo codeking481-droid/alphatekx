@@ -75,8 +75,8 @@ function Markdown({ children }: { children: string }) {
         a: ({ node: _n, ...props }) => <a className="text-emerald-400 hover:underline" target="_blank" rel="noreferrer" {...props} />,
         strong: ({ node: _n, ...props }) => <strong className="font-semibold text-white" {...props} />,
         em: ({ node: _n, ...props }) => <em className="italic text-zinc-300" {...props} />,
-        code: ({ node: _n, ...props }) => <code className="rounded bg-white/[.04] px-1 py-0.5 text-sm text-emerald-300" {...props} />,
-        pre: ({ node: _n, ...props }) => <pre className="mb-3 overflow-x-auto rounded-xl bg-white/[.04] p-3 text-sm text-zinc-100" {...props} />,
+        code: ({ node: _n, ...props }) => <code className="rounded bg-violet-500/10 px-1 py-0.5 text-sm text-emerald-300" {...props} />,
+        pre: ({ node: _n, ...props }) => <pre className="mb-3 overflow-x-auto rounded-xl bg-violet-500/10 p-3 text-sm text-zinc-100" {...props} />,
         blockquote: ({ node: _n, ...props }) => <blockquote className="mb-3 border-l-2 border-emerald-400/60 pl-3 italic text-zinc-300" {...props} />,
       }}
     >
@@ -88,7 +88,7 @@ function Markdown({ children }: { children: string }) {
 function ChatWidget({ message }: { message: GeneralChatMessage }) {
   if (message.tool === 'clock') {
     return (
-      <div className="mt-3 inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[.04] px-3 py-2 text-sm backdrop-blur-xl">
+      <div className="mt-3 inline-flex items-center gap-2 rounded-xl border border-violet-400/20 bg-violet-500/10 px-3 py-2 text-sm backdrop-blur-xl">
         <Clock size={14} className="text-emerald-400" />
         <LiveClock />
       </div>
@@ -97,7 +97,7 @@ function ChatWidget({ message }: { message: GeneralChatMessage }) {
   if (message.tool === 'currency' && message.currency) {
     const c = message.currency
     return (
-      <div className="mt-3 w-full max-w-4xl rounded-2xl border border-white/10 bg-white/[.04] p-4 backdrop-blur-xl">
+      <div className="mt-3 w-full max-w-4xl rounded-2xl border border-violet-400/20 bg-violet-500/10 p-4 backdrop-blur-xl">
         <div className="flex items-center gap-2 text-xs text-white/55"><DollarSign size={12} /> Live conversion</div>
         <div className="mt-2 flex items-baseline gap-2">
           <span className="text-2xl font-semibold text-white">{c.result.toFixed(2)}</span>
@@ -111,12 +111,12 @@ function ChatWidget({ message }: { message: GeneralChatMessage }) {
     return (
       <div className="mt-3 w-full max-w-4xl space-y-4">
         {message.videos.map(video => (
-          <div key={video.id} className="w-full overflow-hidden rounded-2xl border border-white/10 bg-[#0A0F1E] shadow-lg">
+          <div key={video.id} className="w-full overflow-hidden rounded-2xl border border-violet-400/20 bg-[#0A0F1E] shadow-lg">
             <div className="aspect-video w-full">
               <iframe className="h-full w-full" src={`https://www.youtube.com/embed/${video.id}?rel=0&modestbranding=1`} title={video.title || 'YouTube video'} loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen />
             </div>
             {(video.title || video.channel) && (
-              <div className="border-t border-white/10 px-4 py-3">
+              <div className="border-t border-violet-400/20 px-4 py-3">
                 <div className="text-sm font-medium text-white line-clamp-1">{video.title}</div>
                 {video.channel && <div className="text-xs text-slate-400">{video.channel}</div>}
               </div>
@@ -128,11 +128,11 @@ function ChatWidget({ message }: { message: GeneralChatMessage }) {
   }
   if (message.tool === 'search' && message.sources?.length) {
     return (
-      <div className="mt-3 w-full max-w-4xl rounded-2xl border border-white/10 bg-white/[.04] p-4 backdrop-blur-xl">
+      <div className="mt-3 w-full max-w-4xl rounded-2xl border border-violet-400/20 bg-violet-500/10 p-4 backdrop-blur-xl">
         <div className="flex items-center gap-2 text-xs text-white/55"><Search size={12} /> Live web results</div>
         <div className="mt-3 grid gap-3">
           {message.sources.slice(0, 8).map((source, i) => (
-            <a key={i} href={source.url} target="_blank" rel="noreferrer" className="group flex items-start gap-3 rounded-xl bg-white/[.04] p-3 transition hover:bg-white/[.04]">
+            <a key={i} href={source.url} target="_blank" rel="noreferrer" className="group flex items-start gap-3 rounded-xl bg-violet-500/10 p-3 transition hover:bg-violet-500/10">
               <ExternalLink size={14} className="mt-0.5 flex-shrink-0 text-emerald-400" />
               <div className="min-w-0">
                 <div className="text-sm font-medium text-white group-hover:text-emerald-300 line-clamp-1">{source.title}</div>
@@ -382,7 +382,7 @@ export default function Chat() {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background text-white">
-      <header className="flex-none border-b border-white/10 bg-background/80 px-4 py-3 backdrop-blur-xl sm:px-6">
+      <header className="flex-none border-b border-violet-400/20 bg-background/80 px-4 py-3 backdrop-blur-xl sm:px-6">
         <div className="mx-auto flex max-w-4xl items-center justify-between">
           <div className="flex items-center gap-2 text-sm font-semibold tracking-wide">
             <Sparkles size={16} className="text-emerald-400" />
@@ -390,13 +390,13 @@ export default function Chat() {
           </div>
           <div className="flex items-center gap-3 text-xs text-zinc-400">
             <span className="hidden items-center gap-1.5 sm:flex"><Clock size={12} /> {clock}</span>
-            <Link to="/history" className="rounded-lg border border-white/10 bg-white/[.04] px-3 py-1.5 hover:bg-white/[.04]">History</Link>
-            <button onClick={() => { setMessages([]); const thread = createChatThread(); setParams({ thread: thread.id }, { replace: true }) }} className="rounded-lg border border-white/10 bg-white/[.04] px-3 py-1.5 hover:bg-white/[.04]">New chat</button>
+            <Link to="/history" className="rounded-lg border border-violet-400/20 bg-violet-500/10 px-3 py-1.5 hover:bg-violet-500/10">History</Link>
+            <button onClick={() => { setMessages([]); const thread = createChatThread(); setParams({ thread: thread.id }, { replace: true }) }} className="rounded-lg border border-violet-400/20 bg-violet-500/10 px-3 py-1.5 hover:bg-violet-500/10">New chat</button>
           </div>
         </div>
       </header>
 
-      {notice && <div className="flex-none border-b border-white/10 bg-amber-500/10 px-4 py-2 text-center text-xs text-amber-200">{notice}</div>}
+      {notice && <div className="flex-none border-b border-violet-400/20 bg-amber-500/10 px-4 py-2 text-center text-xs text-amber-200">{notice}</div>}
 
       <main className="flex-1 min-h-0 overflow-y-auto">
         <div className="mx-auto w-full max-w-4xl space-y-6 px-4 py-6 sm:px-6">
@@ -409,7 +409,7 @@ export default function Chat() {
               <p className="mt-2 max-w-md text-sm text-zinc-400">Ask Alpha anything. Search the live web, convert currency, embed YouTube videos, get the time, and more.</p>
               <div className="mt-8 flex flex-wrap justify-center gap-2">
                 {['Convert 100 USD to EUR', 'Search the web for Apple news', 'Show me a YouTube video about space', 'What time is it?'].map(p => (
-                  <button key={p} onClick={() => void send(p, undefined, false)} className="rounded-full border border-white/10 bg-white/[.04] px-4 py-2 text-xs text-zinc-300 hover:bg-white/[.04] hover:text-white">{p}</button>
+                  <button key={p} onClick={() => void send(p, undefined, false)} className="rounded-full border border-violet-400/20 bg-violet-500/10 px-4 py-2 text-xs text-zinc-300 hover:bg-violet-500/10 hover:text-white">{p}</button>
                 ))}
               </div>
             </section>
@@ -422,11 +422,11 @@ export default function Chat() {
                     <Bot size={14} />
                     Alpha
                     <div className="ml-auto flex items-center gap-1">
-                      <button onClick={() => void copyText(message.content, message.id)} title="Copy" className="rounded p-1 text-slate-400 hover:bg-white/[.04] hover:text-white">
+                      <button onClick={() => void copyText(message.content, message.id)} title="Copy" className="rounded p-1 text-slate-400 hover:bg-violet-500/10 hover:text-white">
                         {copiedId === message.id ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
                       </button>
                       {message.id === lastAssistantId && !loading && (
-                        <button onClick={() => regenerate(message.id)} title="Regenerate" className="rounded p-1 text-slate-400 hover:bg-white/[.04] hover:text-white"><Pencil size={12} /></button>
+                        <button onClick={() => regenerate(message.id)} title="Regenerate" className="rounded p-1 text-slate-400 hover:bg-violet-500/10 hover:text-white"><Pencil size={12} /></button>
                       )}
                     </div>
                   </div>
@@ -438,7 +438,7 @@ export default function Chat() {
                   <ChatWidget message={message} />
                 </div>
               ) : (
-                <div className="max-w-[90%] rounded-2xl bg-white/[.04] px-4 py-3 text-sm text-white sm:max-w-[80%]">
+                <div className="max-w-[90%] rounded-2xl bg-violet-500/10 px-4 py-3 text-sm text-white sm:max-w-[80%]">
                   <div className="whitespace-pre-wrap text-[15px] leading-6">{message.content}</div>
                 </div>
               )}
@@ -446,13 +446,13 @@ export default function Chat() {
           ))}
           {loading && (
             <div className="flex justify-start">
-              <div className="flex max-w-[85%] items-center gap-2 rounded-2xl border border-white/10 bg-white/[.04] px-4 py-3 backdrop-blur-2xl">
+              <div className="flex max-w-[85%] items-center gap-2 rounded-2xl border border-violet-400/20 bg-violet-500/10 px-4 py-3 backdrop-blur-2xl">
                 <Loader2 size={16} className="animate-spin text-emerald-400" />
                 <span className="text-sm text-zinc-400">Alpha is typing</span>
                 <span className="flex gap-0.5">
-                  <i className="size-1.5 animate-bounce rounded-full bg-white/[.05]0" style={{ animationDelay: '0ms' }} />
-                  <i className="size-1.5 animate-bounce rounded-full bg-white/[.05]0" style={{ animationDelay: '150ms' }} />
-                  <i className="size-1.5 animate-bounce rounded-full bg-white/[.05]0" style={{ animationDelay: '300ms' }} />
+                  <i className="size-1.5 animate-bounce rounded-full bg-blue-500" style={{ animationDelay: '0ms' }} />
+                  <i className="size-1.5 animate-bounce rounded-full bg-blue-500" style={{ animationDelay: '150ms' }} />
+                  <i className="size-1.5 animate-bounce rounded-full bg-blue-500" style={{ animationDelay: '300ms' }} />
                 </span>
               </div>
             </div>
@@ -461,13 +461,13 @@ export default function Chat() {
         </div>
       </main>
 
-      <footer className="flex-none border-t border-white/10 bg-background/95 p-4 backdrop-blur-2xl">
+      <footer className="flex-none border-t border-violet-400/20 bg-background/95 p-4 backdrop-blur-2xl">
         <div className="mx-auto w-full max-w-4xl">
-          <div className="flex items-end gap-2 rounded-2xl border border-white/15 bg-white/[.04] p-2 backdrop-blur-2xl focus-within:border-white/30">
+          <div className="flex items-end gap-2 rounded-2xl border border-violet-400/20 bg-violet-500/10 p-2 backdrop-blur-2xl focus-within:border-violet-400/20">
             <button
               onClick={() => setVoiceOn(v => !v)}
               title={voiceOn ? 'Voice reply is on' : 'Voice reply is off'}
-              className={`grid size-10 shrink-0 place-items-center self-center rounded-xl transition-all ${voiceOn ? 'bg-indigo-500 text-white' : 'bg-white/[.04] text-zinc-400 hover:bg-white/[.04]'}`}
+              className={`grid size-10 shrink-0 place-items-center self-center rounded-xl transition-all ${voiceOn ? 'bg-indigo-500 text-white' : 'bg-violet-500/10 text-zinc-400 hover:bg-violet-500/10'}`}
             >
               <Volume2 size={18} />
             </button>
@@ -484,7 +484,7 @@ export default function Chat() {
                 <Square size={16} className="fill-current" />
               </button>
             ) : input.trim() ? (
-              <button onClick={() => void send()} disabled={loading} className="grid size-10 shrink-0 place-items-center self-center rounded-xl bg-white/[.04] text-white transition-all hover:bg-white/[.05] disabled:opacity-30">
+              <button onClick={() => void send()} disabled={loading} className="grid size-10 shrink-0 place-items-center self-center rounded-xl bg-violet-500/10 text-white transition-all hover:bg-blue-500/10 disabled:opacity-30">
                 <ArrowUp size={18} />
               </button>
             ) : (
@@ -494,10 +494,10 @@ export default function Chat() {
             )}
           </div>
           <div className="mt-2 flex flex-wrap gap-2 text-[10px] text-slate-400">
-            <button onClick={() => setInput('Convert 100 USD to EUR')} className="rounded-full border border-white/10 bg-white/[.04] px-2 py-1 hover:bg-white/[.04]">Try: Convert 100 USD to EUR</button>
-            <button onClick={() => setInput('Search the web for Apple news')} className="rounded-full border border-white/10 bg-white/[.04] px-2 py-1 hover:bg-white/[.04]">Try: search the web</button>
-            <button onClick={() => setInput('Show me a YouTube video about space')} className="rounded-full border border-white/10 bg-white/[.04] px-2 py-1 hover:bg-white/[.04]">Try: YouTube video</button>
-            <button onClick={() => setInput('What time is it?')} className="rounded-full border border-white/10 bg-white/[.04] px-2 py-1 hover:bg-white/[.04]">Try: "What time is it?"</button>
+            <button onClick={() => setInput('Convert 100 USD to EUR')} className="rounded-full border border-violet-400/20 bg-violet-500/10 px-2 py-1 hover:bg-violet-500/10">Try: Convert 100 USD to EUR</button>
+            <button onClick={() => setInput('Search the web for Apple news')} className="rounded-full border border-violet-400/20 bg-violet-500/10 px-2 py-1 hover:bg-violet-500/10">Try: search the web</button>
+            <button onClick={() => setInput('Show me a YouTube video about space')} className="rounded-full border border-violet-400/20 bg-violet-500/10 px-2 py-1 hover:bg-violet-500/10">Try: YouTube video</button>
+            <button onClick={() => setInput('What time is it?')} className="rounded-full border border-violet-400/20 bg-violet-500/10 px-2 py-1 hover:bg-violet-500/10">Try: "What time is it?"</button>
           </div>
         </div>
       </footer>

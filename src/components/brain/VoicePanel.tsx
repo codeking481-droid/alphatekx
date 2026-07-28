@@ -142,7 +142,7 @@ export default function VoicePanel({ user }: Props) {
   const answerText = result && (typeof result.answer === 'string' ? result.answer : typeof result.command === 'string' ? result.command : JSON.stringify(result, null, 2))
 
   return (
-    <section className="rounded-2xl border border-white/10 bg-white/[.04] p-5">
+    <section className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-5">
       <h2 className="flex items-center gap-2 text-lg font-medium"><Mic size={18} className="text-indigo-400"/>Voice to Action</h2>
       <p className="mt-1 text-sm text-white/55">Speak to Alpha. It will transcribe, process, and respond.</p>
 
@@ -155,23 +155,23 @@ export default function VoicePanel({ user }: Props) {
         {recording && (
           <>
             <span className="flex h-3 w-3 rounded-full bg-red-500 animate-pulse" />
-            <button onClick={pause} className="flex min-h-11 items-center gap-2 rounded-xl border border-white/[.15] px-4 text-sm transition hover:bg-white/[.04]"><Pause size={16}/> Pause</button>
-            <button onClick={stop} className="flex min-h-11 items-center gap-2 rounded-xl border border-white/[.15] px-4 text-sm transition hover:bg-white/[.04]"><Square size={16} className="fill-current"/> Stop</button>
-            <button onClick={cancel} className="flex min-h-11 items-center gap-2 rounded-xl border border-white/[.15] px-4 text-sm transition hover:bg-rose-500/10 hover:border-rose-500/30"><VolumeX size={16}/> Cancel</button>
+            <button onClick={pause} className="flex min-h-11 items-center gap-2 rounded-xl border border-violet-400/20 px-4 text-sm transition hover:bg-violet-500/10"><Pause size={16}/> Pause</button>
+            <button onClick={stop} className="flex min-h-11 items-center gap-2 rounded-xl border border-violet-400/20 px-4 text-sm transition hover:bg-violet-500/10"><Square size={16} className="fill-current"/> Stop</button>
+            <button onClick={cancel} className="flex min-h-11 items-center gap-2 rounded-xl border border-violet-400/20 px-4 text-sm transition hover:bg-rose-500/10 hover:border-rose-500/30"><VolumeX size={16}/> Cancel</button>
           </>
         )}
         {paused && (
           <>
             <button onClick={resume} className="btn-alpha flex min-h-11 items-center gap-2 rounded-xl px-5 text-sm text-white"><Play size={16}/> Resume</button>
-            <button onClick={stop} className="flex min-h-11 items-center gap-2 rounded-xl border border-white/[.15] px-4 text-sm transition hover:bg-white/[.04]"><Square size={16} className="fill-current"/> Finish</button>
+            <button onClick={stop} className="flex min-h-11 items-center gap-2 rounded-xl border border-violet-400/20 px-4 text-sm transition hover:bg-violet-500/10"><Square size={16} className="fill-current"/> Finish</button>
           </>
         )}
         {transcript && !recording && !busy && (
-          <button onClick={send} disabled={busy} className="flex min-h-11 items-center gap-2 rounded-xl border border-white/[.15] px-4 text-sm transition hover:bg-white/[.04] disabled:opacity-50">{busy ? <Loader2 className="animate-spin" size={16}/> : 'Send to Alpha'}</button>
+          <button onClick={send} disabled={busy} className="flex min-h-11 items-center gap-2 rounded-xl border border-violet-400/20 px-4 text-sm transition hover:bg-violet-500/10 disabled:opacity-50">{busy ? <Loader2 className="animate-spin" size={16}/> : 'Send to Alpha'}</button>
         )}
         <div className="ml-auto flex items-center gap-2">
           <Languages size={14} className="text-white/40" />
-          <select value={language} onChange={e => setLanguage(e.target.value)} className="rounded-lg border border-white/[.12] bg-[#0A0F1E]/45 px-2 py-1 text-sm outline-none">
+          <select value={language} onChange={e => setLanguage(e.target.value)} className="rounded-lg border border-violet-400/20 bg-[#0A0F1E]/45 px-2 py-1 text-sm outline-none">
             <option value="en-US">English (US)</option>
             <option value="en-GB">English (UK)</option>
             <option value="es-ES">Spanish</option>
@@ -186,7 +186,7 @@ export default function VoicePanel({ user }: Props) {
         </div>
       </div>
 
-      <div className="mt-4 min-h-[120px] rounded-xl border border-white/10 bg-[#0A0F1E]/45 p-4 text-sm">
+      <div className="mt-4 min-h-[120px] rounded-xl border border-violet-400/20 bg-[#0A0F1E]/45 p-4 text-sm">
         {transcript || interim ? (
           <p className="whitespace-pre-wrap">{transcript}<span className="text-white/40">{interim}</span></p>
         ) : (
@@ -195,11 +195,11 @@ export default function VoicePanel({ user }: Props) {
       </div>
 
       {result && (
-        <div className="mt-4 rounded-xl border border-white/10 bg-[#0A0F1E]/55 p-4 text-sm">
+        <div className="mt-4 rounded-xl border border-violet-400/20 bg-[#0A0F1E]/55 p-4 text-sm">
           <pre className="max-h-64 overflow-auto whitespace-pre-wrap">{answerText}</pre>
           <div className="mt-3 flex gap-2">
-            <button onClick={() => answerText && speak(answerText)} disabled={speaking} className="flex min-h-9 items-center gap-2 rounded-lg border border-white/[.12] px-3 text-xs transition hover:bg-white/[.04] disabled:opacity-50">{speaking ? <VolumeX size={14}/> : <Volume2 size={14}/>} {speaking ? 'Speaking...' : 'Read aloud'}</button>
-            {speaking && <button onClick={stopSpeaking} className="flex min-h-9 items-center gap-2 rounded-lg border border-white/[.12] px-3 text-xs transition hover:bg-white/[.04]"><Square size={14} className="fill-current"/> Stop</button>}
+            <button onClick={() => answerText && speak(answerText)} disabled={speaking} className="flex min-h-9 items-center gap-2 rounded-lg border border-violet-400/20 px-3 text-xs transition hover:bg-violet-500/10 disabled:opacity-50">{speaking ? <VolumeX size={14}/> : <Volume2 size={14}/>} {speaking ? 'Speaking...' : 'Read aloud'}</button>
+            {speaking && <button onClick={stopSpeaking} className="flex min-h-9 items-center gap-2 rounded-lg border border-violet-400/20 px-3 text-xs transition hover:bg-violet-500/10"><Square size={14} className="fill-current"/> Stop</button>}
           </div>
         </div>
       )}
@@ -207,7 +207,7 @@ export default function VoicePanel({ user }: Props) {
       {voices.length > 0 && (
         <div className="mt-4 flex items-center gap-2 text-xs text-white/55">
           <span>Voice:</span>
-          <select value={voice?.name || ''} onChange={e => setVoice(voices.find(v => v.name === e.target.value) || null)} className="rounded border border-white/[.12] bg-[#0A0F1E]/45 px-2 py-1 text-xs outline-none">
+          <select value={voice?.name || ''} onChange={e => setVoice(voices.find(v => v.name === e.target.value) || null)} className="rounded border border-violet-400/20 bg-[#0A0F1E]/45 px-2 py-1 text-xs outline-none">
             <option value="">Default</option>
             {voices.map(v => <option key={v.name} value={v.name}>{v.name} ({v.lang})</option>)}
           </select>

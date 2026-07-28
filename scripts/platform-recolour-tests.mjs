@@ -5,6 +5,7 @@ import path from 'node:path'
 const css = fs.readFileSync('src/index.css', 'utf8')
 const app = fs.readFileSync('src/App.tsx', 'utf8')
 const billing = fs.readFileSync('src/lib/billing.ts', 'utf8')
+const settings = fs.readFileSync('src/pages/Settings.tsx', 'utf8')
 
 const files = []
 function collect(directory) {
@@ -17,6 +18,7 @@ function collect(directory) {
 collect('src')
 const source = files.map(file => fs.readFileSync(file, 'utf8')).join('\n')
 const componentSource = files.filter(file => !file.endsWith('.css')).map(file => fs.readFileSync(file, 'utf8')).join('\n')
+const platformSource = files.filter(file => !file.includes(`${path.sep}lib${path.sep}templates${path.sep}`)).map(file => fs.readFileSync(file, 'utf8')).join('\n')
 
 assert.match(css, /--bg-base:\s*#0A0F1E/)
 for (const color of ['#06FFA5', '#3B82F6', '#8B5CF6', '#7C3AED']) assert.ok(css.includes(color))
@@ -26,8 +28,11 @@ assert.match(css, /backdrop-filter:\s*blur\(20px\)/)
 assert.match(css, /linear-gradient\(90deg,\s*transparent,\s*rgba\(6,255,165/)
 assert.match(css, /scrollbar-color/)
 assert.doesNotMatch(source, /#000000|bg-black|rgb\(0\s*,\s*0\s*,\s*0\s*\)/)
-assert.doesNotMatch(componentSource, /bg-white(?!\/\[\.0[45]\])/)
+assert.doesNotMatch(componentSource, /\bbg-white\b|\bborder-white\b/)
 assert.doesNotMatch(componentSource, /bg-\[#(?:FFFFFF|FAFBFF|F9FAFB|F4F3FF)\]/)
+assert.doesNotMatch(platformSource, /rgba\(255\s*,\s*255\s*,\s*255/)
+assert.match(settings, /text-3xl font-black text-cyan-200/)
+assert.match(settings, /value="Living indigo"/)
 for (const price of ['1500', '2900', '7900']) assert.match(billing, new RegExp(`priceKobo:\\s*${price}`))
 
 console.log('PLATFORM_RECOLOUR_TESTS_OK')

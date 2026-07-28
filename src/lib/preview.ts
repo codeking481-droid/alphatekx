@@ -64,7 +64,7 @@ export function previewDocument(code: string, appLike = false, files?: { path: s
   html,body{height:100%;margin:0;overflow:${bodyOverflow}}
   #root{${rootCss}}
   *{box-sizing:border-box;font-family:Inter,system-ui,sans-serif}
-  .liquid-glass{background:rgba(255,255,255,0.1);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border:1px solid rgba(255,255,255,0.2);border-radius:1rem;box-shadow:0 25px 50px -12px rgba(0,0,0,0.5)}
+  .liquid-glass{background:rgba(124,58,237,0.12);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border:1px solid rgba(139,92,246,0.28);border-radius:1rem;box-shadow:0 25px 50px -12px rgba(3,7,18,0.5)}
   .alpha-error{margin:24px;padding:16px;border:1px solid #fecaca;border-radius:12px;background:#fef2f2;color:#991b1b;font:14px/1.5 system-ui;white-space:pre-wrap}
   .alpha-mount{min-height:100vh;width:100%;overflow-x:hidden;display:flex;flex-direction:column}
   .alpha-mount header,.alpha-mount>div>header,.alpha-mount>div>div>header{position:sticky;top:0;z-index:50}
