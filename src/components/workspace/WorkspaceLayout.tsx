@@ -73,10 +73,11 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
 
   const isHome = location.pathname === '/dashboard'
 
-  return <div className="flex min-h-[100dvh] flex-col overflow-hidden bg-white text-slate-900">
-    <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center justify-between border-b border-slate-200 bg-white/95 px-4 shadow-[0_8px_25px_rgba(15,23,42,.08)] backdrop-blur-xl">
-      <button onClick={() => setOpen(true)} className="grid size-11 place-items-center rounded-xl border border-slate-200 bg-white text-slate-900 shadow-sm" aria-label="Open menu"><Menu size={20}/></button>
-      <NavLink to="/dashboard" className="text-sm font-black tracking-[.14em]">ALPHATEKX</NavLink>
+  return <div className="workspace-living-bg relative flex min-h-[100dvh] flex-col overflow-hidden text-white">
+    <div className="aurora-blob aurora-blob-one"/><div className="aurora-blob aurora-blob-two"/><div className="aurora-blob aurora-blob-three"/>
+    <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center justify-between border-b border-white/10 bg-[#0A0F1E]/85 px-4 shadow-[0_8px_25px_rgba(3,7,18,.28)] backdrop-blur-xl">
+      <button onClick={() => setOpen(true)} className="grid size-11 place-items-center rounded-xl border border-white/10 bg-white/5 text-white shadow-sm" aria-label="Open menu"><Menu size={20}/></button>
+      <NavLink to="/dashboard" className="text-sm font-black tracking-[.14em] text-white">ALPHATEKX</NavLink>
       <button onClick={() => navigate('/settings?tab=billing')} className="flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-3.5 py-2 text-sm font-black text-[#6D28D9] shadow-sm transition hover:bg-violet-100">
         <span className="inline-block h-2.5 w-2.5 rounded-full bg-[#6D28D9]" />
         <span className={!isAdmin && needsCreditTopUp(credits) ? 'text-amber-700' : 'text-[#6D28D9]'}>{isAdmin ? 'Admin' : `${credits} Credits`}</span>
@@ -98,7 +99,7 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
       </div>
     </aside>
 
-    <main className="flex-1 min-h-0 overflow-y-auto pt-16 pb-16 lg:pb-0">
+    <main className="relative z-10 flex-1 min-h-0 overflow-y-auto pt-16 pb-16 lg:pb-0">
       {isHome && show && (
         <div className="mx-auto max-w-3xl px-4 pt-6">
           <div className="relative rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_15px_40px_rgba(15,23,42,.08)]">
@@ -124,9 +125,9 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
       {children}
     </main>
 
-    <nav className="fixed bottom-0 left-0 right-0 z-30 flex min-h-16 items-center gap-1 overflow-x-auto border-t border-slate-200 bg-white/95 px-2 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_25px_rgba(15,23,42,.08)] backdrop-blur-xl scrollbar-hide lg:hidden">
+    <nav className="fixed bottom-0 left-0 right-0 z-30 flex min-h-16 items-center gap-1 overflow-x-auto border-t border-white/10 bg-[#0A0F1E]/90 px-2 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_25px_rgba(3,7,18,.3)] backdrop-blur-xl scrollbar-hide lg:hidden">
       {mobileNav.map(([label, to, Icon]) => (
-        <NavLink key={label} to={to} title={label} className={({ isActive }) => `flex min-w-[64px] flex-1 flex-col items-center justify-center gap-1 py-2 text-[10px] font-black ${isActive ? 'text-[#6D28D9]' : 'text-slate-400'}`}>
+        <NavLink key={label} to={to} title={label} className={({ isActive }) => `flex min-w-[64px] flex-1 flex-col items-center justify-center gap-1 rounded-full py-2 text-[10px] font-black ${isActive ? 'bg-[#7C3AED] text-white' : 'text-slate-400'}`}>
           <Icon size={20} />
           {label}
         </NavLink>

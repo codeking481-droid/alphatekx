@@ -5,6 +5,7 @@ import { getConnector } from '../../lib/agents/connectorRegistry'
 import { getAgents, saveAgent, setCache } from '../../lib/agents/agentStore'
 import type { Agent } from '../../lib/agents/types'
 import type { IntegrationStatus } from '../../lib/integrations'
+import { scheduleDistanceMultiplier } from '../../lib/schedulePricing'
 
 type Props = {
   agent: Agent
@@ -105,6 +106,8 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
   const missingBrand = !brand.audience.trim() || !brand.tone.trim()
   const requiredConnectors = platformIds.filter(id => !connectorConnected(id, integrationStatus))
   const total = campaign.totalCredits
+  const furthestSchedule = campaign.posts.reduce((latest, post) => new Date(post.scheduledAt).getTime() > new Date(latest).getTime() ? post.scheduledAt : latest, campaign.posts[0]?.scheduledAt || new Date().toISOString())
+  const distanceMultiplier = scheduleDistanceMultiplier(furthestSchedule)
   const balance = credits ?? 0
   const canAfford = isAdmin || balance >= total
   const startAtDate = scheduleDate && scheduleTime ? new Date(`${scheduleDate}T${scheduleTime}`) : null
@@ -353,6 +356,7 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
           <p>Publishing: {platformIds.length} platform(s) × {campaign.meta.totalPosts} posts = {platformIds.length * campaign.meta.totalPosts}</p>
           <div className="mt-2 border-t border-white/[.08] pt-2 text-base font-semibold text-white">Total: {total} credits</div>
         </div>
+        {distanceMultiplier > 1 && <p className="rounded-lg bg-amber-400/10 p-3 text-amber-200">Long-term schedule multiplier: {distanceMultiplier}×. Paystack collects the configured local-currency equivalent when you buy the required credits.</p>}
         <p>Current balance: <span className="font-semibold">{isAdmin ? '∞' : balance}</span></p>
         {!canAfford && <p className="text-amber-300">You need {total - balance} more credits.</p>}
       </div>}

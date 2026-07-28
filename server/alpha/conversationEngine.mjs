@@ -3,6 +3,7 @@ import { buildCapabilityPlan, detectCapability, isSupportedAction } from '../aut
 import { calendarHasDuplicates } from '../automation/contentMemory.mjs'
 import { listImageProviders } from '../automation/imageGateway.mjs'
 import { selectHookExamples } from '../automation/viralHooks.mjs'
+import { scheduledCreditCost } from '../schedulePricing.mjs'
 import { connectorFeatureAccess, unavailableConnectorMessage, unavailablePromptConnector } from '../featureAccess.mjs'
 import { classifyIntent, clarificationResponse, conversationalResponse, helpResponse, INTENT_CATEGORIES } from './intentClassifier.mjs'
 
@@ -1301,20 +1302,23 @@ Total posts: ${totalPosts}.`
         const text = p.captions?.[platform] || p.captions?.[Object.keys(p.captions || {})[0]] || ''
         if (typeof text === 'string' && text.trim()) captions[platform] = text.trim()
       }
+      const scheduledAt = meta.publishingMode === 'once_now'
+        ? nowIso()
+        : platforms.length === 1 && platforms[0] === 'linkedin'
+        ? scheduleOccurrence(i, startDate, p.slot ? { label: p.slot, hour: parseTime(p.slot)?.hour || slot.hour, minute: parseTime(p.slot)?.minute || slot.minute } : slot, meta.frequency, meta.daysOfWeek, timezone)
+        : (p.scheduledAt || scheduleDate(day, p.slot ? { label: p.slot, hour: parseTime(p.slot)?.hour || slot.hour, minute: parseTime(p.slot)?.minute || slot.minute } : slot, startDate, timezone))
+      const baseCredits = computePostCredits(postPlatforms, includeImages)
       return {
         id: p.id || randomUUID(),
         day,
         slot: p.slot || slot.label,
-        scheduledAt: meta.publishingMode === 'once_now'
-          ? nowIso()
-          : platforms.length === 1 && platforms[0] === 'linkedin'
-          ? scheduleOccurrence(i, startDate, p.slot ? { label: p.slot, hour: parseTime(p.slot)?.hour || slot.hour, minute: parseTime(p.slot)?.minute || slot.minute } : slot, meta.frequency, meta.daysOfWeek, timezone)
-          : (p.scheduledAt || scheduleDate(day, p.slot ? { label: p.slot, hour: parseTime(p.slot)?.hour || slot.hour, minute: parseTime(p.slot)?.minute || slot.minute } : slot, startDate, timezone)),
+        scheduledAt,
         platforms: postPlatforms,
         topic: p.topic || '',
         postType: ['educational', 'product', 'story', 'cta'].includes(p.postType) ? p.postType : 'educational',
         captions,
-        credits: computePostCredits(postPlatforms, includeImages),
+        baseCredits,
+        credits: scheduledCreditCost(baseCredits, scheduledAt),
         status: 'pending_approval',
         result: {},
       }
