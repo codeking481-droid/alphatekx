@@ -6196,8 +6196,9 @@ const server = http.createServer(async (req, res) => {
       const config = supabaseConfig()
       const user = await currentOrLocalUser(req, config.url, config.anon)
       if (!user) return json(res, 401, { error: 'Authentication required' })
-      return json(res, 200, { items: await mediaLibrary.listMedia(config, user) })
+      return json(res, 200, { items: await mediaLibrary.listMedia(config, user), setupRequired: false })
     } catch (error) {
+      if (mediaLibrary.isMissingMediaSchema(error)) return json(res, 200, { items: [], setupRequired: true })
       const code = error?.code || 'MEDIA_ERROR'
       return json(res, code === 'DB_ERROR' ? 503 : 500, { error: error instanceof Error ? error.message : 'Could not load Media Library.', code })
     }
@@ -6222,6 +6223,11 @@ const server = http.createServer(async (req, res) => {
       const [stats, insights] = await Promise.all([moneyLoop.getMoneyLoopStats(config, user), moneyLoop.listInsights(config, user)])
       return json(res, 200, { stats, insights })
     } catch (error) {
+      if (moneyLoop.isMissingMoneyLoopSchema(error)) return json(res, 200, {
+        stats: { total: 0, new: 0, contacted: 0, qualified: 0, closed: 0, lost: 0, estimatedValue: 0, closedValue: 0 },
+        insights: [],
+        setupRequired: true,
+      })
       const code = error?.code || 'MONEY_LOOP_ERROR'
       return json(res, code === 'DB_ERROR' ? 503 : 400, { error: error instanceof Error ? error.message : 'Could not load Money Loop stats.', code })
     }
@@ -6274,6 +6280,19 @@ const server = http.createServer(async (req, res) => {
     } catch (error) {
       const code = error?.code || 'MEDIA_ERROR'
       return json(res, code === 'DB_ERROR' ? 503 : 400, { error: error instanceof Error ? error.message : 'Could not update media.', code })
+    }
+  }
+  if (/^\/api\/media\/[0-9a-f-]+\/publish$/i.test(req.url || '') && req.method === 'POST') {
+    try {
+      const config = supabaseConfig()
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      if (!user) return json(res, 401, { error: 'Authentication required' })
+      const id = String(req.url).split('/').at(-2)
+      return json(res, 200, await mediaLibrary.publishMediaNow(config, user, id, alphaConnector.executeProviderAction))
+    } catch (error) {
+      const code = error?.code || (/insufficient credits/i.test(String(error?.message || '')) ? 'INSUFFICIENT_CREDITS' : 'MEDIA_PUBLISH_FAILED')
+      const status = code === 'INSUFFICIENT_CREDITS' ? 402 : code === 'RECONNECT_NEEDED' ? 409 : code === 'DB_ERROR' ? 503 : 502
+      return json(res, status, { error: error instanceof Error ? error.message : 'Video publication failed.', code, charged: false })
     }
   }
   if (req.url === '/api/connected-apps' && req.method === 'GET') {

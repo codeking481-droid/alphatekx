@@ -88,3 +88,6 @@ drop policy if exists "dm logs owner read" on public.auto_dm_logs;
 create policy "dm logs owner read" on public.auto_dm_logs for select using (auth.uid() = user_id);
 drop policy if exists "insights owner read" on public.content_insights;
 create policy "insights owner read" on public.content_insights for select using (auth.uid() = user_id);
+
+-- Make newly-created relations visible to PostgREST immediately.
+notify pgrst, 'reload schema';

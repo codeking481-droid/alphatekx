@@ -41,6 +41,10 @@ function fileKind(mime) {
   return String(mime).startsWith('video/') ? 'video' : 'image'
 }
 
+export function isMissingMediaSchema(error) {
+  return error?.code === 'DB_ERROR' && /media_library|schema cache|relation|does not exist/i.test(String(error?.message || ''))
+}
+
 async function signedUrl(config, storagePath, expiresIn = 3600) {
   const response = await fetch(`${config.url}/storage/v1/object/sign/${BUCKET}/${storagePath}`, {
     method: 'POST',
@@ -251,6 +255,61 @@ async function patchQueueItem(config, id, patch, query = '') {
   return responseJson(response)
 }
 
+async function executeMediaItem(config, item, executeProviderAction, user) {
+  if (item.file_type !== 'video') throw new Error('Only videos can be published from the Media Library.')
+  const executionKey = item.execution_key || `vault:${item.id}:${item.scheduled_for || 'publish-now'}`
+  const videoUrl = await signedUrl(config, item.storage_path, 3600)
+  if (!videoUrl) throw new Error('Alpha could not create a secure video URL.')
+  const title = String(item.title || item.file_name).slice(0, 100)
+  const result = await executeProviderAction(user, 'youtube', 'upload_video', {
+    title,
+    description: String(item.description || `${title}\n\nPublished by AlphaTekx after explicit Media Library approval.`),
+    tags: Array.isArray(item.tags) ? item.tags.slice(0, 20) : [],
+    privacyStatus: 'public',
+    video_url: videoUrl,
+    idempotencyKey: executionKey,
+    approvalId: `vault:${item.id}`,
+  })
+  if (!result?.providerId) throw new Error('YouTube did not return a confirmed video ID. No credit was charged.')
+  await patchQueueItem(config, item.id, {
+    status: 'published',
+    published_at: new Date().toISOString(),
+    provider_id: result.providerId,
+    execution_key: executionKey,
+    last_error: null,
+  })
+  return { id: item.id, status: 'published', providerId: result.providerId }
+}
+
+export async function publishMediaNow(config, user, id, executeProviderAction) {
+  assertConfig(config)
+  const response = await fetch(
+    `${config.url}/rest/v1/media_library?id=eq.${encodeURIComponent(id)}&user_id=eq.${encodeURIComponent(user.id)}&select=*&limit=1`,
+    { headers: headers(config.service) },
+  )
+  const item = (await responseJson(response))?.[0]
+  if (!item) throw new Error('Media item was not found.')
+  if (item.status === 'published' && item.provider_id) {
+    return { id: item.id, status: 'published', providerId: item.provider_id, duplicate: true }
+  }
+  if (!['ready', 'failed'].includes(item.status)) throw new Error('This video is already scheduled or being processed.')
+  const executionKey = item.execution_key || `vault:${item.id}:publish-now`
+  const claimed = await patchQueueItem(config, item.id, {
+    status: 'processing', claimed_at: new Date().toISOString(), execution_key: executionKey, last_error: null,
+  }, `&user_id=eq.${encodeURIComponent(user.id)}&status=in.(ready,failed)`)
+  if (!claimed?.[0]) throw new Error('This video is already being published.')
+  try {
+    return await executeMediaItem(config, { ...item, execution_key: executionKey }, executeProviderAction, user)
+  } catch (error) {
+    await patchQueueItem(config, item.id, {
+      status: 'failed',
+      claimed_at: new Date().toISOString(),
+      last_error: String(error instanceof Error ? error.message : error).slice(0, 1000),
+    })
+    throw error
+  }
+}
+
 export async function runDueMedia(config, executeProviderAction, now = new Date()) {
   assertConfig(config)
   const dueResponse = await fetch(
@@ -272,30 +331,12 @@ export async function runDueMedia(config, executeProviderAction, now = new Date(
       )
       const profile = (await responseJson(profileResponse))?.[0]
       if (!profile?.email) throw new Error('The owner profile has no email for its connected account.')
-      const videoUrl = await signedUrl(config, item.storage_path, 3600)
-      if (!videoUrl) throw new Error('Alpha could not create a secure video URL.')
-      const title = String(item.title || item.file_name).slice(0, 100)
-      const result = await executeProviderAction(
+      results.push(await executeMediaItem(
+        config,
+        { ...item, execution_key: executionKey },
+        executeProviderAction,
         { id: item.user_id, email: profile.email },
-        'youtube',
-        'upload_video',
-        {
-          title,
-          description: String(item.description || `${title}\n\nPublished by AlphaTekx after explicit vault scheduling approval.`),
-          tags: Array.isArray(item.tags) ? item.tags.slice(0, 20) : [],
-          privacyStatus: 'public',
-          video_url: videoUrl,
-          idempotencyKey: executionKey,
-          approvalId: `vault:${item.id}`,
-        },
-      )
-      await patchQueueItem(config, item.id, {
-        status: 'published',
-        published_at: new Date().toISOString(),
-        provider_id: result.providerId,
-        last_error: null,
-      })
-      results.push({ id: item.id, status: 'published', providerId: result.providerId })
+      ))
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       const waiting = /insufficient credits/i.test(message)

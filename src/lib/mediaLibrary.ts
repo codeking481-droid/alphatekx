@@ -40,7 +40,7 @@ async function mediaRequest<T>(url: string, init: RequestInit): Promise<T> {
 }
 
 export async function listMedia() {
-  return getJson<{ items: MediaItem[] }>('/api/media/list')
+  return getJson<{ items: MediaItem[]; setupRequired?: boolean }>('/api/media/list')
 }
 
 export async function uploadMedia(file: File, onProgress?: (percent: number) => void) {
@@ -82,4 +82,10 @@ export async function deleteMedia(id: string) {
 
 export async function createSmartImage(content: string) {
   return postJson<{ image_url: string; image_prompt: string; image_source: string }>('/api/media/smart-image', { content })
+}
+
+export async function publishMedia(id: string) {
+  return mediaRequest<{ id: string; status: 'published'; providerId: string; duplicate?: boolean }>(`/api/media/${id}/publish`, {
+    method: 'POST',
+  })
 }
