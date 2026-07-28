@@ -40,6 +40,8 @@ const tests = [
     return url.hostname === 'image.pollinations.ai' && !url.searchParams.has('key') && url.searchParams.get('model') === 'flux'
   })()],
   ['Pollinations fallback uses the public open image route', new URL(pollinationsImageUrl('premium photo', 'cartoon', 'fixed-seed', { backup: true })).pathname.startsWith('/p/')],
+  ['Pollinations generation runs before optional stock-photo fallback', service.indexOf('const delays = [0, 2_000, 5_000]') < service.indexOf('process.env.PEXELS_API_KEY')],
+  ['social planner automatically activates image matching for visual platforms', engine.includes("['facebook', 'instagram', 'x', 'twitter']") && engine.includes('automaticImagePlatforms')],
   ['generated images are persisted into the reusable private vault', service.includes("file_type: 'image'") && service.includes("status: 'ready'") && service.includes('image_cache')],
   ['image fetch retries and rejects undersized provider output', service.includes('attempt < 3') && service.includes('50 * 1024')],
   ['scheduled posts refresh private image URLs before provider execution', service.includes('refreshMediaUrl') && server.includes('post.imageStoragePath') && server.includes('IMAGE_REFRESH_FAILED')],

@@ -288,27 +288,26 @@ export async function findSmartImage(config, user, content, objective = '', plat
 
   let source = 'pollinations'
   let remoteUrl = ''
-  if (process.env.PEXELS_API_KEY) {
+  let downloaded = null
+  const delays = [0, 2_000, 5_000]
+  for (let attempt = 0; attempt < 3 && !downloaded; attempt += 1) {
+    if (delays[attempt]) await wait(delays[attempt])
+    remoteUrl = pollinationsImageUrl(advancedPrompt, negativePrompt, `${Date.now()}-${attempt}-${Math.floor(Math.random() * 100000)}`)
+    downloaded = await downloadImage(remoteUrl, 50 * 1024, 30_000).catch(() => null)
+  }
+  if (!downloaded) {
+    await wait(10_000)
+    remoteUrl = pollinationsImageUrl(advancedPrompt, negativePrompt, `${Date.now()}-backup`, { backup: true })
+    downloaded = await downloadImage(remoteUrl, 50 * 1024, 30_000).catch(() => null)
+  }
+  if (!downloaded && process.env.PEXELS_API_KEY) {
     const pexels = await fetch(`https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=1`, {
       headers: { Authorization: process.env.PEXELS_API_KEY },
     }).then(responseJson).catch(() => null)
     remoteUrl = pexels?.photos?.[0]?.src?.large2x || ''
-    if (remoteUrl) source = 'pexels'
-  }
-  let downloaded = null
-  if (remoteUrl) downloaded = await downloadImage(remoteUrl).catch(() => null)
-  if (!downloaded) {
-    source = 'pollinations'
-    const delays = [0, 2_000, 5_000]
-    for (let attempt = 0; attempt < 3 && !downloaded; attempt += 1) {
-      if (delays[attempt]) await wait(delays[attempt])
-      remoteUrl = pollinationsImageUrl(advancedPrompt, negativePrompt, `${Date.now()}-${attempt}-${Math.floor(Math.random() * 100000)}`)
-      downloaded = await downloadImage(remoteUrl, 50 * 1024, 30_000).catch(() => null)
-    }
-    if (!downloaded) {
-      await wait(10_000)
-      remoteUrl = pollinationsImageUrl(advancedPrompt, negativePrompt, `${Date.now()}-backup`, { backup: true })
-      downloaded = await downloadImage(remoteUrl, 50 * 1024, 30_000).catch(() => null)
+    if (remoteUrl) {
+      source = 'pexels'
+      downloaded = await downloadImage(remoteUrl).catch(() => null)
     }
   }
   if (!downloaded) throw new Error('Alpha could not fetch a premium image after three verified attempts.')
