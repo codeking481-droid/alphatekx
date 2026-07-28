@@ -35,6 +35,12 @@ const tests = [
     const url = new URL(pollinationsImageUrl('premium photo', 'cartoon', 'fixed-seed'))
     return url.searchParams.get('model') === 'flux' && url.searchParams.get('enhance') === 'true' && url.searchParams.get('nologo') === 'true' && url.searchParams.get('seed') === 'fixed-seed'
   })()],
+  ['Pollinations image generation remains free and keyless', (() => {
+    const url = new URL(pollinationsImageUrl('premium photo', 'cartoon', 'fixed-seed'))
+    return url.hostname === 'image.pollinations.ai' && !url.searchParams.has('key') && url.searchParams.get('model') === 'flux'
+  })()],
+  ['Pollinations fallback uses the public open image route', new URL(pollinationsImageUrl('premium photo', 'cartoon', 'fixed-seed', { backup: true })).pathname.startsWith('/p/')],
+  ['generated images are persisted into the reusable private vault', service.includes("file_type: 'image'") && service.includes("status: 'ready'") && service.includes('image_cache')],
   ['image fetch retries and rejects undersized provider output', service.includes('attempt < 3') && service.includes('50 * 1024')],
   ['scheduled posts refresh private image URLs before provider execution', service.includes('refreshMediaUrl') && server.includes('post.imageStoragePath') && server.includes('IMAGE_REFRESH_FAILED')],
   ['campaign review shows the matched image before approval', preview.includes('post.imageUrl') && preview.includes('Matched automatically by Alpha')],
