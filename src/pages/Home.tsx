@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowRight, CheckCircle2, ChevronDown, Instagram, Linkedin, Mail, Plug, Sparkles, Twitter, Youtube } from 'lucide-react'
+import { ArrowRight, CheckCircle2, Instagram, Linkedin, Mail, Plug, Sparkles, Twitter, Youtube } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { getConnectedApps } from '../lib/connectors/connectorApi'
 import { getIntegrationStatus } from '../lib/integrations'
 
 const platforms = [
-  { id: 'x', label: 'Twitter / X', icon: Twitter, soon: false },
-  { id: 'instagram', label: 'Instagram', icon: Instagram, soon: false },
-  { id: 'linkedin', label: 'LinkedIn', icon: Linkedin, soon: false },
-  { id: 'gmail', label: 'Gmail', icon: Mail, soon: false },
-  { id: 'youtube', label: 'YouTube', icon: Youtube, soon: false },
+  { id: 'x', label: 'Twitter / X', description: 'Posts and threads', icon: Twitter, soon: false },
+  { id: 'instagram', label: 'Instagram', description: 'Posts, reels and stories', icon: Instagram, soon: false },
+  { id: 'linkedin', label: 'LinkedIn', description: 'Professional publishing', icon: Linkedin, soon: false },
+  { id: 'gmail', label: 'Gmail', description: 'Email and attachments', icon: Mail, soon: false },
+  { id: 'youtube', label: 'YouTube', description: 'Videos and channel actions', icon: Youtube, soon: false },
 ]
 
 export default function Home() {
@@ -68,22 +68,39 @@ export default function Home() {
         </div>
 
         <div className="mx-auto mt-12 max-w-2xl rounded-[1.75rem] border border-violet-400/20 bg-violet-500/10 p-6 shadow-[0_28px_70px_rgba(15,23,42,.14)] sm:p-8">
-          <label htmlFor="platform" className="text-xs font-black uppercase tracking-[.16em] text-slate-400">Select Platform</label>
-          <div className="relative mt-3">
-            <select id="platform" value={selected} onChange={event => { setSelected(event.target.value); setNotice('') }} className="min-h-16 w-full appearance-none rounded-xl border-2 border-violet-400/20 bg-violet-500/10 px-5 pr-12 text-base font-black text-white outline-none transition focus:border-[#6D28D9] focus:ring-4 focus:ring-violet-100">
-              <option value="">Choose a platform</option>
-              {platforms.map(item => <option key={item.id} value={item.id} disabled={item.soon}>{item.label}{item.soon ? ' — Coming Soon' : ''}</option>)}
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-5 top-1/2 -translate-y-1/2 text-violet-300" />
-          </div>
-
-          {platform && (
-            <div className={`mt-5 flex items-center gap-4 rounded-2xl border p-4 ${platform.soon ? 'border-amber-200 bg-amber-500/10' : isConnected ? 'border-emerald-200 bg-emerald-500/10' : 'border-violet-200 bg-violet-500/10'}`}>
-              <span className={`grid size-12 place-items-center rounded-xl ${isConnected ? 'bg-emerald-600 text-white' : 'bg-violet-500/10 text-violet-300 shadow-sm'}`}>{isConnected ? <CheckCircle2/> : <platform.icon/>}</span>
-              <div className="min-w-0 flex-1"><p className="font-black text-white">{platform.label}</p><p className="mt-0.5 text-sm font-bold text-slate-400">{platform.soon ? 'Coming Soon' : isConnected ? 'Connected securely to AlphaTekx' : 'Connect securely to continue'}</p></div>
-              {platform.soon && <span className="rounded-full bg-amber-200 px-3 py-1 text-[10px] font-black text-amber-300">COMING SOON</span>}
+          <fieldset>
+            <legend className="text-xs font-black uppercase tracking-[.16em] text-slate-300">Choose your platform</legend>
+            <p id="platform-help" className="mt-2 text-sm font-semibold text-slate-400">Select one app to connect or continue to its Command Centre.</p>
+            <div role="radiogroup" aria-describedby="platform-help" className="mt-5 grid gap-3 sm:grid-cols-2">
+              {platforms.map((item, index) => {
+                const active = selected === item.id
+                const ready = connected.has(item.id)
+                const Icon = item.icon
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    disabled={item.soon}
+                    onClick={() => { setSelected(item.id); setNotice('') }}
+                    className={`group relative flex min-h-[92px] items-center gap-4 overflow-hidden rounded-2xl border p-4 text-left transition duration-300 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-violet-400/25 ${index === platforms.length - 1 ? 'sm:col-span-2' : ''} ${active ? 'border-violet-400 bg-violet-500/20 shadow-[0_14px_35px_rgba(109,40,217,.25),inset_0_1px_0_rgba(255,255,255,.14)]' : 'border-white/10 bg-white/[.045] shadow-[inset_0_1px_0_rgba(255,255,255,.07)] hover:-translate-y-0.5 hover:border-violet-400/45 hover:bg-white/[.075]'}`}
+                  >
+                    <span className={`grid size-12 shrink-0 place-items-center rounded-xl border transition ${active ? 'border-violet-300/40 bg-violet-500 text-white shadow-lg shadow-violet-950/30' : 'border-white/10 bg-white/[.06] text-violet-300 group-hover:text-white'}`}><Icon size={22}/></span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-base font-black text-white">{item.label}</span>
+                      <span className="mt-1 block text-xs font-semibold text-slate-400">{item.description}</span>
+                      <span className={`mt-2 inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[.08em] ${ready ? 'text-emerald-300' : 'text-slate-400'}`}>
+                        <span className={`size-1.5 rounded-full ${ready ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,.8)]' : 'bg-slate-500'}`}/>
+                        {item.soon ? 'Coming soon' : ready ? 'Connected' : 'Ready to connect'}
+                      </span>
+                    </span>
+                    {active && <CheckCircle2 aria-hidden="true" className="absolute right-3 top-3 text-violet-300" size={19}/>}
+                  </button>
+                )
+              })}
             </div>
-          )}
+          </fieldset>
 
           {notice && <p className="mt-5 rounded-xl border border-rose-200 bg-rose-500/10 p-3 text-sm font-bold text-rose-300">{notice}</p>}
 
