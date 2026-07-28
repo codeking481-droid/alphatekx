@@ -6357,10 +6357,10 @@ const server = http.createServer(async (req, res) => {
         const config = supabaseConfig()
         const user = await currentOrLocalUser(req, config.url, config.anon)
         if (!user) return json(res, 401, { error: 'Authentication required' })
-        if (!requireConnectorFeature(req, res, user, toolkit)) return
         if (deleteMatch && req.method === 'DELETE') {
           return json(res, 200, await alphaConnector.disconnectProvider(user, toolkit))
         }
+        if (!requireConnectorFeature(req, res, user, toolkit)) return
         if (operation === 'connect' && req.method === 'POST') {
           const callbackUrl = new URL('/connected-apps', publicAppUrl())
           callbackUrl.searchParams.set('provider', toolkit)

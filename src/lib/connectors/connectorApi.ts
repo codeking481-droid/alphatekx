@@ -91,8 +91,8 @@ export async function connectProvider(providerId: string, token?: string): Promi
 }
 
 // Disconnect a provider
-export async function disconnectProvider(providerId: string, token?: string): Promise<{ success: boolean }> {
-  return deleteJson<{ success: boolean }>(`/api/connectors/${providerId}`, { token, timeoutMs: 20_000 })
+export async function disconnectProvider(providerId: string, token?: string): Promise<{ success: boolean; disconnected: boolean; provider: string; deletedAccounts: number }> {
+  return deleteJson<{ success: boolean; disconnected: boolean; provider: string; deletedAccounts: number }>(`/api/connectors/${providerId}`, { token, timeoutMs: 20_000 })
 }
 
 // Reconnect OAuth for a provider
