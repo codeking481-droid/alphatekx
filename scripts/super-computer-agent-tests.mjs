@@ -99,6 +99,8 @@ test('LinkedIn and image matching remain in the established execution engine', (
   assert.match(server, /getSmartImage/)
   assert.match(engine, /reason: 'direct_image_request'/)
   assert.match(engine, /imageStoragePath/)
+  assert.match(engine, /\{ allowEphemeral: true \}/)
+  assert.match(engine, /if \(!image\?\.image_url\)/)
 })
 
 test('CEO mode persists suggestions and requires an atomic approval claim', () => {

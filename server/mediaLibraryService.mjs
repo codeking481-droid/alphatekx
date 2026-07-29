@@ -189,7 +189,6 @@ export function generateAdvancedImagePrompt(content, objective = '', platform = 
 }
 
 export function pollinationsImageUrl(advancedPrompt, negativePrompt, seed = `${Date.now()}-${Math.floor(Math.random() * 100000)}`, options = {}) {
-  if (options.backup) return `https://pollinations.ai/p/${encodeURIComponent(advancedPrompt)}`
   const params = new URLSearchParams({
     model: 'flux',
     width: '1024',
@@ -199,16 +198,17 @@ export function pollinationsImageUrl(advancedPrompt, negativePrompt, seed = `${D
     negative: negativePrompt,
     seed: String(seed),
   })
-  return `https://image.pollinations.ai/prompt/${encodeURIComponent(advancedPrompt)}?${params.toString()}`
+  const host = options.legacy || options.backup ? 'https://image.pollinations.ai/prompt' : 'https://gen.pollinations.ai/image'
+  return `${host}/${encodeURIComponent(advancedPrompt)}?${params.toString()}`
 }
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 
-async function downloadImage(url, minimumBytes = 50 * 1024, timeoutMs = 30_000) {
+async function downloadImage(url, minimumBytes = 50 * 1024, timeoutMs = 30_000, requestHeaders = {}) {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const response = await fetch(url, { signal: controller.signal, headers: { Accept: 'image/*' } })
+    const response = await fetch(url, { signal: controller.signal, headers: { Accept: 'image/*', ...requestHeaders } })
     if (!response.ok) throw new Error(`Image provider returned HTTP ${response.status}.`)
     const mime = String(response.headers.get('content-type') || 'image/jpeg').split(';')[0]
     if (!ALLOWED_TYPES.has(mime) || !mime.startsWith('image/')) throw new Error('Image provider did not return a supported image.')
@@ -266,7 +266,7 @@ async function persistGenerated(config, user, bytes, mime, metadata) {
   }
 }
 
-export async function findSmartImage(config, user, content, objective = '', platform = '') {
+export async function findSmartImage(config, user, content, objective = '', platform = '', options = {}) {
   assertConfig(config)
   const { keywords, advancedPrompt, negativePrompt } = generateAdvancedImagePrompt(content, objective, platform)
   const query = keywords.join(' ')
@@ -289,14 +289,25 @@ export async function findSmartImage(config, user, content, objective = '', plat
   let source = 'pollinations'
   let remoteUrl = ''
   let downloaded = null
+  const pollinationsKey = String(process.env.POLLINATIONS_API_KEY || '').trim()
+  const pollinationsHeaders = pollinationsKey ? { Authorization: `Bearer ${pollinationsKey}` } : {}
   const delays = [0, 2_000, 5_000]
-  for (let attempt = 0; attempt < 3 && !downloaded; attempt += 1) {
+  for (let attempt = 0; attempt < (pollinationsKey ? 3 : 0) && !downloaded; attempt += 1) {
     if (delays[attempt]) await wait(delays[attempt])
     remoteUrl = pollinationsImageUrl(advancedPrompt, negativePrompt, `${Date.now()}-${attempt}-${Math.floor(Math.random() * 100000)}`)
-    downloaded = await downloadImage(remoteUrl, 50 * 1024, 30_000).catch(() => null)
+    downloaded = await downloadImage(remoteUrl, 50 * 1024, 30_000, pollinationsHeaders).catch(() => null)
   }
   if (!downloaded) {
-    await wait(10_000)
+    source = 'pollinations-legacy'
+    for (let attempt = 0; attempt < 3 && !downloaded; attempt += 1) {
+      if (delays[attempt]) await wait(delays[attempt])
+      remoteUrl = pollinationsImageUrl(advancedPrompt, negativePrompt, `${Date.now()}-legacy-${attempt}`, { legacy: true })
+      downloaded = await downloadImage(remoteUrl, 50 * 1024, 30_000).catch(() => null)
+    }
+  }
+  if (!downloaded) {
+    await wait(2_000)
+    source = 'pollinations-legacy-backup'
     remoteUrl = pollinationsImageUrl(advancedPrompt, negativePrompt, `${Date.now()}-backup`, { backup: true })
     downloaded = await downloadImage(remoteUrl, 50 * 1024, 30_000).catch(() => null)
   }
@@ -311,7 +322,27 @@ export async function findSmartImage(config, user, content, objective = '', plat
     }
   }
   if (!downloaded) throw new Error('Alpha could not fetch a premium image after three verified attempts.')
-  return persistGenerated(config, user, downloaded.bytes, downloaded.mime, { query_hash: queryHash, query, prompt: advancedPrompt, keywords, source })
+  try {
+    return await persistGenerated(config, user, downloaded.bytes, downloaded.mime, { query_hash: queryHash, query, prompt: advancedPrompt, keywords, source })
+  } catch (error) {
+    if (options.allowEphemeral === true) {
+      let publicUrl = /^https:\/\/(?:image\.)?pollinations\.ai\//i.test(remoteUrl) ? remoteUrl : ''
+      if (!publicUrl) {
+        publicUrl = pollinationsImageUrl(advancedPrompt, negativePrompt, `${Date.now()}-chat`, { backup: true })
+        const publicImage = await downloadImage(publicUrl, 50 * 1024, 30_000).catch(() => null)
+        if (!publicImage) throw error
+      }
+      return {
+        image_url: publicUrl,
+        image_storage_path: null,
+        image_prompt: advancedPrompt,
+        image_keywords: keywords,
+        image_source: source,
+        persistence_warning: error instanceof Error ? error.message : 'Media Library persistence is unavailable.',
+      }
+    }
+    throw error
+  }
 }
 
 export async function refreshMediaUrl(config, user, storagePath, expiresIn = 3600) {

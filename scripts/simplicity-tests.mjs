@@ -12,7 +12,7 @@ const read = path => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'ut
 
 await test('Automate workspace has a focused empty state and persistent planning state', () => {
   const source = read('src/pages/Agents.tsx')
-  assert.match(source, /What would you like Alpha to automate/)
+  assert.match(source, /What can Alpha do for you\?/)
   assert.match(source, /alphatekx:planning-conversation/)
   assert.doesNotMatch(source, /Success rate/)
 })
@@ -34,7 +34,7 @@ await test('Official Active Automations routes and retired aliases are registere
 
 await test('Navigation uses the required simplicity-first wording', () => {
   const source = read('src/components/workspace/WorkspaceLayout.tsx')
-  for (const label of ['Automate', 'Running Automations', 'History', 'Connected Apps', 'Settings', 'Help', 'Logout']) assert.match(source, new RegExp(label))
+  for (const label of ['Automate', 'Running Automations', 'History', 'Connected Apps', 'Settings', 'Help', 'Sign out']) assert.match(source, new RegExp(label))
   assert.doesNotMatch(source, /\['Dashboard'/)
 })
 
@@ -47,7 +47,7 @@ await test('Active Automations maps empty history honestly', () => {
 
 await test('Connected Apps has searchable selection and honest unsupported labels', () => {
   const source = read('src/pages/Connectors.tsx')
-  assert.match(source, /Search platforms/)
+  assert.match(source, /Search connected tools/)
   assert.match(source, /Coming Soon/)
   assert.match(source, /already|Connected/i)
   assert.match(source, /Disconnect/)
