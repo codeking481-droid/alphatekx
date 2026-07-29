@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import { CheckCircle2, LoaderCircle, RefreshCw, Unplug } from 'lucide-react'
+import { CheckCircle2, LoaderCircle, Unplug } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { ConnectorIcon } from '../components/agents/ConnectorIcon'
 import { getConnector } from '../lib/agents/connectorRegistry'
@@ -76,9 +76,11 @@ export default function Connectors() {
   }
 
   const load = async () => {
+    let usedCache = false
     try {
       const cached = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null')
       if (cached?.timestamp && Date.now() - cached.timestamp < CACHE_TTL && Array.isArray(cached.providers)) {
+        usedCache = true
         applyProviders(cached.providers)
         if (cached.native && typeof cached.native === 'object') setNative(cached.native)
         setLoading(false)
@@ -97,8 +99,7 @@ export default function Connectors() {
       setNotice('')
     } else {
       console.error('[Connections]', nativeResult.reason, connectedResult.reason)
-      const reason = connectedResult.reason || nativeResult.reason
-      setNotice(reason instanceof Error ? reason.message : 'Could not refresh connections.')
+      if (!usedCache) setNotice('Live connection status is temporarily unavailable. You can still choose a tool below and connect securely.')
     }
     setLoading(false)
   }
@@ -231,7 +232,7 @@ export default function Connectors() {
             <p className="mt-2 text-[11px] font-bold text-slate-400">{connected ? '1 active connection' : '0 active connections'}</p>
             {item.id === 'whatsapp' && <div className="mt-3 text-xs text-slate-300"><p>Requires an approved 15-digit WABA ID from Meta Business Suite. Regular WhatsApp sellers can skip this.</p>{wabaReady && <a href="https://business.facebook.com/settings/whatsapp-business-accounts" target="_blank" rel="noreferrer" className="mt-2 inline-block text-violet-300 underline">How to get a WABA ID</a>}</div>}
             {item.id === 'whatsapp' && !connected && !wabaReady ? <div className="mt-4 grid gap-2"><button onClick={() => setWabaReady(true)} className="min-h-11 rounded-xl bg-[#7C3AED] px-3 text-sm font-black">I have WABA ID — Connect</button><button onClick={() => { setNotice('WhatsApp skipped. Instagram and Facebook are ready.'); document.getElementById('platform-instagram')?.scrollIntoView({ behavior: 'smooth' }) }} className="min-h-11 rounded-xl border border-violet-400/20 bg-violet-500/10 px-3 text-sm font-bold">I don’t have one — Skip</button></div> :
-              <div className={`mt-4 grid min-w-0 gap-2 ${connected ? 'grid-cols-2' : 'grid-cols-1'}`}><button onClick={() => void connect(item.id, item.name)} disabled={Boolean(connecting || disconnecting || comingSoon)} className="flex min-h-11 min-w-0 items-center justify-center gap-2 rounded-xl bg-[#7C3AED] px-3 text-sm font-black disabled:opacity-50">{busy ? <LoaderCircle className="shrink-0 animate-spin" size={16}/> : connected ? <RefreshCw className="shrink-0" size={16}/> : <CheckCircle2 className="shrink-0" size={16}/>}{comingSoon ? 'Coming Soon' : busy ? 'Connecting…' : connected ? 'Reconnect' : 'Connect'}</button>{connected && <button onClick={() => void disconnect(item.id)} disabled={Boolean(connecting || disconnecting)} aria-label={`Disconnect ${item.name}`} className="flex min-h-11 min-w-0 items-center justify-center gap-2 rounded-xl border border-rose-300/20 bg-rose-300/10 px-3 text-sm font-black text-rose-200 transition hover:bg-rose-300/15 disabled:opacity-50">{removing ? <LoaderCircle className="shrink-0 animate-spin" size={16}/> : <Unplug className="shrink-0" size={16}/>}<span>{removing ? 'Disconnecting…' : 'Disconnect'}</span></button>}</div>}
+              <div className={`mt-4 grid min-w-0 gap-2 ${connected ? 'grid-cols-2' : 'grid-cols-1'}`}><button onClick={() => void connect(item.id, item.name)} disabled={Boolean(connecting || disconnecting || comingSoon || connected)} className="flex min-h-11 min-w-0 items-center justify-center gap-2 rounded-xl bg-[#7C3AED] px-3 text-sm font-black disabled:opacity-70">{busy ? <LoaderCircle className="shrink-0 animate-spin" size={16}/> : <CheckCircle2 className="shrink-0" size={16}/>}{comingSoon ? 'Coming Soon' : busy ? 'Connecting…' : connected ? 'Connected ✓' : 'Connect'}</button>{connected && <button onClick={() => void disconnect(item.id)} disabled={Boolean(connecting || disconnecting)} aria-label={`Disconnect ${item.name}`} className="flex min-h-11 min-w-0 items-center justify-center gap-2 rounded-xl border border-rose-300/20 bg-rose-300/10 px-3 text-sm font-black text-rose-200 transition hover:bg-rose-300/15 disabled:opacity-50">{removing ? <LoaderCircle className="shrink-0 animate-spin" size={16}/> : <Unplug className="shrink-0" size={16}/>}<span>{removing ? 'Disconnecting…' : 'Disconnect'}</span></button>}</div>}
           </article></Fragment>
         })}
       </section>}

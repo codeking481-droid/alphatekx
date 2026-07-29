@@ -13,15 +13,20 @@ function testEngine() {
   const records = new Map()
   let modelCalls = 0
   let creditCharges = 0
+  let imageCalls = 0
   const engine = createConversationEngine({
     saveServerAgent: async record => { records.set(record.id, structuredClone(record)); return record },
     getServerAgent: async id => structuredClone(records.get(id)),
     getUserCredits: async () => 30,
     spendUserCredits: async () => { creditCharges += 1; return true },
     getIntegrationStatus: async () => ({ connected: true, ready: true }),
+    getSmartImage: async () => {
+      imageCalls += 1
+      return { image_url: 'https://image.pollinations.ai/prompt/verified-car', image_storage_path: 'user/generated/car.jpg', image_source: 'pollinations-legacy' }
+    },
     callLLMForRole: async () => { modelCalls += 1; throw new Error('Model should not be required by this test') },
   })
-  return { engine, records, get modelCalls() { return modelCalls }, get creditCharges() { return creditCharges } }
+  return { engine, records, get modelCalls() { return modelCalls }, get creditCharges() { return creditCharges }, get imageCalls() { return imageCalls } }
 }
 
 for (const greeting of ['Hi', 'Hello', 'Good morning', 'How are you?']) {
@@ -43,6 +48,26 @@ await test('a genuine request after a greeting enters deterministic planning', a
   assert.equal(conversation.conversationStage, 'awaiting_approval')
   assert.equal(conversation.automationDraft.actions[0].action, 'save_attachments_to_drive')
   assert.equal(fixture.modelCalls, 0)
+})
+
+await test('misspelled direct image request bypasses automation clarification', async () => {
+  const fixture = testEngine()
+  const conversation = await fixture.engine.start({ id: 'image-user', email: 'owner@example.com' }, 'creaet an image of a beautiful car')
+  assert.equal(conversation.intent, 'image_generation')
+  assert.equal(conversation.conversationStage, 'chatting')
+  assert.match(conversation.messages.at(-1).text, /Generated image/)
+  assert.equal(fixture.imageCalls, 1)
+  assert.equal(fixture.modelCalls, 0)
+})
+
+await test('direct image request interrupts an existing planning context safely', async () => {
+  const fixture = testEngine()
+  const user = { id: 'image-follow-up-user', email: 'iamdan4live@gmail.com' }
+  let conversation = await fixture.engine.start(user, 'Save invoice attachments to Google Drive')
+  conversation = await fixture.engine.continue(conversation.id, user, 'generate a photo of a beautiful car')
+  assert.equal(conversation.intent, 'image_generation')
+  assert.equal(conversation.automationDraft, null)
+  assert.equal(fixture.imageCalls, 1)
 })
 
 await test('approval persists a separate active automation without charging credits', async () => {

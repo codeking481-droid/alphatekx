@@ -24,6 +24,7 @@ const agentPage = fs.readFileSync(new URL('../src/pages/Agents.tsx', import.meta
 const appRoutes = fs.readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
 const workspaceLayout = fs.readFileSync(new URL('../src/components/workspace/WorkspaceLayout.tsx', import.meta.url), 'utf8')
 const connectorIcons = fs.readFileSync(new URL('../src/components/agents/ConnectorIcon.tsx', import.meta.url), 'utf8')
+const historyPage = fs.readFileSync(new URL('../src/pages/History.tsx', import.meta.url), 'utf8')
 
 test('calculates days to a named date deterministically', () => {
   assert.equal(calculateDaysUntilQuestion('how many days to Dec 31', new Date('2026-07-29T12:00:00Z')), 'There are **155 days** until 31 December 2026.')
@@ -126,4 +127,17 @@ test('agent workspace is full-screen, mobile-safe, and renders generated images'
   assert.match(connectors, /Connections are secured by Composio and AlphaTekx OAuth/)
 })
 
-console.log(`\n${passed}/16 super-computer agent checks passed`)
+test('connections remain actionable without a refresh-first dead end', () => {
+  assert.doesNotMatch(connectors, /Reconnect/)
+  assert.match(connectors, /Connected ✓/)
+  assert.match(connectors, /You can still choose a tool below and connect securely/)
+})
+
+test('durable Alpha conversations are available from History', () => {
+  assert.match(server, /req\.url === '\/api\/alpha\/conversations'/)
+  assert.match(server, /record\.type === 'conversation'/)
+  assert.match(historyPage, /Every completed chat turn is saved securely/)
+  assert.match(historyPage, /conversation\.messages\.map/)
+})
+
+console.log(`\n${passed}/18 super-computer agent checks passed`)

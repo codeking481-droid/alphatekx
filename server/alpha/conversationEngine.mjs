@@ -378,6 +378,19 @@ export function createConversationEngine(deps) {
     getSmartImage,
   } = deps
 
+  function normalizeImageCommand(value) {
+    return String(value || '')
+      .replace(/\b(?:creaet|craete|cretae|creat)\b/gi, 'create')
+      .replace(/\b(?:genrate|generat|genereate)\b/gi, 'generate')
+  }
+
+  function isDirectImageRequest(value) {
+    const prompt = normalizeImageCommand(value)
+    const asksForImage = /\b(?:image|picture|photo|visual|artwork|illustration)\b/i.test(prompt)
+    const createsSomething = /\b(?:create|generate|make|draw|design|produce|show\s+me)\b/i.test(prompt)
+    return asksForImage && createsSomething && !/\b(?:post|publish|schedule|automation|campaign)\b/i.test(prompt)
+  }
+
   async function saveConversation(conversation) {
     conversation.updatedAt = nowIso()
     await saveServerAgent(conversation)
@@ -414,9 +427,8 @@ export function createConversationEngine(deps) {
   }
 
   async function understandRequest(conversation, promptOverride = '') {
-    const prompt = promptOverride || conversation.originalRequest
-    const directImageRequest = /\b(?:create|generate|make|find|match)\s+(?:an?\s+)?(?:image|picture|photo|visual)\b/i.test(prompt) &&
-      !/\b(?:post|publish|schedule|automation|campaign)\b/i.test(prompt)
+    const prompt = normalizeImageCommand(promptOverride || conversation.originalRequest)
+    const directImageRequest = isDirectImageRequest(prompt)
     if (directImageRequest) {
       conversation.intentClassification = { category: INTENT_CATEGORIES.conversation, confidence: 1, reason: 'direct_image_request' }
       conversation.intent = 'image_generation'
@@ -1730,6 +1742,13 @@ Return JSON: { "text": "..." }`
   async function continueConversation(id, user, text) {
     const conversation = await loadConversation(id, user)
     addMessage(conversation, 'user', text)
+    if (isDirectImageRequest(text)) {
+      conversation.originalRequest = normalizeImageCommand(text)
+      conversation.currentGoal = conversation.originalRequest
+      await understandRequest(conversation, conversation.originalRequest)
+      await saveConversation(conversation)
+      return conversation
+    }
     const brainAnswer = answerFromBrain(text)
     if (brainAnswer) {
       addMessage(conversation, 'alpha', brainAnswer, { knowledgeSource: 'alphatekx-brain' })

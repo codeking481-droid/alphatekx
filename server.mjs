@@ -6970,16 +6970,41 @@ const server = http.createServer(async (req, res) => {
       if (!user) return json(res, 401, { error: 'Authentication required' })
       const body = await readBody(req)
       prompt = String(body.prompt || '')
-      const unavailable = unavailablePromptConnector(user, prompt, trustedFeatureIdentity(req))
-      if (unavailable) return json(res, 200, { conversation: { id: randomUUID(), type: 'conversation', conversationStage: 'chatting', status: 'chatting', messages: [{ role: 'assistant', content: unavailableConnectorMessage(unavailable) }], automationDraft: null }, agent: null })
       const conversation = await getConversationEngine().start(user, prompt)
       return json(res, 200, { conversation, agent: conversation.automationDraft })
     } catch (error) {
       if (user && isProviderOrConfigError(error)) {
         const conversation = fallbackConversationResponse(user, prompt, error)
+        await saveServerAgent(conversation).catch(saveError => {
+          console.error('[AlphaTekX] fallback conversation persistence failed:', saveError instanceof Error ? saveError.message : saveError)
+        })
         return json(res, 200, { conversation, agent: null, warning: alphaConfigurationMessage(error) })
       }
       return json(res, error instanceof Error && error.message.includes('No AI provider') ? 503 : 400, { error: error instanceof Error ? error.message : 'Conversation failed' })
+    }
+  }
+  if (req.method === 'GET' && req.url === '/api/alpha/conversations') {
+    try {
+      const config = supabaseConfig()
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      if (!user) return json(res, 401, { error: 'Authentication required' })
+      const conversations = (await listServerAgentsForUser(user.id))
+        .filter(record => record.type === 'conversation' && record.status !== 'deleted')
+        .sort((a, b) => new Date(b.updated_at || b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updated_at || a.updatedAt || a.createdAt || 0).getTime())
+        .slice(0, 100)
+        .map(record => ({
+          id: record.id,
+          title: record.name || `Conversation: ${String(record.originalRequest || '').slice(0, 40)}`,
+          originalRequest: record.originalRequest || '',
+          conversationStage: record.conversationStage || 'chatting',
+          status: record.status || 'draft',
+          createdAt: record.createdAt || record.updated_at,
+          updatedAt: record.updated_at || record.updatedAt || record.createdAt,
+          messages: Array.isArray(record.messages) ? record.messages : [],
+        }))
+      return json(res, 200, { conversations })
+    } catch (error) {
+      return json(res, 500, { error: error instanceof Error ? error.message : 'Could not load conversation history.' })
     }
   }
   const conversationGetMatch = req.url?.match(/^\/api\/alpha\/conversation\/([^/]+)$/)
