@@ -1338,12 +1338,12 @@ function createOAuthState(userId, config, email = '', redirect = '/agents', extr
 
 function verifyOAuthState(value, config) {
   const [payload, signature] = String(value || '').split('.')
-  if (!payload || !signature) throw new Error('Invalid Google connection state')
+  if (!payload || !signature) throw new Error('Invalid or missing OAuth connection state. Start the connection again.')
   const expected = createHmac('sha256', oauthStateKey(config)).update(payload).digest()
   const received = Buffer.from(signature, 'base64url')
-  if (received.length !== expected.length || !timingSafeEqual(received, expected)) throw new Error('Invalid Google connection state')
+  if (received.length !== expected.length || !timingSafeEqual(received, expected)) throw new Error('Invalid OAuth connection state. Start the connection again.')
   const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'))
-  if (!parsed.userId || Number(parsed.expires) < Date.now()) throw new Error('Google connection expired. Start again from Vault.')
+  if (!parsed.userId || Number(parsed.expires) < Date.now()) throw new Error('OAuth connection expired. Start the connection again.')
   return parsed
 }
 
@@ -1836,7 +1836,34 @@ async function testConnectorHandler(req, res) {
   }
 }
 
-const linkedinRedirectUri = () => String(process.env.LINKEDIN_REDIRECT_URI || `${publicAppUrl()}/api/connectors/linkedin/callback`).trim()
+const linkedinOAuthScopes = () => {
+  const configured = normalizeLinkedInScopes(process.env.LINKEDIN_OAUTH_SCOPES || 'openid profile email w_member_social')
+  if (!configured.includes('w_member_social')) configured.push('w_member_social')
+  return configured
+}
+
+const linkedinRedirectUri = () => {
+  const value = String(process.env.LINKEDIN_REDIRECT_URI || `${publicAppUrl()}/api/connectors/linkedin/callback`).trim()
+  let parsed
+  try { parsed = new URL(value) } catch { throw new Error('LINKEDIN_REDIRECT_URI must be a complete HTTPS URL.') }
+  const local = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1'
+  if (parsed.protocol !== 'https:' && !local) throw new Error('LINKEDIN_REDIRECT_URI must use HTTPS.')
+  if (parsed.pathname !== '/api/connectors/linkedin/callback' || parsed.search || parsed.hash) {
+    throw new Error('LINKEDIN_REDIRECT_URI must end exactly with /api/connectors/linkedin/callback and contain no query or fragment.')
+  }
+  return parsed.toString()
+}
+
+function linkedinOAuthUrl(clientId, redirectUri, state) {
+  const params = new URLSearchParams({
+    response_type: 'code',
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    scope: linkedinOAuthScopes().join(' '),
+    state,
+  })
+  return `https://www.linkedin.com/oauth/v2/authorization?${params.toString()}`
+}
 
 async function startLinkedInOAuth(req, res) {
   const config = supabaseConfig()
@@ -1851,7 +1878,7 @@ async function startLinkedInOAuth(req, res) {
   if (!clientId) return json(res, 503, { error: 'LinkedIn client ID not configured' })
   const redirectUri = linkedinRedirectUri()
   const state = createOAuthState(user.id, config, user.email || '', '/connectors')
-  const authUrl = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent('openid profile w_member_social email')}&state=${encodeURIComponent(state)}`
+  const authUrl = linkedinOAuthUrl(clientId, redirectUri, state)
   res.writeHead(302, { Location: authUrl, 'Cache-Control': 'no-store' })
   return res.end()
 }
@@ -1869,7 +1896,7 @@ async function startLinkedInConnection(req, res) {
   const requestedRedirect = String(body?.redirect || '/connected-apps')
   const safeRedirect = requestedRedirect.startsWith('/') && !requestedRedirect.startsWith('//') ? requestedRedirect : '/connected-apps'
   const state = createOAuthState(user.id, config, user.email, safeRedirect)
-  const authUrl = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent('openid profile w_member_social email')}&state=${encodeURIComponent(state)}`
+  const authUrl = linkedinOAuthUrl(clientId, redirectUri, state)
   return json(res, 200, { url: authUrl })
 }
 
@@ -1912,7 +1939,16 @@ async function linkedinCallback(req, res) {
     if (!linkedinId) throw new Error('Could not fetch LinkedIn profile id')
     const authorUrn = `urn:li:person:${linkedinId}`
     const grantedScopes = normalizeLinkedInScopes(tokenData.scope)
-    await saveUserIntegration(parsed.userId, 'linkedin', { email: parsed.email, identifier: authorUrn, tokens: { access_token: accessToken, author_urn: authorUrn, isMaster: false, hasOwnKey: true, expiry: tokenData.expires_in ? Date.now() + tokenData.expires_in * 1000 : undefined }, scopes: grantedScopes.length ? grantedScopes : ['openid', 'profile', 'w_member_social', 'email'] }, config)
+    const scopes = grantedScopes.length ? grantedScopes : linkedinOAuthScopes()
+    if (!scopes.includes('w_member_social')) throw new Error('LinkedIn did not grant Share on LinkedIn permission. Reconnect and approve the requested permission.')
+    const saved = await saveUserIntegration(parsed.userId, 'linkedin', { email: parsed.email, identifier: authorUrn, tokens: { access_token: accessToken, author_urn: authorUrn, isMaster: false, hasOwnKey: true, expiry: tokenData.expires_in ? Date.now() + tokenData.expires_in * 1000 : undefined }, scopes }, config)
+    if (!saved.durable) throw new Error('LinkedIn authorized successfully, but AlphaTekx could not securely save the connection. Please retry shortly.')
+    const verified = await getUserIntegration(parsed.userId, 'linkedin', config)
+    const verifiedScopes = normalizeLinkedInScopes(verified?.scopes)
+    const verifiedAuthor = verified?.tokens?.author_urn || verified?.tokens?.authorUrn || ''
+    if (!verified?.tokens?.access_token || !String(verifiedAuthor).startsWith('urn:li:person:') || !verifiedScopes.includes('w_member_social')) {
+      throw new Error('LinkedIn authorized, but the saved connection could not be verified. Please reconnect.')
+    }
   } catch (error) {
     destination = new URL('/connected-apps?connected=error', publicAppUrl())
     destination.searchParams.set('reason', error instanceof Error ? error.message.slice(0, 180) : 'LinkedIn connection failed')
@@ -4444,15 +4480,18 @@ async function getUserIntegration(userId, provider, config) {
 async function saveUserIntegration(userId, provider, data, config) {
   const record = { user_id: userId, provider, email: data.email || data.identifier || null, scopes: data.scopes || [], updated_at: new Date().toISOString() }
   let savedRemote = false
+  const remoteRequired = Boolean(config.url && config.service)
   if (config.url && config.service) {
     const key = encryptionKey(config)
     const remote = { ...record, tokens: encryptGenericTokens(data.tokens || {}, key) }
     try {
       const response = await fetch(`${config.url}/rest/v1/connected_accounts?on_conflict=user_id,provider`, { method: 'POST', headers: { ...serviceHeaders(config.service), Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(remote) })
       if (response.ok) savedRemote = true
+      else process.stdout.write(`[save integration] connected_accounts save failed for ${provider}: HTTP ${response.status}\n`)
     } catch (err) { process.stdout.write(`[save integration] connected_accounts save failed: ${err instanceof Error ? err.message : err}\n`) }
   }
-  if (!savedRemote) setLocalIntegration(userId, provider, { ...record, tokens: data.tokens || {} })
+  if (!remoteRequired) setLocalIntegration(userId, provider, { ...record, tokens: data.tokens || {} })
+  return { saved: savedRemote || !remoteRequired, durable: savedRemote || !remoteRequired }
 }
 
 async function repairOversizedAuthSession(req, res) {
