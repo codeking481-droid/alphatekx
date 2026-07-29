@@ -186,6 +186,48 @@ await test('OAuth start uses the exact callback, required scope and signed state
   } finally { app.child.kill('SIGTERM') }
 })
 
+await test('OAuth normalizes a pasted Render assignment instead of blocking LinkedIn', async () => {
+  const port = 4650 + Math.floor(Math.random() * 80)
+  const callback = 'https://alphatekx.name.ng/api/connectors/linkedin/callback'
+  const app = await startApp(port, {
+    PUBLIC_APP_URL: 'https://alphatekx.name.ng',
+    LINKEDIN_CLIENT_ID: 'linkedin-client',
+    LINKEDIN_CLIENT_SECRET: 'linkedin-secret',
+    LINKEDIN_REDIRECT_URI: `LINKEDIN_REDIRECT_URI="${callback}"`,
+  })
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/connectors/linkedin/start`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-local-user-id': 'linkedin-pasted-env-user', 'x-local-user-email': 'oauth@test.local' },
+      body: JSON.stringify({ redirect: '/connected-apps' }),
+    })
+    assert.equal(response.status, 200)
+    const authorization = new URL((await response.json()).url)
+    assert.equal(authorization.searchParams.get('redirect_uri'), callback)
+  } finally { app.child.kill('SIGTERM') }
+})
+
+await test('OAuth safely falls back to the canonical callback for malformed configuration', async () => {
+  const port = 4730 + Math.floor(Math.random() * 70)
+  const callback = 'https://alphatekx.name.ng/api/connectors/linkedin/callback'
+  const app = await startApp(port, {
+    PUBLIC_APP_URL: 'https://alphatekx.name.ng',
+    LINKEDIN_CLIENT_ID: 'linkedin-client',
+    LINKEDIN_CLIENT_SECRET: 'linkedin-secret',
+    LINKEDIN_REDIRECT_URI: 'not-a-url',
+  })
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/connectors/linkedin/start`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-local-user-id': 'linkedin-fallback-user', 'x-local-user-email': 'oauth@test.local' },
+      body: JSON.stringify({ redirect: '/connected-apps' }),
+    })
+    assert.equal(response.status, 200)
+    const authorization = new URL((await response.json()).url)
+    assert.equal(authorization.searchParams.get('redirect_uri'), callback)
+  } finally { app.child.kill('SIGTERM') }
+})
+
 await test('OAuth callback requires durable, verified LinkedIn storage', async () => {
   const source = await readFile(new URL('../server.mjs', import.meta.url), 'utf8')
   assert.match(source, /if \(!saved\.durable\).*could not securely save/s)
