@@ -170,10 +170,15 @@ export async function getPublicProject(config, slug) {
   const rows = await request(config, `builder_projects?slug=eq.${encodeURIComponent(slug)}&published=eq.true&select=id,slug,title,code,public_url,views,created_at&limit=1`)
   const project = rows?.[0]
   if (!project) return null
-  void request(config, `builder_projects?id=eq.${encodeURIComponent(project.id)}`, {
-    method: 'PATCH',
-    headers: { Prefer: 'return=minimal' },
-    body: JSON.stringify({ views: Number(project.views || 0) + 1 }),
-  }).catch(() => {})
-  return project
+  let views = Number(project.views || 0)
+  try {
+    const incremented = await request(config, 'rpc/increment_builder_views', {
+      method: 'POST',
+      body: JSON.stringify({ slug_param: slug }),
+    })
+    if (Number.isFinite(Number(incremented))) views = Number(incremented)
+  } catch (error) {
+    console.warn('[Elite Builder] Atomic view increment unavailable:', error instanceof Error ? error.message : error)
+  }
+  return { ...project, views }
 }

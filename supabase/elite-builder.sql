@@ -48,6 +48,26 @@ create index if not exists idx_builder_projects_user_created
 create index if not exists idx_builder_projects_public_slug
   on public.builder_projects(slug) where published = true;
 
+create or replace function public.increment_builder_views(slug_param text)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  next_views integer;
+begin
+  update public.builder_projects
+  set views = views + 1
+  where slug = slug_param and published = true
+  returning views into next_views;
+  return coalesce(next_views, 0);
+end;
+$$;
+
+revoke all on function public.increment_builder_views(text) from public;
+grant execute on function public.increment_builder_views(text) to anon, authenticated;
+
 alter table public.builder_projects enable row level security;
 
 drop policy if exists "Builder owners can read projects" on public.builder_projects;

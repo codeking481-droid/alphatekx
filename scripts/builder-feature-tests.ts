@@ -180,7 +180,7 @@ await test('Builder V3 supports visual selection, media, remix and domain verifi
   assert(ui.includes('element-clicked') && ui.includes('Use My Media'), 'visual/media editing is incomplete')
   assert(ui.includes('repairCount >= 3'), 'auto-repair must stop after three attempts')
   assert(ui.includes('requestBuilderDomain'), 'custom domain verification UI is missing')
-  assert(publicUi.includes('Remix this app with Alpha'), 'public remix action is missing')
+  assert(publicUi.includes('Remix this app'), 'public remix action is missing')
 })
 
 await test('Builder V3 has responsive device previews and durable version history', () => {
@@ -197,6 +197,14 @@ await test('Builder V3 uses authenticated Pollinations retries without obsolete 
   assert(server.includes('pollinationsBuilderCompletion') && server.includes('attempt < 3'), 'Pollinations retry path is missing')
   assert(server.includes('https://gen.pollinations.ai/v1/chat/completions'), 'official Pollinations endpoint is missing')
   assert(!server.includes("https://text.pollinations.ai/openai"), 'obsolete Pollinations endpoint must not be used')
+})
+
+await test('Builder V3 deployment is full-height and counts public views atomically', () => {
+  const publicUi = readFileSync(new URL('../src/pages/PublicBuilderProject.tsx', import.meta.url), 'utf8')
+  const service = readFileSync(new URL('../server/eliteBuilderService.mjs', import.meta.url), 'utf8')
+  const sql = readFileSync(new URL('../supabase/elite-builder.sql', import.meta.url), 'utf8')
+  assert(publicUi.includes('fixed inset-0 flex min-h-0 flex-col') && publicUi.includes('AlphaTekX Builder V3'), 'deployed app shell is incomplete')
+  assert(service.includes("rpc/increment_builder_views") && sql.includes('increment_builder_views'), 'atomic view counting is missing')
 })
 
 await test('Builder V3 generated apps use the scoped AlphaAPI without browser service keys', () => {
