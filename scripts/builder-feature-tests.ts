@@ -6,7 +6,7 @@ import {
 } from '../src/lib/builderVerifier.ts'
 import { fallbackAlphaBuilder } from '../alphaFallback.mjs'
 import { readFileSync } from 'node:fs'
-import { SLUG_PATTERN, saveGeneratedProject, validateBuilderCode } from '../server/eliteBuilderService.mjs'
+import { contextualFallbackBuilderCode, SLUG_PATTERN, saveGeneratedProject, validateBuilderCode } from '../server/eliteBuilderService.mjs'
 import { builderSrcDoc, normalizeBuilderRuntimeCode } from '../src/lib/eliteBuilder.ts'
 
 globalThis.localStorage = {
@@ -158,6 +158,18 @@ await test('Builder preview handles every saved import and export shape used by 
   const document = builderSrcDoc(generated, 'E-commerce')
   assert(!document.includes('import type'), 'deployed preview contains a type import')
   assert(document.includes('React.createElement(App)'), 'deployed preview does not mount App')
+})
+
+await test('Builder fallback produces a real interactive school website when providers are unavailable', () => {
+  const code = contextualFallbackBuilderCode('create a simple html code of a school website')
+  const result = validateBuilderCode(code)
+  assert(result.errors.length === 0, `school fallback is invalid: ${result.errors.join(' ')}`)
+  for (const expected of ['Alpha Heights School', 'Our programmes', 'Admissions', 'Request a school tour']) {
+    assert(code.includes(expected), `school fallback is missing ${expected}`)
+  }
+  assert(code.includes('React.useState'), 'school fallback is not interactive')
+  assert(code.includes('md:hidden'), 'school fallback does not include mobile navigation')
+  assert(!code.includes('create a simple html code'), 'school fallback exposed the raw instruction as a headline')
 })
 
 await test('Elite Builder validates complete single-component output', () => {

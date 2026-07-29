@@ -190,6 +190,55 @@ export function validateBuilderCode(value) {
   return { code, errors };
 }
 
+export function contextualFallbackBuilderCode(prompt) {
+  const request = String(prompt || "").trim();
+  if (!/\b(?:school|academy|college|nursery|primary|secondary|university|education)\b/i.test(request)) return "";
+  return `function App() {
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const [selectedProgram, setSelectedProgram] = React.useState('Primary School');
+  const [submitted, setSubmitted] = React.useState(false);
+  const programs = [
+    { name: 'Early Years', ages: 'Ages 2–5', detail: 'Play-led learning that builds confidence, language and curiosity.' },
+    { name: 'Primary School', ages: 'Ages 5–11', detail: 'Strong foundations in literacy, mathematics, science and creativity.' },
+    { name: 'Secondary School', ages: 'Ages 11–17', detail: 'Exam-ready learning, leadership development and practical digital skills.' }
+  ];
+  const news = [
+    ['Admissions now open', 'Book a guided campus tour and meet our academic team.'],
+    ['Science fair showcase', 'Students presented renewable-energy projects to families and local leaders.'],
+    ['Inter-house sports', 'A full day of teamwork, athletics and community celebration.']
+  ];
+  const scrollTo = id => { document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' }); setMenuOpen(false); };
+  return <main className="min-h-screen bg-[#F7F9FC] text-slate-950">
+    <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 backdrop-blur-xl">
+      <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4">
+        <button onClick={() => scrollTo('home')} className="flex items-center gap-3 text-left">
+          <span className="grid size-11 place-items-center rounded-2xl bg-blue-700 text-xl font-black text-white">A</span>
+          <span><strong className="block text-base font-black">Alpha Heights School</strong><small className="text-xs font-bold text-blue-700">Learn · Lead · Flourish</small></span>
+        </button>
+        <nav className="hidden items-center gap-7 text-sm font-bold md:flex">
+          {['about','programs','news','admissions'].map(item => <button key={item} onClick={() => scrollTo(item)} className="capitalize text-slate-600 transition hover:text-blue-700">{item}</button>)}
+        </nav>
+        <button onClick={() => scrollTo('admissions')} className="hidden rounded-xl bg-blue-700 px-5 py-3 text-sm font-black text-white shadow-lg shadow-blue-700/20 transition hover:-translate-y-0.5 md:block">Apply now</button>
+        <button onClick={() => setMenuOpen(!menuOpen)} aria-label="Toggle navigation" className="grid size-11 place-items-center rounded-xl border border-slate-200 bg-white text-xl md:hidden">{menuOpen ? '×' : '☰'}</button>
+      </div>
+      {menuOpen && <nav className="grid gap-2 border-t border-slate-100 bg-white p-5 md:hidden">{['about','programs','news','admissions'].map(item => <button key={item} onClick={() => scrollTo(item)} className="rounded-xl px-4 py-3 text-left font-bold capitalize hover:bg-blue-50">{item}</button>)}</nav>}
+    </header>
+    <section id="home" className="relative overflow-hidden bg-gradient-to-br from-blue-950 via-blue-800 to-cyan-700 text-white">
+      <div className="absolute -right-24 top-10 size-80 rounded-full bg-cyan-300/20 blur-3xl"/><div className="absolute -left-20 bottom-0 size-72 rounded-full bg-amber-300/15 blur-3xl"/>
+      <div className="relative mx-auto grid min-h-[620px] max-w-7xl items-center gap-12 px-5 py-20 lg:grid-cols-[1.1fr_.9fr]">
+        <div><p className="text-sm font-black uppercase tracking-[.24em] text-cyan-200">Admissions open for 2026/2027</p><h1 className="mt-6 max-w-3xl text-5xl font-black leading-[.98] sm:text-6xl lg:text-7xl">A school where every child can thrive.</h1><p className="mt-7 max-w-2xl text-lg font-medium leading-8 text-blue-50/80">Excellent teaching, strong character and a safe community prepare learners for a changing world.</p><div className="mt-9 flex flex-col gap-3 sm:flex-row"><button onClick={() => scrollTo('admissions')} className="rounded-xl bg-amber-400 px-7 py-4 font-black text-blue-950 transition hover:-translate-y-1">Start an application</button><button onClick={() => scrollTo('about')} className="rounded-xl border border-white/30 bg-white/10 px-7 py-4 font-black backdrop-blur transition hover:bg-white/20">Explore our school</button></div></div>
+        <div className="rounded-[2rem] border border-white/20 bg-white/10 p-5 shadow-2xl backdrop-blur-xl"><div className="grid aspect-[4/3] place-items-center rounded-3xl bg-gradient-to-br from-cyan-300/30 to-blue-950/40 p-8 text-center"><div><span className="text-7xl">🎓</span><p className="mt-5 text-2xl font-black">Future-ready learning</p><p className="mt-2 text-blue-100/75">Small classes · Caring teachers · Modern facilities</p></div></div></div>
+      </div>
+    </section>
+    <section id="about" className="mx-auto grid max-w-7xl gap-10 px-5 py-20 lg:grid-cols-2 lg:items-center"><div><p className="font-black uppercase tracking-[.2em] text-blue-700">Why families choose us</p><h2 className="mt-4 text-4xl font-black sm:text-5xl">Education with purpose.</h2><p className="mt-5 text-lg leading-8 text-slate-600">We combine rigorous academics with creativity, technology, sport and service. Every learner is known, supported and challenged.</p></div><div className="grid grid-cols-2 gap-4">{[['18','Average class size'],['96%','Parent satisfaction'],['25+','Clubs and activities'],['100%','Safeguarding trained']].map(([value,label]) => <article key={label} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"><strong className="text-3xl font-black text-blue-700">{value}</strong><p className="mt-2 text-sm font-bold text-slate-500">{label}</p></article>)}</div></section>
+    <section id="programs" className="bg-white py-20"><div className="mx-auto max-w-7xl px-5"><div className="max-w-2xl"><p className="font-black uppercase tracking-[.2em] text-blue-700">Our programmes</p><h2 className="mt-4 text-4xl font-black">A clear path from first steps to graduation.</h2></div><div className="mt-10 grid gap-5 md:grid-cols-3">{programs.map(program => <button key={program.name} onClick={() => setSelectedProgram(program.name)} className={'rounded-3xl border p-7 text-left transition hover:-translate-y-1 hover:shadow-xl ' + (selectedProgram === program.name ? 'border-blue-700 bg-blue-700 text-white shadow-xl shadow-blue-700/20' : 'border-slate-200 bg-white')}><span className={'text-xs font-black uppercase tracking-wider ' + (selectedProgram === program.name ? 'text-cyan-200' : 'text-blue-700')}>{program.ages}</span><h3 className="mt-4 text-2xl font-black">{program.name}</h3><p className={'mt-3 leading-7 ' + (selectedProgram === program.name ? 'text-blue-50/80' : 'text-slate-600')}>{program.detail}</p></button>)}</div></div></section>
+    <section id="news" className="mx-auto max-w-7xl px-5 py-20"><h2 className="text-4xl font-black">Life at Alpha Heights</h2><div className="mt-9 grid gap-5 md:grid-cols-3">{news.map(([title,copy],index) => <article key={title} className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm"><div className={'h-40 ' + ['bg-blue-700','bg-cyan-600','bg-amber-400'][index]}/><div className="p-6"><p className="text-xs font-black uppercase tracking-wider text-blue-700">School update</p><h3 className="mt-3 text-xl font-black">{title}</h3><p className="mt-3 leading-7 text-slate-600">{copy}</p></div></article>)}</div></section>
+    <section id="admissions" className="bg-blue-950 py-20 text-white"><div className="mx-auto grid max-w-7xl gap-10 px-5 lg:grid-cols-2"><div><p className="font-black uppercase tracking-[.2em] text-cyan-300">Admissions</p><h2 className="mt-4 text-4xl font-black sm:text-5xl">Come and see your child’s next chapter.</h2><p className="mt-5 max-w-xl text-lg leading-8 text-blue-100/70">Tell us which programme interests you. Our admissions team will contact you to arrange a tour.</p></div><div className="rounded-3xl bg-white p-6 text-slate-950 sm:p-8">{submitted ? <div className="grid min-h-72 place-items-center text-center"><div><span className="text-5xl">✓</span><h3 className="mt-5 text-2xl font-black">Enquiry received</h3><p className="mt-2 text-slate-600">Our admissions team will contact you shortly.</p><button onClick={() => setSubmitted(false)} className="mt-6 font-black text-blue-700">Send another enquiry</button></div></div> : <form onSubmit={event => { event.preventDefault(); setSubmitted(true); }} className="grid gap-4"><input required aria-label="Parent name" placeholder="Parent or guardian name" className="rounded-xl border border-slate-200 px-4 py-3 outline-none focus:border-blue-600"/><input required type="email" aria-label="Email address" placeholder="Email address" className="rounded-xl border border-slate-200 px-4 py-3 outline-none focus:border-blue-600"/><select value={selectedProgram} onChange={event => setSelectedProgram(event.target.value)} className="rounded-xl border border-slate-200 px-4 py-3">{programs.map(program => <option key={program.name}>{program.name}</option>)}</select><textarea required aria-label="Message" placeholder="Tell us about your child" rows={4} className="rounded-xl border border-slate-200 px-4 py-3 outline-none focus:border-blue-600"/><button className="rounded-xl bg-blue-700 px-6 py-4 font-black text-white">Request a school tour</button></form>}</div></div></section>
+    <footer className="bg-slate-950 px-5 py-10 text-slate-400"><div className="mx-auto flex max-w-7xl flex-col justify-between gap-4 sm:flex-row"><p className="font-bold text-white">Alpha Heights School</p><p>12 Learning Avenue · Lagos · admissions@alphaheights.edu</p></div></footer>
+  </main>;
+}`;
+}
+
 export async function listProjects(config, user) {
   try {
     const rows = await request(

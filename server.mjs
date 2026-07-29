@@ -6581,6 +6581,8 @@ Return only one JSX code block containing a single React component named App.
 - Do not claim payment, authentication, database, or external API behavior that is not implemented.`
 
 function fallbackEliteComponent(prompt) {
+  const contextualFallback = eliteBuilder.contextualFallbackBuilderCode(prompt)
+  if (contextualFallback) return contextualFallback
   const subject = String(prompt || 'Your next product').replace(/[<>{}`]/g, '').trim().slice(0, 90) || 'Your next product'
   return `function App() {
   const [email, setEmail] = React.useState('');
