@@ -192,12 +192,18 @@ function heuristicParseRequest(prompt) {
     { id: 'tiktok', test: /\btiktok\b/ },
     { id: 'youtube', test: /\byoutube\b/ },
   ]
-  const platforms = platformList.filter(p => p.test.test(lower)).map(p => p.id === 'twitter' ? 'x' : p.id)
+  const platforms = platformList
+    .map(p => ({ ...p, match: lower.match(p.test) }))
+    .filter(p => p.match)
+    .sort((a, b) => (a.match?.index ?? Number.MAX_SAFE_INTEGER) - (b.match?.index ?? Number.MAX_SAFE_INTEGER))
+    .map(p => p.id === 'twitter' ? 'x' : p.id)
+    .filter((platform, index, all) => all.indexOf(platform) === index)
   if (!hasPost) return result
   result.intent = 'social_content'
   result.knownFields.platforms = platforms
 
   const businessPatterns = [
+    /\bbusiness\s*:\s*([^\n]+)/i,
     /\bintroducing\s+([^,.!?]+)/i,
     /\bmy\s+business\s+(?:is|offers?)\s+([^,.!?]+)/i,
     /\b(?:post|article)\s+(?:about|on)\s+([^,.!?]+)/i,
@@ -208,16 +214,38 @@ function heuristicParseRequest(prompt) {
     if (m) { result.knownFields.business = cleanBusiness(m[1]); break }
   }
 
-  const audienceMatch = prompt.match(/\b(?:for|target(?:ed)?\s+audience(?:\s+is)?)\s*[:=]?\s*([^\.\n]+(?:,[^\.\n]+)*)/i) ||
-                        prompt.match(/\baudience(?:\s+is)?\s*[:=]?\s*([^\.\n]+(?:,[^\.\n]+)*)/i)
-  if (audienceMatch) result.knownFields.audience = audienceMatch[1].trim().replace(/\s+/g, ' ')
+  const explicitAudienceMatch = prompt.match(/\b(?:target(?:ed)?\s+audience|audience)(?:\s+is)?\s*[:=]\s*([^\.\n]+(?:,[^\.\n]+)*)/i)
+  const genericAudienceMatch = prompt.match(/\bfor\s+(?!\d+\s*(?:days?|weeks?|months?)\b)([^\.\n]+(?:,[^\.\n]+)*)/i)
+  if (explicitAudienceMatch) result.knownFields.audience = explicitAudienceMatch[1].trim().replace(/\s+/g, ' ')
+  else if (/\bbuild\s+for\s+real\s+businesses\b/i.test(prompt)) result.knownFields.audience = 'real businesses, founders, and teams that need production-ready websites and automation'
+  else if (genericAudienceMatch) result.knownFields.audience = genericAudienceMatch[1].trim().replace(/\s+/g, ' ')
 
   const toneMatch = prompt.match(/\btone(?:\s+is)?\s*[:=]?\s*([^\.\n]+)/i) ||
                     prompt.match(/(?:\bin a|\bwith a)\s+([^\.\n]+?)\s+\btone\b/i)
   if (toneMatch) result.knownFields.tone = toneMatch[1].trim().replace(/\s+/g, ' ')
+  else if (/\badapt\s+(?:the\s+)?captions?\b/i.test(prompt) && platforms.length > 1) {
+    result.knownFields.tone = 'platform-native: story-led Facebook, punchy X, visual Gen Z Instagram, and professional founder-led LinkedIn'
+  }
+
+  const platformTimes = {}
+  const platformTimePatterns = [
+    ['facebook', /\bfacebook\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i],
+    ['x', /\b(?:twitter|x)\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i],
+    ['instagram', /\binstagram\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i],
+    ['linkedin', /\blinkedin\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i],
+  ]
+  for (const [platform, pattern] of platformTimePatterns) {
+    const match = prompt.match(pattern)
+    const parsed = match ? parseTime(match[1]) : null
+    if (parsed) platformTimes[platform] = parsed.display
+  }
+  if (Object.keys(platformTimes).length) {
+    result.knownFields.platformTimes = platformTimes
+    result.knownFields.time = Object.values(platformTimes)[0]
+  }
 
   const time = extractTimeFromText(prompt)
-  if (time) result.knownFields.time = time
+  if (time && !result.knownFields.time) result.knownFields.time = time
 
   const weekdays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].filter(day => new RegExp(`\\b${day}s?\\b`, 'i').test(prompt))
   if (weekdays.length) {
@@ -225,12 +253,15 @@ function heuristicParseRequest(prompt) {
     result.knownFields.frequency = 'weekly'
   } else if (/\bweekdays?\b/i.test(prompt)) result.knownFields.frequency = 'weekdays'
   else if (/\b(?:every\s+day|daily)\b/i.test(prompt)) result.knownFields.frequency = 'daily'
+  else if (/\bpost times?\b[\s\S]*\bdaily\b/i.test(prompt)) result.knownFields.frequency = 'daily'
   else if (/\bmonthly\b|\bevery\s+month\b/i.test(prompt)) result.knownFields.frequency = 'monthly'
 
-  const timezoneMatch = prompt.match(/\b(?:timezone\s*[:=]?\s*)?(UTC|GMT|WAT|[A-Za-z_]+\/[A-Za-z_]+)\b/i)
+  const timezoneMatch = prompt.match(/\b(?:timezone\s*[:=]?\s*)?(WAT|UTC|GMT|Africa\/Lagos)\b/i) ||
+    prompt.match(/\btimezone\s*[:=]\s*([A-Za-z_]+\/[A-Za-z_]+)\b/i)
   if (timezoneMatch) result.knownFields.timezone = timezoneMatch[1]
   const startMatch = prompt.match(/\bstart(?:ing)?\s+(?:on\s+)?(\d{4}-\d{2}-\d{2}|today|tomorrow)\b/i)
   if (startMatch) result.knownFields.startDate = startMatch[1].toLowerCase()
+  else if (/\b(?:today\s+to|start\s+now|begin\s+now)\b/i.test(prompt)) result.knownFields.startDate = new Date().toISOString().split('T')[0]
   const endMatch = prompt.match(/\b(?:until|end(?:ing)?\s+(?:on\s+)?)(\d{4}-\d{2}-\d{2})\b/i)
   if (endMatch) result.knownFields.endDate = endMatch[1]
   const runMatch = prompt.match(/\b(?:for|stop\s+after)\s+(\d+)\s+(?:posts?|runs?)\b/i)
@@ -243,7 +274,7 @@ function heuristicParseRequest(prompt) {
   if (ctaMatch) result.knownFields.callToAction = ctaMatch[1].trim()
 
   const explicitPostCount = prompt.match(/\b(?:create|generate|make|write)(?:\s+only)?\s+(one|\d+)\s+(?:linkedin\s+|medium\s+|x\s+|twitter\s+|facebook\s+|instagram\s+)?posts?\b/i) ||
-    prompt.match(/\b(?:only|exactly)\s+(one|\d+)\s+posts?\b/i)
+    prompt.match(/\b(?:only|exactly|total)\s+(one|\d+)\s+posts?\b/i)
   if (explicitPostCount) result.knownFields.totalPosts = explicitPostCount[1].toLowerCase() === 'one' ? 1 : Number(explicitPostCount[1])
   const isSinglePost = requestsSinglePost(prompt)
   const publishingMode = publishingModeFromPrompt(prompt)
@@ -322,13 +353,13 @@ function requiredMissingFields(intent, knownFields) {
     if (untilPaused && !knownFields.untilPausedConfirmed) missing.push({ field: 'untilPausedConfirmation', question: 'This schedule runs until paused. Should Alpha auto-pause when your credits finish, set a fixed limit, or wait while you buy more credits?', reason: 'Infinite schedules require an explicit credit-safety choice.', required: true })
     const linkedinOnly = Array.isArray(knownFields.platforms) && knownFields.platforms.length === 1 && knownFields.platforms[0] === 'linkedin'
     const mode = knownFields.publishingMode || ''
-    const recurring = linkedinOnly && mode === 'recurring'
-    if (linkedinOnly && !mode) missing.push({ field: 'publishingMode', question: 'Would you like to publish it once now, schedule it for later, or make it recurring?', reason: 'I need you to choose the publishing mode before I create a schedule.', required: true })
+    const recurring = mode === 'recurring'
+    if (!mode) missing.push({ field: 'publishingMode', question: 'Would you like to publish once now, schedule once for later, or run a recurring campaign?', reason: 'I need the publishing mode before I create a safe schedule.', required: true })
     if (recurring && !knownFields.endDate && !knownFields.totalPosts && !knownFields.total_posts && !knownFields.durationDays && !knownFields.endCondition) missing.push({ field: 'endCondition', question: 'How long should this continue? Choose an end date, number of weeks, number of posts, or continue until paused.', reason: 'Recurring publishing needs a user-confirmed end condition.', required: true })
     if (recurring && !knownFields.frequency) missing.push({ field: 'frequency', question: 'How often should Alpha publish?', reason: 'Recurring publishing needs a user-confirmed frequency.', required: true })
     if ((recurring || mode === 'once_later') && !knownFields.time) missing.push({ field: 'time', question: 'What exact time should the post go out?', reason: 'Scheduled publishing needs a user-confirmed time.', required: true })
     if (recurring && !knownFields.timezone) missing.push({ field: 'timezone', question: 'Which timezone should I use? (for example Africa/Lagos)', reason: 'The server needs an exact timezone for reliable scheduling.', required: true })
-    if (recurring && !knownFields.startDate) missing.push({ field: 'startDate', question: 'When should this LinkedIn schedule start?', reason: 'I need the first eligible publishing date.', required: true })
+    if (recurring && !knownFields.startDate) missing.push({ field: 'startDate', question: 'When should this campaign start?', reason: 'I need the first eligible publishing date.', required: true })
     if (mode === 'once_later' && !knownFields.timezone) missing.push({ field: 'timezone', question: 'Which timezone should I use for that scheduled time?', reason: 'The server needs an exact timezone for reliable scheduling.', required: true })
     if (mode === 'once_later' && !knownFields.startDate) missing.push({ field: 'startDate', question: 'What date should it be published?', reason: 'A one-time scheduled post needs an exact date.', required: true })
     if (!knownFields.business) missing.push({ field: 'business', question: 'What does your business offer, or what is it about?', reason: 'I need this to generate relevant, original posts.', required: true })
@@ -776,10 +807,18 @@ Do not return placeholder text. Use the words the user actually provided.`
   }
 
   async function askNextQuestion(conversation) {
-    const remaining = (conversation.missingFields || []).filter(m => !conversation.askedFields.includes(m.field))
+    let remaining = (conversation.missingFields || []).filter(m => !conversation.askedFields.includes(m.field))
     if (remaining.length === 0) {
-      await moveToPlanningOrContent(conversation)
-      return
+      const stillMissing = conversation.missingFields || []
+      if (!stillMissing.length) {
+        await moveToPlanningOrContent(conversation)
+        return
+      }
+      // A previous answer did not produce a usable value. Ask the unresolved
+      // field again instead of recursively re-entering generation.
+      const unresolved = stillMissing[0]
+      conversation.askedFields = (conversation.askedFields || []).filter(field => field !== unresolved.field)
+      remaining = [unresolved]
     }
     const next = remaining[0]
     conversation.askedFields.push(next.field)
@@ -1048,9 +1087,10 @@ Return JSON:
     conversation.generationMode = res.generationMode || 'model'
   }
 
-  function validateCalendar(calendar, expectedPlatforms, expectedTotal) {
+  function validateCalendar(calendar, expectedPlatforms, expectedTotal, separatePlatformPosts = false) {
     if (!Array.isArray(calendar) || calendar.length < expectedTotal) return false
-    return calendar.every(p => {
+    const seenPlatforms = new Set()
+    const validPosts = calendar.every(p => {
       const caps = p.captions || {}
       const captionEntries = typeof caps === 'object' ? Object.entries(caps) : []
       const quality = captionEntries.length > 0 && captionEntries.every(([platform, value]) => {
@@ -1065,9 +1105,14 @@ Return JSON:
         if (normalized === 'youtube') return words >= 300
         return words >= 40
       })
-      const expected = expectedPlatforms.every(platform => captionEntries.some(([key]) => normalizePlatform(key) === normalizePlatform(platform)))
+      const postPlatforms = Array.isArray(p.platforms) ? p.platforms.map(normalizePlatform).filter(Boolean) : []
+      postPlatforms.forEach(platform => seenPlatforms.add(platform))
+      const expected = separatePlatformPosts
+        ? postPlatforms.length === 1 && captionEntries.some(([key]) => normalizePlatform(key) === postPlatforms[0])
+        : expectedPlatforms.every(platform => captionEntries.some(([key]) => normalizePlatform(key) === normalizePlatform(platform)))
       return Number.isInteger(p.day) && p.day > 0 && Array.isArray(p.platforms) && p.platforms.length > 0 && quality && expected
     })
+    return validPosts && expectedPlatforms.every(platform => seenPlatforms.has(normalizePlatform(platform)))
   }
 
   async function generateContent(conversation) {
@@ -1107,6 +1152,10 @@ Return JSON:
       await askNextQuestion(conversation)
       return
     }
+    const platformTimes = known.platformTimes && typeof known.platformTimes === 'object' ? known.platformTimes : {}
+    const separatePlatformPosts = platforms.length > 1 &&
+      Object.keys(platformTimes).length >= platforms.length &&
+      totalPosts >= durationDays * platforms.length
     const postsPerDay = Math.max(1, Math.ceil(totalPosts / durationDays))
     const dontPost = Array.isArray(known.dontPost) ? known.dontPost : []
     const automaticImagePlatforms = platforms.some(platform => ['facebook', 'instagram', 'x', 'twitter'].includes(platform))
@@ -1121,8 +1170,11 @@ Return JSON:
     const baseHour = parseTime(time)?.hour ?? 0
     const scheduleSlots = []
     for (let i = 0; i < postsPerDay; i++) {
-      const hour = (baseHour + i) % 24
-      scheduleSlots.push({ label: `${hour.toString().padStart(2, '0')}:00`, hour, minute: 0 })
+      const platform = platforms[i % platforms.length]
+      const platformTime = parseTime(platformTimes[platform])
+      const hour = platformTime?.hour ?? ((baseHour + i) % 24)
+      const minute = platformTime?.minute ?? 0
+      scheduleSlots.push({ label: `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`, hour, minute, platform })
     }
 
     const meta = {
@@ -1142,6 +1194,8 @@ Return JSON:
       publishingMode,
       durationSource: known.durationSource,
       scheduleSource: known.scheduleSource,
+      platformTimes,
+      separatePlatformPosts,
     }
     const hookExamples = selectHookExamples(String(known.mission || known.outcome || business), 3)
 
@@ -1155,6 +1209,7 @@ Useful hook directions (adapt them; never invent claims):
 ${hookExamples.map(item => `- ${item.type}: ${item.text}`).join('\n')}
 Stay focused on this product/service and audience. Do not replace the brand with AlphaTekx or drift into unrelated topics.
 Each post should be unique, sound natural, and match the platform's style.
+${separatePlatformPosts ? `Create exactly one calendar entry per platform per day (${platforms.length} entries each day). Each entry must contain only that platform in "platforms" and only that platform's caption. Use these platform times: ${JSON.stringify(platformTimes)}.` : 'Each calendar entry must include an adapted caption for every selected platform.'}
 Return strict JSON with shape:
 {
   "calendar": [
@@ -1193,11 +1248,11 @@ Total posts: ${totalPosts}.`
     let providerLog = null
 
     async function tryGenerate(strict = false) {
-      const estimatedTokens = totalPosts === 1 ? 700 : Math.max(1200, Math.min(3000, totalPosts * 180 + 400))
+      const estimatedTokens = totalPosts === 1 ? 700 : Math.max(1800, Math.min(9000, totalPosts * 300 + 600))
       const res = await callLLMForRole('content', strict ? strictSystem : system, JSON.stringify({ brand, meta }), { jsonMode: true, maxTokens: estimatedTokens })
       logModelCall(conversation, res, 'generate_content')
       providerLog = { provider: res.provider, model: res.model, usage: res.usage, latencyMs: res.latencyMs }
-      if (validateCalendar(res.result?.calendar, platforms, totalPosts)) {
+      if (validateCalendar(res.result?.calendar, platforms, totalPosts, separatePlatformPosts)) {
         const duplicate = calendarHasDuplicates(res.result.calendar, conversation.automationDraft?.contentMemory || [])
         if (duplicate.duplicate) throw new Error(`Generated calendar repeated prior content (${duplicate.reason})`)
         return res.result.calendar
@@ -1227,14 +1282,14 @@ Total posts: ${totalPosts}.`
       const fallbackEnabled = !linkedinOnly && process.env.ALPHA_ENABLE_DETERMINISTIC_FALLBACK !== 'false'
       if (fallbackEnabled) {
         generationMode = 'fallback'
-        posts = generateFallbackPosts(platforms, business, audience, tone, durationDays, postsPerDay, scheduleSlots, startDate, timezone, includeImages)
+        posts = generateFallbackPosts(platforms, business, audience, tone, durationDays, postsPerDay, scheduleSlots, startDate, timezone, includeImages, separatePlatformPosts)
       } else {
         conversation.conversationStage = 'blocked'
         addMessage(conversation, 'alpha', 'Alpha’s content-generation models are temporarily unavailable. Your automation details have been saved, so you can continue without starting again.')
         return
       }
     }
-    if (!validateCalendar(posts, platforms, totalPosts)) {
+    if (!validateCalendar(posts, platforms, totalPosts, separatePlatformPosts)) {
       conversation.conversationStage = 'blocked'
       addMessage(conversation, 'alpha', 'Alpha refused to schedule low-quality or incomplete content. Your plan is saved, nothing was published, and no credits were charged. Please regenerate when the content provider is available.')
       return
@@ -1242,24 +1297,29 @@ Total posts: ${totalPosts}.`
 
     if (includeImages && typeof getSmartImage === 'function') {
       try {
-        for (let index = 0; index < posts.length; index += 3) {
-          const batch = posts.slice(index, index + 3)
-          const images = await Promise.all(batch.map(post => {
-            const content = [post.topic, ...Object.values(post.captions || {})].filter(Boolean).join('\n')
+        const imageGroups = separatePlatformPosts
+          ? Array.from(new Set(posts.map(post => post.day))).map(day => ({ day, posts: posts.filter(post => post.day === day) }))
+          : posts.map((post, index) => ({ day: index, posts: [post] }))
+        for (let index = 0; index < imageGroups.length; index += 3) {
+          const batch = imageGroups.slice(index, index + 3)
+          const images = await Promise.all(batch.map(group => {
+            const content = group.posts.map(post => [post.topic, ...Object.values(post.captions || {})].filter(Boolean).join('\n')).join('\n')
             return getSmartImage(
               { id: conversation.userId, email: conversation.userEmail },
               content,
               String(known.mission || known.outcome || conversation.currentGoal || conversation.originalRequest),
-              String(post.platforms?.[0] || platforms[0] || ''),
+              String(group.posts[0]?.platforms?.[0] || platforms[0] || ''),
             )
           }))
           images.forEach((image, offset) => {
             if (!image?.image_url || !image?.image_storage_path) throw new Error('Image provider did not return a durable verified image.')
-            posts[index + offset].imageUrl = image.image_url
-            posts[index + offset].imageStoragePath = image.image_storage_path
-            posts[index + offset].imagePrompt = image.image_prompt
-            posts[index + offset].imageKeywords = image.image_keywords
-            posts[index + offset].imageSource = image.image_source
+            batch[offset].posts.forEach(post => {
+              post.imageUrl = image.image_url
+              post.imageStoragePath = image.image_storage_path
+              post.imagePrompt = image.image_prompt
+              post.imageKeywords = image.image_keywords
+              post.imageSource = image.image_source
+            })
           })
         }
         if (posts.some(post => !post.imageUrl || !post.imageStoragePath)) throw new Error('At least one post is missing its durable matched image.')
@@ -1373,7 +1433,9 @@ Total posts: ${totalPosts}.`
         ? nowIso()
         : platforms.length === 1 && platforms[0] === 'linkedin'
         ? scheduleOccurrence(i, startDate, p.slot ? { label: p.slot, hour: parseTime(p.slot)?.hour || slot.hour, minute: parseTime(p.slot)?.minute || slot.minute } : slot, meta.frequency, meta.daysOfWeek, timezone)
-        : (p.scheduledAt || scheduleDate(day, p.slot ? { label: p.slot, hour: parseTime(p.slot)?.hour || slot.hour, minute: parseTime(p.slot)?.minute || slot.minute } : slot, startDate, timezone))
+        : meta.separatePlatformPosts
+          ? scheduleDate(day, slot, startDate, timezone)
+          : (p.scheduledAt || scheduleDate(day, p.slot ? { label: p.slot, hour: parseTime(p.slot)?.hour || slot.hour, minute: parseTime(p.slot)?.minute || slot.minute } : slot, startDate, timezone))
       const baseCredits = computePostCredits(postPlatforms, includeImages)
       return {
         id: p.id || randomUUID(),
@@ -1392,7 +1454,7 @@ Total posts: ${totalPosts}.`
     }).slice(0, calendar.length)
   }
 
-  function generateFallbackPosts(platforms, business, audience, tone, durationDays, postsPerDay, scheduleSlots, startDate, timezone, includeImages) {
+  function generateFallbackPosts(platforms, business, audience, tone, durationDays, postsPerDay, scheduleSlots, startDate, timezone, includeImages, separatePlatformPosts = false) {
     const posts = []
     for (let day = 1; day <= durationDays; day++) {
       for (let i = 0; i < postsPerDay; i++) {
@@ -1400,7 +1462,8 @@ Total posts: ${totalPosts}.`
         const types = ['educational', 'product', 'story', 'cta']
         const postType = types[(day + i) % types.length]
         const captions = {}
-        for (const platform of platforms) {
+        const postPlatforms = separatePlatformPosts ? [platforms[i % platforms.length]] : platforms
+        for (const platform of postPlatforms) {
           captions[platform] = generateFallbackCaption(platform, business, audience, tone, postType, day)
         }
         posts.push({
@@ -1408,7 +1471,7 @@ Total posts: ${totalPosts}.`
           day,
           slot: slot.label,
           scheduledAt: scheduleDate(day, slot, startDate, timezone),
-          platforms,
+          platforms: postPlatforms,
           topic: `${postType} post`,
           postType,
           captions,
@@ -1423,8 +1486,8 @@ Total posts: ${totalPosts}.`
 
   function scheduleDate(day, slot, startDate, timezone) {
     const [year, month, dayOfMonth] = startDate.split('-').map(Number)
-    const date = new Date(year, month - 1, dayOfMonth + day - 1, slot.hour, slot.minute, 0)
-    return date.toISOString()
+    const date = new Date(Date.UTC(year, month - 1, dayOfMonth + day - 1))
+    return zonedTimeToUtc(date, slot.hour, slot.minute, timezone)
   }
 
   function zonedTimeToUtc(date, hour, minute, timezone) {

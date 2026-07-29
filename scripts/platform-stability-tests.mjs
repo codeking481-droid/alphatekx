@@ -70,6 +70,66 @@ await test('direct image request interrupts an existing planning context safely'
   assert.equal(fixture.imageCalls, 1)
 })
 
+await test('complete four-platform campaign skips dull questions and builds 28 scheduled previews without recursion', async () => {
+  const records = new Map()
+  let imageCalls = 0
+  const platforms = ['facebook', 'x', 'instagram', 'linkedin']
+  const longText = (platform, day) => {
+    if (platform === 'x') return `Day ${day}: ${Array.from({ length: 24 }, (_, index) => `x${day}idea${index}`).join(' ')}. #AI #BuildInPublic`
+    const minimum = platform === 'facebook' ? 215 : platform === 'instagram' ? 165 : 190
+    return Array.from({ length: minimum }, (_, index) => index === 0 ? `Day-${day}-${platform}` : `${platform}${day}topic${index}`).join(' ')
+  }
+  const calendar = Array.from({ length: 7 }, (_, dayIndex) => platforms.map(platform => ({
+    day: dayIndex + 1,
+    slot: { facebook: '09:00', x: '12:00', instagram: '15:00', linkedin: '18:00' }[platform],
+    platforms: [platform],
+    topic: `AlphaTekx campaign day ${dayIndex + 1}`,
+    postType: dayIndex === 6 ? 'cta' : 'product',
+    captions: { [platform]: longText(platform, dayIndex + 1) },
+  }))).flat()
+  const engine = createConversationEngine({
+    saveServerAgent: async record => { records.set(record.id, structuredClone(record)); return record },
+    getServerAgent: async id => structuredClone(records.get(id)),
+    getUserCredits: async () => 100,
+    spendUserCredits: async () => true,
+    getIntegrationStatus: async () => ({ connected: true, ready: true }),
+    getSmartImage: async (_user, _content, _mission, platform) => {
+      imageCalls += 1
+      return { image_url: `https://images.example/${imageCalls}.jpg`, image_storage_path: `campaign/${imageCalls}.jpg`, image_prompt: `AlphaTekx ${platform}`, image_source: 'test' }
+    },
+    callLLMForRole: async role => {
+      if (role === 'content') return { result: { calendar }, provider: 'test', model: 'test', generationMode: 'model' }
+      return { result: {}, provider: 'test', model: 'test', generationMode: 'model' }
+    },
+  })
+  const prompt = `Advertise AlphaTekx heavily for 1 WEEK across Facebook, Twitter/X, Instagram, LinkedIn.
+Business: AlphaTekx - alphatekx.name.ng
+What we do: Build production-ready websites, media workflows and approved automations for real businesses.
+Goal: Get signups from real businesses.
+Adapt captions for each platform.
+Create 7 days content, 4 posts per day, total 28 posts.
+Generate an image for every post.
+Post times (WAT): Facebook 9am, Twitter 12pm, Instagram 3pm, LinkedIn 6pm daily.
+Start NOW. Show all 28 posts for review, then ask for approval.`
+  const conversation = await engine.start({ id: 'campaign-regression-user', email: 'owner@example.com' }, prompt)
+  assert.equal(conversation.conversationStage, 'awaiting_content_review', JSON.stringify({ missing: conversation.missingFields, known: conversation.knownFields }))
+  assert.equal(conversation.generatedContent.length, 28)
+  assert.deepEqual(conversation.knownFields.platforms, platforms)
+  assert.equal(conversation.knownFields.durationDays, 7)
+  assert.equal(conversation.knownFields.totalPosts, 28)
+  assert.equal(conversation.knownFields.timezone, 'WAT')
+  assert.equal(conversation.knownFields.tone.includes('platform-native'), true)
+  assert.equal(imageCalls, 7, 'One verified campaign visual should be generated per day and attached to all four platform previews.')
+  for (let day = 1; day <= 7; day++) {
+    const daily = conversation.generatedContent.filter(post => post.day === day)
+    assert.equal(daily.length, 4)
+    assert.deepEqual(daily.map(post => post.platforms[0]), platforms)
+    assert.ok(daily.every(post => post.imageUrl && post.imageStoragePath))
+  }
+  const firstDay = conversation.generatedContent.slice(0, 4)
+  assert.deepEqual(firstDay.map(post => new Date(post.scheduledAt).getUTCHours()), [8, 11, 14, 17])
+})
+
 await test('approval persists a separate active automation without charging credits', async () => {
   const fixture = testEngine()
   const user = { id: 'creation-user', email: 'iamdan4live@gmail.com' }
