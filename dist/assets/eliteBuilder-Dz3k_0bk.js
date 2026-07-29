@@ -1,4 +1,4 @@
-import{g as o,p as r}from"./apiClient-BWFwuxRp.js";const l=2,u=/^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])$/;function p(e,t="AlphaTekX build",n={}){const s=t.replace(/[<>&"']/g,""),i=JSON.stringify(String(e||"")).replace(/</g,"\\u003c"),a=JSON.stringify(n.slug||"preview"),c=n.selectMode===!0?"true":"false";return`<!doctype html>
+import{g as o,p as r}from"./apiClient-LilbbFKn.js";const l=/^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])$/;function u(e,t="AlphaTekX build",n={}){const s=t.replace(/[<>&"']/g,""),i=JSON.stringify(String(e||"")).replace(/</g,"\\u003c"),a=JSON.stringify(n.slug||"preview"),c=n.selectMode===!0?"true":"false";return`<!doctype html>
 <html>
 <head>
   <meta charset="utf-8"/>
@@ -44,4 +44,4 @@ import{g as o,p as r}from"./apiClient-BWFwuxRp.js";const l=2,u=/^[a-z0-9](?:[a-z
     }
   <\/script>
 </body>
-</html>`}async function m(e,t){return r("/api/builder/generate",{prompt:e,requestId:t},{timeoutMs:18e4})}async function y(){return o("/api/builder/projects")}async function g(e,t){return r("/api/builder/deploy",{id:e,slug:t})}async function f(e,t){return r("/api/builder/edit",{projectId:e,instruction:t},{timeoutMs:18e4})}async function b(e,t){return r("/api/builder/fix",{projectId:e,error:t},{timeoutMs:18e4})}async function h(e,t){return r("/api/builder/domain",{projectId:e,domain:t})}async function v(e){return o(`/api/builder/public/${encodeURIComponent(e)}`)}export{l as B,u as a,p as b,m as c,g as d,f as e,b as f,v as g,y as l,h as r};
+</html>`}async function p(e,t){return r("/api/builder/generate",{prompt:e,requestId:t},{timeoutMs:18e4})}async function m(){return o("/api/builder/projects")}async function y(e,t){return r("/api/builder/deploy",{id:e,slug:t})}async function g(e,t){return r("/api/builder/edit",{projectId:e,instruction:t},{timeoutMs:18e4})}async function f(e,t){return r("/api/builder/fix",{projectId:e,error:t},{timeoutMs:18e4})}async function b(e,t){return r("/api/builder/domain",{projectId:e,domain:t})}async function h(e){return o(`/api/builder/public/${encodeURIComponent(e)}`)}export{l as B,p as a,u as b,y as d,g as e,f,h as g,m as l,b as r};

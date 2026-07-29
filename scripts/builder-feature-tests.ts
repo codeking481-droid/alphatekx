@@ -207,6 +207,19 @@ await test('Builder V3 deployment is full-height and counts public views atomica
   assert(service.includes("rpc/increment_builder_views") && sql.includes('increment_builder_views'), 'atomic view counting is missing')
 })
 
+await test('Builder starts from the authenticated server balance instead of stale browser credits', () => {
+  const ui = readFileSync(new URL('../src/pages/EliteBuilder.tsx', import.meta.url), 'utf8')
+  assert(ui.includes('hydrateCredits().then(setCreditBalance)'), 'server credit hydration is missing')
+  assert(!ui.includes('if (credits < BUILDER_COST)'), 'stale browser credits still block build requests')
+})
+
+await test('Builder remains usable through durable compatibility storage before dedicated schema activation', () => {
+  const service = readFileSync(new URL('../server/eliteBuilderService.mjs', import.meta.url), 'utf8')
+  assert(service.includes('saveLegacyProject') && /type:\s*["']builder-v3["']/.test(service), 'durable compatibility persistence is missing')
+  assert(service.includes('isBuilderSchemaError') && service.includes('creations?'), 'schema fallback routing is missing')
+  assert(!service.includes('using (true)'), 'compatibility must not weaken database ownership')
+})
+
 await test('Builder V3 generated apps use the scoped AlphaAPI without browser service keys', () => {
   const client = readFileSync(new URL('../src/lib/eliteBuilder.ts', import.meta.url), 'utf8')
   assert(client.includes('window.AlphaAPI'), 'project data bridge is missing')
