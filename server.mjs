@@ -6670,7 +6670,17 @@ function parseGradioCompletion(eventStream) {
   const complete = blocks.find(block => /^event:\s*complete\s*$/m.test(block))
   if (!complete) {
     const failed = blocks.find(block => /^event:\s*(?:error|unexpected_error)\s*$/m.test(block))
-    throw new Error(failed ? 'AlphaTekX Coder reported a generation error.' : 'AlphaTekX Coder did not finish in time.')
+    if (failed) {
+      const dataLine = failed.split(/\r?\n/).find(line => line.startsWith('data:'))
+      try {
+        const payload = JSON.parse(String(dataLine || '').slice(5).trim())
+        throw new Error(String(payload?.title || payload?.error || 'AlphaTekX Coder reported a generation error.'))
+      } catch (error) {
+        if (error instanceof SyntaxError) throw new Error('AlphaTekX Coder reported a generation error.')
+        throw error
+      }
+    }
+    throw new Error('AlphaTekX Coder did not finish in time.')
   }
   const dataLine = complete.split(/\r?\n/).find(line => line.startsWith('data:'))
   if (!dataLine) throw new Error('AlphaTekX Coder returned an empty completion.')
@@ -6682,7 +6692,10 @@ async function alphatekxCoderCompletion(messages) {
   const configured = String(process.env.BUILDER_GRADIO_URL || 'https://alpha4-44-alphatekx-coder-api2.hf.space').trim()
   const base = new URL(configured)
   if (base.protocol !== 'https:') throw new Error('BUILDER_GRADIO_URL must use HTTPS.')
-  const prompt = messages.map(message => `${String(message.role || 'user').toUpperCase()}:\n${String(message.content || '')}`).join('\n\n')
+  // The Space already owns its elite system prompt. Send only the build
+  // request; duplicating AlphaTekX's server prompt wastes ZeroGPU time and
+  // reduces the tokens available for the generated application.
+  const prompt = String([...messages].reverse().find(message => message.role === 'user')?.content || 'Build a production-quality application')
   const started = Date.now()
   const submission = await fetchJson(`${base.origin}/gradio_api/call/generate`, {
     method: 'POST',
