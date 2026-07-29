@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import http from 'node:http'
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 import { buildCapabilityPlan, detectCapability } from '../server/automation/capabilityRegistry.mjs'
 import { createConversationEngine } from '../server/alpha/conversationEngine.mjs'
 import { publishLinkedInTextPost, validateLinkedInCredentials } from '../server/linkedin.mjs'
@@ -133,8 +134,8 @@ const provider = http.createServer(async (req, res) => {
 await new Promise(resolve => provider.listen(0, '127.0.0.1', resolve))
 const providerPort = provider.address().port
 
-async function startApp(port) {
-  const child = spawn(process.execPath, ['server.mjs'], { cwd: new URL('..', import.meta.url), env: { ...process.env, PORT: String(port), KEEP_ALIVE: 'false', LINKEDIN_API_BASE_URL: `http://127.0.0.1:${providerPort}` }, stdio: ['ignore', 'pipe', 'pipe'] })
+async function startApp(port, extraEnv = {}) {
+  const child = spawn(process.execPath, ['server.mjs'], { cwd: new URL('..', import.meta.url), env: { ...process.env, PORT: String(port), KEEP_ALIVE: 'false', LINKEDIN_API_BASE_URL: `http://127.0.0.1:${providerPort}`, ...extraEnv }, stdio: ['ignore', 'pipe', 'pipe'] })
   let output = ''
   child.stdout.on('data', data => { output += data })
   child.stderr.on('data', data => { output += data })
@@ -160,6 +161,38 @@ await test('OAuth denial redirects to canonical Connected Apps route', async () 
   } finally { app.child.kill('SIGTERM') }
 })
 
+await test('OAuth start uses the exact callback, required scope and signed state', async () => {
+  const port = 4550 + Math.floor(Math.random() * 100)
+  const callback = 'https://alphatekx.name.ng/api/connectors/linkedin/callback'
+  const app = await startApp(port, {
+    LINKEDIN_CLIENT_ID: 'linkedin-client',
+    LINKEDIN_CLIENT_SECRET: 'linkedin-secret',
+    LINKEDIN_REDIRECT_URI: callback,
+    LINKEDIN_OAUTH_SCOPES: 'openid profile email',
+  })
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/connectors/linkedin/start`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-local-user-id': 'linkedin-oauth-user', 'x-local-user-email': 'oauth@test.local' },
+      body: JSON.stringify({ redirect: '/connected-apps' }),
+    })
+    assert.equal(response.status, 200)
+    const data = await response.json()
+    const authorization = new URL(data.url)
+    assert.equal(authorization.origin, 'https://www.linkedin.com')
+    assert.equal(authorization.searchParams.get('redirect_uri'), callback)
+    assert.ok(authorization.searchParams.get('state')?.includes('.'))
+    assert.ok(authorization.searchParams.get('scope')?.split(' ').includes('w_member_social'))
+  } finally { app.child.kill('SIGTERM') }
+})
+
+await test('OAuth callback requires durable, verified LinkedIn storage', async () => {
+  const source = await readFile(new URL('../server.mjs', import.meta.url), 'utf8')
+  assert.match(source, /if \(!saved\.durable\).*could not securely save/s)
+  assert.match(source, /const verified = await getUserIntegration\(parsed\.userId, 'linkedin', config\)/)
+  assert.match(source, /saved connection could not be verified/)
+})
+
 await test('Approved campaign publishes once, charges once, persists history, and survives refresh', async () => {
   const port = 4700 + Math.floor(Math.random() * 200)
   let app = await startApp(port)
@@ -171,7 +204,7 @@ await test('Approved campaign publishes once, charges once, persists history, an
   try {
     let response = await request('/api/connectors/save', { method: 'POST', body: JSON.stringify({ platform: 'linkedin', tokens: { access_token: 'test-token', author_urn: 'urn:li:person:test-member', expiry: Date.now() + 3600_000 }, identifier: 'urn:li:person:test-member', scopes: ['email,openid,profile,w_member_social'] }) })
     assert.equal(response.status, 200)
-    const scheduledAt = new Date(Date.now() + 1_000).toISOString()
+    const scheduledAt = new Date(Date.now() + 3_000).toISOString()
     const agent = { id: agentId, type: 'campaign', name: 'LinkedIn test', description: 'Focused integration test', trigger: { type: 'campaign', cron: 'campaign', nextRun: scheduledAt }, status: 'awaiting_approval', approved: false, actions: [], executionHistory: [], permissions: ['linkedin'], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), campaign: { name: 'LinkedIn test', description: 'test', brand: { business: 'AlphaTekx', audience: 'Founders', tone: 'Professional', website: '', dontPost: [] }, meta: { platforms: ['linkedin'], slots: [{ label: '09:00', hour: 9, minute: 0 }], durationDays: 1, postsPerDay: 1, totalPosts: 1, startDate: scheduledAt, includeImages: false, timezone: 'UTC', frequencyText: 'One time' }, posts: [{ id: `post-${randomUUID()}`, day: 1, slot: '09:00', scheduledAt, platforms: ['linkedin'], topic: 'AlphaTekx', postType: 'educational', captions: { linkedin: 'Focused LinkedIn automation integration test.' }, status: 'pending_approval', result: {}, credits: 3 }], totalCredits: 3, status: 'pending_approval', charged: false, approved: false, autoPublish: false } }
     response = await request('/api/agents', { method: 'POST', body: JSON.stringify({ agent }) })
     assert.equal(response.status, 200)
@@ -179,7 +212,7 @@ await test('Approved campaign publishes once, charges once, persists history, an
     response = await request(`/api/agents/campaign/${agentId}/activate`, { method: 'POST', body: JSON.stringify({ autoPublish: true, startAt: scheduledAt }) })
     assert.equal(response.status, 200)
     assert.equal((await response.json()).charged, 0)
-    await new Promise(resolve => setTimeout(resolve, 1_100))
+    await new Promise(resolve => setTimeout(resolve, 3_100))
     response = await request('/api/agents/run-due')
     assert.equal(response.status, 200)
     const dueResult = await response.json()
