@@ -6692,6 +6692,8 @@ async function alphatekxCoderCompletion(messages) {
   const configured = String(process.env.BUILDER_GRADIO_URL || 'https://alpha4-44-alphatekx-coder-api2.hf.space').trim()
   const base = new URL(configured)
   if (base.protocol !== 'https:') throw new Error('BUILDER_GRADIO_URL must use HTTPS.')
+  const huggingFaceToken = firstKey('HUGGINGFACE_TOKEN', 'HF_TOKEN')
+  const authorizationHeaders = huggingFaceToken ? { Authorization: `Bearer ${huggingFaceToken}` } : {}
   // The Space already owns its elite system prompt. Send only the build
   // request; duplicating AlphaTekX's server prompt wastes ZeroGPU time and
   // reduces the tokens available for the generated application.
@@ -6699,13 +6701,13 @@ async function alphatekxCoderCompletion(messages) {
   const started = Date.now()
   const submission = await fetchJson(`${base.origin}/gradio_api/call/generate`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { ...authorizationHeaders, 'Content-Type': 'application/json' },
     body: JSON.stringify({ data: [prompt] }),
   }, 4_000)
   if (!submission?.event_id) throw new Error('AlphaTekX Coder did not issue a generation job.')
   const remaining = Math.max(1_000, 12_000 - (Date.now() - started))
   const events = await fetchText(`${base.origin}/gradio_api/call/generate/${encodeURIComponent(submission.event_id)}`, {
-    headers: { Accept: 'text/event-stream' },
+    headers: { ...authorizationHeaders, Accept: 'text/event-stream' },
   }, remaining)
   return verifiedBuilderCompletion(parseGradioCompletion(events), 'alphatekx-coder')
 }

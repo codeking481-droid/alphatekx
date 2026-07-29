@@ -287,9 +287,10 @@ await test('Builder V3 has no browser-side user-pays AI fallback', () => {
 await test('Builder uses the deployed Gradio queue contract with a bounded response time', () => {
   const server = readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
   assert(server.includes('/gradio_api/call/generate'), 'Gradio call endpoint is missing')
-  assert(server.includes("headers: { Accept: 'text/event-stream' }"), 'Gradio event stream is not consumed')
   assert(server.includes("find(message => message.role === 'user')"), 'Builder sends redundant system prompts to the Space')
   assert(server.includes('body: JSON.stringify({ data: [prompt] })'), 'Builder does not match the live one-input Gradio contract')
+  assert(server.includes("firstKey('HUGGINGFACE_TOKEN', 'HF_TOKEN')"), 'Builder cannot authenticate to the owner Space quota')
+  assert(server.includes("headers: { ...authorizationHeaders, Accept: 'text/event-stream' }"), 'Builder does not authenticate the Gradio event stream')
   assert(server.includes('12_000 - (Date.now() - started)'), 'AlphaTekX Coder request is not bounded')
   assert(server.includes('}, 6_000)'), 'Groq recovery is not bounded within the Builder response budget')
   assert(server.includes('parseGradioCompletion(events)'), 'Gradio completion parser is missing')
