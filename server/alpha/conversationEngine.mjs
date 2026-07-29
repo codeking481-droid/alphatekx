@@ -1821,6 +1821,31 @@ Return JSON: { "text": "..." }`
       await saveConversation(conversation)
       return conversation
     }
+    const approvalRequested = /\b(?:approve|approved|activate|launch|start\s+campaign|go\s+ahead)\b/i.test(text)
+    const recoverableStage = ['chatting', 'blocked', 'unsupported'].includes(conversation.conversationStage)
+    const originalHeuristic = heuristicParseRequest(conversation.originalRequest || '')
+    if (approvalRequested && recoverableStage && SOCIAL_CONTENT_INTENTS.has(originalHeuristic.intent)) {
+      addMessage(conversation, 'alpha', 'The previous plan did not reach a valid review screen, so I am rebuilding it from your saved campaign details. Nothing will publish until the complete preview is ready and you approve it.')
+      conversation.currentGoal = conversation.originalRequest
+      conversation.intent = 'unknown'
+      conversation.confidence = 0
+      conversation.knownFields = {}
+      conversation.missingFields = []
+      conversation.askedFields = []
+      conversation.generatedContent = []
+      conversation.pendingConnections = []
+      conversation.automationDraft = null
+      conversation.approvalRequired = false
+      conversation.conversationStage = 'understanding'
+      await understandRequest(conversation, conversation.originalRequest)
+      if (conversation.conversationStage === 'awaiting_content_review') {
+        addMessage(conversation, 'alpha', 'Your campaign preview is ready again. Review the posts and images, then approve once more to activate it.')
+      } else if (conversation.conversationStage === 'blocked') {
+        addMessage(conversation, 'alpha', 'I still could not produce a complete verified preview, so I did not activate or charge anything. Use Regenerate when the content and image providers are ready.')
+      }
+      await saveConversation(conversation)
+      return conversation
+    }
     const hasPlanningContext = !['chatting', 'created', 'blocked', 'unsupported'].includes(conversation.conversationStage)
     const classification = classifyIntent(text, { hasPlanningContext })
     conversation.intentClassification = classification
@@ -1855,7 +1880,7 @@ Return JSON: { "text": "..." }`
       } else {
         addMessage(conversation, 'alpha', 'You can say "approve all", "regenerate", or "edit post 3 to ...".')
       }
-    } else if (conversation.conversationStage === 'awaiting_approval') {
+    } else if (conversation.conversationStage === 'awaiting_approval' || conversation.conversationStage === 'ready_to_create') {
       const lower = text.toLowerCase()
       if (/\b(approve|yes|activate|go|start)\b/.test(lower)) {
         await createAutomation(conversation, user)
