@@ -1085,7 +1085,14 @@ function authUserEmail(user) {
 }
 
 function isAdminAuthUser(user) {
-  return authUserEmail(user) === adminEmail
+  if (authUserEmail(user) === adminEmail) return true
+  const configured = new Set(
+    String(process.env.SUPER_ADMIN_EMAILS || '')
+      .split(',')
+      .map(normalizedAuthEmail)
+      .filter(Boolean),
+  )
+  return configured.has(authUserEmail(user))
 }
 
 async function runUserWorker(worker, apiKey, prompt) {

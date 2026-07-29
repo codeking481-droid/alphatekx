@@ -85,7 +85,13 @@ function userEmail(user) {
   }
   return ''
 }
-function isAdmin(user) { userEmail(user); return false }
+function configuredAdminEmails() {
+  return new Set([
+    adminEmail,
+    ...String(process.env.SUPER_ADMIN_EMAILS || '').split(',').map(normalizedEmail).filter(Boolean),
+  ])
+}
+function isAdmin(user) { return configuredAdminEmails().has(userEmail(user)) }
 
 function nowIso() { return new Date().toISOString() }
 
@@ -395,8 +401,10 @@ export async function setPlan(user, planId, config, { reference } = {}) {
 export async function canCreateAgent(user, config, activeCount) {
   if (isAdmin(user)) return { ok: true }
   const billing = await getUserBilling(user, config)
-  const plan = getPlan(billing.plan)
-  if (activeCount >= plan.maxActiveAutomations) return { ok: false, reason: `Your ${plan.name} plan supports up to ${plan.maxActiveAutomations} active automation${plan.maxActiveAutomations === 1 ? '' : 's'}.`, plan: plan.id }
+  void activeCount
+  if (Number(billing.credits) < 1) {
+    return { ok: false, reason: 'You need at least 1 credit to create an automation.', plan: billing.plan }
+  }
   return { ok: true }
 }
 
