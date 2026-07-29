@@ -119,7 +119,16 @@ const fetchText = async (url, options, timeout = 60000) => {
   const timer = setTimeout(() => controller.abort(), timeout)
   try {
     const response = await fetch(url, { ...options, signal: controller.signal })
-    return await response.text()
+    const text = await response.text()
+    if (!response.ok) {
+      let message = `Provider HTTP ${response.status}`
+      try {
+        const payload = text ? JSON.parse(text) : null
+        message = payload?.error?.message || payload?.details?.error?.message || payload?.error || message
+      } catch {}
+      throw new Error(String(message))
+    }
+    return text
   } finally { clearTimeout(timer) }
 }
 
@@ -6618,15 +6627,37 @@ async function pollinationsBuilderCompletion(messages) {
       }
     }
   }
+  // Pollinations' legacy OpenAI-compatible endpoint still accepts anonymous
+  // traffic where its IP allowance is available. POST avoids the URL-length
+  // failure of the old prompt-in-path API. It is recovery only: 401/402/429
+  // are logged and the verified local Builder fallback remains available.
+  try {
+    const payload = await fetchJson('https://text.pollinations.ai/openai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: process.env.POLLINATIONS_LEGACY_TEXT_MODEL || 'openai',
+        messages,
+        temperature: 0.35,
+        max_tokens: 8000,
+      }),
+    }, 60_000)
+    const result = eliteBuilder.validateBuilderCode(payload?.choices?.[0]?.message?.content || '')
+    if (!result.errors.length) return { code: result.code, provider: 'pollinations-legacy-openai' }
+    lastError = new Error(result.errors.join(' '))
+  } catch (error) {
+    lastError = error
+    console.error('[Elite Builder] Pollinations legacy POST failed:', error instanceof Error ? error.message : error)
+  }
   // Legacy public text is a best-effort recovery path. Keep it deliberately
   // short so the URL is accepted by proxies; production uses the authenticated
   // OpenAI-compatible endpoint above.
   try {
     const userPrompt = String([...messages].reverse().find(message => message.role === 'user')?.content || 'Build a production-ready website').slice(0, 900)
     const directPrompt = `BUILD THIS ELITE WEBSITE: ${userPrompt}\n\nIMPORTANT: NO IMPORTS ALLOWED. Return only function App() {...} with no import lines. Use only React.useState, React.useEffect, React.useRef, React.useMemo and other React.* hooks, Tailwind classes, responsive mobile layouts, real interactions, loading and empty states. For icons use inline SVG or Unicode, never lucide-react. Do not use exports, markdown fences, scripts, eval, ReactDOM, TypeScript types, or createRoot.`
-    const text = await fetchText(`https://text.pollinations.ai/${encodeURIComponent(directPrompt)}`, {
+    const text = await fetchText(`https://text.pollinations.ai/${encodeURIComponent(directPrompt)}?model=${encodeURIComponent(process.env.POLLINATIONS_LEGACY_TEXT_MODEL || 'openai')}`, {
       headers: { Accept: 'text/plain' },
-    }, 15_000)
+    }, 45_000)
     const result = eliteBuilder.validateBuilderCode(text)
     if (!result.errors.length) return { code: result.code, provider: 'pollinations-direct' }
     lastError = new Error(result.errors.join(' '))

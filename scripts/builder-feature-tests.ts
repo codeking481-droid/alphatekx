@@ -189,6 +189,14 @@ await test('verified code can become an honest uncharged transient preview', () 
   assert(project.published === false, 'transient preview must not claim publication')
 })
 
+await test('Builder rotates through current and legacy Pollinations endpoints before local recovery', () => {
+  const server = readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
+  assert(server.includes("https://gen.pollinations.ai/v1/chat/completions"), 'current Pollinations endpoint is missing')
+  assert(server.includes("https://text.pollinations.ai/openai"), 'legacy POST recovery endpoint is missing')
+  assert(server.includes("POLLINATIONS_LEGACY_TEXT_MODEL"), 'legacy model is not configurable')
+  assert(server.includes("if (!response.ok)"), 'provider HTTP failures are not rejected')
+})
+
 await test('Elite Builder validates complete single-component output', () => {
   const result = validateBuilderCode(`function App(){ const [open,setOpen]=React.useState(false); return <main className="min-h-screen bg-black text-white"><h1>Launch Lagos</h1><button onClick={()=>setOpen(!open)}>Toggle</button>{open&&<p>Ready for customers with a complete mobile experience and helpful content.</p>}<section>${'Premium product experience. '.repeat(20)}</section></main>; }`)
   assert(result.errors.length === 0, `unexpected elite validation errors: ${result.errors.join(', ')}`)
@@ -263,11 +271,11 @@ await test('Builder V3 has responsive device previews and durable version histor
 
 await test('Builder V3 uses a bounded authenticated Pollinations request with a verified direct fallback', () => {
   const server = readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
-  assert(server.includes('pollinationsBuilderCompletion') && server.includes("15_000"), 'Pollinations timeout is missing')
+  assert(server.includes('pollinationsBuilderCompletion') && server.includes("45_000") && server.includes("60_000"), 'Pollinations timeouts are missing')
   assert(server.includes('https://gen.pollinations.ai/v1/chat/completions'), 'official Pollinations endpoint is missing')
   assert(server.includes('https://text.pollinations.ai/'), 'direct Pollinations recovery endpoint is missing')
   assert(server.includes("provider: 'pollinations-direct'"), 'direct output is not verified before use')
-  assert(!server.includes("https://text.pollinations.ai/openai"), 'obsolete Pollinations endpoint must not be used')
+  assert(server.includes("https://text.pollinations.ai/openai"), 'legacy OpenAI-compatible recovery endpoint is missing')
 })
 
 await test('Builder V3 deployment is full-height and counts public views atomically', () => {
