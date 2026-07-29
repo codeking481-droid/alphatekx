@@ -20,6 +20,14 @@ export type MediaItem = {
   created_at: string
 }
 
+export type MediaSetupStatus = {
+  activated: boolean
+  tableReady: boolean
+  bucketReady: boolean
+  tableError?: string
+  bucketError?: string
+}
+
 async function bearerToken() {
   const session = await supabase?.auth.getSession()
   return session?.data?.session?.access_token || ''
@@ -40,7 +48,11 @@ async function mediaRequest<T>(url: string, init: RequestInit): Promise<T> {
 }
 
 export async function listMedia() {
-  return getJson<{ items: MediaItem[]; setupRequired?: boolean }>('/api/media/list')
+  return getJson<{ items: MediaItem[]; setupRequired?: boolean; setup?: MediaSetupStatus }>('/api/media/list')
+}
+
+export async function getMediaSetupStatus() {
+  return getJson<MediaSetupStatus>('/api/media/status')
 }
 
 export async function uploadMedia(file: File, onProgress?: (percent: number) => void) {

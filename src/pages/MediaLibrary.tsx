@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarClock, CheckCircle2, FileVideo2, Image, LoaderCircle, Play, Trash2, UploadCloud, X } from 'lucide-react'
 import { getCredits } from '../lib/creditStore'
-import { createSmartImage, deleteMedia, listMedia, publishMedia, updateMedia, uploadMedia, type MediaItem } from '../lib/mediaLibrary'
+import { createSmartImage, deleteMedia, getMediaSetupStatus, listMedia, publishMedia, updateMedia, uploadMedia, type MediaItem } from '../lib/mediaLibrary'
 
 const MAX_FILES = 20
 const MAX_BYTES = 500 * 1024 * 1024
@@ -22,10 +22,20 @@ export default function MediaLibrary() {
   const load = async () => {
     setLoading(true)
     try {
+      const setup = await getMediaSetupStatus()
       const response = await listMedia()
       setItems(response.items)
-      setSetupRequired(response.setupRequired === true)
-      setNotice(response.setupRequired ? 'Media Library needs one administrator database activation. No uploads are attempted until secure storage is ready.' : '')
+      const unavailable = !setup.activated || response.setupRequired === true
+      setSetupRequired(unavailable)
+      if (!unavailable) {
+        setNotice('')
+      } else if (!setup.tableReady && setup.bucketReady) {
+        setNotice('Private storage is ready. Apply supabase/media-library.sql once to activate media records, then refresh.')
+      } else if (setup.tableReady && !setup.bucketReady) {
+        setNotice('Media records are ready, but private storage could not be prepared. Check the server service-role credential.')
+      } else {
+        setNotice('Media Library is not ready yet. Apply supabase/media-library.sql and verify the server service-role credential.')
+      }
     } catch (error) { setNotice(error instanceof Error ? error.message : 'Could not load your Media Library.') }
     finally { setLoading(false) }
   }

@@ -45,6 +45,54 @@ export function isMissingMediaSchema(error) {
   return error?.code === 'DB_ERROR' && /media_library|schema cache|relation|does not exist/i.test(String(error?.message || ''))
 }
 
+async function ensureBucket(config) {
+  const current = await fetch(`${config.url}/storage/v1/bucket/${BUCKET}`, {
+    headers: headers(config.service),
+  })
+  if (current.ok) return true
+  if (current.status !== 404) await responseJson(current)
+
+  const created = await fetch(`${config.url}/storage/v1/bucket`, {
+    method: 'POST',
+    headers: headers(config.service, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify({
+      id: BUCKET,
+      name: BUCKET,
+      public: false,
+      file_size_limit: MAX_FILE_SIZE,
+      allowed_mime_types: [...ALLOWED_TYPES],
+    }),
+  })
+  // Another request may have created it between the GET and POST.
+  if (!created.ok && created.status !== 409) await responseJson(created)
+  return true
+}
+
+async function hasMediaTable(config) {
+  const response = await fetch(`${config.url}/rest/v1/media_library?select=id&limit=1`, {
+    headers: headers(config.service),
+  })
+  await responseJson(response)
+  return true
+}
+
+export async function mediaSetupStatus(config) {
+  assertConfig(config)
+  const status = { activated: false, tableReady: false, bucketReady: false }
+  try {
+    status.bucketReady = await ensureBucket(config)
+  } catch (error) {
+    status.bucketError = error instanceof Error ? error.message : 'Private storage could not be prepared.'
+  }
+  try {
+    status.tableReady = await hasMediaTable(config)
+  } catch (error) {
+    status.tableError = error instanceof Error ? error.message : 'Media records are not available.'
+  }
+  status.activated = status.bucketReady && status.tableReady
+  return status
+}
+
 async function signedUrl(config, storagePath, expiresIn = 3600) {
   const response = await fetch(`${config.url}/storage/v1/object/sign/${BUCKET}/${storagePath}`, {
     method: 'POST',
@@ -66,6 +114,13 @@ async function decorateRows(config, rows) {
 
 export async function listMedia(config, user) {
   assertConfig(config)
+  const setup = await mediaSetupStatus(config)
+  if (!setup.activated) {
+    const error = new Error(setup.tableError || setup.bucketError || 'Media Library storage is not ready.')
+    error.code = 'DB_ERROR'
+    error.setup = setup
+    throw error
+  }
   const response = await fetch(
     `${config.url}/rest/v1/media_library?user_id=eq.${encodeURIComponent(user.id)}&select=*&order=created_at.desc`,
     { headers: headers(config.service) },

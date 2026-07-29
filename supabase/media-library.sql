@@ -60,10 +60,14 @@ create table if not exists public.image_cache (
   query text not null,
   storage_path text not null,
   prompt text not null,
-  source text not null check (source in ('vault', 'pexels', 'pollinations')),
+  source text not null check (source in ('vault', 'pexels', 'pollinations', 'pollinations-legacy', 'pollinations-legacy-backup')),
   created_at timestamptz not null default now(),
   unique(user_id, query_hash)
 );
+
+alter table public.image_cache drop constraint if exists image_cache_source_check;
+alter table public.image_cache add constraint image_cache_source_check
+  check (source in ('vault', 'pexels', 'pollinations', 'pollinations-legacy', 'pollinations-legacy-backup'));
 
 alter table public.media_library enable row level security;
 alter table public.image_cache enable row level security;
