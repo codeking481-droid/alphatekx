@@ -6,7 +6,7 @@ import {
 } from '../src/lib/builderVerifier.ts'
 import { fallbackAlphaBuilder } from '../alphaFallback.mjs'
 import { readFileSync } from 'node:fs'
-import { SLUG_PATTERN, validateBuilderCode } from '../server/eliteBuilderService.mjs'
+import { SLUG_PATTERN, saveGeneratedProject, validateBuilderCode } from '../server/eliteBuilderService.mjs'
 import { builderSrcDoc } from '../src/lib/eliteBuilder.ts'
 
 globalThis.localStorage = {
@@ -218,6 +218,49 @@ await test('Builder remains usable through durable compatibility storage before 
   assert(service.includes('saveLegacyProject') && /type:\s*["']builder-v3["']/.test(service), 'durable compatibility persistence is missing')
   assert(service.includes('isBuilderSchemaError') && service.includes('creations?'), 'schema fallback routing is missing')
   assert(!service.includes('using (true)'), 'compatibility must not weaken database ownership')
+})
+
+await test('Builder compatibility storage accepts missions.description when production has no goal column', async () => {
+  const originalFetch = globalThis.fetch
+  const missionBodies: Record<string, unknown>[] = []
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input)
+    if (url.includes('/builder_projects')) {
+      return new Response(JSON.stringify({ message: "Could not find the table 'public.builder_projects' in the schema cache" }), { status: 404 })
+    }
+    if (url.endsWith('/missions')) {
+      const body = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>
+      missionBodies.push(body)
+      if ('goal' in body) {
+        return new Response(JSON.stringify({ message: "Could not find the 'goal' column of 'missions' in the schema cache" }), { status: 400 })
+      }
+      return new Response('', { status: 201 })
+    }
+    if (url.endsWith('/creations')) {
+      const body = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>
+      return new Response(JSON.stringify([body]), { status: 201, headers: { 'content-type': 'application/json' } })
+    }
+    return new Response(JSON.stringify({ message: `Unexpected test URL: ${url}` }), { status: 500 })
+  }) as typeof fetch
+  try {
+    const saved = await saveGeneratedProject(
+      { url: 'https://supabase.test', service: 'service-role' },
+      { id: '11111111-1111-4111-8111-111111111111' },
+      {
+        id: '22222222-2222-4222-8222-222222222222',
+        title: 'Production Builder Test',
+        prompt: 'Build a production website',
+        code: 'function App(){return <main>Ready</main>}',
+      },
+    )
+    assert(saved.id === '22222222-2222-4222-8222-222222222222', 'compatible project was not persisted')
+    assert(missionBodies.length === 2, `expected goal retry followed by description retry, got ${missionBodies.length}`)
+    assert('goal' in missionBodies[0], 'legacy mission insert was not attempted')
+    assert(missionBodies[1].description === 'Build a production website', 'description-compatible mission was not written')
+    assert(!('goal' in missionBodies[1]), 'rejected goal column remained in the compatibility retry')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
 })
 
 await test('Builder V3 generated apps use the scoped AlphaAPI without browser service keys', () => {
