@@ -25,6 +25,7 @@ import { connectorFeatureAccess, featureStatusForUser, refreshFeatureConfig, una
 import * as alphaConnector from './server/composioConnectorService.mjs'
 import * as mediaLibrary from './server/mediaLibraryService.mjs'
 import * as moneyLoop from './server/moneyLoopService.mjs'
+import * as eliteBuilder from './server/eliteBuilderService.mjs'
 import { claimPendingAction, createPendingAction, finishPendingAction, listPendingActions } from './server/ceoPendingActions.mjs'
 import { scheduledCreditCost } from './server/schedulePricing.mjs'
 
@@ -6419,10 +6420,126 @@ async function buildMissionFiles(req, res) {
   return json(res, 200, { missionId, generatedPath: `generated/${missionId}`, files, code: files.find(file => file.path === 'src/App.jsx')?.code || '', logs })
 }
 
+const ELITE_BUILDER_PROMPT = `You are AlphaTekX Elite Builder, a senior product engineer and interface designer.
+Build a complete, polished application, not a wireframe.
+Return only one JSX code block containing a single React component named App.
+- No imports, exports, explanation, script tags, eval, or Function constructors.
+- Use React.useState/useEffect directly. React is already available.
+- Use Tailwind className utilities only. Do not depend on component libraries.
+- Make it mobile-first, responsive, accessible, and premium using #0A0A0F, #1A1A23, #7C3AED and #E9E7FF.
+- Add realistic data, working interactions, focus states, and useful copy.
+- Use inline SVG or text symbols for icons and Unsplash only when imagery helps.
+- Landing pages need navigation, hero, proof, features, pricing, FAQ, CTA, and footer.
+- Apps need useful navigation, data views, forms, and interactive state.
+- Do not claim payment, authentication, database, or external API behavior that is not implemented.`
+
+function fallbackEliteComponent(prompt) {
+  const subject = String(prompt || 'Your next product').replace(/[<>{}`]/g, '').trim().slice(0, 90) || 'Your next product'
+  return `function App() {
+  const [email, setEmail] = React.useState('');
+  const [joined, setJoined] = React.useState(false);
+  const features = [['Built for momentum','A focused experience that moves visitors from curiosity to action.'],['Responsive by default','Every section adapts cleanly from mobile screens to wide desktops.'],['Designed to convert','Clear proof, pricing and calls to action without visual clutter.']];
+  return <main className="min-h-screen overflow-hidden bg-[#0A0A0F] text-[#E9E7FF]">
+    <nav className="mx-auto flex max-w-6xl items-center justify-between px-5 py-6"><span className="text-sm font-black tracking-[.22em]">ALPHA BUILT</span><button onClick={()=>document.getElementById('join')?.scrollIntoView({behavior:'smooth'})} className="rounded-full bg-[#7C3AED] px-5 py-2.5 text-sm font-black transition hover:-translate-y-0.5">Join early</button></nav>
+    <section className="relative mx-auto max-w-6xl px-5 pb-24 pt-16 text-center sm:pt-24"><div className="absolute left-1/2 top-10 h-64 w-64 -translate-x-1/2 rounded-full bg-violet-600/20 blur-3xl"/><p className="relative text-xs font-black uppercase tracking-[.25em] text-violet-300">Designed by AlphaTekX</p><h1 className="relative mx-auto mt-6 max-w-4xl text-4xl font-black leading-[1.02] sm:text-6xl lg:text-7xl">${subject}</h1><p className="relative mx-auto mt-6 max-w-2xl text-base font-semibold leading-7 text-white/60 sm:text-lg">A premium, focused product experience created to help ambitious people launch with confidence.</p><div className="relative mt-9 flex flex-wrap justify-center gap-3"><button onClick={()=>document.getElementById('join')?.scrollIntoView({behavior:'smooth'})} className="rounded-2xl bg-[#7C3AED] px-7 py-4 font-black shadow-2xl shadow-violet-900/30 transition hover:-translate-y-1">Start building</button><button onClick={()=>document.getElementById('features')?.scrollIntoView({behavior:'smooth'})} className="rounded-2xl border border-white/10 bg-white/5 px-7 py-4 font-black transition hover:bg-white/10">Explore features</button></div></section>
+    <section id="features" className="mx-auto grid max-w-6xl gap-4 px-5 py-16 md:grid-cols-3">{features.map(([title,copy],index)=><article key={title} className="rounded-3xl border border-white/10 bg-[#1A1A23] p-7 shadow-2xl"><span className="grid size-10 place-items-center rounded-xl bg-violet-500/15 font-black text-violet-300">0{index+1}</span><h2 className="mt-8 text-xl font-black">{title}</h2><p className="mt-3 leading-7 text-white/55">{copy}</p></article>)}</section>
+    <section id="join" className="mx-auto max-w-3xl px-5 py-24 text-center"><div className="rounded-[2rem] border border-violet-400/20 bg-gradient-to-br from-violet-600/20 to-cyan-400/5 p-7 sm:p-12"><h2 className="text-3xl font-black">Ready when you are.</h2><p className="mt-3 text-white/60">Join the early list and be first to experience what comes next.</p>{joined?<p className="mt-7 rounded-2xl bg-emerald-400/10 p-4 font-bold text-emerald-300">You are on the list. Welcome.</p>:<form onSubmit={event=>{event.preventDefault();if(email.includes('@'))setJoined(true)}} className="mx-auto mt-7 flex max-w-lg flex-col gap-3 sm:flex-row"><input required type="email" value={email} onChange={event=>setEmail(event.target.value)} placeholder="you@company.com" className="min-h-12 flex-1 rounded-xl border border-white/10 bg-black/20 px-4 text-white outline-none focus:border-violet-400"/><button className="min-h-12 rounded-xl bg-white px-6 font-black text-[#0A0A0F]">Join waitlist</button></form>}</div></section>
+  </main>;
+}`
+}
+
+async function generateEliteCode(prompt) {
+  const messages = [{ role: 'system', content: ELITE_BUILDER_PROMPT }, { role: 'user', content: `Build this now at production-quality visual standards: ${prompt}` }]
+  const pollinationsKey = firstKey('POLLINATIONS_API_KEY')
+  try {
+    const payload = await fetchJson('https://gen.pollinations.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(pollinationsKey ? { Authorization: `Bearer ${pollinationsKey}` } : {}) },
+      body: JSON.stringify({ model: process.env.POLLINATIONS_TEXT_MODEL || 'openai-fast', messages, temperature: 0.35, max_tokens: 9000 }),
+    }, 120000)
+    const result = eliteBuilder.validateBuilderCode(payload?.choices?.[0]?.message?.content || '')
+    if (!result.errors.length) return { code: result.code, provider: 'pollinations' }
+  } catch (error) {
+    console.error('[Elite Builder] Pollinations failed:', error instanceof Error ? error.message : error)
+  }
+  for (const name of getProviderOrder().filter(provider => getProviderKey(provider) && providerHealth.canAttempt(provider))) {
+    try {
+      const response = await callProvider(name, messages, true, false, 9000)
+      const result = eliteBuilder.validateBuilderCode(response.data?.choices?.[0]?.message?.content || '')
+      if (!result.errors.length) return { code: result.code, provider: name }
+    } catch (error) {
+      console.error(`[Elite Builder] ${name} failed:`, error instanceof Error ? error.message : error)
+    }
+  }
+  const fallback = eliteBuilder.validateBuilderCode(fallbackEliteComponent(prompt))
+  if (fallback.errors.length) throw new Error('Alpha could not produce a verified build.')
+  return { code: fallback.code, provider: 'alpha-fallback' }
+}
+
+async function builderGenerateHandler(req, res) {
+  const config = supabaseConfig()
+  const user = await currentOrLocalUser(req, config.url, config.anon)
+  if (!user) return json(res, 401, { error: 'Authentication required.' })
+  const body = await readBody(req)
+  const prompt = String(body.prompt || '').trim()
+  const requestId = String(body.requestId || randomUUID()).replace(/[^a-zA-Z0-9-]/g, '').slice(0, 80)
+  if (prompt.length < 8) return json(res, 400, { error: 'Describe what you want Alpha to build in a little more detail.' })
+  if (prompt.length > 6000) return json(res, 413, { error: 'Keep the build description under 6,000 characters.' })
+  const existing = await eliteBuilder.findProjectByRequest(config, user, requestId).catch(() => null)
+  if (existing?.charged) {
+    const balance = isAdminAuthUser(user) ? null : await billing.getUserCredits(user, config)
+    return json(res, 200, { project: existing, code: existing.code, provider: existing.provider, credits: balance, duplicate: true })
+  }
+  if (!isAdminAuthUser(user) && await billing.getUserCredits(user, config) < eliteBuilder.BUILDER_COST) {
+    return json(res, 402, { error: `This build needs ${eliteBuilder.BUILDER_COST} credits. Buy credits to continue.` })
+  }
+  let project = null
+  try {
+    const generated = await generateEliteCode(prompt)
+    const title = prompt.replace(/^(build|create|make|design)\s+(me\s+)?/i, '').split(/[.!?\n]/)[0].trim().slice(0, 72) || 'Untitled build'
+    if (existing?.id) await eliteBuilder.deleteProject(config, user, existing.id).catch(() => {})
+    project = await eliteBuilder.saveGeneratedProject(config, user, { title, prompt, code: generated.code, provider: generated.provider, requestId })
+    const charged = await billing.spendCredits(user, eliteBuilder.BUILDER_COST, config, { idempotencyKey: `elite-builder:${requestId}`, reason: `Elite Builder: ${title}`, builderProjectId: project.id })
+    if (!charged.ok) {
+      await eliteBuilder.deleteProject(config, user, project.id).catch(() => {})
+      return json(res, 402, { error: 'Your credit balance changed before completion. The draft was removed and nothing was charged.' })
+    }
+    project = await eliteBuilder.markProjectCharged(config, user, project.id)
+    return json(res, 200, { project, code: generated.code, provider: generated.provider, credits: Number.isFinite(charged.remaining) ? charged.remaining : null })
+  } catch (error) {
+    if (project?.id) await eliteBuilder.deleteProject(config, user, project.id).catch(() => {})
+    return json(res, 503, { error: error instanceof Error ? error.message : 'Alpha is resting. Retry this build in a moment.' })
+  }
+}
+
+async function builderProjectsHandler(req, res) {
+  const config = supabaseConfig()
+  const user = await currentOrLocalUser(req, config.url, config.anon)
+  if (!user) return json(res, 401, { error: 'Authentication required.' })
+  try { return json(res, 200, { projects: await eliteBuilder.listProjects(config, user) }) }
+  catch (error) { return json(res, 503, { error: error instanceof Error ? error.message : 'Builder history could not load.' }) }
+}
+
+async function builderDeployHandler(req, res) {
+  const config = supabaseConfig()
+  const user = await currentOrLocalUser(req, config.url, config.anon)
+  if (!user) return json(res, 401, { error: 'Authentication required.' })
+  try { return json(res, 200, await eliteBuilder.deployProject(config, user, await readBody(req), publicAppUrl())) }
+  catch (error) { return json(res, Number(error?.status) || 503, { error: error instanceof Error ? error.message : 'Deployment could not be completed.' }) }
+}
+
+async function builderPublicHandler(req, res, slug) {
+  try {
+    const project = await eliteBuilder.getPublicProject(supabaseConfig(), slug)
+    if (!project) return json(res, 404, { error: 'This AlphaTekX build is not published.' })
+    return json(res, 200, { project })
+  } catch (error) { return json(res, 503, { error: error instanceof Error ? error.message : 'Published build could not load.' }) }
+}
+
 const rateLimitMap = new Map()
 const RATE_LIMIT_WINDOW_MS = 60_000
 const RATE_LIMIT_MAX = 60
-const SENSITIVE_PATHS = ['/api/alpha', '/api/brain', '/api/credits', '/api/agents', '/api/alpha/mission', '/api/previews/', '/api/creations/publish', '/api/integrations/', '/api/verify-bonus']
+const SENSITIVE_PATHS = ['/api/alpha', '/api/brain', '/api/credits', '/api/agents', '/api/alpha/mission', '/api/previews/', '/api/creations/publish', '/api/integrations/', '/api/verify-bonus', '/api/builder/']
 function isRateLimited(req) {
   const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown').split(',')[0].trim()
   const now = Date.now()
@@ -6439,6 +6556,12 @@ const server = http.createServer(async (req, res) => {
   if (isRateLimited(req)) return json(res, 429, { error: 'Too many requests. Please slow down.' })
   if (req.method === 'OPTIONS') return json(res, 204, {})
   if (String(req.url || '').startsWith('/api/')) await refreshFeatureConfig(supabaseConfig()).catch(() => {})
+  if (req.method === 'POST' && req.url === '/api/builder/generate') return builderGenerateHandler(req, res)
+  if (req.method === 'GET' && req.url === '/api/builder/projects') return builderProjectsHandler(req, res)
+  if (req.method === 'POST' && req.url === '/api/builder/deploy') return builderDeployHandler(req, res)
+  if (req.method === 'GET' && /^\/api\/builder\/public\/[a-z0-9-]+$/.test(req.url || '')) {
+    return builderPublicHandler(req, res, decodeURIComponent(String(req.url).split('/').pop() || ''))
+  }
   if ((req.method === 'GET' || req.method === 'POST') && String(req.url || '').startsWith('/api/connectors/whatsapp/webhook')) {
     try { return await whatsappWebhookHandler(req, res) } catch { return json(res, 500, { error: 'WhatsApp could not process this webhook.' }) }
   }

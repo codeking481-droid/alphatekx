@@ -16,6 +16,8 @@ const Privacy = lazy(() => import('./pages/Privacy'))
 const Terms = lazy(() => import('./pages/Terms'))
 const ContentPage = lazy(() => import('./pages/ContentPage'))
 const MediaLibrary = lazy(() => import('./pages/MediaLibrary'))
+const EliteBuilder = lazy(() => import('./pages/EliteBuilder'))
+const PublicBuilderProject = lazy(() => import('./pages/PublicBuilderProject'))
 const FoundersLegacy = lazy(() => import('./pages/FoundersLegacy'))
 const Admin = lazy(() => import('./pages/Admin'))
 const AdminAgents = lazy(() => import('./pages/AdminAgents'))
@@ -61,6 +63,7 @@ export default function App() {
       <Route path="/connectors" element={protectedPage(<Connectors />)} />
       <Route path="/apps" element={protectedPage(<Connectors />)} />
       <Route path="/media-library" element={protectedPage(<MediaLibrary />)} />
+      <Route path="/builder" element={protectedPage(<EliteBuilder />)} />
       <Route path="/leads" element={toDashboard} />
       <Route path="/ceo" element={toDashboard} />
       <Route path="/settings" element={protectedPage(<Settings />)} />
@@ -80,6 +83,7 @@ export default function App() {
       <Route path="/cookie-policy" element={<ContentPage slug="cookie-policy" />} />
       <Route path="/updates" element={<ContentPage slug="updates" />} />
       <Route path="/founders-legacy" element={suspended(<FoundersLegacy />)} />
+      <Route path="/b/:slug" element={suspended(<PublicBuilderProject />)} />
 
       {/* Backward-compatible redirect: /agents -> /automations */}
       <Route path="/agents" element={toAutomations} />
@@ -94,7 +98,6 @@ export default function App() {
       <Route path="/brain" element={toDashboard} />
       <Route path="/chat" element={toDashboard} />
       <Route path="/standards" element={toDashboard} />
-      <Route path="/builder" element={toDashboard} />
       <Route path="/build-start" element={toDashboard} />
       <Route path="/marketplace" element={toDashboard} />
       <Route path="/marketplace/new" element={toDashboard} />
