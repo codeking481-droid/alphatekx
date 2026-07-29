@@ -33,7 +33,7 @@ import {
   requestBuilderDomain,
   type BuilderProject,
 } from "../lib/eliteBuilder";
-import { getCredits, setCredits } from "../lib/creditStore";
+import { getCredits, hydrateCredits, setCredits, subscribeCredits } from "../lib/creditStore";
 import { listMedia, type MediaItem } from "../lib/mediaLibrary";
 
 const templates = [
@@ -87,6 +87,7 @@ const BUILD_STAGES = [
   "Testing interactions",
   "Preparing live preview",
 ];
+const AGENT_SUPERPOWERS = ["YouTube", "Content", "Gmail", "Calendar"] as const;
 
 export default function EliteBuilder() {
   const [prompt, setPrompt] = useState("");
@@ -112,9 +113,10 @@ export default function EliteBuilder() {
   const [domainHelp, setDomainHelp] = useState("");
   const [device, setDevice] = useState<"desktop" | "tablet" | "mobile">("desktop");
   const [previewKey, setPreviewKey] = useState(0);
+  const [superpowers, setSuperpowers] = useState<string[]>([]);
   const previewShell = useRef<HTMLDivElement>(null);
   const [searchParams] = useSearchParams();
-  const credits = getCredits();
+  const [credits, setCreditBalance] = useState(() => getCredits());
 
   const preview = useMemo(
     () => builderSrcDoc(code, project?.title, { slug: project?.slug || "preview", selectMode }),
@@ -135,6 +137,8 @@ export default function EliteBuilder() {
 
   useEffect(() => {
     void refreshHistory();
+    void hydrateCredits().then(setCreditBalance);
+    return subscribeCredits(() => setCreditBalance(getCredits()));
   }, []);
   useEffect(() => {
     const remix = searchParams.get("remix");
@@ -173,10 +177,6 @@ export default function EliteBuilder() {
       setNotice("Describe the product and who it is for so Alpha can build it properly.");
       return;
     }
-    if (credits < BUILDER_COST) {
-      setNotice("You need 2 credits for a verified build. Buy credits to continue.");
-      return;
-    }
     setBusy(true);
     setBuildStage(BUILD_STAGES[0]);
     setNotice("");
@@ -190,7 +190,10 @@ export default function EliteBuilder() {
     }, 1800);
     try {
       const requestId = crypto.randomUUID();
-      const result = await generateBuild(value, requestId);
+      const agentContext = superpowers.length
+        ? `\n\nInclude AlphaTekX-ready interfaces for these connected capabilities: ${superpowers.join(", ")}. Use window.AlphaAPI for durable actions and never fake an external connection.`
+        : "";
+      const result = await generateBuild(`${value}${agentContext}`, requestId);
       setProject(result.project);
       setCode(result.code);
       setSlug(
@@ -200,7 +203,10 @@ export default function EliteBuilder() {
           .replace(/^-|-$/g, "")
           .slice(0, 30),
       );
-      if (typeof result.credits === "number") setCredits(result.credits);
+      if (typeof result.credits === "number") {
+        setCredits(result.credits);
+        setCreditBalance(result.credits);
+      }
       setTab("preview");
       setNotice(
         `Build complete with ${result.provider}. Two credits were charged after verification.`,
@@ -445,6 +451,40 @@ export default function EliteBuilder() {
               </div>
               <div>
                 <p className="mb-2 text-[10px] font-black uppercase tracking-[.16em] text-white/35">
+                  Superpowers
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {AGENT_SUPERPOWERS.map((agent) => {
+                    const selected = superpowers.includes(agent);
+                    return (
+                      <button
+                        key={agent}
+                        type="button"
+                        onClick={() =>
+                          setSuperpowers((current) =>
+                            selected
+                              ? current.filter((value) => value !== agent)
+                              : [...current, agent],
+                          )
+                        }
+                        className={`min-h-10 rounded-xl border px-3 text-left text-[11px] font-black transition ${
+                          selected
+                            ? "border-cyan-300/40 bg-cyan-400/10 text-cyan-200"
+                            : "border-white/10 bg-white/[.035] text-white/50"
+                        }`}
+                      >
+                        {selected ? "✓ " : "+ "}
+                        {agent} Agent
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-2 text-[10px] font-semibold leading-4 text-white/30">
+                  Alpha adds real integration-ready interfaces; it never pretends an account is connected.
+                </p>
+              </div>
+              <div>
+                <p className="mb-2 text-[10px] font-black uppercase tracking-[.16em] text-white/35">
                   Elite templates
                 </p>
                 <div className="flex flex-wrap gap-2">
@@ -461,11 +501,7 @@ export default function EliteBuilder() {
               </div>
               <button
                 onClick={() => (project ? void revise() : void build())}
-                disabled={
-                  busy ||
-                  prompt.trim().length < (project ? 3 : 8) ||
-                  (!project && credits < BUILDER_COST)
-                }
+                disabled={busy || prompt.trim().length < (project ? 3 : 8) || false}
                 className="flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-[#7C3AED] px-5 text-sm font-black text-white shadow-xl shadow-violet-950/35 transition hover:-translate-y-0.5 hover:bg-violet-500 disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-45"
               >
                 {busy ? (
