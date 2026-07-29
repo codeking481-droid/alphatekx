@@ -10,6 +10,7 @@ export type BuilderProject = {
   public_url?: string | null
   published?: boolean
   views?: number
+  versions?: { id: string; code: string; provider?: string; created_at: string }[]
   created_at?: string
 }
 

@@ -6424,8 +6424,8 @@ async function buildMissionFiles(req, res) {
   return json(res, 200, { missionId, generatedPath: `generated/${missionId}`, files, code: files.find(file => file.path === 'src/App.jsx')?.code || '', logs })
 }
 
-const ELITE_BUILDER_PROMPT = `You are AlphaTekX Builder V2 with 60 years combined experience shipping products at Stripe, Linear, Apple and Vercel.
-Build an Apple-quality, complete application, not an ugly MVP or static wireframe.
+const ELITE_BUILDER_PROMPT = `You are AlphaTekX Builder V3, a senior product engineering system with deep experience shipping reliable products.
+Build a complete, production-quality interactive application, not a static mock-up.
 Return only one JSX code block containing a single React component named App.
 - No imports, exports, explanation, script tags, eval, or Function constructors.
 - Use React.useState/useEffect directly. React is already available.
@@ -6439,6 +6439,8 @@ Return only one JSX code block containing a single React component named App.
 - Mobile experiences need a real hamburger or bottom sheet, not merely shrinking desktop UI.
 - For e-commerce include product grid, cart drawer, checkout mock and order-success state. Never claim a real payment occurred.
 - For dashboards include sidebar, stats, CSS charts, table and filters.
+- For marketplaces include search, categories, product detail, cart quantity controls, persisted cart, checkout validation, order confirmation, and responsive navigation.
+- Every visible button must have a real local interaction or be clearly disabled with explanatory copy.
 - For apps that save data, use window.AlphaAPI.get/post/put/del with an entity name. AlphaAPI is the secure project-scoped backend; never embed Supabase keys.
 - Do not claim payment, authentication, database, or external API behavior that is not implemented.`
 
@@ -6457,17 +6459,34 @@ function fallbackEliteComponent(prompt) {
 }`
 }
 
+async function pollinationsBuilderCompletion(messages) {
+  const pollinationsKey = firstKey('POLLINATIONS_API_KEY')
+  if (!pollinationsKey) throw new Error('Pollinations is not configured.')
+  const delays = [0, 2_000, 5_000]
+  let lastError = null
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (delays[attempt]) await new Promise(resolve => setTimeout(resolve, delays[attempt]))
+    try {
+      const payload = await fetchJson('https://gen.pollinations.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${pollinationsKey}` },
+        body: JSON.stringify({ model: process.env.POLLINATIONS_TEXT_MODEL || 'openai-fast', messages, temperature: 0.25, max_tokens: 9000 }),
+      }, 120000)
+      const result = eliteBuilder.validateBuilderCode(payload?.choices?.[0]?.message?.content || '')
+      if (!result.errors.length) return { code: result.code, provider: 'pollinations' }
+      lastError = new Error(result.errors.join(' '))
+    } catch (error) {
+      lastError = error
+      console.error(`[Elite Builder] Pollinations attempt ${attempt + 1}/3 failed:`, error instanceof Error ? error.message : error)
+    }
+  }
+  throw lastError || new Error('Pollinations did not return a verified application.')
+}
+
 async function generateEliteCode(prompt) {
   const messages = [{ role: 'system', content: ELITE_BUILDER_PROMPT }, { role: 'user', content: `Build this now at production-quality visual standards: ${prompt}` }]
-  const pollinationsKey = firstKey('POLLINATIONS_API_KEY')
   try {
-    const payload = await fetchJson('https://gen.pollinations.ai/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(pollinationsKey ? { Authorization: `Bearer ${pollinationsKey}` } : {}) },
-      body: JSON.stringify({ model: process.env.POLLINATIONS_TEXT_MODEL || 'openai-fast', messages, temperature: 0.35, max_tokens: 9000 }),
-    }, 120000)
-    const result = eliteBuilder.validateBuilderCode(payload?.choices?.[0]?.message?.content || '')
-    if (!result.errors.length) return { code: result.code, provider: 'pollinations' }
+    return await pollinationsBuilderCompletion(messages)
   } catch (error) {
     console.error('[Elite Builder] Pollinations failed:', error instanceof Error ? error.message : error)
   }
@@ -6493,6 +6512,11 @@ async function generateEliteRevision(currentCode, instruction, error = '') {
     { role: 'system', content: `${ELITE_BUILDER_PROMPT}\nYou are editing existing verified code. Return the complete corrected App component only.` },
     { role: 'user', content: `${task}\n\nEXISTING CODE:\n${currentCode}` },
   ]
+  try {
+    return await pollinationsBuilderCompletion(messages)
+  } catch (providerError) {
+    console.error('[Elite Builder edit] Pollinations:', providerError instanceof Error ? providerError.message : providerError)
+  }
   for (const name of getProviderOrder().filter(provider => getProviderKey(provider) && providerHealth.canAttempt(provider))) {
     try {
       const response = await callProvider(name, messages, true, false, 9000)

@@ -4,7 +4,8 @@ import { supabaseServiceHeaders } from './supabaseHeaders.mjs'
 export const BUILDER_COST = 2
 export const SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])$/
 
-const missingTable = message => /builder_projects|schema cache|does not exist|relation .* does not exist/i.test(String(message || ''))
+const missingTable = message => /(?:relation\s+["']?(?:public\.)?builder_projects["']?\s+does not exist|could not find the table\s+["']?public\.builder_projects|schema cache.*builder_projects)/i.test(String(message || ''))
+const missingColumn = message => /(?:column\s+(?:builder_projects\.)?["']?[a-z_]+["']?\s+does not exist|could not find the\s+["']?[a-z_]+["']?\s+column.*builder_projects)/i.test(String(message || ''))
 const headers = config => supabaseServiceHeaders(config.service)
 
 async function request(config, path, init = {}) {
@@ -18,7 +19,8 @@ async function request(config, path, init = {}) {
   try { payload = raw ? JSON.parse(raw) : null } catch { payload = raw }
   if (!response.ok) {
     const message = payload?.message || payload?.error || `Builder database returned HTTP ${response.status}.`
-    if (missingTable(message)) throw new Error('Builder needs one administrator database activation. Apply supabase/elite-builder.sql once.')
+    if (missingTable(message)) throw Object.assign(new Error('Builder storage is not installed in production. Apply supabase/elite-builder.sql to the connected Supabase project.'), { code: 'BUILDER_SCHEMA_MISSING' })
+    if (missingColumn(message)) throw Object.assign(new Error('Builder storage is outdated. Apply the latest supabase/elite-builder.sql migration to add the required columns.'), { code: 'BUILDER_SCHEMA_OUTDATED' })
     throw new Error(String(message))
   }
   return payload
@@ -54,7 +56,7 @@ export function validateBuilderCode(value) {
 }
 
 export async function listProjects(config, user) {
-  const rows = await request(config, `builder_projects?user_id=eq.${encodeURIComponent(user.id)}&charged=eq.true&select=id,slug,title,prompt,code,provider,public_url,published,views,created_at,updated_at&order=created_at.desc&limit=50`)
+  const rows = await request(config, `builder_projects?user_id=eq.${encodeURIComponent(user.id)}&charged=eq.true&select=id,slug,title,prompt,code,provider,public_url,published,views,versions,created_at,updated_at&order=created_at.desc&limit=50`)
   return Array.isArray(rows) ? rows : []
 }
 
@@ -69,10 +71,18 @@ export async function getOwnerProject(config, user, id) {
 }
 
 export async function updateProjectCode(config, user, id, code, provider) {
+  const current = await getOwnerProject(config, user, id)
+  const versions = Array.isArray(current?.versions) ? current.versions : []
+  const nextVersions = current?.code ? [...versions, {
+    id: randomUUID(),
+    code: current.code,
+    provider: current.provider || 'alpha',
+    created_at: new Date().toISOString(),
+  }].slice(-20) : versions
   const rows = await request(config, `builder_projects?id=eq.${encodeURIComponent(id)}&user_id=eq.${encodeURIComponent(user.id)}`, {
     method: 'PATCH',
     headers: { Prefer: 'return=representation' },
-    body: JSON.stringify({ code, provider, updated_at: new Date().toISOString() }),
+    body: JSON.stringify({ code, provider, versions: nextVersions, updated_at: new Date().toISOString() }),
   })
   if (!rows?.length) throw Object.assign(new Error('This build could not be found in your account.'), { status: 404 })
   return rows[0]
