@@ -17,10 +17,13 @@ export type BuilderProject = {
 export const BUILDER_COST = 2
 export const BUILDER_SLUG = /^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])$/
 
-export function normalizeBuilderRuntimeCode(value: string) {
+export function cleanCodeForPreview(value: string) {
   let code = String(value || '')
   const iconBindings: string[] = []
-  const importPattern = /\bimport\s+([\s\S]*?)\s+from\s+(['"])([^'"]+)\2\s*;?/g
+  // Generated code is evaluated as a single browser component, never as an
+  // ES module. Strip default, named, namespace, multiline, same-line, type,
+  // and side-effect imports before Babel sees the source.
+  const importPattern = /\bimport\s+(?:type\s+)?([\s\S]*?)\s+from\s+(['"])([^'"]+)\2\s*;?/g
   for (const match of code.matchAll(importPattern)) {
     if (match[3] !== 'lucide-react') continue
     const named = match[1].match(/\{([\s\S]*?)\}/)?.[1] || ''
@@ -32,9 +35,12 @@ export function normalizeBuilderRuntimeCode(value: string) {
   }
   code = code
     .replace(importPattern, '\n')
-    .replace(/\bimport\s+(['"])[^'"]+\1\s*;?/g, '\n')
+    .replace(/\bimport\s+(?:type\s+)?(['"])[^'"]+\1\s*;?/g, '\n')
     .replace(/\bexport\s+default\s+function\s+App\b/, 'function App')
     .replace(/\bexport\s+default\s+App\s*;?/g, '')
+    .replace(/\bexport\s+default\s+(?=(?:function|class)\s+App\b)/g, '')
+    .replace(/\bexport\s+default\s+(?=(?:const|let|var)\s+App\b)/g, '')
+    .replace(/\bexport\s+(?=(?:const|let|var|function|class)\s+App\b)/g, '')
     .replace(/(?<!React\.)\b(useState|useEffect|useMemo|useReducer|useRef|useCallback|useContext)\s*\(/g, 'React.$1(')
     .trim()
   if (iconBindings.length) {
@@ -46,9 +52,11 @@ export function normalizeBuilderRuntimeCode(value: string) {
   return code
 }
 
+export const normalizeBuilderRuntimeCode = cleanCodeForPreview
+
 export function builderSrcDoc(code: string, title = 'AlphaTekX build', options: { slug?: string; selectMode?: boolean } = {}) {
   const safeTitle = title.replace(/[<>&"']/g, '')
-  const encodedCode = JSON.stringify(normalizeBuilderRuntimeCode(code)).replace(/</g, '\\u003c')
+  const encodedCode = JSON.stringify(cleanCodeForPreview(code)).replace(/</g, '\\u003c')
   const slug = JSON.stringify(options.slug || 'preview')
   const selectMode = options.selectMode === true ? 'true' : 'false'
   return `<!doctype html>

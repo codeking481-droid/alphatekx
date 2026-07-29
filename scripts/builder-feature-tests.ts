@@ -140,6 +140,26 @@ await test('Builder preview removes inline and multiline imports before live exe
   assert(!html.includes('import React'), 'preview HTML still contains the generated import')
 })
 
+await test('Builder preview handles every saved import and export shape used by generated e-commerce apps', () => {
+  const generated = `"use client";
+  import type { MouseEvent } from "react";
+  import React from "react";
+  import "some-theme";
+  import * as Icons from "lucide-react";
+  export default const App = () => {
+    const [cart, setCart] = useState([]);
+    return <main><h1>Lagos Store</h1><button onClick={() => setCart(["gown"])}>Add to cart</button><p>{cart.length} items</p></main>;
+  };`
+  const runtime = normalizeBuilderRuntimeCode(generated)
+  assert(!/\bimport\s/.test(runtime), `preview left an import behind: ${runtime}`)
+  assert(!/\bexport\s/.test(runtime), `preview left an export behind: ${runtime}`)
+  assert(runtime.includes('const App ='), 'preview removed the App component')
+  assert(runtime.includes('React.useState('), 'preview did not bind the React hook')
+  const document = builderSrcDoc(generated, 'E-commerce')
+  assert(!document.includes('import type'), 'deployed preview contains a type import')
+  assert(document.includes('React.createElement(App)'), 'deployed preview does not mount App')
+})
+
 await test('Elite Builder validates complete single-component output', () => {
   const result = validateBuilderCode(`function App(){ const [open,setOpen]=React.useState(false); return <main className="min-h-screen bg-black text-white"><h1>Launch Lagos</h1><button onClick={()=>setOpen(!open)}>Toggle</button>{open&&<p>Ready for customers with a complete mobile experience and helpful content.</p>}<section>${'Premium product experience. '.repeat(20)}</section></main>; }`)
   assert(result.errors.length === 0, `unexpected elite validation errors: ${result.errors.join(', ')}`)

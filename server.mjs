@@ -6561,8 +6561,10 @@ async function buildMissionFiles(req, res) {
 const ELITE_BUILDER_PROMPT = `You are AlphaTekX Builder V3, a senior product engineering system with deep experience shipping reliable products.
 Build a complete, production-quality interactive application, not a static mock-up.
 Return only one JSX code block containing a single React component named App.
-- No imports, exports, explanation, script tags, eval, or Function constructors.
-- Use React.useState/useEffect directly. React is already available.
+- NO IMPORTS ALLOWED. Return only function App() {...} with no import lines.
+- Do not use exports, explanation, script tags, eval, Function constructors, createRoot, ReactDOM, TypeScript types, or external component packages.
+- React is already available. Use only React.useState, React.useEffect, React.useRef, React.useMemo, React.useCallback, React.useReducer, and React.useContext.
+- For icons use inline SVG or Unicode symbols, never lucide-react or another import.
 - Use Tailwind className utilities only. Do not depend on component libraries.
 - Make it mobile-first, responsive, accessible, and premium using #0A0A0F, #1A1A23, #7C3AED and #E9E7FF.
 - Add realistic data, working interactions, focus states, and useful copy.
@@ -6616,7 +6618,7 @@ async function pollinationsBuilderCompletion(messages) {
   // authenticated output before it can be saved or charged.
   try {
     const userPrompt = String([...messages].reverse().find(message => message.role === 'user')?.content || 'Build a production-ready website').slice(0, 6000)
-    const directPrompt = `BUILD THIS ELITE WEBSITE: ${userPrompt}\n\nReturn only one complete production-quality React App component. Use React.* hooks, Tailwind classes, responsive mobile layouts, real interactions, loading and empty states. Do not use imports, markdown fences, scripts, eval, or createRoot.`
+    const directPrompt = `BUILD THIS ELITE WEBSITE: ${userPrompt}\n\nIMPORTANT: NO IMPORTS ALLOWED. Return only function App() {...} with no import lines. Use only React.useState, React.useEffect, React.useRef, React.useMemo and other React.* hooks, Tailwind classes, responsive mobile layouts, real interactions, loading and empty states. For icons use inline SVG or Unicode, never lucide-react. Do not use exports, markdown fences, scripts, eval, ReactDOM, TypeScript types, or createRoot.`
     const text = await fetchText(`https://text.pollinations.ai/${encodeURIComponent(directPrompt)}`, {
       headers: { Accept: 'text/plain' },
     }, 15_000)
