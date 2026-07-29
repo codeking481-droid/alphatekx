@@ -16,6 +16,9 @@ export type ConnectedAppStatus = {
   lastSyncedAt?: string
   metadata?: Record<string, unknown>
   requiredEnvironment?: string[]
+  name?: string
+  authMode?: 'managed' | 'custom'
+  connectionCount?: number
 }
 
 export type ExecutionResult = {

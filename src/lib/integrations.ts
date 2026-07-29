@@ -122,6 +122,12 @@ export const saveIntegration = (provider: string, token: string | undefined, cre
 export const deleteIntegration = (provider: string, token: string | undefined) =>
   request<{ deleted: boolean; provider: string }>(`/api/integrations/${provider}`, token, { method: 'DELETE' })
 
+export async function startCustomOAuth(provider: 'tiktok' | 'snapchat', token?: string) {
+  const data = await request<{ url: string }>(`/api/${provider}/auth`, token, { method: 'POST', body: '{}' })
+  if (!data.url) throw new Error(`${provider} did not return a secure connection URL.`)
+  window.location.assign(data.url)
+}
+
 export const getUserUsage = (token?: string) => request<UserUsage>('/api/user/usage', token)
 
 export const saveConnector = (platform: string, token: string | undefined, credentials: Record<string, unknown>, identifier?: string) =>

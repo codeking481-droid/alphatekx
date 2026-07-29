@@ -152,7 +152,9 @@ await test('Meta, WhatsApp, Instagram and X use the correct configuration paths'
   const connectors = fs.readFileSync(new URL('../src/pages/Connectors.tsx', import.meta.url), 'utf8')
   const server = fs.readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
   const composio = fs.readFileSync(new URL('../server/composioConnectorService.mjs', import.meta.url), 'utf8')
-  assert.match(connectors, /composioOAuthProviders = new Set\(\['whatsapp', 'facebook', 'instagram', 'x', 'youtube'\]\)/)
+  for (const provider of ['gmail', 'github', 'googledocs', 'googlesheets', 'discord', 'whatsapp', 'facebook', 'instagram', 'youtube']) {
+    assert.match(connectors, new RegExp(`composioOAuthProviders[\\s\\S]*'${provider}'`))
+  }
   assert.match(connectors, /serverManagedProviders = new Set<string>\(\)/)
   assert.match(server, /META_APP_ID and META_APP_SECRET/)
   assert.match(server, /WHATSAPP_ACCESS_TOKEN/)

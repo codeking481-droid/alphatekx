@@ -1487,7 +1487,7 @@ async function integrationsStatus(req, res) {
   status.google_sheets = status.sheets
   status.google_calendar = status.calendar
   status.google_drive = status.drive
-  const providers = ['github', 'linkedin', 'x', 'facebook', 'whatsapp', 'paystack', 'supabase', 'notion', 'slack', 'discord', 'telegram', 'email']
+  const providers = ['github', 'linkedin', 'x', 'facebook', 'whatsapp', 'tiktok', 'snapchat', 'paystack', 'supabase', 'notion', 'slack', 'discord', 'telegram', 'email']
   for (const provider of providers) {
     const integration = await getUserIntegration(user.id, provider, config).catch(() => null)
     const token = integration?.tokens || {}
@@ -2054,6 +2054,110 @@ async function selectFacebookPage(req, res) {
   }, config)
   await deleteUserIntegration(user.id, 'facebook_pending', config)
   return json(res, 200, { connected: true, page: { id: pageId, name: String(verifiedPage.name || page.name || 'Facebook Page') } })
+}
+
+const customOAuthProviders = {
+  tiktok: {
+    name: 'TikTok',
+    clientIdEnv: 'TIKTOK_CLIENT_KEY',
+    clientSecretEnv: 'TIKTOK_CLIENT_SECRET',
+    redirectEnv: 'TIKTOK_REDIRECT_URI',
+    redirectPath: '/api/tiktok/callback',
+    authorizeUrl: 'https://www.tiktok.com/v2/auth/authorize/',
+    tokenUrl: 'https://open.tiktokapis.com/v2/oauth/token/',
+    scopes: ['user.info.basic', 'video.list', 'video.upload'],
+    clientIdParam: 'client_key',
+  },
+  snapchat: {
+    name: 'Snapchat',
+    clientIdEnv: 'SNAPCHAT_CLIENT_ID',
+    clientSecretEnv: 'SNAPCHAT_CLIENT_SECRET',
+    redirectEnv: 'SNAPCHAT_REDIRECT_URI',
+    redirectPath: '/api/snapchat/callback',
+    authorizeUrl: 'https://accounts.snapchat.com/login/oauth2/authorize',
+    tokenUrl: 'https://accounts.snapchat.com/login/oauth2/access_token',
+    scopes: ['snapchat-marketing-api'],
+    clientIdParam: 'client_id',
+  },
+}
+
+function customOAuthConfig(provider) {
+  const definition = customOAuthProviders[provider]
+  if (!definition) return null
+  return {
+    ...definition,
+    clientId: String(process.env[definition.clientIdEnv] || '').trim(),
+    clientSecret: String(process.env[definition.clientSecretEnv] || '').trim(),
+    redirectUri: String(process.env[definition.redirectEnv] || `${publicAppUrl()}${definition.redirectPath}`).trim(),
+  }
+}
+
+async function startCustomOAuth(req, res, provider) {
+  const definition = customOAuthConfig(provider)
+  if (!definition) return json(res, 404, { error: 'Unknown OAuth provider' })
+  const config = supabaseConfig()
+  const user = await currentOrLocalUser(req, config.url, config.anon)
+  if (!user) return json(res, 401, { error: 'Authentication required' })
+  if (!definition.clientId || !definition.clientSecret) {
+    return json(res, 503, { error: `${definition.name} is not configured yet. Add ${definition.clientIdEnv} and ${definition.clientSecretEnv} on Render.` })
+  }
+  const state = createOAuthState(user.id, config, user.email || '', '/connected-apps')
+  const params = new URLSearchParams({
+    [definition.clientIdParam]: definition.clientId,
+    redirect_uri: definition.redirectUri,
+    response_type: 'code',
+    scope: provider === 'tiktok' ? definition.scopes.join(',') : definition.scopes.join(' '),
+    state,
+  })
+  return json(res, 200, { url: `${definition.authorizeUrl}?${params.toString()}`, provider })
+}
+
+async function customOAuthCallback(req, res, provider) {
+  const definition = customOAuthConfig(provider)
+  let destination = new URL('/connected-apps', publicAppUrl())
+  try {
+    if (!definition?.clientId || !definition?.clientSecret) throw new Error(`${definition?.name || provider} is not configured`)
+    const requestUrl = new URL(req.url || '/', publicAppUrl())
+    const denied = requestUrl.searchParams.get('error_description') || requestUrl.searchParams.get('error')
+    if (denied) throw new Error(`${definition.name} authorization was denied: ${denied}`)
+    const code = requestUrl.searchParams.get('code')
+    const state = requestUrl.searchParams.get('state')
+    if (!code || !state) throw new Error(`${definition.name} did not return a valid authorization response`)
+    const parsed = verifyOAuthState(state, supabaseConfig())
+    const tokenBody = new URLSearchParams({
+      [definition.clientIdParam]: definition.clientId,
+      client_secret: definition.clientSecret,
+      code,
+      grant_type: 'authorization_code',
+      redirect_uri: definition.redirectUri,
+    })
+    const tokenResponse = await fetch(definition.tokenUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: tokenBody,
+    })
+    const tokenData = await tokenResponse.json().catch(() => ({}))
+    if (!tokenResponse.ok || !tokenData.access_token) throw new Error(tokenData.error_description || tokenData.message || `${definition.name} token exchange failed`)
+    await saveUserIntegration(parsed.userId, provider, {
+      email: parsed.email,
+      identifier: tokenData.open_id || tokenData.sub || parsed.email,
+      scopes: String(tokenData.scope || definition.scopes.join(' ')).split(/[,\s]+/).filter(Boolean),
+      tokens: {
+        access_token: tokenData.access_token,
+        refresh_token: tokenData.refresh_token || '',
+        expiry: Date.now() + Number(tokenData.expires_in || 3600) * 1000,
+        open_id: tokenData.open_id || '',
+      },
+    }, supabaseConfig())
+    destination.searchParams.set('connected', provider)
+    destination.searchParams.set('provider', provider)
+  } catch (error) {
+    destination.searchParams.set('connected', 'error')
+    destination.searchParams.set('provider', provider)
+    destination.searchParams.set('reason', error instanceof Error ? error.message.slice(0, 180) : `${provider} connection failed`)
+  }
+  res.writeHead(302, { Location: destination.toString(), 'Cache-Control': 'no-store' })
+  return res.end()
 }
 
 const cleanHeader = (value) => String(value || '').replace(/[\r\n]+/g, ' ').trim()
@@ -6418,6 +6522,21 @@ const server = http.createServer(async (req, res) => {
       if (!user) return json(res, 401, { error: 'Authentication required' })
       return json(res, 200, await alphaConnector.getConnectedApps(user))
     } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Failed to list connected apps' }) }
+  }
+  if (req.url === '/api/composio/toolkits' && req.method === 'GET') {
+    try {
+      const config = supabaseConfig()
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      if (!user) return json(res, 401, { error: 'Authentication required' })
+      const result = await alphaConnector.getConnectedApps(user)
+      return json(res, 200, { toolkits: result.providers.map(({ provider, name, category, enabled, connected, connectionCount, authMode, status }) => ({ id: provider, name, category, enabled, connected, connectionCount, authMode, status })) })
+    } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Could not list toolkits' }) }
+  }
+  if (req.method === 'POST' && /^\/api\/(tiktok|snapchat)\/auth$/.test(req.url || '')) {
+    return startCustomOAuth(req, res, String(req.url).split('/')[2])
+  }
+  if (req.method === 'GET' && /^\/api\/(tiktok|snapchat)\/callback(?:\?|$)/.test(req.url || '')) {
+    return customOAuthCallback(req, res, String(req.url).split('/')[2])
   }
   if (req.url?.startsWith('/api/connectors/')) {
     const url = new URL(req.url, 'http://localhost')

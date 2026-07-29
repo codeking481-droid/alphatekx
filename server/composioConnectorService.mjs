@@ -4,6 +4,7 @@
 
 import { Composio } from '@composio/core'
 import { supabaseServiceHeaders } from './supabaseHeaders.mjs'
+import { AUTH_CONFIGS } from './composioAuthConfigs.mjs'
 
 // ---------------------------------------------------------------------------
 // Provider Registry — maps AlphaTekX provider IDs to Composio toolkit slugs
@@ -26,17 +27,49 @@ import { supabaseServiceHeaders } from './supabaseHeaders.mjs'
 
 /** @type {Record<string, ConnectorProviderDef>} */
 const PROVIDER_DEFS = {
+  gmail: {
+    id: 'gmail', name: 'Gmail', composioAppName: 'gmail', composioAppNames: ['gmail'],
+    authConfigEnv: 'COMPOSIO_GMAIL_AUTH_ID', defaultAuthConfigId: AUTH_CONFIGS.GMAIL,
+    enabled: false, stage: 'live', actions: ['send_email', 'list_messages'],
+    isNative: false, authMode: 'managed', category: 'Communication',
+  },
+  github: {
+    id: 'github', name: 'GitHub', composioAppName: 'github', composioAppNames: ['github'],
+    authConfigEnv: 'COMPOSIO_GITHUB_AUTH_ID', defaultAuthConfigId: AUTH_CONFIGS.GITHUB,
+    enabled: false, stage: 'live', actions: ['list_repositories', 'get_file', 'create_issue'],
+    isNative: false, authMode: 'managed', category: 'Development',
+  },
+  googledocs: {
+    id: 'googledocs', name: 'Google Docs', composioAppName: 'googledocs', composioAppNames: ['googledocs'],
+    authConfigEnv: 'COMPOSIO_GOOGLEDOCS_AUTH_ID', defaultAuthConfigId: AUTH_CONFIGS.DOCS,
+    enabled: false, stage: 'live', actions: ['create_document', 'get_document', 'update_document'],
+    isNative: false, authMode: 'managed', category: 'Productivity',
+  },
+  googlesheets: {
+    id: 'googlesheets', name: 'Google Sheets', composioAppName: 'googlesheets', composioAppNames: ['googlesheets'],
+    authConfigEnv: 'COMPOSIO_SHEETS_AUTH_ID', defaultAuthConfigId: AUTH_CONFIGS.SHEETS,
+    enabled: false, stage: 'live', actions: ['read_rows', 'append_row', 'update_row'],
+    isNative: false, authMode: 'managed', category: 'Productivity',
+  },
+  discord: {
+    id: 'discord', name: 'Discord', composioAppName: 'discord', composioAppNames: ['discord'],
+    authConfigEnv: 'COMPOSIO_DISCORD_AUTH_ID', defaultAuthConfigId: AUTH_CONFIGS.DISCORD,
+    enabled: false, stage: 'live', actions: ['send_message'],
+    isNative: false, authMode: 'managed', category: 'Communication',
+  },
   whatsapp: {
     id: 'whatsapp',
     name: 'WhatsApp',
     composioAppName: 'whatsapp',
     composioAppNames: ['whatsapp', 'whatsapp_business'],
     authConfigEnv: 'COMPOSIO_WHATSAPP_AUTH_CONFIG_ID',
+    defaultAuthConfigId: AUTH_CONFIGS.WHATSAPP,
     enabled: false,
     stage: 'beta',
     actions: ['send_message', 'send_template'],
     isNative: false,
     category: 'Communication',
+    authMode: 'managed',
   },
   facebook: {
     id: 'facebook',
@@ -44,11 +77,13 @@ const PROVIDER_DEFS = {
     composioAppName: 'facebook',
     composioAppNames: ['facebook'],
     authConfigEnv: 'COMPOSIO_FACEBOOK_AUTH_CONFIG_ID',
+    defaultAuthConfigId: AUTH_CONFIGS.FACEBOOK,
     enabled: false,
     stage: 'beta',
     actions: ['create_post', 'create_page_post', 'publish'],
     isNative: false,
     category: 'Social Media',
+    authMode: 'managed',
   },
   instagram: {
     id: 'instagram',
@@ -56,11 +91,13 @@ const PROVIDER_DEFS = {
     composioAppName: 'instagram',
     composioAppNames: ['instagram'],
     authConfigEnv: 'COMPOSIO_INSTAGRAM_AUTH_CONFIG_ID',
+    defaultAuthConfigId: AUTH_CONFIGS.INSTAGRAM,
     enabled: false,
     stage: 'beta',
     actions: ['create_media', 'create_post', 'create_media_post', 'publish_post', 'publish_reel', 'publish_story'],
     isNative: false,
     category: 'Social Media',
+    authMode: 'managed',
   },
   twitter: {
     id: 'twitter',
@@ -73,6 +110,7 @@ const PROVIDER_DEFS = {
     actions: ['create_post', 'create_tweet', 'create_thread', 'create_media_tweet'],
     isNative: false,
     category: 'Social Media',
+    authMode: 'managed',
   },
   youtube: {
     id: 'youtube',
@@ -85,10 +123,17 @@ const PROVIDER_DEFS = {
     actions: ['upload_video', 'create_short', 'update_video', 'update_description'],
     isNative: false,
     category: 'Content',
+    authMode: 'managed',
+    defaultAuthConfigId: AUTH_CONFIGS.YOUTUBE,
   },
 }
 
 const AUTH_CONFIG_ALIASES = {
+  gmail: ['COMPOSIO_GMAIL_AUTH_CONFIG_ID'],
+  github: ['COMPOSIO_GITHUB_AUTH_CONFIG_ID'],
+  googledocs: ['COMPOSIO_GOOGLE_DOCS_AUTH_CONFIG_ID'],
+  googlesheets: ['COMPOSIO_GOOGLESHEETS_AUTH_CONFIG_ID', 'COMPOSIO_GOOGLE_SHEETS_AUTH_CONFIG_ID'],
+  discord: ['COMPOSIO_DISCORD_AUTH_CONFIG_ID'],
   whatsapp: ['WHATSAPP_AUTH_CONFIG_ID', 'COMPOSIO_WHATSAPP_BUSINESS_AUTH_CONFIG_ID'],
   facebook: ['FACEBOOK_AUTH_CONFIG_ID'],
   instagram: ['INSTAGRAM_AUTH_CONFIG_ID', 'COMPOSIO_META_INSTAGRAM_AUTH_CONFIG_ID'],
@@ -102,6 +147,8 @@ const AUTH_CONFIG_ALIASES = {
 
 const ALIASES = {
   x: 'twitter',
+  google_docs: 'googledocs',
+  google_sheets: 'googlesheets',
   'x (twitter)': 'twitter',
   linkedin: 'linkedin', // native, not composio
   gmail: 'gmail', // native
@@ -125,6 +172,18 @@ function resolveProviderAlias(idOrName) {
 
 /** Maps (providerId, actionId) → Composio tool slug */
 const ACTION_TOOL_MAP = {
+  'gmail.send_email': process.env.COMPOSIO_GMAIL_SEND_EMAIL_TOOL || 'GMAIL_SEND_EMAIL',
+  'gmail.list_messages': process.env.COMPOSIO_GMAIL_LIST_MESSAGES_TOOL || 'GMAIL_FETCH_EMAILS',
+  'github.list_repositories': process.env.COMPOSIO_GITHUB_LIST_REPOSITORIES_TOOL || 'GITHUB_LIST_REPOSITORIES_FOR_THE_AUTHENTICATED_USER',
+  'github.get_file': process.env.COMPOSIO_GITHUB_GET_FILE_TOOL || 'GITHUB_GET_REPOSITORY_CONTENT',
+  'github.create_issue': process.env.COMPOSIO_GITHUB_CREATE_ISSUE_TOOL || 'GITHUB_CREATE_AN_ISSUE',
+  'googledocs.create_document': process.env.COMPOSIO_GOOGLEDOCS_CREATE_DOCUMENT_TOOL || 'GOOGLEDOCS_CREATE_DOCUMENT',
+  'googledocs.get_document': process.env.COMPOSIO_GOOGLEDOCS_GET_DOCUMENT_TOOL || 'GOOGLEDOCS_GET_DOCUMENT',
+  'googledocs.update_document': process.env.COMPOSIO_GOOGLEDOCS_UPDATE_DOCUMENT_TOOL || 'GOOGLEDOCS_BATCH_UPDATE_DOCUMENT',
+  'googlesheets.read_rows': process.env.COMPOSIO_SHEETS_READ_ROWS_TOOL || 'GOOGLESHEETS_BATCH_GET',
+  'googlesheets.append_row': process.env.COMPOSIO_SHEETS_APPEND_ROW_TOOL || 'GOOGLESHEETS_SPREADSHEETS_VALUES_APPEND',
+  'googlesheets.update_row': process.env.COMPOSIO_SHEETS_UPDATE_ROW_TOOL || 'GOOGLESHEETS_SPREADSHEETS_VALUES_UPDATE',
+  'discord.send_message': process.env.COMPOSIO_DISCORD_SEND_MESSAGE_TOOL || 'DISCORD_SEND_MESSAGE',
   'whatsapp.send_message': process.env.COMPOSIO_WHATSAPP_SEND_MESSAGE_TOOL || 'WHATSAPP_SEND_MESSAGE',
   'whatsapp.send_template': process.env.COMPOSIO_WHATSAPP_SEND_TEMPLATE_TOOL || 'WHATSAPP_SEND_TEMPLATE_MESSAGE',
   'facebook.create_post': process.env.COMPOSIO_FACEBOOK_CREATE_POST_TOOL || 'FACEBOOK_CREATE_POST',
@@ -147,6 +206,10 @@ const ACTION_TOOL_MAP = {
 }
 
 const TOOLKIT_VERSIONS = {
+  github: '',
+  googledocs: '',
+  googlesheets: '',
+  discord: '',
   whatsapp: '20260721_00',
   facebook: '20260721_00',
   instagram: '20260721_00',
@@ -194,7 +257,7 @@ export function initialize() {
     for (const [pid, def] of Object.entries(PROVIDER_DEFS)) {
       const envNames = [def.authConfigEnv, ...(AUTH_CONFIG_ALIASES[pid] || [])]
       const configuredEnv = envNames.find(name => String(process.env[name] || '').trim())
-      const authConfigId = configuredEnv ? String(process.env[configuredEnv]).trim() : ''
+      const authConfigId = configuredEnv ? String(process.env[configuredEnv]).trim() : String(def.defaultAuthConfigId || '').trim()
       if (authConfigId) {
         providerConfigs[pid] = {
           authConfigId,
@@ -496,6 +559,8 @@ export async function getConnectedApps(user) {
       error,
       requiredEnvironment: config.requiredEnvironment || [],
       isNative: def.isNative,
+      authMode: def.authMode || 'managed',
+      connectionCount: connected ? 1 : 0,
       actions: def.actions,
     })
   }
