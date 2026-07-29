@@ -20,6 +20,7 @@ const connectors = fs.readFileSync(new URL('../src/pages/Connectors.tsx', import
 const engine = fs.readFileSync(new URL('../server/alpha/conversationEngine.mjs', import.meta.url), 'utf8')
 const capabilityRegistry = fs.readFileSync(new URL('../server/automation/capabilityRegistry.mjs', import.meta.url), 'utf8')
 const ceoPage = fs.readFileSync(new URL('../src/pages/CeoInbox.tsx', import.meta.url), 'utf8')
+const agentPage = fs.readFileSync(new URL('../src/pages/Agents.tsx', import.meta.url), 'utf8')
 
 test('calculates days to a named date deterministically', () => {
   assert.equal(calculateDaysUntilQuestion('how many days to Dec 31', new Date('2026-07-29T12:00:00Z')), 'There are **155 days** until 31 December 2026.')
@@ -90,4 +91,11 @@ test('builder mode creates an unmerged GitHub pull request only from reviewed fi
   assert.match(server, /draft: params\.draft !== false/)
 })
 
-console.log(`\n${passed}/13 super-computer agent checks passed`)
+test('agent workspace is full-screen, mobile-safe, and renders generated images', () => {
+  assert.match(agentPage, /alpha-chat-screen/)
+  assert.match(agentPage, /h-\[calc\(100dvh-8rem\)\]/)
+  assert.match(agentPage, /ReactMarkdown/)
+  assert.match(connectors, /Connections are secured by Composio/)
+})
+
+console.log(`\n${passed}/14 super-computer agent checks passed`)

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { isAdminUser } from '../lib/adminAccess'
 import { ArrowRight, CalendarDays, CheckCircle2, Clock3, Edit3, LoaderCircle, Send, Sparkles, X } from 'lucide-react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import ReactMarkdown from 'react-markdown'
 import CampaignPreview from '../components/agents/CampaignPreview'
 import WorkflowPlan from '../components/agents/WorkflowPlan'
 import { getAgents, setCache, useAgents } from '../lib/agents/agentStore'
@@ -57,6 +58,7 @@ export default function Agents() {
   const [creating, setCreating] = useState(false)
   const [notice, setNotice] = useState('')
   const composer = useRef<HTMLTextAreaElement>(null)
+  const messageEnd = useRef<HTMLDivElement>(null)
   const isAdmin = isAdminUser(user)
 
   const authHeaders = (): Record<string, string> => {
@@ -109,6 +111,7 @@ export default function Agents() {
     else sessionStorage.removeItem(SUCCESS_KEY)
   }, [success])
   useEffect(() => { sessionStorage.setItem(PROMPT_KEY, input) }, [input])
+  useEffect(() => { messageEnd.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }) }, [conversation?.messages?.length, creating])
   useEffect(() => {
     const prompt = searchParams.get('prompt')
     const automationId = searchParams.get('id')
@@ -217,9 +220,9 @@ export default function Agents() {
     return <GuidedCommandCentre platform={guidedPlatform} creating={creating} notice={notice} onComplete={message => void send(message)} onBack={() => navigate('/dashboard')} />
   }
 
-  return <main className="flex min-h-[calc(100dvh-8rem)] w-full flex-col px-3 py-5 sm:px-6 lg:min-h-[calc(100dvh-4rem)] lg:py-8">
-    <div className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col">
-      <header className="shrink-0 py-4 text-center sm:py-7">
+  return <main className="alpha-chat-screen flex h-[calc(100dvh-8rem)] min-h-0 w-full flex-col overflow-hidden lg:h-[calc(100dvh-4rem)]">
+    <div className="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col">
+      <header className="hidden">
         <p className="text-xs font-medium uppercase tracking-[.24em] text-violet-300">Run your automations 24/7</p>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-5xl">Turn Your Ideas Into Reality</h1>
         <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-white/58 sm:text-base">Tell Alpha what you want done. It will plan an automation that keeps working even when you are offline.</p>
@@ -229,14 +232,39 @@ export default function Agents() {
         <CheckCircle2 className="mx-auto text-emerald-300" size={34}/>
         <h2 className="mt-4 text-xl font-semibold">{success.message || 'Automation created successfully.'}</h2>
         {success.id && <button onClick={() => navigate(`/active-automations/${success.id}`)} className="mx-auto mt-6 flex min-h-12 items-center justify-center gap-2 rounded-xl btn-alpha px-5 text-sm">Visit Automation<ArrowRight size={16}/></button>}
-      </section> : <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[1.75rem] border border-violet-400/20 bg-violet-500/10 shadow-2xl shadow-violet-950/20">
-        <div className="flex items-center justify-between border-b border-violet-400/20 px-4 py-3 sm:px-6"><div className="flex items-center gap-2 text-sm font-medium"><span className="grid size-8 place-items-center rounded-full bg-violet-500/15"><Sparkles size={16} className="text-violet-300"/></span>Plan with Alpha</div>{conversation && <button onClick={startNew} className="rounded-lg px-3 py-2 text-xs text-white/50 hover:bg-violet-500/10">New automation</button>}</div>
-        <div className="min-h-[260px] flex-1 overflow-y-auto px-4 py-6 sm:px-7" aria-live="polite">
-          {!conversation ? <div className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center py-8 text-center"><h2 className="text-xl font-medium sm:text-2xl">What would you like Alpha to automate?</h2><p className="mt-3 text-sm text-white/50">{agents.length === 0 ? 'No automations yet. Describe the result you want and Alpha will ask only what is missing.' : 'Describe the result you want. Alpha will ask only what is missing.'}</p><div className="mt-7 grid w-full gap-2 sm:grid-cols-2 lg:grid-cols-3">{examples.map(example => <button key={example} onClick={() => { setInput(example); composer.current?.focus() }} className="rounded-xl border border-violet-400/20 bg-violet-500/10 px-4 py-3 text-left text-sm text-white/65 transition hover:border-violet-400/30 hover:bg-violet-500/10">{example}</button>)}</div></div> : <div className="space-y-5">{conversation.messages?.map((message, index) => <div key={`${message.ts}-${index}`} className={message.role === 'user' ? 'ml-auto max-w-[88%]' : 'max-w-[92%]'}><div className={message.role === 'user' ? 'rounded-2xl rounded-br-md bg-violet-500 px-4 py-3 text-sm leading-6' : 'text-sm leading-7 text-white/82'}>{message.role === 'alpha' && <p className="mb-1 text-xs font-medium text-violet-300">Alpha</p>}<p className="whitespace-pre-wrap">{message.text}</p></div></div>)}{creating && <div className="flex items-center gap-2 text-sm text-white/45"><LoaderCircle className="animate-spin" size={16}/>Alpha is preparing the next step…</div>}</div>}
+      </section> : <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="absolute right-3 top-3 z-20 sm:right-6">{conversation && <button onClick={startNew} className="rounded-xl border border-violet-300/15 bg-[#0A0F1E]/80 px-3 py-2 text-xs font-bold text-slate-300 backdrop-blur-xl hover:text-white">New chat</button>}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-5 sm:px-6 sm:py-8" aria-live="polite">
+          {!conversation ? (
+            <div className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center px-2 py-8 text-center">
+              <span className="grid size-12 place-items-center rounded-2xl bg-violet-500/15 text-violet-300"><Sparkles size={22}/></span>
+              <h1 className="mt-5 text-2xl font-black tracking-tight sm:text-3xl">What can Alpha do for you?</h1>
+              <p className="mt-3 max-w-xl text-sm leading-6 text-slate-400">{agents.length === 0 ? 'Describe a result. Alpha will ask only what is missing, prepare the work, and wait for your approval.' : 'Ask a question, create an image, or describe the next result you want automated.'}</p>
+              <div className="mt-7 grid w-full gap-2 sm:grid-cols-3">{examples.map(example => <button key={example} onClick={() => { setInput(example); composer.current?.focus() }} className="min-h-16 rounded-2xl border border-violet-400/15 bg-white/[.035] px-4 py-3 text-left text-sm font-semibold text-slate-300 transition hover:border-violet-400/35 hover:bg-violet-500/10">{example}</button>)}</div>
+            </div>
+          ) : (
+            <div className="mx-auto w-full max-w-3xl space-y-6">
+              {conversation.messages?.map((message, index) => <div key={`${message.ts}-${index}`} className={message.role === 'user' ? 'ml-auto max-w-[88%] sm:max-w-[75%]' : 'max-w-full'}>
+                <div className={message.role === 'user' ? 'rounded-3xl rounded-br-lg bg-violet-600 px-4 py-3 text-sm leading-6 text-white sm:px-5' : 'text-sm leading-7 text-slate-100'}>
+                  {message.role === 'alpha' && <p className="mb-1.5 text-xs font-black text-violet-300">Alpha</p>}
+                  <ReactMarkdown components={{ img: props => <img {...props} className="mt-3 max-h-[420px] w-full rounded-2xl border border-violet-300/15 object-contain" loading="lazy"/>, p: props => <p {...props} className="whitespace-pre-wrap"/> }}>{message.text}</ReactMarkdown>
+                </div>
+              </div>)}
+              {creating && <div className="flex items-center gap-2 text-sm text-slate-400"><LoaderCircle className="animate-spin" size={16}/>Alpha is thinking…</div>}
+              <div ref={messageEnd}/>
+            </div>
+          )}
         </div>
         {needsConnection && <div className="mx-4 mb-3 rounded-xl border border-amber-400/20 bg-amber-500/[.08] p-4 text-sm sm:mx-6"><p className="text-amber-100">{needsConnection} needs to be connected before Alpha can publish.</p><Link to={`/connected-apps?platform=${encodeURIComponent(needsConnection)}&returnTo=${encodeURIComponent(`/automations?resume=${conversation?.id || ''}`)}`} className="mt-3 inline-flex min-h-10 items-center rounded-lg bg-amber-300 px-4 text-xs font-medium text-zinc-950">Connect {needsConnection}</Link></div>}
         {notice && <div role="alert" className="mx-4 mb-3 flex items-start justify-between gap-3 rounded-xl border border-rose-400/20 bg-rose-500/10 p-3 text-sm text-rose-100 sm:mx-6"><span>{notice}</span><button onClick={() => setNotice('')} aria-label="Dismiss error"><X size={16}/></button></div>}
-        <div className="border-t border-violet-400/20 p-3 sm:p-4"><label htmlFor="automation-request" className="sr-only">{conversation ? 'Answer Alpha' : 'Describe what you want Alpha to automate'}</label><div className="flex items-end gap-2 rounded-2xl border border-violet-400/20 bg-[#0A0F1E]/35 p-2 focus-within:border-violet-400/45"><textarea id="automation-request" ref={composer} value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} rows={2} maxLength={10000} placeholder={conversation ? 'Answer Alpha…' : 'Tell Alpha what you want done…'} className="max-h-40 min-h-12 flex-1 resize-none bg-transparent px-3 py-3 text-sm leading-6 outline-none placeholder:text-white/30"/><button onClick={() => void send()} disabled={!input.trim() || creating} className="grid size-11 shrink-0 place-items-center rounded-xl bg-violet-500 text-white transition hover:bg-violet-400 disabled:opacity-35" aria-label="Send request">{creating ? <LoaderCircle className="animate-spin" size={18}/> : <Send size={18}/>}</button></div><p className="mt-2 px-2 text-[11px] text-white/35">Press Enter to send. Shift + Enter adds a new line.</p></div>
+        <div className="shrink-0 bg-gradient-to-t from-[#0A0F1E] via-[#0A0F1E] to-transparent px-3 pb-3 pt-3 sm:px-6 sm:pb-5">
+          <label htmlFor="automation-request" className="sr-only">{conversation ? 'Answer Alpha' : 'Message Alpha'}</label>
+          <div className="mx-auto flex max-w-3xl items-end gap-2 rounded-3xl border border-violet-300/20 bg-[#13192B] p-2 shadow-[0_14px_44px_rgba(0,0,0,.28)] focus-within:border-violet-400/55">
+            <textarea id="automation-request" ref={composer} value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} rows={1} maxLength={10000} placeholder="Message Alpha…" className="max-h-36 min-h-11 flex-1 resize-none bg-transparent px-3 py-2.5 text-base leading-6 text-white outline-none placeholder:text-slate-500"/>
+            <button onClick={() => void send()} disabled={!input.trim() || creating} className="grid size-11 shrink-0 place-items-center rounded-full bg-violet-600 text-white transition hover:bg-violet-500 disabled:bg-slate-700 disabled:text-slate-500" aria-label="Send request">{creating ? <LoaderCircle className="animate-spin" size={18}/> : <Send size={18}/>}</button>
+          </div>
+          <p className="mx-auto mt-2 max-w-3xl text-center text-[10px] font-semibold text-slate-500">Review every plan before approval.</p>
+        </div>
       </section>}
     </div>
 

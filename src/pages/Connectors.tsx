@@ -211,6 +211,7 @@ export default function Connectors() {
     <p className="text-xs font-black uppercase tracking-[.18em] text-violet-300">AlphaTekx connections</p>
     <h1 className="mt-2 text-3xl font-black">Super Computer Connections</h1>
     <p className="mt-2 text-sm font-semibold text-slate-300">Connect once. AlphaTekx uses the approved account only when your reviewed automation runs.</p>
+    <div className="mt-4 flex items-center gap-2 rounded-xl border border-emerald-300/15 bg-emerald-300/10 px-4 py-3 text-sm font-black text-emerald-100"><CheckCircle2 size={17} className="shrink-0"/>Connections are secured by Composio. AlphaTekx never exposes provider tokens in your browser.</div>
     <div className="mt-4 rounded-xl border border-emerald-300/15 bg-emerald-300/10 p-3 text-sm font-bold text-emerald-100">No data? Upload with small data. AlphaTekx posts even when your phone is off.</div>
 
     {notice && <div role="status" className="mt-4 rounded-xl border border-violet-300/20 bg-violet-300/10 p-3 text-sm font-bold text-violet-100">{notice}</div>}

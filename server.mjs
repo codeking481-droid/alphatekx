@@ -6690,6 +6690,7 @@ const server = http.createServer(async (req, res) => {
       const url = new URL(req.url, 'http://localhost')
       return json(res, 200, { leads: await moneyLoop.listLeads(config, user, { status: url.searchParams.get('status') || '', limit: url.searchParams.get('limit') || 100 }) })
     } catch (error) {
+      if (moneyLoop.isMissingMoneyLoopSchema(error)) return json(res, 200, { leads: [], setupRequired: true })
       const code = error?.code || 'MONEY_LOOP_ERROR'
       return json(res, code === 'DB_ERROR' ? 503 : 400, { error: error instanceof Error ? error.message : 'Could not load leads.', code })
     }

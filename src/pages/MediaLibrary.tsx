@@ -25,7 +25,7 @@ export default function MediaLibrary() {
       const response = await listMedia()
       setItems(response.items)
       setSetupRequired(response.setupRequired === true)
-      setNotice(response.setupRequired ? 'Media Library is being prepared. Uploading will become available as soon as storage setup finishes.' : '')
+      setNotice(response.setupRequired ? 'Media Library needs one administrator database activation. No uploads are attempted until secure storage is ready.' : '')
     } catch (error) { setNotice(error instanceof Error ? error.message : 'Could not load your Media Library.') }
     finally { setLoading(false) }
   }

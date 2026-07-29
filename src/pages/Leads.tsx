@@ -13,6 +13,7 @@ export default function Leads() {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState('')
   const [notice, setNotice] = useState('')
+  const [setupRequired, setSetupRequired] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -21,6 +22,7 @@ export default function Leads() {
       setLeads(leadData.leads)
       setStats(statData.stats)
       setInsight(statData.insights[0]?.insight || '')
+      setSetupRequired(leadData.setupRequired === true || statData.setupRequired === true)
       setNotice('')
     } catch (error) { setNotice(error instanceof Error ? error.message : 'Could not load Money Loop.') }
     finally { setLoading(false) }
@@ -43,6 +45,7 @@ export default function Leads() {
     <header className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-[.18em] text-violet-300">Revenue intelligence</p><h1 className="mt-2 text-3xl font-black">Money Loop</h1><p className="mt-2 max-w-2xl text-sm font-semibold text-slate-400">People who explicitly respond to your campaign calls to action, organized for honest follow-up.</p></div><button onClick={() => void load()} className="flex min-h-11 items-center gap-2 rounded-xl border border-violet-400/20 bg-violet-500/10 px-4 text-sm font-black shadow-sm"><RefreshCw size={16}/>Refresh</button></header>
 
     {notice && <div role="status" className="mt-5 rounded-xl border border-violet-200 bg-violet-500/10 p-3 text-sm font-bold">{notice}</div>}
+    {setupRequired && <div role="status" className="mt-5 rounded-xl border border-amber-300/20 bg-amber-300/10 p-4 text-sm font-semibold text-amber-100"><strong className="block font-black">Money Loop is ready for database activation.</strong>No customer data was lost or invented. An administrator needs to apply the bundled Money Loop migration once; this page will begin syncing automatically afterward.</div>}
     <section className="mt-7 grid grid-cols-2 gap-3 lg:grid-cols-4">
       <Stat icon={Users} label="Total leads" value={String(stats.total)}/>
       <Stat icon={MessageCircle} label="Contacted" value={String(stats.contacted)}/>
