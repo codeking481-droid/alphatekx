@@ -17,6 +17,9 @@ const DEFAULT_FEATURES = [
   ['tiktok', 'TikTok', 'disabled', 'connector'],
   ['google', 'Google', 'public', 'connector'],
   ['gmail', 'Gmail', 'public', 'connector'],
+  ['github', 'GitHub', 'public', 'connector'],
+  ['googledocs', 'Google Docs', 'public', 'connector'],
+  ['googlesheets', 'Google Sheets', 'public', 'connector'],
   ['google_sheets', 'Google Sheets', 'public', 'connector'],
   ['google_calendar', 'Google Calendar', 'public', 'connector'],
   ['google_drive', 'Google Drive', 'public', 'connector'],
@@ -32,7 +35,7 @@ const DEFAULT_FEATURES = [
   ['video_generator', 'AI Video Generator', 'disabled', 'product'],
 ].map(([id, name, state, category]) => ({ id, name, state, category, stop_existing: true, updated_at: new Date(0).toISOString(), updated_by: 'system' }))
 
-const PLATFORM_ALIASES = Object.freeze({ twitter: 'x', sheets: 'google_sheets', calendar: 'google_calendar', drive: 'google_drive' })
+const PLATFORM_ALIASES = Object.freeze({ twitter: 'x', sheets: 'googlesheets', google_sheets: 'googlesheets', google_docs: 'googledocs', calendar: 'google_calendar', drive: 'google_drive' })
 const DEFAULT_FEATURE_MAP = new Map(DEFAULT_FEATURES.map(feature => [feature.id, feature]))
 let featureCache = new Map(DEFAULT_FEATURES.map(feature => [feature.id, feature]))
 let betaUsers = new Set()

@@ -118,7 +118,15 @@ async function runTests() {
     assert(serviceSource.includes(`id: '${provider}'`), `${provider} is registered in the server-side Composio catalog`)
   }
   assert(serviceSource.includes('composioClient.authConfigs.list'), 'Missing environment IDs are discovered from enabled Composio Auth Configs')
-  assert(connectorPageSource.includes("new Set(['whatsapp', 'facebook', 'instagram', 'x', 'youtube'])"), 'Connected Apps routes all five requested platforms through Composio')
+  assert(['gmail', 'github', 'googledocs', 'googlesheets', 'discord', 'whatsapp', 'facebook', 'instagram', 'youtube'].every(provider => connectorPageSource.includes(`'${provider}'`)), 'Connected Apps routes all nine managed platforms through Composio')
+  const authConfigsSource = fs.readFileSync(new URL('../server/composioAuthConfigs.mjs', import.meta.url), 'utf8')
+  for (const id of ['ac_K0fpEcRPTCJL', 'ac_gZz4pPc0m1Th', 'ac_u_Si-U1KyWyg', 'ac_P6J_UNItatfh', 'ac_sEDBieVAsSvc', 'ac_2aNBLsdLANIy', 'ac_mVq6qm6ivr3x', 'ac_KxXKh4E240Vi', 'ac_0Lzm_WFhC38W']) {
+    assert(authConfigsSource.includes(id), `Managed Auth Config ${id} is registered`)
+  }
+  assert(serverSource.includes("/api/composio/toolkits"), 'Managed toolkit catalog endpoint exists')
+  assert(serverSource.includes("/^\\/api\\/(tiktok|snapchat)\\/auth$/"), 'TikTok and Snapchat custom OAuth starts are server-side')
+  assert(serverSource.includes("createOAuthState(user.id"), 'Custom OAuth uses signed expiring state')
+  assert(connectorPageSource.includes("comingSoon: true"), 'TikTok and Snapchat are honestly marked Coming Soon')
   assert(!connectorPageSource.includes("selected === 'facebook'"), 'Facebook no longer falls back to the old native connection branch')
   assert(/if \(deleteMatch && req\.method === 'DELETE'\)[\s\S]{0,250}disconnectProvider[\s\S]{0,250}requireConnectorFeature/.test(serverSource), 'Users can disconnect even when a connector feature is disabled')
   assert(connectorPageSource.includes('disconnected successfully') && connectorPageSource.includes("status: 'disconnected'"), 'Connected Apps updates disconnected state immediately after server confirmation')

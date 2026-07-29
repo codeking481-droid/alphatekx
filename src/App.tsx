@@ -60,6 +60,7 @@ export default function App() {
       <Route path="/history" element={protectedPage(<History />)} />
       <Route path="/connected-apps" element={protectedPage(<Connectors />)} />
       <Route path="/connectors" element={protectedPage(<Connectors />)} />
+      <Route path="/apps" element={protectedPage(<Connectors />)} />
       <Route path="/media-library" element={protectedPage(<MediaLibrary />)} />
       <Route path="/leads" element={protectedPage(<Leads />)} />
       <Route path="/settings" element={protectedPage(<Settings />)} />

@@ -6,11 +6,12 @@ import { getConnector } from '../lib/agents/connectorRegistry'
 import type { Connector } from '../lib/agents/types'
 import { useAuth } from '../lib/auth'
 import { connectProvider, disconnectProvider, getConnectedApps, reconnectProvider, type ConnectedAppStatus } from '../lib/connectors/connectorApi'
-import { deleteIntegration, getIntegrationStatus, startLinkedInAuth } from '../lib/integrations'
+import { deleteIntegration, getIntegrationStatus, startCustomOAuth, startLinkedInAuth } from '../lib/integrations'
 
 const CACHE_KEY = 'alphatekx_connections_cache'
 const CACHE_TTL = 5 * 60_000
-const composioOAuthProviders = new Set(['whatsapp', 'facebook', 'instagram', 'x', 'youtube'])
+const composioOAuthProviders = new Set(['gmail', 'github', 'googledocs', 'googlesheets', 'discord', 'whatsapp', 'facebook', 'instagram', 'x', 'youtube'])
+const customOAuthProviders = new Set(['tiktok', 'snapchat'])
 const serverManagedProviders = new Set<string>()
 // Public tools active. Readiness remains equivalent to service(id).connected && service(id).ready.
 
@@ -19,12 +20,19 @@ function backendReady(state: { connected?: boolean; ready?: boolean }) {
 }
 
 const releasedPlatforms = [
-  { id: 'linkedin', name: 'LinkedIn', color: '#0A66C2', description: 'Native personal-profile text publishing.' },
-  { id: 'instagram', name: 'Instagram', color: '#C13584', description: 'Posts and reels through your connected account.' },
-  { id: 'facebook', name: 'Facebook', color: '#1877F2', description: 'Facebook Page publishing.' },
-  { id: 'x', name: 'X', color: '#334155', description: 'Posts, threads, and media.' },
-  { id: 'youtube', name: 'YouTube', color: '#FF0033', description: 'Upload videos from your Media Library.' },
-  { id: 'whatsapp', name: 'WhatsApp', color: '#25D366', description: 'Advanced Business API messaging.' },
+  { id: 'linkedin', name: 'LinkedIn', color: '#0A66C2', description: 'Native personal-profile text publishing.', authMode: 'Native' },
+  { id: 'gmail', name: 'Gmail', color: '#EA4335', description: 'Send and manage approved business email.', authMode: 'Managed' },
+  { id: 'github', name: 'GitHub', color: '#334155', description: 'Read code and manage repository work.', authMode: 'Managed' },
+  { id: 'googledocs', name: 'Google Docs', color: '#4285F4', description: 'Create and update proposals and documents.', authMode: 'Managed' },
+  { id: 'googlesheets', name: 'Google Sheets', color: '#0F9D58', description: 'Read orders, inventory, and append rows.', authMode: 'Managed' },
+  { id: 'discord', name: 'Discord', color: '#5865F2', description: 'Send approved team messages.', authMode: 'Managed' },
+  { id: 'instagram', name: 'Instagram', color: '#C13584', description: 'Posts and reels through your connected account.', authMode: 'Managed' },
+  { id: 'facebook', name: 'Facebook', color: '#1877F2', description: 'Facebook Page publishing.', authMode: 'Managed' },
+  { id: 'x', name: 'X', color: '#334155', description: 'Posts, threads, and media.', authMode: 'Managed' },
+  { id: 'youtube', name: 'YouTube', color: '#FF0033', description: 'Upload videos from your Media Library.', authMode: 'Managed' },
+  { id: 'whatsapp', name: 'WhatsApp', color: '#25D366', description: 'Advanced Business API messaging.', authMode: 'Managed' },
+  { id: 'tiktok', name: 'TikTok', color: '#111827', description: 'Custom TikTok API foundation awaiting approved app credentials.', authMode: 'Custom API', comingSoon: true },
+  { id: 'snapchat', name: 'Snapchat', color: '#EAB308', description: 'Custom Snapchat API foundation awaiting approved app credentials.', authMode: 'Custom API', comingSoon: true },
 ] as const
 const publicConnectorIds = new Set(releasedPlatforms.map(platform => platform.id))
 
@@ -55,6 +63,8 @@ export default function Connectors() {
   const [disconnecting, setDisconnecting] = useState<string | null>(null)
   const [slow, setSlow] = useState(false)
   const [notice, setNotice] = useState('')
+  const [search, setSearch] = useState('')
+  const [authFilter, setAuthFilter] = useState<'all' | 'managed' | 'custom'>('all')
   const [wabaReady, setWabaReady] = useState(false)
   const slowTimer = useRef<number | null>(null)
   const autoStarted = useRef(false)
@@ -116,6 +126,8 @@ export default function Connectors() {
   const status = useMemo(() => Object.fromEntries(releasedPlatforms.map(platform => {
     const connected = platform.id === 'linkedin'
       ? backendReady(native.linkedin || {})
+      : customOAuthProviders.has(platform.id)
+        ? backendReady(native[platform.id] || {})
       : composio[platform.id]?.connected === true
     return [platform.id, connected]
   })), [native, composio])
@@ -131,8 +143,14 @@ export default function Connectors() {
     setNotice(`Connecting to ${name}…`)
     slowTimer.current = window.setTimeout(() => setSlow(true), 10_000)
     try {
+      const selected = releasedPlatforms.find(item => item.id === id)
+      if (selected && 'comingSoon' in selected && selected.comingSoon) throw new Error(`${name} custom API is coming soon. No credentials were saved.`)
       if (id === 'linkedin') {
         await startLinkedInAuth(session?.access_token, '/connected-apps')
+        return
+      }
+      if (customOAuthProviders.has(id)) {
+        await startCustomOAuth(id as 'tiktok' | 'snapchat', session?.access_token)
         return
       }
       if (!composioOAuthProviders.has(id)) throw new Error('This platform does not have a released connection flow.')
@@ -153,9 +171,9 @@ export default function Connectors() {
     setDisconnecting(id)
     setNotice('')
     try {
-      if (id === 'linkedin') {
-        await deleteIntegration('linkedin', session?.access_token)
-        setNative(current => ({ ...current, linkedin: { connected: false, ready: false } }))
+      if (id === 'linkedin' || customOAuthProviders.has(id)) {
+        await deleteIntegration(id, session?.access_token)
+        setNative(current => ({ ...current, [id]: { connected: false, ready: false } }))
       } else {
         await disconnectProvider(id, session?.access_token)
         setComposio(current => ({
@@ -193,19 +211,28 @@ export default function Connectors() {
     {notice && <div role="status" className="mt-4 rounded-xl border border-violet-300/20 bg-violet-300/10 p-3 text-sm font-bold text-violet-100">{notice}</div>}
     {slow && <div className="mt-4 rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-sm font-bold text-amber-100">Network slow? <button onClick={() => { setConnecting(null); setSlow(false); void load() }} className="ml-2 underline">Retry connection</button></div>}
 
+    <div className="mt-6 grid gap-3 sm:grid-cols-[1fr_auto]">
+      <input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search connected tools" className="min-h-12 rounded-xl border border-violet-300/20 bg-slate-950/30 px-4 font-bold text-white outline-none placeholder:text-slate-400 focus:border-violet-400"/>
+      <div className="flex rounded-xl border border-violet-300/20 bg-slate-950/30 p-1">
+        {(['all', 'managed', 'custom'] as const).map(value => <button key={value} onClick={() => setAuthFilter(value)} className={`rounded-lg px-3 py-2 text-xs font-black capitalize ${authFilter === value ? 'bg-violet-600 text-white' : 'text-slate-300'}`}>{value === 'custom' ? 'Custom API' : value}</button>)}
+      </div>
+    </div>
+
     {loading ? <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{releasedPlatforms.map(item => <div key={item.id} className="skeleton h-52 rounded-[20px]"/>)}</div> :
       <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {releasedPlatforms.map(item => {
+        {releasedPlatforms.filter(item => item.name.toLowerCase().includes(search.trim().toLowerCase()) && (authFilter === 'all' || (authFilter === 'custom' ? item.authMode === 'Custom API' : item.authMode !== 'Custom API'))).map(item => {
           const connected = status[item.id]
+          const comingSoon = 'comingSoon' in item && item.comingSoon
           const busy = connecting === item.id
           const removing = disconnecting === item.id
           const connector = getConnector(item.id) || fallbackConnector(item.id, item.name)
           return <article id={`platform-${item.id}`} key={item.id} className="liquid-glass min-w-0 rounded-[20px] p-4 sm:p-5">
-            <div className="flex items-center gap-3"><span className="grid size-12 place-items-center rounded-full text-white" style={{ background: item.id === 'instagram' ? 'linear-gradient(135deg,#F58529,#DD2A7B,#8134AF)' : item.color }}><ConnectorIcon connector={connector}/></span><div><h2 className="font-black">{item.name}</h2><span className={`mt-1 inline-flex rounded-full border px-2 py-1 text-[11px] font-bold ${connected ? 'border-emerald-300/25 bg-emerald-300/10 text-emerald-200' : 'border-violet-400/20 bg-violet-500/10 text-slate-300'}`}>{connected ? '● Connected' : '○ Not connected'}</span></div></div>
+            <div className="flex items-center gap-3"><span className="grid size-12 place-items-center rounded-full text-white" style={{ background: item.id === 'instagram' ? 'linear-gradient(135deg,#F58529,#DD2A7B,#8134AF)' : item.color }}><ConnectorIcon connector={connector}/></span><div><h2 className="font-black">{item.name}</h2><div className="mt-1 flex flex-wrap gap-1"><span className={`inline-flex rounded-full border px-2 py-1 text-[11px] font-bold ${connected ? 'border-emerald-300/25 bg-emerald-300/10 text-emerald-200' : 'border-violet-400/20 bg-violet-500/10 text-slate-300'}`}>{connected ? '● Connected' : '○ Enabled'}</span><span className="inline-flex rounded-full border border-slate-400/20 px-2 py-1 text-[11px] font-bold text-slate-300">{item.authMode || (item.id === 'linkedin' ? 'Native' : 'Managed')}</span></div></div></div>
             <p className="mt-4 min-h-10 text-xs font-semibold text-slate-300">{item.description}</p>
+            <p className="mt-2 text-[11px] font-bold text-slate-400">{connected ? '1 active connection' : '0 active connections'}</p>
             {item.id === 'whatsapp' && <div className="mt-3 text-xs text-slate-300"><p>Requires an approved 15-digit WABA ID from Meta Business Suite. Regular WhatsApp sellers can skip this.</p>{wabaReady && <a href="https://business.facebook.com/settings/whatsapp-business-accounts" target="_blank" rel="noreferrer" className="mt-2 inline-block text-violet-300 underline">How to get a WABA ID</a>}</div>}
             {item.id === 'whatsapp' && !connected && !wabaReady ? <div className="mt-4 grid gap-2"><button onClick={() => setWabaReady(true)} className="min-h-11 rounded-xl bg-[#7C3AED] px-3 text-sm font-black">I have WABA ID — Connect</button><button onClick={() => { setNotice('WhatsApp skipped. Instagram and Facebook are ready.'); document.getElementById('platform-instagram')?.scrollIntoView({ behavior: 'smooth' }) }} className="min-h-11 rounded-xl border border-violet-400/20 bg-violet-500/10 px-3 text-sm font-bold">I don’t have one — Skip</button></div> :
-              <div className={`mt-4 grid min-w-0 gap-2 ${connected ? 'grid-cols-2' : 'grid-cols-1'}`}><button onClick={() => void connect(item.id, item.name)} disabled={Boolean(connecting || disconnecting)} className="flex min-h-11 min-w-0 items-center justify-center gap-2 rounded-xl bg-[#7C3AED] px-3 text-sm font-black disabled:opacity-50">{busy ? <LoaderCircle className="shrink-0 animate-spin" size={16}/> : connected ? <RefreshCw className="shrink-0" size={16}/> : <CheckCircle2 className="shrink-0" size={16}/>}{busy ? 'Connecting…' : connected ? 'Reconnect' : 'Connect'}</button>{connected && <button onClick={() => void disconnect(item.id)} disabled={Boolean(connecting || disconnecting)} aria-label={`Disconnect ${item.name}`} className="flex min-h-11 min-w-0 items-center justify-center gap-2 rounded-xl border border-rose-300/20 bg-rose-300/10 px-3 text-sm font-black text-rose-200 transition hover:bg-rose-300/15 disabled:opacity-50">{removing ? <LoaderCircle className="shrink-0 animate-spin" size={16}/> : <Unplug className="shrink-0" size={16}/>}<span>{removing ? 'Disconnecting…' : 'Disconnect'}</span></button>}</div>}
+              <div className={`mt-4 grid min-w-0 gap-2 ${connected ? 'grid-cols-2' : 'grid-cols-1'}`}><button onClick={() => void connect(item.id, item.name)} disabled={Boolean(connecting || disconnecting || comingSoon)} className="flex min-h-11 min-w-0 items-center justify-center gap-2 rounded-xl bg-[#7C3AED] px-3 text-sm font-black disabled:opacity-50">{busy ? <LoaderCircle className="shrink-0 animate-spin" size={16}/> : connected ? <RefreshCw className="shrink-0" size={16}/> : <CheckCircle2 className="shrink-0" size={16}/>}{comingSoon ? 'Coming Soon' : busy ? 'Connecting…' : connected ? 'Reconnect' : 'Connect'}</button>{connected && <button onClick={() => void disconnect(item.id)} disabled={Boolean(connecting || disconnecting)} aria-label={`Disconnect ${item.name}`} className="flex min-h-11 min-w-0 items-center justify-center gap-2 rounded-xl border border-rose-300/20 bg-rose-300/10 px-3 text-sm font-black text-rose-200 transition hover:bg-rose-300/15 disabled:opacity-50">{removing ? <LoaderCircle className="shrink-0 animate-spin" size={16}/> : <Unplug className="shrink-0" size={16}/>}<span>{removing ? 'Disconnecting…' : 'Disconnect'}</span></button>}</div>}
           </article>
         })}
       </section>}
