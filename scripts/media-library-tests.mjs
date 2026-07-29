@@ -6,6 +6,7 @@ const server = fs.readFileSync('server.mjs', 'utf8')
 const service = fs.readFileSync('server/mediaLibraryService.mjs', 'utf8')
 const migration = fs.readFileSync('supabase/media-library.sql', 'utf8')
 const page = fs.readFileSync('src/pages/MediaLibrary.tsx', 'utf8')
+const client = fs.readFileSync('src/lib/mediaLibrary.ts', 'utf8')
 const preview = fs.readFileSync('src/components/agents/CampaignPreview.tsx', 'utf8')
 const engine = fs.readFileSync('server/alpha/conversationEngine.mjs', 'utf8')
 
@@ -21,6 +22,10 @@ const tests = [
   ['duplicate Publish Now returns the stored provider ID', service.includes("duplicate: true") && service.includes('item.provider_id')],
   ['insufficient credits wait without false success', service.includes("status: waiting ? 'waiting_credits' : 'failed'")],
   ['missing schema becomes an honest setup state', service.includes('isMissingMediaSchema') && server.includes('setupRequired: true')],
+  ['readiness probe checks the table and private bucket independently', service.includes('mediaSetupStatus') && service.includes('tableReady') && service.includes('bucketReady')],
+  ['private bucket is provisioned with the service credential', service.includes('ensureBucket') && service.includes('file_size_limit: MAX_FILE_SIZE') && service.includes('allowed_mime_types: [...ALLOWED_TYPES]')],
+  ['media UI uses the real readiness endpoint', page.includes('getMediaSetupStatus') && client.includes("'/api/media/status'")],
+  ['image-cache migration accepts every active Pollinations fallback', migration.includes("'pollinations-legacy'") && migration.includes("'pollinations-legacy-backup'")],
   ['media API routes require authenticated user', server.includes("req.url === '/api/media/upload'") && server.includes("if (!user) return json(res, 401")],
   ['vault UI has loading and upload states', page.includes('animate-pulse') && page.includes('Uploading ${index + 1}/${batch.length}')],
   ['vault scheduling explains confirmed-work charging', page.includes('Credits are charged only after confirmed publication')],

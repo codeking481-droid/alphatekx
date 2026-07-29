@@ -6678,6 +6678,21 @@ const server = http.createServer(async (req, res) => {
       return json(res, status, { error: error instanceof Error ? error.message : 'Execution failed', code, charged: false })
     }
   }
+  if (req.url === '/api/media/status' && req.method === 'GET') {
+    try {
+      const config = supabaseConfig()
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      if (!user) return json(res, 401, { error: 'Authentication required' })
+      return json(res, 200, await mediaLibrary.mediaSetupStatus(config))
+    } catch (error) {
+      return json(res, 503, {
+        activated: false,
+        tableReady: false,
+        bucketReady: false,
+        error: error instanceof Error ? error.message : 'Media Library readiness check failed.',
+      })
+    }
+  }
   if (req.url === '/api/media/list' && req.method === 'GET') {
     try {
       const config = supabaseConfig()
@@ -6685,7 +6700,13 @@ const server = http.createServer(async (req, res) => {
       if (!user) return json(res, 401, { error: 'Authentication required' })
       return json(res, 200, { items: await mediaLibrary.listMedia(config, user), setupRequired: false })
     } catch (error) {
-      if (mediaLibrary.isMissingMediaSchema(error)) return json(res, 200, { items: [], setupRequired: true })
+      if (mediaLibrary.isMissingMediaSchema(error)) {
+        return json(res, 200, {
+          items: [],
+          setupRequired: true,
+          setup: error?.setup || await mediaLibrary.mediaSetupStatus(supabaseConfig()),
+        })
+      }
       const code = error?.code || 'MEDIA_ERROR'
       return json(res, code === 'DB_ERROR' ? 503 : 500, { error: error instanceof Error ? error.message : 'Could not load Media Library.', code })
     }
