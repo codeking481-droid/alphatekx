@@ -18,9 +18,16 @@ function test(name, fn) {
 const server = fs.readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
 const connectors = fs.readFileSync(new URL('../src/pages/Connectors.tsx', import.meta.url), 'utf8')
 const engine = fs.readFileSync(new URL('../server/alpha/conversationEngine.mjs', import.meta.url), 'utf8')
+const capabilityRegistry = fs.readFileSync(new URL('../server/automation/capabilityRegistry.mjs', import.meta.url), 'utf8')
+const ceoPage = fs.readFileSync(new URL('../src/pages/CeoInbox.tsx', import.meta.url), 'utf8')
+const agentPage = fs.readFileSync(new URL('../src/pages/Agents.tsx', import.meta.url), 'utf8')
 
 test('calculates days to a named date deterministically', () => {
   assert.equal(calculateDaysUntilQuestion('how many days to Dec 31', new Date('2026-07-29T12:00:00Z')), 'There are **155 days** until 31 December 2026.')
+})
+
+test('calculates days to Christmas without an LLM', () => {
+  assert.equal(calculateDaysUntilQuestion('how many days to Christmas', new Date('2026-07-29T12:00:00Z')), 'There are **149 days** until 25 December 2026.')
 })
 
 test('answers capture from permanent brain knowledge', () => {
@@ -41,20 +48,28 @@ test('brain is loaded before generic unknown-intent handling', () => {
   assert.match(engine, /knowledgeSource: 'alphatekx-brain'/)
 })
 
-test('native X uses OAuth 2.0 PKCE and confirmed provider IDs', () => {
-  assert.match(server, /code_challenge_method: 'S256'/)
-  assert.match(server, /tweet\.read tweet\.write users\.read offline\.access/)
-  assert.match(server, /X did not return a confirmed post identifier/)
+test('X uses the configured Composio Auth Config and confirmed provider IDs', () => {
+  const authConfigs = fs.readFileSync(new URL('../server/composioAuthConfigs.mjs', import.meta.url), 'utf8')
+  const composioService = fs.readFileSync(new URL('../server/composioConnectorService.mjs', import.meta.url), 'utf8')
+  assert.match(authConfigs, /TWITTER: 'ac_75GBYAXRovfm'/)
+  assert.match(composioService, /defaultAuthConfigId: AUTH_CONFIGS\.TWITTER/)
+  assert.match(composioService, /'twitter\.create_post'/)
+  assert.match(composioService, /confirmedProviderId/)
+  assert.match(server, /alphaConnector\.startConnection\(user, 'x'/)
+  assert.doesNotMatch(server, /req\.url === '\/api\/x\/auth'\) \{\s*try \{ return await startXConnection/)
 })
 
-test('X no longer executes through the Composio publishing set', () => {
-  assert.match(server, /const composioPublishingPlatforms = new Set\(\['youtube', 'instagram', 'facebook', 'whatsapp'\]\)/)
+test('X executes through the Composio publishing set', () => {
+  assert.match(server, /const composioPublishingPlatforms = new Set\(\['youtube', 'instagram', 'facebook', 'whatsapp', 'x', 'twitter'\]\)/)
 })
 
-test('connection UI separates native and nine managed tools', () => {
-  assert.match(connectors, /Native — AlphaTekx direct/)
-  assert.match(connectors, /Nine secure Composio-managed tools/)
-  assert.match(connectors, /startXAuth/)
+test('connection UI uses one secure experience with LinkedIn native and X through Composio', () => {
+  assert.match(connectors, /const nativeOAuthProviders = new Set\(\['linkedin'\]\)/)
+  assert.match(connectors, /composioOAuthProviders = new Set\(\[[^\n]*'x'\]\)/)
+  assert.match(connectors, /startLinkedInAuth/)
+  assert.doesNotMatch(connectors, /startXAuth/)
+  assert.doesNotMatch(connectors, /Native — AlphaTekx direct/)
+  assert.doesNotMatch(connectors, /Managed connections/)
 })
 
 test('connection UI does not contain raw Auth Config IDs', () => {
@@ -68,4 +83,27 @@ test('LinkedIn and image matching remain in the established execution engine', (
   assert.match(engine, /imageStoragePath/)
 })
 
-console.log(`\n${passed}/10 super-computer agent checks passed`)
+test('CEO mode persists suggestions and requires an atomic approval claim', () => {
+  assert.match(server, /claimPendingAction/)
+  assert.match(server, /idempotencyKey: `ceo:/)
+  assert.match(server, /schedule\('\*\/5 \* \* \* \*'/)
+  assert.match(server, /CEO_WATCHER_ENABLED/)
+  assert.match(ceoPage, /Pending Approvals/)
+  assert.match(ceoPage, /Approve/)
+})
+
+test('builder mode creates an unmerged GitHub pull request only from reviewed files', () => {
+  assert.match(capabilityRegistry, /github-pull-request/)
+  assert.match(capabilityRegistry, /mergePolicy: 'separate_explicit_approval'/)
+  assert.match(server, /GitHub pull request requires reviewed file paths and complete contents/)
+  assert.match(server, /draft: params\.draft !== false/)
+})
+
+test('agent workspace is full-screen, mobile-safe, and renders generated images', () => {
+  assert.match(agentPage, /alpha-chat-screen/)
+  assert.match(agentPage, /h-\[calc\(100dvh-8rem\)\]/)
+  assert.match(agentPage, /ReactMarkdown/)
+  assert.match(connectors, /Connections are secured by Composio and AlphaTekx OAuth/)
+})
+
+console.log(`\n${passed}/14 super-computer agent checks passed`)

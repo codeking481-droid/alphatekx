@@ -91,7 +91,7 @@ export default function Home() {
                       <span className="block text-base font-black text-white">{item.label}</span>
                       <span className="mt-1 block text-xs font-semibold text-slate-400">{item.description}</span>
                       <span className={`mt-2 inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[.08em] ${ready ? 'text-emerald-300' : 'text-slate-400'}`}>
-                        <span className={`size-1.5 rounded-full ${ready ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,.8)]' : 'bg-slate-500'}`}/>
+                        <span className={`size-1.5 rounded-full ${ready ? 'bg-emerald-400' : 'bg-slate-500'}`}/>
                         {item.soon ? 'Coming soon' : ready ? 'Connected' : 'Ready to connect'}
                       </span>
                     </span>

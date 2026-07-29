@@ -32,11 +32,11 @@ export type MoneyLoopStats = {
 
 export async function getLeads(status = '') {
   const query = status ? `?status=${encodeURIComponent(status)}` : ''
-  return getJson<{ leads: Lead[] }>(`/api/money-loop/leads${query}`)
+  return getJson<{ leads: Lead[]; setupRequired?: boolean }>(`/api/money-loop/leads${query}`)
 }
 
 export async function getMoneyLoopStats() {
-  return getJson<{ stats: MoneyLoopStats; insights: { id: string; insight: string; created_at: string }[] }>('/api/money-loop/stats')
+  return getJson<{ stats: MoneyLoopStats; insights: { id: string; insight: string; created_at: string }[]; setupRequired?: boolean }>('/api/money-loop/stats')
 }
 
 export async function updateLead(id: string, patch: { status?: LeadStatus; estimated_value?: number }) {

@@ -105,6 +105,7 @@ const PROVIDER_DEFS = {
     composioAppName: 'twitter',
     composioAppNames: ['twitter'],
     authConfigEnv: 'COMPOSIO_TWITTER_AUTH_CONFIG_ID',
+    defaultAuthConfigId: AUTH_CONFIGS.TWITTER,
     enabled: false,
     stage: 'beta',
     actions: ['create_post', 'create_tweet', 'create_thread', 'create_media_tweet'],

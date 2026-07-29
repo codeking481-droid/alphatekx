@@ -128,12 +128,6 @@ export async function startCustomOAuth(provider: 'tiktok' | 'snapchat', token?: 
   window.location.assign(data.url)
 }
 
-export async function startXAuth(token?: string, redirect = '/connected-apps') {
-  const data = await request<{ url: string }>('/api/x/auth', token, { method: 'POST', body: JSON.stringify({ redirect }) })
-  if (!data.url) throw new Error('X OAuth URL was not returned')
-  window.location.assign(data.url)
-}
-
 export const getUserUsage = (token?: string) => request<UserUsage>('/api/user/usage', token)
 
 export const saveConnector = (platform: string, token: string | undefined, credentials: Record<string, unknown>, identifier?: string) =>

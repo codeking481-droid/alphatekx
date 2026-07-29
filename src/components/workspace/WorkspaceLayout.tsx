@@ -1,5 +1,5 @@
 import { useEffect, useState, type PropsWithChildren } from 'react'
-import { Bot, FolderOpen, HandCoins, HelpCircle, History, ListChecks, LogOut, Menu, Plug, Settings, ShieldCheck, Sparkles, X } from 'lucide-react'
+import { Bot, BriefcaseBusiness, FolderOpen, HandCoins, HelpCircle, History, ListChecks, LogOut, Menu, Plug, Settings, ShieldCheck, Sparkles, X } from 'lucide-react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { getCredits, hydrateCredits, subscribeCredits } from '../../lib/creditStore'
 import { useAuth } from '../../lib/auth'
@@ -15,6 +15,7 @@ const primary = [
   ['History', '/history', History],
   ['Media Library', '/media-library', FolderOpen],
   ['Money Loop', '/leads', HandCoins],
+  ['CEO Inbox', '/ceo', BriefcaseBusiness],
   ['Connected Apps', '/connected-apps', Plug],
 ] as const
 
