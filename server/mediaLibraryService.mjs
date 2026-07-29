@@ -244,6 +244,11 @@ export function generateAdvancedImagePrompt(content, objective = '', platform = 
 }
 
 export function pollinationsImageUrl(advancedPrompt, negativePrompt, seed = `${Date.now()}-${Math.floor(Math.random() * 100000)}`, options = {}) {
+  // Pollinations expects a numeric seed. Previous timestamp labels containing
+  // hyphens were rejected by some image workers before generation started.
+  const numericSeed = Number.isSafeInteger(Number(seed))
+    ? Math.abs(Number(seed)) % 2147483647
+    : parseInt(createHash('sha256').update(String(seed)).digest('hex').slice(0, 8), 16) % 2147483647
   const params = new URLSearchParams({
     model: 'flux',
     width: '1024',
@@ -251,7 +256,7 @@ export function pollinationsImageUrl(advancedPrompt, negativePrompt, seed = `${D
     enhance: 'true',
     nologo: 'true',
     negative: negativePrompt,
-    seed: String(seed),
+    seed: String(numericSeed),
   })
   const host = options.legacy || options.backup ? 'https://image.pollinations.ai/prompt' : 'https://gen.pollinations.ai/image'
   return `${host}/${encodeURIComponent(advancedPrompt)}?${params.toString()}`
@@ -259,7 +264,7 @@ export function pollinationsImageUrl(advancedPrompt, negativePrompt, seed = `${D
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 
-async function downloadImage(url, minimumBytes = 50 * 1024, timeoutMs = 30_000, requestHeaders = {}) {
+async function downloadImage(url, minimumBytes = 50 * 1024, timeoutMs = 60_000, requestHeaders = {}) {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
   try {
@@ -323,6 +328,7 @@ async function persistGenerated(config, user, bytes, mime, metadata) {
 
 export async function findSmartImage(config, user, content, objective = '', platform = '', options = {}) {
   assertConfig(config)
+  await ensureBucket(config)
   const { keywords, advancedPrompt, negativePrompt } = generateAdvancedImagePrompt(content, objective, platform)
   const query = keywords.join(' ')
   const queryHash = createHash('sha256').update(`${platform}:${query}`).digest('hex')
@@ -350,21 +356,30 @@ export async function findSmartImage(config, user, content, objective = '', plat
   for (let attempt = 0; attempt < (pollinationsKey ? 3 : 0) && !downloaded; attempt += 1) {
     if (delays[attempt]) await wait(delays[attempt])
     remoteUrl = pollinationsImageUrl(advancedPrompt, negativePrompt, `${Date.now()}-${attempt}-${Math.floor(Math.random() * 100000)}`)
-    downloaded = await downloadImage(remoteUrl, 50 * 1024, 30_000, pollinationsHeaders).catch(() => null)
+    downloaded = await downloadImage(remoteUrl, 50 * 1024, 60_000, pollinationsHeaders).catch(error => {
+      console.warn(`[AlphaTekX] Pollinations authenticated image attempt ${attempt + 1} failed: ${error instanceof Error ? error.message : error}`)
+      return null
+    })
   }
   if (!downloaded) {
     source = 'pollinations-legacy'
     for (let attempt = 0; attempt < 3 && !downloaded; attempt += 1) {
       if (delays[attempt]) await wait(delays[attempt])
       remoteUrl = pollinationsImageUrl(advancedPrompt, negativePrompt, `${Date.now()}-legacy-${attempt}`, { legacy: true })
-      downloaded = await downloadImage(remoteUrl, 50 * 1024, 30_000).catch(() => null)
+      downloaded = await downloadImage(remoteUrl, 50 * 1024, 60_000).catch(error => {
+        console.warn(`[AlphaTekX] Pollinations public image attempt ${attempt + 1} failed: ${error instanceof Error ? error.message : error}`)
+        return null
+      })
     }
   }
   if (!downloaded) {
     await wait(2_000)
     source = 'pollinations-legacy-backup'
     remoteUrl = pollinationsImageUrl(advancedPrompt, negativePrompt, `${Date.now()}-backup`, { backup: true })
-    downloaded = await downloadImage(remoteUrl, 50 * 1024, 30_000).catch(() => null)
+    downloaded = await downloadImage(remoteUrl, 50 * 1024, 60_000).catch(error => {
+      console.warn(`[AlphaTekX] Pollinations backup image attempt failed: ${error instanceof Error ? error.message : error}`)
+      return null
+    })
   }
   if (!downloaded && process.env.PEXELS_API_KEY) {
     const pexels = await fetch(`https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=1`, {
@@ -384,7 +399,7 @@ export async function findSmartImage(config, user, content, objective = '', plat
       let publicUrl = /^https:\/\/(?:image\.)?pollinations\.ai\//i.test(remoteUrl) ? remoteUrl : ''
       if (!publicUrl) {
         publicUrl = pollinationsImageUrl(advancedPrompt, negativePrompt, `${Date.now()}-chat`, { backup: true })
-        const publicImage = await downloadImage(publicUrl, 50 * 1024, 30_000).catch(() => null)
+        const publicImage = await downloadImage(publicUrl, 50 * 1024, 60_000).catch(() => null)
         if (!publicImage) throw error
       }
       return {
