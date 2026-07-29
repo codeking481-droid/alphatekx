@@ -6,6 +6,7 @@ import {
   unavailableConnectorMessage,
   updateFeature,
 } from '../server/featureAccess.mjs'
+import { canCreateAgent, getUserCredits } from '../server/billing.mjs'
 
 const tests = []
 async function test(name, fn) {
@@ -15,6 +16,22 @@ async function test(name, fn) {
 
 const admin = { id: 'admin', email: 'iamdan4live@gmail.com' }
 const publicUser = { id: 'public', email: 'public@example.com' }
+
+await test('authenticated administrator is credit exempt', async () => {
+  assert.equal(await getUserCredits(admin, {}), Infinity)
+  assert.deepEqual(await canCreateAgent(admin, {}, 1000000), { ok: true })
+})
+
+await test('configured supervisor email is credit exempt', async () => {
+  const previous = process.env.SUPER_ADMIN_EMAILS
+  process.env.SUPER_ADMIN_EMAILS = 'supervisor@example.com'
+  try {
+    assert.equal(await getUserCredits({ id: 'supervisor', email: 'SUPERVISOR@example.com' }, {}), Infinity)
+  } finally {
+    if (previous === undefined) delete process.env.SUPER_ADMIN_EMAILS
+    else process.env.SUPER_ADMIN_EMAILS = previous
+  }
+})
 
 await test('verified admin account regains admin authority', () => {
   const status = featureStatusForUser(admin)

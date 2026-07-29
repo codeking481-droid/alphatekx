@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import { createConversationEngine } from '../server/alpha/conversationEngine.mjs'
+import { contentGenerationMissingFields, createConversationEngine } from '../server/alpha/conversationEngine.mjs'
 import { runCommand } from '../server/projectWorkspace.mjs'
 
 const tests = []
@@ -28,6 +28,19 @@ function testEngine() {
   })
   return { engine, records, get modelCalls() { return modelCalls }, get creditCharges() { return creditCharges }, get imageCalls() { return imageCalls } }
 }
+
+await test('unresolved publishing schedule yields a real question instead of recursive generation', () => {
+  const missing = contentGenerationMissingFields('social_content', {
+    platforms: ['linkedin'],
+    publishingMode: 'once_now',
+    scheduleSource: 'unresolved',
+    business: 'AlphaTekx',
+    audience: 'founders',
+    tone: 'professional',
+  })
+  assert.equal(missing[0]?.field, 'publishingMode')
+  assert.match(missing[0]?.question || '', /once now/i)
+})
 
 for (const greeting of ['Hi', 'Hello', 'Good morning', 'How are you?']) {
   await test(`greeting stays out of planning: ${greeting}`, async () => {

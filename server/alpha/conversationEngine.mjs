@@ -398,6 +398,28 @@ function requiredMissingFields(intent, knownFields) {
   return []
 }
 
+function publishingModeQuestion() {
+  return {
+    field: 'publishingMode',
+    question: 'Should Alpha publish this once now, once at a specific date and time, or as a recurring campaign?',
+    reason: 'The publishing schedule must be explicitly confirmed before content is generated.',
+    required: true,
+  }
+}
+
+export function contentGenerationMissingFields(intent, knownFields = {}) {
+  const missing = requiredMissingFields(intent, knownFields)
+  const publishingMode = knownFields.publishingMode
+  if (
+    SOCIAL_CONTENT_INTENTS.has(intent) &&
+    (!['once_now', 'once_later', 'recurring'].includes(publishingMode) || knownFields.scheduleSource === 'unresolved') &&
+    !missing.some(item => item.field === 'publishingMode')
+  ) {
+    missing.unshift(publishingModeQuestion())
+  }
+  return missing
+}
+
 export function createConversationEngine(deps) {
   const {
     callLLMForRole,
@@ -811,14 +833,27 @@ Do not return placeholder text. Use the words the user actually provided.`
     if (remaining.length === 0) {
       const stillMissing = conversation.missingFields || []
       if (!stillMissing.length) {
-        await moveToPlanningOrContent(conversation)
-        return
+        // Never recursively re-enter planning from an empty question queue.
+        // Inconsistent persisted state previously caused generateContent ->
+        // askNextQuestion -> moveToPlanningOrContent -> generateContent forever.
+        const fallback = SOCIAL_CONTENT_INTENTS.has(conversation.intent)
+          ? publishingModeQuestion()
+          : {
+              field: 'clarification',
+              question: 'What result should Alpha produce, and when should it run?',
+              reason: 'I need one clear execution detail before continuing.',
+              required: true,
+            }
+        conversation.missingFields = [fallback]
+        conversation.askedFields = (conversation.askedFields || []).filter(field => field !== fallback.field)
+        remaining = [fallback]
+      } else {
+        // A previous answer did not produce a usable value. Ask the unresolved
+        // field again instead of recursively re-entering generation.
+        const unresolved = stillMissing[0]
+        conversation.askedFields = (conversation.askedFields || []).filter(field => field !== unresolved.field)
+        remaining = [unresolved]
       }
-      // A previous answer did not produce a usable value. Ask the unresolved
-      // field again instead of recursively re-entering generation.
-      const unresolved = stillMissing[0]
-      conversation.askedFields = (conversation.askedFields || []).filter(field => field !== unresolved.field)
-      remaining = [unresolved]
     }
     const next = remaining[0]
     conversation.askedFields.push(next.field)
@@ -1120,7 +1155,7 @@ Return JSON:
     const publishingMode = known.publishingMode
     if (!['once_now', 'once_later', 'recurring'].includes(publishingMode) || known.scheduleSource === 'unresolved') {
       conversation.conversationStage = 'gathering_information'
-      conversation.missingFields = requiredMissingFields(conversation.intent, known)
+      conversation.missingFields = contentGenerationMissingFields(conversation.intent, known)
       conversation.askedFields = (conversation.askedFields || []).filter(field => field !== 'publishingMode')
       await askNextQuestion(conversation)
       return
@@ -1129,7 +1164,7 @@ Return JSON:
     const platforms = Array.isArray(known.platforms) ? known.platforms.filter(Boolean) : []
     if (!platforms.length) {
       conversation.conversationStage = 'gathering_information'
-      conversation.missingFields = requiredMissingFields(conversation.intent, known)
+      conversation.missingFields = contentGenerationMissingFields(conversation.intent, known)
       await askNextQuestion(conversation)
       return
     }
@@ -1148,7 +1183,7 @@ Return JSON:
     }
     if (!durationDays || !totalPosts || (!isSinglePost && (known.durationSource === 'unresolved' || !known.frequency || !known.time || !known.timezone || !known.startDate))) {
       conversation.conversationStage = 'gathering_information'
-      conversation.missingFields = requiredMissingFields(conversation.intent, known)
+      conversation.missingFields = contentGenerationMissingFields(conversation.intent, known)
       await askNextQuestion(conversation)
       return
     }
