@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarClock, CheckCircle2, FileVideo2, Image, LoaderCircle, Play, Trash2, UploadCloud, X } from 'lucide-react'
+import { CalendarClock, CheckCircle2, Download, FileVideo2, Image, LoaderCircle, Play, Trash2, UploadCloud, X } from 'lucide-react'
 import { getCredits } from '../lib/creditStore'
-import { createSmartImage, deleteMedia, getMediaSetupStatus, listMedia, previewMedia as getMediaPreview, publishMedia, updateMedia, uploadMedia, type MediaItem } from '../lib/mediaLibrary'
+import { createSmartImage, createSmartVideo, deleteMedia, getMediaSetupStatus, listMedia, previewMedia as getMediaPreview, publishMedia, updateMedia, uploadMedia, type MediaItem } from '../lib/mediaLibrary'
 
 const MAX_FILES = 20
 const MAX_BYTES = 500 * 1024 * 1024
@@ -37,6 +37,7 @@ export default function MediaLibrary() {
   const [brokenCards, setBrokenCards] = useState<Set<string>>(() => new Set())
   const [setupRequired, setSetupRequired] = useState(false)
   const [imagePrompt, setImagePrompt] = useState('')
+  const [generationType, setGenerationType] = useState<'image' | 'video'>('image')
   const [startDate, setStartDate] = useState(() => new Date(Date.now() + 86400000).toISOString().slice(0, 10))
   const [time, setTime] = useState('09:00')
 
@@ -169,6 +170,39 @@ export default function MediaLibrary() {
     } finally { setBusy(false) }
   }
 
+  const generateVideo = async () => {
+    const prompt = imagePrompt.trim()
+    if (!prompt) { setNotice('Describe the video you want Alpha to create.'); return }
+    setBusy(true)
+    setNotice('Alpha is generating and verifying your video. This can take a few minutes…')
+    try {
+      const result = await createSmartVideo(prompt, { duration: 5, aspectRatio: '16:9' })
+      if (!result.item?.id || !result.video_storage_path) throw new Error('The video provider did not return a verified saved video.')
+      await load()
+      setImagePrompt('')
+      setNotice('Video generated, verified, and saved privately in your Media Library.')
+    } catch (error) {
+      setNotice(error instanceof Error ? `${error.message} Nothing was charged.` : 'Video generation failed safely. Nothing was charged.')
+    } finally { setBusy(false) }
+  }
+
+  const downloadItem = async (item: MediaItem) => {
+    setPreviewLoading(item.id)
+    try {
+      const { item: secured } = await getMediaPreview(item.id)
+      if (!secured.file_url) throw new Error('A secure download link could not be created.')
+      const response = await fetch(secured.file_url)
+      if (!response.ok) throw new Error(`Download failed with HTTP ${response.status}.`)
+      const url = URL.createObjectURL(await response.blob())
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = displayName(item) || item.file_name
+      anchor.click()
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch (error) { setNotice(error instanceof Error ? error.message : 'Download could not start.') }
+    finally { setPreviewLoading(null) }
+  }
+
   return <main className="mx-auto min-h-[calc(100dvh-8rem)] w-full min-w-0 max-w-6xl overflow-x-hidden bg-violet-500/10 px-4 pb-28 pt-7 text-white sm:px-6 sm:py-8">
     <header className="flex flex-wrap items-end justify-between gap-4">
       <div><p className="text-xs font-black uppercase tracking-[.18em] text-violet-300">Content vault</p><h1 className="mt-2 text-3xl font-black">Your Media Library</h1><p className="mt-2 max-w-2xl text-sm font-semibold text-slate-400">Upload up to 20 videos at once. Alpha keeps the files private and prepares an honest publishing queue.</p></div>
@@ -183,11 +217,12 @@ export default function MediaLibrary() {
 
     <section className="mt-6 rounded-2xl border border-violet-400/20 bg-violet-500/10 p-4 sm:p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-        <label className="min-w-0 flex-1 text-sm font-black text-white">Generate premium image with Alpha
-          <span className="mt-1 block text-xs font-semibold text-slate-400">Describe the scene. Alpha generates, verifies, and securely saves a private 1024×1024 premium image.</span>
-          <input value={imagePrompt} onChange={event => setImagePrompt(event.target.value)} placeholder="e.g. thrift gown in Lagos, premium editorial photograph" className="field mt-3" disabled={busy || setupRequired}/>
+        <label className="min-w-0 flex-1 text-sm font-black text-white">Create with Alpha
+          <span className="mt-1 block text-xs font-semibold text-slate-400">Generate a verified image or short video and save it directly to your private vault.</span>
+          <div className="mt-3 flex w-fit rounded-xl border border-white/10 bg-black/20 p-1">{(['image','video'] as const).map(type => <button type="button" key={type} onClick={() => setGenerationType(type)} className={`min-h-9 rounded-lg px-4 text-xs font-black capitalize ${generationType === type ? 'bg-violet-600 text-white' : 'text-slate-400'}`}>{type}</button>)}</div>
+          <input value={imagePrompt} onChange={event => setImagePrompt(event.target.value)} placeholder={generationType === 'image' ? 'e.g. premium editorial photo of a thrift gown in Lagos' : 'e.g. cinematic 5-second video of a luxury car driving at sunset'} className="field mt-3" disabled={busy || setupRequired}/>
         </label>
-        <button onClick={() => void generateImage()} disabled={busy || setupRequired || !imagePrompt.trim()} className="btn-alpha min-h-12 shrink-0 rounded-xl px-5 text-sm font-black disabled:opacity-50">{busy ? 'Alpha is creating…' : 'Generate premium image'}</button>
+        <button onClick={() => void (generationType === 'image' ? generateImage() : generateVideo())} disabled={busy || setupRequired || !imagePrompt.trim()} className="btn-alpha min-h-12 shrink-0 rounded-xl px-5 text-sm font-black disabled:opacity-50">{busy ? 'Alpha is creating…' : `Generate ${generationType}`}</button>
       </div>
       {busy && <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/5"><div className="skeleton h-full w-full"/></div>}
     </section>
@@ -207,12 +242,12 @@ export default function MediaLibrary() {
 
     {loading ? <section className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{[1,2,3].map(value => <div key={value} className="h-64 animate-pulse rounded-2xl bg-blue-500/10"/>)}</section> :
       items.length === 0 ? <section className="mt-7 rounded-2xl border border-violet-400/20 bg-blue-500/10 p-10 text-center"><FileVideo2 className="mx-auto text-slate-400"/><h2 className="mt-3 font-black">Your vault is ready</h2><p className="mt-1 text-sm font-semibold text-slate-400">Upload your first file to begin.</p></section> :
-      <section className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{items.map(item => <article key={item.id} className="overflow-hidden rounded-2xl border border-violet-400/20 bg-violet-500/10 shadow-sm">
+      <section className="mt-7 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">{items.map(item => <article key={item.id} className="min-w-0 overflow-hidden rounded-2xl border border-violet-400/20 bg-violet-500/10 shadow-sm">
         <div className="relative grid aspect-video place-items-center bg-blue-500/10">
           {isImage(item) && item.file_url && !brokenCards.has(item.id) ? <img src={item.file_url} alt={displayName(item)} className="h-full w-full object-cover" onError={() => setBrokenCards(current => new Set(current).add(item.id))}/> : isVideo(item) && item.file_url && !brokenCards.has(item.id) ? <video src={item.file_url} className="h-full w-full object-cover" preload="metadata" onError={() => setBrokenCards(current => new Set(current).add(item.id))}/> : isVideo(item) ? <FileVideo2 className="text-slate-400"/> : <Image className="text-slate-400"/>}
           <span className={`absolute right-3 top-3 rounded-full border px-2.5 py-1 text-[10px] font-black uppercase ${item.status === 'published' ? 'border-emerald-200 bg-emerald-500/10 text-emerald-300' : item.status === 'scheduled' ? 'border-violet-200 bg-violet-500/10 text-violet-200' : 'border-violet-400/20 bg-violet-500/10 text-slate-400'}`}>{item.status}</span>
         </div>
-        <div className="p-4"><h2 className="truncate font-black">{displayName(item)}</h2><p className="mt-1 text-xs font-semibold text-slate-400">{(item.file_size / 1048576).toFixed(1)}MB {item.scheduled_for ? `· ${new Date(item.scheduled_for).toLocaleString()}` : ''}</p><div className="mt-4 flex flex-wrap gap-2"><button onClick={() => void openPreview(item)} disabled={previewLoading === item.id} className="action bg-violet-500/10 text-slate-300">{previewLoading === item.id ? <LoaderCircle className="animate-spin" size={15}/> : <Play size={15}/>}Preview</button>{isVideo(item) && ['ready', 'failed'].includes(item.status) && <button onClick={() => void publishNow(item)} disabled={busy} className="action bg-[#6D28D9] text-white"><UploadCloud size={15}/>Publish now</button>}<button onClick={() => void remove(item)} disabled={busy} className="action bg-violet-500/10 text-rose-300"><Trash2 size={15}/>Delete</button></div></div>
+        <div className="p-3"><h2 className="truncate text-sm font-black">{displayName(item)}</h2><p className="mt-1 truncate text-[10px] font-semibold text-slate-400">{(item.file_size / 1048576).toFixed(1)}MB {item.scheduled_for ? `· ${new Date(item.scheduled_for).toLocaleString()}` : ''}</p><div className="mt-3 flex flex-wrap gap-1.5"><button onClick={() => void openPreview(item)} disabled={previewLoading === item.id} className="action bg-violet-500/10 px-2 text-slate-300">{previewLoading === item.id ? <LoaderCircle className="animate-spin" size={14}/> : <Play size={14}/>}Preview</button><button onClick={() => void downloadItem(item)} className="action bg-violet-500/10 px-2 text-slate-300"><Download size={14}/>Save</button>{isVideo(item) && ['ready', 'failed'].includes(item.status) && <button onClick={() => void publishNow(item)} disabled={busy} className="action bg-[#6D28D9] px-2 text-white"><UploadCloud size={14}/>Publish</button>}<button aria-label={`Delete ${displayName(item)}`} onClick={() => void remove(item)} disabled={busy} className="action bg-violet-500/10 px-2 text-rose-300"><Trash2 size={14}/></button></div></div>
       </article>)}</section>}
 
     {previewItem && <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/80 p-4" onClick={() => setPreviewItem(null)}><section className="w-full max-w-4xl overflow-hidden rounded-3xl border border-violet-300/20 bg-[#0A0F1E] shadow-2xl" onClick={event => event.stopPropagation()}><header className="flex items-center justify-between gap-3 border-b border-violet-300/15 p-4"><div className="min-w-0"><h2 className="truncate font-black">{displayName(previewItem)}</h2><p className="mt-1 text-xs text-slate-400">Secure private preview · expires in 1 hour</p></div><button onClick={() => setPreviewItem(null)} aria-label="Close preview" className="grid size-10 shrink-0 place-items-center rounded-full bg-white/5"><X size={18}/></button></header><div className="grid max-h-[75dvh] min-h-64 place-items-center bg-black/20 p-3">{isImage(previewItem) && previewItem.file_url ? <img src={previewItem.file_url} alt={displayName(previewItem)} className="max-h-[70dvh] max-w-full rounded-xl object-contain"/> : isVideo(previewItem) && previewItem.file_url ? <video src={previewItem.file_url} controls autoPlay className="max-h-[70dvh] max-w-full rounded-xl"/> : <div className="text-center text-slate-400"><FileVideo2 className="mx-auto" size={38}/><p className="mt-3 font-bold">This file has no browser preview.</p></div>}</div></section></div>}
