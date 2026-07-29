@@ -164,10 +164,21 @@ await test('Meta, WhatsApp, Instagram and X use the correct configuration paths'
 await test('api clients omit browser cookies to avoid oversized header failures', () => {
   const apiClient = fs.readFileSync(new URL('../src/lib/apiClient.ts', import.meta.url), 'utf8')
   const integrations = fs.readFileSync(new URL('../src/lib/integrations.ts', import.meta.url), 'utf8')
+  const repair = fs.readFileSync(new URL('../src/lib/sessionRepair.ts', import.meta.url), 'utf8')
+  const server = fs.readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
   assert.match(apiClient, /credentials: 'omit'/)
   assert.match(integrations, /credentials: 'omit'/)
   assert.match(apiClient, /response\.status === 431/)
   assert.match(integrations, /response\.status === 431/)
+  assert.match(apiClient, /repairOversizedSession\(token\)/)
+  assert.match(integrations, /repairOversizedSession\(authToken\)/)
+  assert.match(repair, /\/api\/auth\/repair-oversized-session/)
+  assert.match(repair, /refreshSession/)
+  assert.match(server, /async function repairOversizedAuthSession/)
+  assert.match(server, /const \{ integrations: _removed, \.\.\.slimMetadata \} = metadata/)
+  assert.match(server, /rest\/v1\/connected_accounts\?on_conflict=user_id,provider/)
+  assert.doesNotMatch(server.match(/async function saveUserIntegration[\s\S]*?\n\}/)?.[0] || '', /saveAuthAppIntegration/)
+  assert.doesNotMatch(server.match(/async function remoteExecutionsSaveForUser[\s\S]*?\n\}/)?.[0] || '', /saveAuthAppIntegration/)
 })
 
 await test('cancelled child processes terminate on Windows without hanging the planner', async () => {

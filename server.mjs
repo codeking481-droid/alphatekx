@@ -1052,6 +1052,18 @@ async function authenticatedUser(req, supabaseUrl, anonKey) {
   }
 }
 
+async function userFromAccessToken(accessToken, supabaseUrl, anonKey) {
+  if (!accessToken || accessToken.length > 1_000_000) return null
+  try {
+    const response = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      headers: { apikey: anonKey, Authorization: `Bearer ${accessToken}` },
+    })
+    return response.ok ? response.json() : null
+  } catch {
+    return null
+  }
+}
+
 function normalizedAuthEmail(value) {
   return String(value || '').trim().toLowerCase()
 }
@@ -4235,13 +4247,53 @@ async function saveUserIntegration(userId, provider, data, config) {
     try {
       const response = await fetch(`${config.url}/rest/v1/connected_accounts?on_conflict=user_id,provider`, { method: 'POST', headers: { ...serviceHeaders(config.service), Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(remote) })
       if (response.ok) savedRemote = true
-      else if (response.status === 404) {
-        savedRemote = await saveAuthAppIntegration(userId, provider, data, config)
-      }
     } catch (err) { process.stdout.write(`[save integration] connected_accounts save failed: ${err instanceof Error ? err.message : err}\n`) }
-    if (!savedRemote) savedRemote = await saveAuthAppIntegration(userId, provider, data, config)
   }
   if (!savedRemote) setLocalIntegration(userId, provider, { ...record, tokens: data.tokens || {} })
+}
+
+async function repairOversizedAuthSession(req, res) {
+  const config = supabaseConfig()
+  if (!config.url || !config.anon || !config.service) return json(res, 503, { error: 'Authentication storage is not configured.' })
+  const body = await readBody(req)
+  const accessToken = String(body.accessToken || '')
+  const user = await userFromAccessToken(accessToken, config.url, config.anon)
+  if (!user?.id) return json(res, 401, { error: 'Your session has expired. Please sign in again.' })
+
+  const metadata = await getAuthAppMetadata(user.id, config)
+  const legacy = metadata?.integrations
+  if (!legacy || typeof legacy !== 'object') return json(res, 200, { repaired: false })
+
+  // Move every legacy record out of the JWT before removing it. Tokens are already
+  // encrypted with the same application key used by connected_accounts.
+  for (const [provider, record] of Object.entries(legacy)) {
+    const remote = {
+      user_id: user.id,
+      provider,
+      email: record?.email || user.email || null,
+      scopes: Array.isArray(record?.scopes) ? record.scopes : [],
+      tokens: record?.tokens || {},
+      updated_at: record?.updated_at || new Date().toISOString(),
+    }
+    const saved = await fetch(`${config.url}/rest/v1/connected_accounts?on_conflict=user_id,provider`, {
+      method: 'POST',
+      headers: { ...serviceHeaders(config.service), Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify(remote),
+    })
+    if (!saved.ok) {
+      process.stdout.write(`[session repair] could not migrate ${provider}: HTTP ${saved.status}\n`)
+      return json(res, 503, { error: 'Alpha could not safely repair this session yet. Please contact support.' })
+    }
+  }
+
+  const { integrations: _removed, ...slimMetadata } = metadata
+  const updated = await fetch(`${config.url}/auth/v1/admin/users/${encodeURIComponent(user.id)}`, {
+    method: 'PUT',
+    headers: serviceHeaders(config.service),
+    body: JSON.stringify({ app_metadata: slimMetadata }),
+  })
+  if (!updated.ok) return json(res, 503, { error: 'Alpha could not refresh your saved session.' })
+  return json(res, 200, { repaired: true })
 }
 
 async function deleteUserIntegration(userId, provider, config) {
@@ -5349,18 +5401,29 @@ async function remoteAgentsSaveForUser(userId, email, agents, config) {
 }
 
 async function remoteExecutionsList(config) {
+  const res = await fetch(`${config.url}/rest/v1/connected_accounts?provider=eq.${AGENT_EXECUTIONS_PROVIDER}&select=*`, { headers: serviceHeaders(config.service) })
+  if (res.ok) {
+    const rows = await res.json()
+    if (Array.isArray(rows) && rows.length) return rows.flatMap(row => (Array.isArray(row.tokens?.executions) ? row.tokens.executions : []).map(execution => ({ ...execution, userId: execution.userId || row.user_id })))
+  }
   const bundles = await authMetadataBundles(config, AGENT_EXECUTIONS_PROVIDER)
   return bundles.flatMap(bundle => (Array.isArray(bundle.tokens?.executions) ? bundle.tokens.executions : []).map(execution => ({ ...execution, userId: execution.userId || bundle.userId })))
 }
 
 async function remoteExecutionsForUser(userId, config) {
+  const res = await fetch(`${config.url}/rest/v1/connected_accounts?provider=eq.${AGENT_EXECUTIONS_PROVIDER}&user_id=eq.${encodeURIComponent(userId)}&select=*`, { headers: serviceHeaders(config.service) })
+  if (res.ok) {
+    const row = (await res.json())?.[0]
+    if (row) return Array.isArray(row.tokens?.executions) ? row.tokens.executions : []
+  }
   const record = await getAuthAppIntegration(userId, AGENT_EXECUTIONS_PROVIDER, config)
   return Array.isArray(record?.tokens?.executions) ? record.tokens.executions : []
 }
 
 async function remoteExecutionsSaveForUser(userId, email, executions, config) {
-  const saved = await saveAuthAppIntegration(userId, AGENT_EXECUTIONS_PROVIDER, { email, identifier: 'agent-executions', scopes: [], tokens: { executions: executions.slice(0, 200) } }, config)
-  if (!saved) throw new Error('Could not save executions to durable Supabase Auth metadata')
+  const body = JSON.stringify({ user_id: userId, provider: AGENT_EXECUTIONS_PROVIDER, email: email || '', identifier: 'agent-executions', scopes: [], tokens: { executions: executions.slice(0, 200), updated_at: new Date().toISOString() }, updated_at: new Date().toISOString() })
+  const res = await fetch(`${config.url}/rest/v1/connected_accounts?on_conflict=user_id,provider`, { method: 'POST', headers: { ...serviceHeaders(config.service), Prefer: 'resolution=merge-duplicates,return=minimal' }, body })
+  if (!res.ok) throw new Error('Could not save executions to durable connected_accounts storage')
 }
 
 async function executionOwner(execution, config) {
@@ -6136,6 +6199,9 @@ const server = http.createServer(async (req, res) => {
       req.alphaBody = body
       return await saveConnectorHandler(req, res)
     } catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : 'Could not save connector' }) }
+  }
+  if (req.method === 'POST' && req.url === '/api/auth/repair-oversized-session') {
+    try { return await repairOversizedAuthSession(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Session repair failed' }) }
   }
   if (req.method === 'POST' && req.url === '/api/connectors/test') {
     try { return await testConnectorHandler(req, res) } catch (error) { return json(res, 502, { error: error instanceof Error ? error.message : 'Connector test failed' }) }
