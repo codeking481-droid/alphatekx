@@ -6577,7 +6577,10 @@ Return only one JSX code block containing a single React component named App.
 - Use Tailwind className utilities only. Do not depend on component libraries.
 - Make it mobile-first, responsive, accessible, and premium using #0A0A0F, #1A1A23, #7C3AED and #E9E7FF.
 - Add realistic data, working interactions, focus states, and useful copy.
-- Use inline SVG or text symbols for icons and Unsplash only when imagery helps.
+- Use inline SVG or text symbols for icons. When imagery helps, use resilient
+  https://image.pollinations.ai/prompt/{encoded-description}?width=800&height=600&nologo=true&model=flux
+  image URLs with a CSS gradient fallback and an onError handler so a remote
+  image failure never breaks the application.
 - Landing pages need navigation, hero, proof, features, pricing, FAQ, CTA, and footer.
 - Apps need useful navigation, data views, forms, and interactive state.
 - Use glass, bento layouts, large typography, a 12-column rhythm, micro-interactions, skeletons, empty states and honest error states.
@@ -6606,83 +6609,95 @@ function fallbackEliteComponent(prompt) {
 }`
 }
 
-async function pollinationsBuilderCompletion(messages) {
-  const pollinationsKey = firstKey('POLLINATIONS_API_KEY')
+function verifiedBuilderCompletion(content, provider) {
+  const result = eliteBuilder.validateBuilderCode(content || '')
+  if (result.errors.length) throw new Error(result.errors.join(' '))
+  return { code: result.code, provider }
+}
+
+async function freeBuilderCompletion(messages) {
   let lastError = null
-  if (pollinationsKey) {
-    const models = [...new Set([process.env.POLLINATIONS_TEXT_MODEL, 'openai', 'openai-fast'].filter(Boolean))]
-    for (const model of models) {
-      try {
-        const payload = await fetchJson('https://gen.pollinations.ai/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${pollinationsKey}` },
-          body: JSON.stringify({ model, messages, temperature: 0.35, max_tokens: 9000 }),
-        }, 45_000)
-        const result = eliteBuilder.validateBuilderCode(payload?.choices?.[0]?.message?.content || '')
-        if (!result.errors.length) return { code: result.code, provider: `pollinations-${model}` }
-        lastError = new Error(result.errors.join(' '))
-      } catch (error) {
-        lastError = error
-        console.error(`[Elite Builder] Pollinations ${model} failed:`, error instanceof Error ? error.message : error)
-      }
+  const groqKey = firstKey('GROQ_API_KEY')
+  if (groqKey) {
+    try {
+      const payload = await fetchJson('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: process.env.GROQ_BUILDER_MODEL || 'llama-3.3-70b-versatile',
+          messages,
+          temperature: 0.7,
+          max_tokens: 6000,
+        }),
+      }, 20_000)
+      return verifiedBuilderCompletion(payload?.choices?.[0]?.message?.content, 'groq')
+    } catch (error) {
+      lastError = error
+      console.error('[Elite Builder] Groq failed:', error instanceof Error ? error.message : error)
     }
   }
-  // Pollinations' legacy OpenAI-compatible endpoint still accepts anonymous
-  // traffic where its IP allowance is available. POST avoids the URL-length
-  // failure of the old prompt-in-path API. It is recovery only: 401/402/429
-  // are logged and the verified local Builder fallback remains available.
-  try {
-    const payload = await fetchJson('https://text.pollinations.ai/openai', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: process.env.POLLINATIONS_LEGACY_TEXT_MODEL || 'openai',
-        messages,
-        temperature: 0.35,
-        max_tokens: 8000,
-      }),
-    }, 60_000)
-    const result = eliteBuilder.validateBuilderCode(payload?.choices?.[0]?.message?.content || '')
-    if (!result.errors.length) return { code: result.code, provider: 'pollinations-legacy-openai' }
-    lastError = new Error(result.errors.join(' '))
-  } catch (error) {
-    lastError = error
-    console.error('[Elite Builder] Pollinations legacy POST failed:', error instanceof Error ? error.message : error)
+
+  const geminiKey = firstKey('GEMINI_API_KEY')
+  if (geminiKey) {
+    try {
+      const model = process.env.GEMINI_BUILDER_MODEL || 'gemini-2.5-flash'
+      const system = messages.find(message => message.role === 'system')?.content || ELITE_BUILDER_PROMPT
+      const contents = messages
+        .filter(message => message.role !== 'system')
+        .map(message => ({
+          role: message.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: String(message.content || '') }],
+        }))
+      const payload = await fetchJson(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(geminiKey)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: system }] },
+          contents,
+          generationConfig: { temperature: 0.7, maxOutputTokens: 6000 },
+        }),
+      }, 20_000)
+      const content = payload?.candidates?.[0]?.content?.parts?.map(part => part?.text || '').join('\n')
+      return verifiedBuilderCompletion(content, 'gemini')
+    } catch (error) {
+      lastError = error
+      console.error('[Elite Builder] Gemini failed:', error instanceof Error ? error.message : error)
+    }
   }
-  // Legacy public text is a best-effort recovery path. Keep it deliberately
-  // short so the URL is accepted by proxies; production uses the authenticated
-  // OpenAI-compatible endpoint above.
-  try {
-    const userPrompt = String([...messages].reverse().find(message => message.role === 'user')?.content || 'Build a production-ready website').slice(0, 900)
-    const directPrompt = `BUILD THIS ELITE WEBSITE: ${userPrompt}\n\nIMPORTANT: NO IMPORTS ALLOWED. Return only function App() {...} with no import lines. Use only React.useState, React.useEffect, React.useRef, React.useMemo and other React.* hooks, Tailwind classes, responsive mobile layouts, real interactions, loading and empty states. For icons use inline SVG or Unicode, never lucide-react. Do not use exports, markdown fences, scripts, eval, ReactDOM, TypeScript types, or createRoot.`
-    const text = await fetchText(`https://text.pollinations.ai/${encodeURIComponent(directPrompt)}?model=${encodeURIComponent(process.env.POLLINATIONS_LEGACY_TEXT_MODEL || 'openai')}`, {
-      headers: { Accept: 'text/plain' },
-    }, 45_000)
-    const result = eliteBuilder.validateBuilderCode(text)
-    if (!result.errors.length) return { code: result.code, provider: 'pollinations-direct' }
-    lastError = new Error(result.errors.join(' '))
-  } catch (error) {
-    lastError = error
-    console.error('[Elite Builder] Pollinations direct fallback failed:', error instanceof Error ? error.message : error)
+
+  const openRouterKey = firstKey('OPENROUTER_API_KEY')
+  if (openRouterKey) {
+    try {
+      const payload = await fetchJson('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${openRouterKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': process.env.PUBLIC_APP_URL || 'https://alphatekx.name.ng',
+          'X-Title': 'AlphaTekX Builder',
+        },
+        body: JSON.stringify({
+          model: process.env.OPENROUTER_BUILDER_MODEL || 'openrouter/free',
+          messages,
+          temperature: 0.7,
+          max_tokens: 6000,
+        }),
+      }, 20_000)
+      return verifiedBuilderCompletion(payload?.choices?.[0]?.message?.content, 'openrouter')
+    } catch (error) {
+      lastError = error
+      console.error('[Elite Builder] OpenRouter failed:', error instanceof Error ? error.message : error)
+    }
   }
-  throw lastError || new Error('Pollinations did not return a verified application.')
+  throw lastError || new Error('No hosted Builder provider is configured.')
 }
 
 async function generateEliteCode(prompt) {
   const messages = [{ role: 'system', content: ELITE_BUILDER_PROMPT }, { role: 'user', content: `Build this now at production-quality visual standards: ${prompt}` }]
   try {
-    return await pollinationsBuilderCompletion(messages)
+    return await freeBuilderCompletion(messages)
   } catch (error) {
-    console.error('[Elite Builder] Pollinations failed:', error instanceof Error ? error.message : error)
-  }
-  for (const name of getProviderOrder().filter(provider => getProviderKey(provider) && providerHealth.canAttempt(provider))) {
-    try {
-      const response = await callProvider(name, messages, true, false, 9000)
-      const result = eliteBuilder.validateBuilderCode(response.data?.choices?.[0]?.message?.content || '')
-      if (!result.errors.length) return { code: result.code, provider: name }
-    } catch (error) {
-      console.error(`[Elite Builder] ${name} failed:`, error instanceof Error ? error.message : error)
-    }
+    console.error('[Elite Builder] hosted providers unavailable:', error instanceof Error ? error.message : error)
   }
   const fallback = eliteBuilder.validateBuilderCode(fallbackEliteComponent(prompt))
   if (fallback.errors.length) throw new Error('Alpha could not produce a verified build.')
@@ -6698,16 +6713,9 @@ async function generateEliteRevision(currentCode, instruction, error = '') {
     { role: 'user', content: `${task}\n\nEXISTING CODE:\n${currentCode}` },
   ]
   try {
-    return await pollinationsBuilderCompletion(messages)
+    return await freeBuilderCompletion(messages)
   } catch (providerError) {
-    console.error('[Elite Builder edit] Pollinations:', providerError instanceof Error ? providerError.message : providerError)
-  }
-  for (const name of getProviderOrder().filter(provider => getProviderKey(provider) && providerHealth.canAttempt(provider))) {
-    try {
-      const response = await callProvider(name, messages, true, false, 9000)
-      const result = eliteBuilder.validateBuilderCode(response.data?.choices?.[0]?.message?.content || '')
-      if (!result.errors.length) return { code: result.code, provider: name }
-    } catch (providerError) { console.error(`[Elite Builder edit] ${name}:`, providerError instanceof Error ? providerError.message : providerError) }
+    console.error('[Elite Builder edit] hosted providers unavailable:', providerError instanceof Error ? providerError.message : providerError)
   }
   throw new Error('Alpha could not produce a verified edit. Your current build was preserved.')
 }

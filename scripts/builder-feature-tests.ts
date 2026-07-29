@@ -189,12 +189,11 @@ await test('verified code can become an honest uncharged transient preview', () 
   assert(project.published === false, 'transient preview must not claim publication')
 })
 
-await test('Builder rotates through current and legacy Pollinations endpoints before local recovery', () => {
+await test('Builder does not require hosted keys to reach verified local recovery', () => {
   const server = readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
-  assert(server.includes("https://gen.pollinations.ai/v1/chat/completions"), 'current Pollinations endpoint is missing')
-  assert(server.includes("https://text.pollinations.ai/openai"), 'legacy POST recovery endpoint is missing')
-  assert(server.includes("POLLINATIONS_LEGACY_TEXT_MODEL"), 'legacy model is not configurable')
-  assert(server.includes("if (!response.ok)"), 'provider HTTP failures are not rejected')
+  assert(server.includes("throw lastError || new Error('No hosted Builder provider is configured.')"), 'missing keys do not reach local recovery')
+  assert(server.includes('fallbackEliteComponent(prompt)'), 'verified local Builder fallback is missing')
+  assert(server.includes("provider: 'alpha-fallback'"), 'local recovery provider is not reported honestly')
 })
 
 await test('Elite Builder validates complete single-component output', () => {
@@ -269,13 +268,29 @@ await test('Builder V3 has responsive device previews and durable version histor
   assert(service.includes('nextVersions') && sql.includes('versions jsonb'), 'version persistence is missing')
 })
 
-await test('Builder V3 uses a bounded authenticated Pollinations request with a verified direct fallback', () => {
+await test('Builder V3 uses the verified Groq, Gemini and OpenRouter chain before local fallback', () => {
   const server = readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
-  assert(server.includes('pollinationsBuilderCompletion') && server.includes("45_000") && server.includes("60_000"), 'Pollinations timeouts are missing')
-  assert(server.includes('https://gen.pollinations.ai/v1/chat/completions'), 'official Pollinations endpoint is missing')
-  assert(server.includes('https://text.pollinations.ai/'), 'direct Pollinations recovery endpoint is missing')
-  assert(server.includes("provider: 'pollinations-direct'"), 'direct output is not verified before use')
-  assert(server.includes("https://text.pollinations.ai/openai"), 'legacy OpenAI-compatible recovery endpoint is missing')
+  const groq = server.indexOf('https://api.groq.com/openai/v1/chat/completions')
+  const gemini = server.indexOf('https://generativelanguage.googleapis.com/v1beta/models/')
+  const openRouter = server.indexOf('https://openrouter.ai/api/v1/chat/completions')
+  const local = server.indexOf("provider: 'alpha-fallback'")
+  assert(groq > 0 && gemini > groq && openRouter > gemini && local > openRouter, 'Builder provider order is incorrect')
+  assert(server.includes('verifiedBuilderCompletion'), 'hosted output is not verified before preview')
+  assert(!server.includes('pollinationsBuilderCompletion'), 'paid Pollinations text generation remains in the Builder path')
+})
+
+await test('Builder V3 offers an explicit browser-only Puter recovery option', () => {
+  const ui = readFileSync(new URL('../src/pages/EliteBuilder.tsx', import.meta.url), 'utf8')
+  assert(ui.includes('https://js.puter.com/v2/') && ui.includes('puter.ai.chat'), 'Puter browser integration is missing')
+  assert(ui.includes('Build privately with Puter') && ui.includes('user-pays'), 'Puter consent and cost label are missing')
+  assert(ui.includes('cleanCodeForPreview(puterText(response))'), 'Puter output is not normalized before preview')
+})
+
+await test('Builder image guidance and local commerce fallback use resilient Pollinations images', () => {
+  const server = readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
+  const service = readFileSync(new URL('../server/eliteBuilderService.mjs', import.meta.url), 'utf8')
+  assert(server.includes('https://image.pollinations.ai/prompt/'), 'Builder image guidance is missing')
+  assert(service.includes('https://image.pollinations.ai/prompt/') && service.includes("onError={event => { event.currentTarget.style.display = 'none'; }}"), 'local image fallback is not resilient')
 })
 
 await test('Builder V3 deployment is full-height and counts public views atomically', () => {
