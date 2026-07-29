@@ -38,7 +38,12 @@ const tests = [
   })()],
   ['Pollinations current URL pins Flux quality controls without exposing an API key', (() => {
     const url = new URL(pollinationsImageUrl('premium photo', 'cartoon', 'fixed-seed'))
-    return url.hostname === 'gen.pollinations.ai' && !url.searchParams.has('key') && url.searchParams.get('model') === 'flux' && url.searchParams.get('enhance') === 'true' && url.searchParams.get('nologo') === 'true' && url.searchParams.get('seed') === 'fixed-seed'
+    return url.hostname === 'gen.pollinations.ai' && !url.searchParams.has('key') && url.searchParams.get('model') === 'flux' && url.searchParams.get('enhance') === 'true' && url.searchParams.get('nologo') === 'true' && /^\d+$/.test(url.searchParams.get('seed') || '')
+  })()],
+  ['Pollinations seeds are normalized to provider-safe integers', (() => {
+    const first = new URL(pollinationsImageUrl('premium photo', 'cartoon', 'timestamp-legacy-0')).searchParams.get('seed')
+    const second = new URL(pollinationsImageUrl('premium photo', 'cartoon', 'timestamp-legacy-0')).searchParams.get('seed')
+    return first === second && /^\d+$/.test(first || '')
   })()],
   ['Pollinations authentication stays server-side and legacy fallback remains available', (() => {
     const legacy = new URL(pollinationsImageUrl('premium photo', 'cartoon', 'fixed-seed', { legacy: true }))
