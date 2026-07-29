@@ -4489,6 +4489,8 @@ function hasUsableStoredIntegration(provider, tokens) {
   return Boolean(accessToken || tokens.refresh_token || tokens.webhook_url || tokens.webhookUrl || Object.keys(tokens).length)
 }
 
+let userIntegrationsRetryAt = 0
+
 async function getUserIntegration(userId, provider, config) {
   if (provider === 'google') return getGoogleIntegration(userId, config)
   if (config.url && config.service) {
@@ -4514,6 +4516,7 @@ async function getUserIntegration(userId, provider, config) {
     // existing encrypted user_integrations vault. Keep reading it so OAuth
     // connections remain durable while deployments migrate independently.
     try {
+      if (Date.now() < userIntegrationsRetryAt) throw Object.assign(new Error('Legacy integration vault is awaiting database activation.'), { quiet: true })
       const response = await fetch(`${config.url}/rest/v1/user_integrations?user_id=eq.${encodeURIComponent(userId)}&provider=eq.${encodeURIComponent(provider)}&select=*`, { headers: serviceHeaders(config.service) })
       if (response.ok) {
         const rows = await response.json()
@@ -4538,9 +4541,16 @@ async function getUserIntegration(userId, provider, config) {
         }
       } else {
         const detail = await response.text().catch(() => '')
+        if (response.status === 404 && /PGRST205|user_integrations/i.test(detail)) {
+          userIntegrationsRetryAt = Date.now() + 5 * 60_000
+          process.stdout.write('[get integration] legacy user_integrations vault is absent; retrying after schema repair window\n')
+        } else {
         process.stdout.write(`[get integration] user_integrations lookup failed for ${provider}: HTTP ${response.status}${detail ? ` ${detail.slice(0, 240)}` : ''}\n`)
+        }
       }
-    } catch (err) { process.stdout.write(`[get integration] user_integrations lookup failed: ${err instanceof Error ? err.message : err}\n`) }
+    } catch (err) {
+      if (!err?.quiet) process.stdout.write(`[get integration] user_integrations lookup failed: ${err instanceof Error ? err.message : err}\n`)
+    }
     try {
       const fromAuth = await getAuthAppIntegration(userId, provider, config)
       if (fromAuth) return fromAuth
@@ -6610,13 +6620,92 @@ function fallbackEliteComponent(prompt) {
 }
 
 function verifiedBuilderCompletion(content, provider) {
-  const result = eliteBuilder.validateBuilderCode(content || '')
+  const result = eliteBuilder.validateBuilderCode(extractAppComponent(content || ''))
   if (result.errors.length) throw new Error(result.errors.join(' '))
   return { code: result.code, provider }
 }
 
+function extractAppComponent(value) {
+  const source = String(value || '').replace(/```(?:jsx|tsx|javascript|js)?/gi, '').replace(/```/g, '').trim()
+  const start = source.search(/\bfunction\s+App\s*\(/)
+  if (start < 0) return source
+  const open = source.indexOf('{', start)
+  if (open < 0) return source
+  let depth = 0
+  let quote = ''
+  let escaped = false
+  let lineComment = false
+  let blockComment = false
+  for (let index = open; index < source.length; index += 1) {
+    const char = source[index]
+    const next = source[index + 1]
+    if (lineComment) {
+      if (char === '\n') lineComment = false
+      continue
+    }
+    if (blockComment) {
+      if (char === '*' && next === '/') { blockComment = false; index += 1 }
+      continue
+    }
+    if (quote) {
+      if (escaped) { escaped = false; continue }
+      if (char === '\\') { escaped = true; continue }
+      if (char === quote) quote = ''
+      continue
+    }
+    if (char === '/' && next === '/') { lineComment = true; index += 1; continue }
+    if (char === '/' && next === '*') { blockComment = true; index += 1; continue }
+    if (char === "'" || char === '"' || char === '`') { quote = char; continue }
+    if (char === '{') depth += 1
+    if (char === '}') {
+      depth -= 1
+      if (depth === 0) return source.slice(start, index + 1)
+    }
+  }
+  return source
+}
+
+function parseGradioCompletion(eventStream) {
+  const blocks = String(eventStream || '').split(/\r?\n\r?\n/)
+  const complete = blocks.find(block => /^event:\s*complete\s*$/m.test(block))
+  if (!complete) {
+    const failed = blocks.find(block => /^event:\s*(?:error|unexpected_error)\s*$/m.test(block))
+    throw new Error(failed ? 'AlphaTekX Coder reported a generation error.' : 'AlphaTekX Coder did not finish in time.')
+  }
+  const dataLine = complete.split(/\r?\n/).find(line => line.startsWith('data:'))
+  if (!dataLine) throw new Error('AlphaTekX Coder returned an empty completion.')
+  const payload = JSON.parse(dataLine.slice(5).trim())
+  return Array.isArray(payload) ? payload[0] : payload
+}
+
+async function alphatekxCoderCompletion(messages) {
+  const configured = String(process.env.BUILDER_GRADIO_URL || 'https://alpha4-44-alphatekx-coder-api2.hf.space').trim()
+  const base = new URL(configured)
+  if (base.protocol !== 'https:') throw new Error('BUILDER_GRADIO_URL must use HTTPS.')
+  const prompt = messages.map(message => `${String(message.role || 'user').toUpperCase()}:\n${String(message.content || '')}`).join('\n\n')
+  const started = Date.now()
+  const submission = await fetchJson(`${base.origin}/gradio_api/call/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data: [prompt] }),
+  }, 4_000)
+  if (!submission?.event_id) throw new Error('AlphaTekX Coder did not issue a generation job.')
+  const remaining = Math.max(1_000, 12_000 - (Date.now() - started))
+  const events = await fetchText(`${base.origin}/gradio_api/call/generate/${encodeURIComponent(submission.event_id)}`, {
+    headers: { Accept: 'text/event-stream' },
+  }, remaining)
+  return verifiedBuilderCompletion(parseGradioCompletion(events), 'alphatekx-coder')
+}
+
 async function freeBuilderCompletion(messages) {
   let lastError = null
+  try {
+    return await alphatekxCoderCompletion(messages)
+  } catch (error) {
+    lastError = error
+    console.error('[Elite Builder] AlphaTekX Coder failed:', error instanceof Error ? error.message : error)
+  }
+
   const groqKey = firstKey('GROQ_API_KEY')
   if (groqKey) {
     try {
@@ -6629,7 +6718,7 @@ async function freeBuilderCompletion(messages) {
           temperature: 0.7,
           max_tokens: 6000,
         }),
-      }, 20_000)
+      }, 6_000)
       return verifiedBuilderCompletion(payload?.choices?.[0]?.message?.content, 'groq')
     } catch (error) {
       lastError = error
@@ -6637,56 +6726,6 @@ async function freeBuilderCompletion(messages) {
     }
   }
 
-  const huggingFaceToken = firstKey('HF_TOKEN')
-  if (huggingFaceToken) {
-    try {
-      const payload = await fetchJson('https://router.huggingface.co/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${huggingFaceToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: process.env.HF_BUILDER_MODEL || 'Qwen/Qwen2.5-Coder-32B-Instruct',
-          messages,
-          temperature: 0.7,
-          max_tokens: 4000,
-        }),
-      }, 20_000)
-      return verifiedBuilderCompletion(payload?.choices?.[0]?.message?.content, 'huggingface')
-    } catch (error) {
-      lastError = error
-      console.error('[Elite Builder] Hugging Face failed:', error instanceof Error ? error.message : error)
-    }
-  }
-
-  const selfHostedUrl = String(process.env.SELF_HOSTED_URL || '').trim()
-  if (selfHostedUrl) {
-    try {
-      const parsedUrl = new URL(selfHostedUrl)
-      if (parsedUrl.protocol !== 'https:' && parsedUrl.hostname !== 'localhost' && parsedUrl.hostname !== '127.0.0.1') {
-        throw new Error('SELF_HOSTED_URL must use HTTPS.')
-      }
-      const selfHostedToken = firstKey('SELF_HOSTED_TOKEN')
-      const payload = await fetchJson(parsedUrl.toString(), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(selfHostedToken ? { Authorization: `Bearer ${selfHostedToken}` } : {}),
-        },
-        body: JSON.stringify({
-          model: process.env.SELF_HOSTED_MODEL || 'Qwen/Qwen2.5-Coder-7B-Instruct',
-          messages,
-          temperature: 0.7,
-          max_tokens: 6000,
-        }),
-      }, 25_000)
-      return verifiedBuilderCompletion(payload?.choices?.[0]?.message?.content, 'self-hosted')
-    } catch (error) {
-      lastError = error
-      console.error('[Elite Builder] self-hosted provider failed:', error instanceof Error ? error.message : error)
-    }
-  }
   throw lastError || new Error('No hosted Builder provider is configured.')
 }
 

@@ -42,6 +42,10 @@ create table if not exists public.media_library (
 alter table public.media_library add column if not exists execution_key text;
 alter table public.media_library add column if not exists claimed_at timestamptz;
 alter table public.media_library add column if not exists last_error text;
+alter table public.media_library add column if not exists scheduled_for timestamptz;
+alter table public.media_library add column if not exists published_at timestamptz;
+alter table public.media_library add column if not exists provider_id text;
+alter table public.media_library add column if not exists thumbnail_path text;
 alter table public.media_library drop constraint if exists media_library_status_check;
 alter table public.media_library add constraint media_library_status_check
   check (status in ('ready', 'scheduled', 'processing', 'waiting_credits', 'published', 'failed'));
