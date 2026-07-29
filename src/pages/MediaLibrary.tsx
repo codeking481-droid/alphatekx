@@ -1,10 +1,28 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarClock, CheckCircle2, FileVideo2, Image, LoaderCircle, Play, Trash2, UploadCloud, X } from 'lucide-react'
 import { getCredits } from '../lib/creditStore'
-import { createSmartImage, deleteMedia, getMediaSetupStatus, listMedia, publishMedia, updateMedia, uploadMedia, type MediaItem } from '../lib/mediaLibrary'
+import { createSmartImage, deleteMedia, getMediaSetupStatus, listMedia, previewMedia as getMediaPreview, publishMedia, updateMedia, uploadMedia, type MediaItem } from '../lib/mediaLibrary'
 
 const MAX_FILES = 20
 const MAX_BYTES = 500 * 1024 * 1024
+const IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif'])
+const VIDEO_EXTENSIONS = new Set(['mp4', 'webm', 'mov'])
+
+function extension(name: string) {
+  return name.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] || ''
+}
+
+function isImage(item: MediaItem) {
+  return item.file_type === 'image' || item.mime_type?.startsWith('image/') || IMAGE_EXTENSIONS.has(extension(item.file_name))
+}
+
+function isVideo(item: MediaItem) {
+  return item.file_type === 'video' || item.mime_type?.startsWith('video/') || VIDEO_EXTENSIONS.has(extension(item.file_name))
+}
+
+function displayName(item: MediaItem) {
+  return String(item.title || item.file_name || 'Untitled media').replace(/\.img$/i, '')
+}
 
 export default function MediaLibrary() {
   const input = useRef<HTMLInputElement>(null)
@@ -14,6 +32,9 @@ export default function MediaLibrary() {
   const [progress, setProgress] = useState('')
   const [notice, setNotice] = useState('')
   const [scheduleOpen, setScheduleOpen] = useState(false)
+  const [previewItem, setPreviewItem] = useState<MediaItem | null>(null)
+  const [previewLoading, setPreviewLoading] = useState<string | null>(null)
+  const [brokenCards, setBrokenCards] = useState<Set<string>>(() => new Set())
   const [setupRequired, setSetupRequired] = useState(false)
   const [imagePrompt, setImagePrompt] = useState('')
   const [startDate, setStartDate] = useState(() => new Date(Date.now() + 86400000).toISOString().slice(0, 10))
@@ -77,6 +98,17 @@ export default function MediaLibrary() {
       setNotice('Media deleted.')
     } catch (error) { setNotice(error instanceof Error ? error.message : 'Delete failed.') }
     finally { setBusy(false) }
+  }
+
+  const openPreview = async (item: MediaItem) => {
+    setPreviewLoading(item.id)
+    setNotice('')
+    try {
+      const result = await getMediaPreview(item.id)
+      setPreviewItem(result.item)
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Preview could not be opened.')
+    } finally { setPreviewLoading(null) }
   }
 
   const publishNow = async (item: MediaItem) => {
@@ -151,11 +183,11 @@ export default function MediaLibrary() {
 
     <section className="mt-6 rounded-2xl border border-violet-400/20 bg-violet-500/10 p-4 sm:p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-        <label className="min-w-0 flex-1 text-sm font-black text-white">Generate image with Alpha
-          <span className="mt-1 block text-xs font-semibold text-slate-400">Describe the scene. Alpha creates, verifies, and saves a private 1024×1024 image.</span>
+        <label className="min-w-0 flex-1 text-sm font-black text-white">Generate premium image with Alpha
+          <span className="mt-1 block text-xs font-semibold text-slate-400">Describe the scene. Alpha generates, verifies, and securely saves a private 1024×1024 premium image.</span>
           <input value={imagePrompt} onChange={event => setImagePrompt(event.target.value)} placeholder="e.g. thrift gown in Lagos, premium editorial photograph" className="field mt-3" disabled={busy || setupRequired}/>
         </label>
-        <button onClick={() => void generateImage()} disabled={busy || setupRequired || !imagePrompt.trim()} className="btn-alpha min-h-12 shrink-0 rounded-xl px-5 text-sm font-black disabled:opacity-50">{busy ? 'Alpha is creating…' : 'Generate image'}</button>
+        <button onClick={() => void generateImage()} disabled={busy || setupRequired || !imagePrompt.trim()} className="btn-alpha min-h-12 shrink-0 rounded-xl px-5 text-sm font-black disabled:opacity-50">{busy ? 'Alpha is creating…' : 'Generate premium image'}</button>
       </div>
       {busy && <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/5"><div className="skeleton h-full w-full"/></div>}
     </section>
@@ -177,11 +209,13 @@ export default function MediaLibrary() {
       items.length === 0 ? <section className="mt-7 rounded-2xl border border-violet-400/20 bg-blue-500/10 p-10 text-center"><FileVideo2 className="mx-auto text-slate-400"/><h2 className="mt-3 font-black">Your vault is ready</h2><p className="mt-1 text-sm font-semibold text-slate-400">Upload your first file to begin.</p></section> :
       <section className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{items.map(item => <article key={item.id} className="overflow-hidden rounded-2xl border border-violet-400/20 bg-violet-500/10 shadow-sm">
         <div className="relative grid aspect-video place-items-center bg-blue-500/10">
-          {item.file_type === 'image' && item.file_url ? <img src={item.file_url} alt="" className="h-full w-full object-cover"/> : item.file_url ? <video src={item.file_url} className="h-full w-full object-cover" preload="metadata"/> : item.file_type === 'video' ? <FileVideo2 className="text-slate-400"/> : <Image className="text-slate-400"/>}
+          {isImage(item) && item.file_url && !brokenCards.has(item.id) ? <img src={item.file_url} alt={displayName(item)} className="h-full w-full object-cover" onError={() => setBrokenCards(current => new Set(current).add(item.id))}/> : isVideo(item) && item.file_url && !brokenCards.has(item.id) ? <video src={item.file_url} className="h-full w-full object-cover" preload="metadata" onError={() => setBrokenCards(current => new Set(current).add(item.id))}/> : isVideo(item) ? <FileVideo2 className="text-slate-400"/> : <Image className="text-slate-400"/>}
           <span className={`absolute right-3 top-3 rounded-full border px-2.5 py-1 text-[10px] font-black uppercase ${item.status === 'published' ? 'border-emerald-200 bg-emerald-500/10 text-emerald-300' : item.status === 'scheduled' ? 'border-violet-200 bg-violet-500/10 text-violet-200' : 'border-violet-400/20 bg-violet-500/10 text-slate-400'}`}>{item.status}</span>
         </div>
-        <div className="p-4"><h2 className="truncate font-black">{item.title || item.file_name}</h2><p className="mt-1 text-xs font-semibold text-slate-400">{(item.file_size / 1048576).toFixed(1)}MB {item.scheduled_for ? `· ${new Date(item.scheduled_for).toLocaleString()}` : ''}</p><div className="mt-4 flex flex-wrap gap-2">{item.file_url && <a href={item.file_url} target="_blank" rel="noreferrer" className="action bg-violet-500/10 text-slate-400"><Play size={15}/>Preview</a>}{item.file_type === 'video' && ['ready', 'failed'].includes(item.status) && <button onClick={() => void publishNow(item)} disabled={busy} className="action bg-[#6D28D9] text-white"><UploadCloud size={15}/>Publish now</button>}<button onClick={() => void remove(item)} disabled={busy} className="action bg-violet-500/10 text-rose-300"><Trash2 size={15}/>Delete</button></div></div>
+        <div className="p-4"><h2 className="truncate font-black">{displayName(item)}</h2><p className="mt-1 text-xs font-semibold text-slate-400">{(item.file_size / 1048576).toFixed(1)}MB {item.scheduled_for ? `· ${new Date(item.scheduled_for).toLocaleString()}` : ''}</p><div className="mt-4 flex flex-wrap gap-2"><button onClick={() => void openPreview(item)} disabled={previewLoading === item.id} className="action bg-violet-500/10 text-slate-300">{previewLoading === item.id ? <LoaderCircle className="animate-spin" size={15}/> : <Play size={15}/>}Preview</button>{isVideo(item) && ['ready', 'failed'].includes(item.status) && <button onClick={() => void publishNow(item)} disabled={busy} className="action bg-[#6D28D9] text-white"><UploadCloud size={15}/>Publish now</button>}<button onClick={() => void remove(item)} disabled={busy} className="action bg-violet-500/10 text-rose-300"><Trash2 size={15}/>Delete</button></div></div>
       </article>)}</section>}
+
+    {previewItem && <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/80 p-4" onClick={() => setPreviewItem(null)}><section className="w-full max-w-4xl overflow-hidden rounded-3xl border border-violet-300/20 bg-[#0A0F1E] shadow-2xl" onClick={event => event.stopPropagation()}><header className="flex items-center justify-between gap-3 border-b border-violet-300/15 p-4"><div className="min-w-0"><h2 className="truncate font-black">{displayName(previewItem)}</h2><p className="mt-1 text-xs text-slate-400">Secure private preview · expires in 1 hour</p></div><button onClick={() => setPreviewItem(null)} aria-label="Close preview" className="grid size-10 shrink-0 place-items-center rounded-full bg-white/5"><X size={18}/></button></header><div className="grid max-h-[75dvh] min-h-64 place-items-center bg-black/20 p-3">{isImage(previewItem) && previewItem.file_url ? <img src={previewItem.file_url} alt={displayName(previewItem)} className="max-h-[70dvh] max-w-full rounded-xl object-contain"/> : isVideo(previewItem) && previewItem.file_url ? <video src={previewItem.file_url} controls autoPlay className="max-h-[70dvh] max-w-full rounded-xl"/> : <div className="text-center text-slate-400"><FileVideo2 className="mx-auto" size={38}/><p className="mt-3 font-bold">This file has no browser preview.</p></div>}</div></section></div>}
 
     {scheduleOpen && <div className="fixed inset-0 z-50 grid place-items-end bg-slate-950/35 sm:place-items-center" onClick={() => setScheduleOpen(false)}><section className="w-full rounded-t-3xl bg-violet-500/10 p-6 text-white shadow-2xl sm:max-w-md sm:rounded-3xl" onClick={event => event.stopPropagation()}><div className="flex items-center justify-between"><div><h2 className="text-xl font-black">Daily YouTube queue</h2><p className="mt-1 text-sm font-semibold text-slate-400">One ready video per day · Africa/Lagos</p></div><button onClick={() => setScheduleOpen(false)} className="grid size-10 place-items-center rounded-full bg-blue-500/10"><X size={18}/></button></div><div className="mt-6 grid gap-4"><label className="text-sm font-bold">Start date<input type="date" value={startDate} min={new Date().toISOString().slice(0,10)} onChange={event => setStartDate(event.target.value)} className="mt-1 h-12 w-full rounded-xl border border-violet-400/20 px-3 text-white"/></label><label className="text-sm font-bold">Time<input type="time" value={time} onChange={event => setTime(event.target.value)} className="mt-1 h-12 w-full rounded-xl border border-violet-400/20 px-3 text-white"/></label><div className="rounded-xl border border-emerald-200 bg-emerald-500/10 p-3 text-xs font-bold text-emerald-300"><CheckCircle2 className="mr-1 inline" size={15}/>No credits are charged while scheduling. Each confirmed publication costs one credit.</div><button onClick={() => void scheduleReady()} disabled={busy} className="min-h-12 rounded-xl bg-[#6D28D9] px-5 font-black text-white disabled:opacity-50">{busy ? 'Scheduling…' : 'Confirm queue'}</button></div></section></div>}
   </main>

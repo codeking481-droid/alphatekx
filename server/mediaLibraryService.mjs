@@ -45,6 +45,27 @@ export function isMissingMediaSchema(error) {
   return error?.code === 'DB_ERROR' && /media_library|schema cache|relation|does not exist/i.test(String(error?.message || ''))
 }
 
+function extensionForMime(mime) {
+  return {
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+    'video/mp4': 'mp4',
+    'video/webm': 'webm',
+    'video/quicktime': 'mov',
+  }[mime] || ''
+}
+
+export function nameForMime(value, mime) {
+  const name = safeName(value)
+  const expected = extensionForMime(mime)
+  if (!expected) return name
+  const current = name.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase() || ''
+  const aliases = mime === 'image/jpeg' ? new Set(['jpg', 'jpeg']) : new Set([expected])
+  if (aliases.has(current)) return name
+  return `${name.replace(/\.[^.]+$/, '') || 'upload'}.${expected}`
+}
+
 async function ensureBucket(config) {
   const current = await fetch(`${config.url}/storage/v1/bucket/${BUCKET}`, {
     headers: headers(config.service),
@@ -101,7 +122,12 @@ async function signedUrl(config, storagePath, expiresIn = 3600) {
   })
   const payload = await responseJson(response)
   const signed = payload?.signedURL || payload?.signedUrl
-  return signed ? new URL(signed, config.url).toString() : null
+  if (!signed) return null
+  if (/^https?:\/\//i.test(signed)) return signed
+  const path = String(signed).startsWith('/storage/v1/')
+    ? String(signed)
+    : `/storage/v1/${String(signed).replace(/^\/+/, '')}`
+  return new URL(path, config.url).toString()
 }
 
 async function decorateRows(config, rows) {
@@ -142,7 +168,7 @@ export async function uploadMedia(config, user, req) {
     error.code = 'INVALID_MEDIA'
     throw error
   }
-  const originalName = safeName(req.headers['x-file-name'])
+  const originalName = nameForMime(req.headers['x-file-name'], mime)
   const storagePath = `${user.id}/uploads/${Date.now()}-${randomUUID()}-${originalName}`
   const uploaded = await fetch(`${config.url}/storage/v1/object/${BUCKET}/${storagePath}`, {
     method: 'POST',
@@ -419,6 +445,19 @@ export async function refreshMediaUrl(config, user, storagePath, expiresIn = 360
   assertConfig(config)
   if (!String(storagePath || '').startsWith(`${user.id}/`)) throw new Error('Media ownership could not be verified.')
   return signedUrl(config, storagePath, expiresIn)
+}
+
+export async function previewMedia(config, user, id, expiresIn = 3600) {
+  assertConfig(config)
+  const response = await fetch(
+    `${config.url}/rest/v1/media_library?id=eq.${encodeURIComponent(id)}&user_id=eq.${encodeURIComponent(user.id)}&select=*&limit=1`,
+    { headers: headers(config.service) },
+  )
+  const item = (await responseJson(response))?.[0]
+  if (!item) throw new Error('Media item was not found.')
+  const previewUrl = await signedUrl(config, item.storage_path, expiresIn)
+  if (!previewUrl) throw new Error('Alpha could not create a secure preview URL.')
+  return { item: { ...item, file_url: previewUrl }, previewUrl, expiresIn }
 }
 
 async function patchQueueItem(config, id, patch, query = '') {

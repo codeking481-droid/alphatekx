@@ -6810,6 +6810,18 @@ const server = http.createServer(async (req, res) => {
       return json(res, status, { error: error instanceof Error ? error.message : 'Video publication failed.', code, charged: false })
     }
   }
+  if (/^\/api\/media\/[0-9a-f-]+\/preview$/i.test(req.url || '') && req.method === 'GET') {
+    try {
+      const config = supabaseConfig()
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      if (!user) return json(res, 401, { error: 'Authentication required' })
+      const id = String(req.url).split('/').at(-2)
+      return json(res, 200, await mediaLibrary.previewMedia(config, user, id, 3600))
+    } catch (error) {
+      const code = error?.code || 'MEDIA_PREVIEW_FAILED'
+      return json(res, code === 'DB_ERROR' ? 503 : 404, { error: error instanceof Error ? error.message : 'Preview could not be opened.', code })
+    }
+  }
   if (req.url === '/api/connected-apps' && req.method === 'GET') {
     try {
       const config = supabaseConfig()
