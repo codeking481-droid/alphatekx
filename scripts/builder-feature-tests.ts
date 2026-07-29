@@ -268,13 +268,13 @@ await test('Builder V3 has responsive device previews and durable version histor
   assert(service.includes('nextVersions') && sql.includes('versions jsonb'), 'version persistence is missing')
 })
 
-await test('Builder V3 uses Groq, authenticated Hugging Face and self-hosted inference before local fallback', () => {
+await test('Builder V3 uses AlphaTekX Coder, Groq and local fallback in order', () => {
   const server = readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
-  const groq = server.indexOf('https://api.groq.com/openai/v1/chat/completions')
-  const huggingFace = server.indexOf('https://router.huggingface.co/v1/chat/completions')
-  const selfHosted = server.indexOf("const selfHostedUrl = String(process.env.SELF_HOSTED_URL")
-  const local = server.indexOf("provider: 'alpha-fallback'")
-  assert(groq > 0 && huggingFace > groq && selfHosted > huggingFace && local > selfHosted, 'Builder provider order is incorrect')
+  const builder = server.slice(server.indexOf('async function freeBuilderCompletion'), server.indexOf('async function generateEliteRevision'))
+  const coder = builder.indexOf('return await alphatekxCoderCompletion(messages)')
+  const groq = builder.indexOf('https://api.groq.com/openai/v1/chat/completions')
+  const local = builder.indexOf("provider: 'alpha-fallback'")
+  assert(coder > 0 && groq > coder && local > groq, 'Builder provider order is incorrect')
   assert(server.includes('verifiedBuilderCompletion'), 'hosted output is not verified before preview')
   assert(!server.includes('pollinationsBuilderCompletion'), 'paid Pollinations text generation remains in the Builder path')
 })
@@ -284,12 +284,23 @@ await test('Builder V3 has no browser-side user-pays AI fallback', () => {
   assert(!ui.includes('https://js.puter.com/v2/') && !ui.includes('puter.ai.chat'), 'user-pays Puter code remains')
 })
 
-await test('Builder Hugging Face and self-hosted routes are authenticated and bounded', () => {
+await test('Builder uses the deployed Gradio queue contract with a bounded response time', () => {
   const server = readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
-  assert(server.includes("const huggingFaceToken = firstKey('HF_TOKEN')"), 'Hugging Face token gate is missing')
-  assert(server.includes("Authorization: `Bearer ${huggingFaceToken}`"), 'Hugging Face authorization is missing')
-  assert(server.includes("SELF_HOSTED_URL must use HTTPS."), 'self-hosted URL validation is missing')
-  assert(server.includes("const selfHostedToken = firstKey('SELF_HOSTED_TOKEN')"), 'optional self-hosted authentication is missing')
+  assert(server.includes('/gradio_api/call/generate'), 'Gradio call endpoint is missing')
+  assert(server.includes("headers: { Accept: 'text/event-stream' }"), 'Gradio event stream is not consumed')
+  assert(server.includes("find(message => message.role === 'user')"), 'Builder sends redundant system prompts to the Space')
+  assert(server.includes('body: JSON.stringify({ data: [prompt] })'), 'Builder does not match the live one-input Gradio contract')
+  assert(server.includes('12_000 - (Date.now() - started)'), 'AlphaTekX Coder request is not bounded')
+  assert(server.includes('}, 6_000)'), 'Groq recovery is not bounded within the Builder response budget')
+  assert(server.includes('parseGradioCompletion(events)'), 'Gradio completion parser is missing')
+  assert(server.includes('extractAppComponent(content ||'), 'provider prose is not removed before validation')
+})
+
+await test('production runtime repair covers observed integration and media schema failures', () => {
+  const migration = readFileSync(new URL('../supabase/production-runtime-repair.sql', import.meta.url), 'utf8')
+  assert(migration.includes('create table if not exists public.user_integrations'), 'integration vault repair is missing')
+  assert(migration.includes('add column if not exists scheduled_for timestamptz'), 'scheduled media repair is missing')
+  assert(migration.includes("notify pgrst, 'reload schema'"), 'PostgREST schema reload is missing')
 })
 
 await test('Builder image guidance and local commerce fallback use resilient Pollinations images', () => {

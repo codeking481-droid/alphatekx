@@ -187,6 +187,12 @@ export function validateBuilderCode(value) {
     errors.push("The generated application attempted to mount itself.");
   if (/(?<!React\.)\b(?:useState|useEffect|useMemo|useReducer|useRef|useCallback|useContext)\s*\(/.test(code))
     errors.push("The generated application used an unavailable bare React hook.");
+  for (const collection of ["products", "items", "features"]) {
+    const used = new RegExp(`(?<![.\\w])${collection}\\s*\\.(?:map|filter|reduce|find)\\s*\\(`).test(code);
+    const declared = new RegExp(`\\b(?:const|let|var)\\s+${collection}\\b`).test(code);
+    if (used && !declared)
+      errors.push(`The generated application referenced undeclared ${collection} data.`);
+  }
   return { code, errors };
 }
 

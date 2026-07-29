@@ -80,7 +80,7 @@ const templates = [
 
 type Tab = "preview" | "code" | "deploy" | "versions";
 const BUILD_STAGES = [
-  "Understanding your product",
+  "Connecting to AlphaTekX Coder",
   "Designing the application structure",
   "Applying the visual system",
   "Testing interactions",
