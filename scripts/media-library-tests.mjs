@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import { generateAdvancedImagePrompt, pollinationsImageUrl } from '../server/mediaLibraryService.mjs'
+import { generateAdvancedImagePrompt, nameForMime, pollinationsImageUrl } from '../server/mediaLibraryService.mjs'
 
 const server = fs.readFileSync('server.mjs', 'utf8')
 const service = fs.readFileSync('server/mediaLibraryService.mjs', 'utf8')
@@ -16,6 +16,16 @@ const tests = [
   ['scheduler claim is persisted', migration.includes('execution_key') && migration.includes('claimed_at') && service.includes("status: 'processing'")],
   ['upload uses key-safe service role and authenticated ownership', service.includes('supabaseServiceHeaders(service, extra)') && service.includes('user.id}/uploads')],
   ['upload is streamed instead of JSON/base64', service.includes("body: req") && service.includes("duplex: 'half'")],
+  ['misleading img extension is corrected from verified MIME type', nameForMime('AI Microphone.img', 'image/png') === 'AI-Microphone.png'],
+  [
+    'private signed URLs include the Supabase storage gateway',
+    service.includes("startsWith('/storage/v1/')")
+      && service.includes('/storage/v1/')
+      && service.includes('new URL(path, config.url)'),
+  ],
+  ['preview requests mint a fresh owner-scoped signed URL', service.includes('export async function previewMedia') && server.includes('/preview$/i') && client.includes('/preview')],
+  ['media preview opens in an in-page modal with MIME-safe rendering', page.includes('previewItem') && page.includes('isImage(item)') && page.includes('isVideo(item)') && page.includes('Secure private preview')],
+  ['premium image generation remains available in the Media Library', page.includes('Generate premium image with Alpha') && page.includes('createSmartImage')],
   ['provider confirmation drives publication', service.includes('provider_id: result.providerId') && service.includes("status: 'published'")],
   ['Publish Now uses the same confirmed provider execution path', service.includes('export async function publishMediaNow') && page.includes('Publish now') && server.includes('/publish$/i')],
   ['missing provider ID cannot become success', service.includes('YouTube did not return a confirmed video ID. No credit was charged.')],
