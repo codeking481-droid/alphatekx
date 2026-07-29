@@ -16,6 +16,7 @@ import { buildCapabilityPlan, detectCapability, isSupportedAction } from './serv
 import { createContentMemoryRecord } from './server/automation/contentMemory.mjs'
 import { validateFreeCampaign } from './server/automation/freePlanPolicy.mjs'
 import { createConversationEngine } from './server/alpha/conversationEngine.mjs'
+import { ALPHATEKX_BRAIN } from './server/alpha/brainKnowledge.mjs'
 import * as providerHealth from './server/alpha/providerHealth.mjs'
 import * as billing from './server/billing.mjs'
 import { normalizeLinkedInScopes, publishLinkedInTextPost } from './server/linkedin.mjs'
@@ -24,6 +25,7 @@ import { connectorFeatureAccess, featureStatusForUser, refreshFeatureConfig, una
 import * as alphaConnector from './server/composioConnectorService.mjs'
 import * as mediaLibrary from './server/mediaLibraryService.mjs'
 import * as moneyLoop from './server/moneyLoopService.mjs'
+import { claimPendingAction, createPendingAction, finishPendingAction, listPendingActions } from './server/ceoPendingActions.mjs'
 import { scheduledCreditCost } from './server/schedulePricing.mjs'
 
 function loadEnv() {
@@ -51,6 +53,7 @@ const integrationsFile = path.resolve(dataDir, 'integrations.json')
 const agentsFile = path.resolve(dataDir, 'agents.json')
 const agentExecutionsFile = path.resolve(dataDir, 'agent-executions.json')
 const agentLogsFile = path.resolve(dataDir, 'agent-logs.json')
+const ceoPendingActionsFile = path.resolve(dataDir, 'ceo-pending-actions.json')
 try { fs.mkdirSync(deploymentsDir, { recursive: true }) } catch {}
 try { fs.mkdirSync(previewsDir, { recursive: true }) } catch {}
 try { fs.mkdirSync(dataDir, { recursive: true }) } catch {}
@@ -425,7 +428,7 @@ Modules should cover the core screens the user needs (4-8 modules). Use short ke
 async function callLLMJSON(systemPrompt, userPrompt) {
   const order = getProviderOrder().filter((name) => getProviderKey(name) && providerHealth.canAttempt(name))
   if (order.length === 0) throw new Error('No AI provider configured or all providers are temporarily unavailable. Add OPENAI_API_KEY, GROQ_API_KEY, QWEN_API_KEY, KIMI_API_KEY, MINIMAX_API_KEY, or FLATKEY_API_KEY.')
-  const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }]
+  const messages = [{ role: 'system', content: `${ALPHATEKX_BRAIN}\n\nTask instructions:\n${systemPrompt}` }, { role: 'user', content: userPrompt }]
   let lastError = null
   for (const name of order) {
     try {
@@ -499,7 +502,7 @@ function fallbackConversationResponse(user, input, error) {
 async function callLLMForRole(role, systemPrompt, userPrompt, { jsonMode = true, maxTokens = 0, fallbackOrder = null } = {}) {
   const order = getRoleProviderOrder(role, fallbackOrder)
   if (order.length === 0) throw new Error('No AI provider configured or all providers are temporarily unavailable. Add OPENAI_API_KEY, GROQ_API_KEY, QWEN_API_KEY, KIMI_API_KEY, MINIMAX_API_KEY, or FLATKEY_API_KEY.')
-  const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }]
+  const messages = [{ role: 'system', content: `${ALPHATEKX_BRAIN}\n\nTask instructions:\n${systemPrompt}` }, { role: 'user', content: userPrompt }]
   let lastError = null
   for (const name of order) {
     try {
@@ -5213,6 +5216,47 @@ async function sendWhatsAppMessage(userId, params) {
   return { messages: [{ id: sent.providerMessageId }] }
 }
 
+async function githubCreatePullRequest(userId, params) {
+  const token = await githubToken(userId)
+  const repo = String(params.repo || '')
+  const files = Array.isArray(params.files) ? params.files : []
+  const title = String(params.title || 'AlphaTekx code change').slice(0, 200)
+  if (!repo) throw new Error('GitHub pull request requires repo (owner/repo)')
+  if (!files.length || files.some(file => !file?.path || typeof file.content !== 'string')) throw new Error('GitHub pull request requires reviewed file paths and complete contents')
+  const api = `https://api.github.com/repos/${encodeRepoPath(repo)}`
+  const request = async (url, init = {}) => {
+    const response = await fetch(url, { ...init, headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json', ...(init.headers || {}) } })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.message || `GitHub returned ${response.status}`)
+    return data
+  }
+  const repository = await request(api)
+  const base = String(params.base || repository.default_branch || 'main')
+  const baseRef = await request(`${api}/git/ref/heads/${encodeURIComponent(base)}`)
+  const suffix = randomUUID().slice(0, 8)
+  const branch = String(params.branch || `alpha/${title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'change'}-${suffix}`)
+  await request(`${api}/git/refs`, { method: 'POST', body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: baseRef.object.sha }) })
+  for (const file of files) {
+    const fileUrl = `${api}/contents/${String(file.path).split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(branch)}`
+    let existingSha = ''
+    try { existingSha = (await request(fileUrl)).sha || '' } catch (error) {
+      if (!/Not Found/i.test(String(error?.message || ''))) throw error
+    }
+    await request(fileUrl.replace(/\?ref=.*$/, ''), {
+      method: 'PUT',
+      body: JSON.stringify({
+        message: String(file.message || params.commitMessage || title),
+        content: Buffer.from(file.content, 'utf8').toString('base64'),
+        branch,
+        ...(existingSha ? { sha: existingSha } : {}),
+      }),
+    })
+  }
+  const pull = await request(`${api}/pulls`, { method: 'POST', body: JSON.stringify({ title, head: branch, base, body: String(params.body || 'Created by AlphaTekx after explicit approval.'), draft: params.draft !== false }) })
+  if (!pull.html_url || !pull.number) throw new Error('GitHub did not return a confirmed pull request')
+  return { id: String(pull.number), number: pull.number, url: pull.html_url, branch, base }
+}
+
 async function paystackSecret(userId) {
   return connectorCredential(userId, 'paystack', 'PAYSTACK_SECRET_KEY')
 }
@@ -5360,6 +5404,10 @@ async function executeConnectorAction(user, action) {
         if (action.action === 'summarize_commits') {
           const commitResult = await githubSummarizeCommits(user.id, params)
           result = { summary: commitResult.summary, commitCount: Array.isArray(commitResult.commits) ? commitResult.commits.length : 0 }
+        }
+        if (action.action === 'create_pull_request') {
+          const pull = await githubCreatePullRequest(user.id, params)
+          result = { id: pull.id, number: pull.number, url: pull.url, branch: pull.branch, base: pull.base }
         }
         break
       }
@@ -5515,6 +5563,50 @@ async function supabaseAddExecution(execution) {
   const res = await fetch(`${c.url}/rest/v1/agent_executions`, { method: 'POST', headers: serviceHeaders(c.service), body })
   if (!res.ok) throw new Error('Could not save execution to Supabase')
   return execution
+}
+
+async function scanCeoSignalsForUser(user) {
+  if (!user?.id) return []
+  const config = supabaseConfig()
+  const created = []
+  try {
+    const messages = await gmailReadUnreadMessages(user.id, { max: 10, q: 'is:unread in:inbox' })
+    if (messages.length) {
+      const sourceIds = messages.map(message => message.id).filter(Boolean).sort()
+      created.push(await createPendingAction(config, ceoPendingActionsFile, {
+        userId: user.id,
+        type: 'unread_email',
+        title: `${messages.length} unread email${messages.length === 1 ? '' : 's'} need attention`,
+        data: { messages: messages.map(message => ({ id: message.id, from: message.from, subject: message.subject })) },
+        suggestedAction: 'Review these emails and approve a reply before Alpha sends anything.',
+        actions: [],
+        sourceKey: `gmail:${createHash('sha256').update(sourceIds.join('|')).digest('hex').slice(0, 24)}`,
+      }))
+    }
+  } catch (error) {
+    process.stdout.write(`[ceo-watcher] Gmail scan skipped for ${user.id}: ${error instanceof Error ? error.message : error}\n`)
+  }
+  const spreadsheetId = String(process.env.CEO_ORDERS_SPREADSHEET_ID || '').trim()
+  if (spreadsheetId) {
+    try {
+      const rows = await googleSheetsReadRows(user.id, { spreadsheetId, range: process.env.CEO_ORDERS_RANGE || 'Sheet1!A:Z' })
+      const values = Array.isArray(rows.values) ? rows.values : []
+      if (values.length > 1) {
+        created.push(await createPendingAction(config, ceoPendingActionsFile, {
+          userId: user.id,
+          type: 'new_orders',
+          title: `${values.length - 1} order row${values.length === 2 ? '' : 's'} detected in Sheets`,
+          data: { spreadsheetId, rowCount: values.length - 1 },
+          suggestedAction: 'Review the detected orders and choose the customers Alpha should email or message.',
+          actions: [],
+          sourceKey: `sheets:${spreadsheetId}:${values.length}`,
+        }))
+      }
+    } catch (error) {
+      process.stdout.write(`[ceo-watcher] Sheets scan skipped for ${user.id}: ${error instanceof Error ? error.message : error}\n`)
+    }
+  }
+  return created
 }
 
 async function supabaseDeleteAgentExecutions(agentId) {
@@ -6395,6 +6487,72 @@ const server = http.createServer(async (req, res) => {
       req.alphaBody = body
       return await saveConnectorHandler(req, res)
     } catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : 'Could not save connector' }) }
+  }
+  if (req.method === 'GET' && req.url === '/api/ceo/pending') {
+    try {
+      const config = supabaseConfig()
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      if (!user) return json(res, 401, { error: 'Authentication required' })
+      return json(res, 200, { actions: await listPendingActions(config, ceoPendingActionsFile, user.id) })
+    } catch (error) { return json(res, 503, { error: error instanceof Error ? error.message : 'CEO Inbox could not load' }) }
+  }
+  if (req.method === 'POST' && req.url === '/api/ceo/events') {
+    try {
+      const config = supabaseConfig()
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      if (!user) return json(res, 401, { error: 'Authentication required' })
+      const body = await readBody(req)
+      const type = String(body.type || '')
+      if (!['new_orders', 'unread_email', 'discord_mention'].includes(type)) return json(res, 400, { error: 'Unsupported CEO signal type' })
+      const allowed = {
+        gmail: new Set(['send_email']),
+        whatsapp: new Set(['send_message', 'send_template']),
+        discord: new Set(['send_message']),
+      }
+      const actions = (Array.isArray(body.actions) ? body.actions : []).map(action => ({
+        provider: String(action.provider || ''),
+        action: String(action.action || ''),
+        params: action.params && typeof action.params === 'object' ? action.params : {},
+      })).filter(action => allowed[action.provider]?.has(action.action))
+      const pending = await createPendingAction(config, ceoPendingActionsFile, {
+        userId: user.id,
+        type,
+        title: String(body.title || (type === 'new_orders' ? 'New orders need attention' : type === 'unread_email' ? 'Unread customer email needs attention' : 'Discord mention needs attention')),
+        data: body.data || {},
+        suggestedAction: String(body.suggestedAction || 'Review this signal and approve the suggested response.'),
+        actions,
+        sourceKey: String(body.sourceKey || `${type}:${createHash('sha256').update(JSON.stringify(body.data || {})).digest('hex').slice(0, 24)}`),
+      })
+      return json(res, 201, { action: pending })
+    } catch (error) { return json(res, 503, { error: error instanceof Error ? error.message : 'CEO signal could not be saved' }) }
+  }
+  const ceoActionMatch = new URL(req.url || '/', 'http://localhost').pathname.match(/^\/api\/ceo\/actions\/([^/]+)\/(approve|reject)$/)
+  if (req.method === 'POST' && ceoActionMatch) {
+    const config = supabaseConfig()
+    const user = await currentOrLocalUser(req, config.url, config.anon)
+    if (!user) return json(res, 401, { error: 'Authentication required' })
+    const [, actionId, decision] = ceoActionMatch
+    try {
+      const claimed = await claimPendingAction(config, ceoPendingActionsFile, user.id, actionId)
+      if (decision === 'reject') {
+        const rejected = await finishPendingAction(config, ceoPendingActionsFile, user.id, actionId, 'rejected')
+        return json(res, 200, { action: rejected })
+      }
+      const results = []
+      for (let index = 0; index < claimed.actions.length; index += 1) {
+        const action = claimed.actions[index]
+        results.push(await alphaConnector.executeProviderAction(user, action.provider, action.action, {
+          ...(action.params || {}),
+          approvalId: claimed.id,
+          idempotencyKey: `ceo:${claimed.id}:${index}`,
+        }))
+      }
+      const approved = await finishPendingAction(config, ceoPendingActionsFile, user.id, actionId, 'approved', { result: { executions: results } })
+      return json(res, 200, { action: approved })
+    } catch (error) {
+      await finishPendingAction(config, ceoPendingActionsFile, user.id, actionId, 'failed', { error: error instanceof Error ? error.message : 'Execution failed' }).catch(() => {})
+      return json(res, 502, { error: error instanceof Error ? error.message : 'CEO action failed', charged: false })
+    }
   }
   if (req.method === 'POST' && req.url === '/api/auth/repair-oversized-session') {
     try { return await repairOversizedAuthSession(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Session repair failed' }) }
@@ -7342,6 +7500,11 @@ if (!process.env.VERCEL) {
       }
       process.stdout.write(`[predictions] generated for ${users.length} user(s)\n`)
     } catch (err) { process.stdout.write(`[predictions] cron error: ${err instanceof Error ? err.message : err}\n`) }
+  })
+  schedule('*/5 * * * *', async () => {
+    if (process.env.CEO_WATCHER_ENABLED !== 'true') return
+    const users = readJsonFile(usersFile, []).filter(user => user?.id)
+    for (const user of users) await scanCeoSignalsForUser(user)
   })
 
   if (process.env.KEEP_ALIVE !== 'false') {

@@ -1,5 +1,16 @@
 const CAPABILITIES = [
   {
+    id: 'github-pull-request',
+    name: 'Build a GitHub Change',
+    description: 'Prepare code on a new branch and open a pull request without merging it.',
+    supported: true,
+    requiredConnectors: ['github'],
+    patterns: [
+      /(?:build|add|fix|change|implement).*(?:code|github|repository|repo|pull request|\bpr\b)/i,
+      /(?:github|repository|repo).*(?:build|add|fix|change|implement)/i,
+    ],
+  },
+  {
     id: 'linkedin-post',
     name: 'Publish LinkedIn Post',
     description: 'Generate, review, schedule, and publish a text post to a connected LinkedIn personal profile.',
@@ -611,6 +622,31 @@ function buildFacebookPlan(prompt, user, extracted) {
   }
 }
 
+function buildGitHubPullRequestPlan(prompt) {
+  const repo = String(prompt).match(/(?:github\.com\/)?([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)/i)?.[1] || ''
+  const missing = []
+  if (!repo) missing.push({ field: 'repo', step: 'Repository', connector: 'github', reason: 'Which GitHub repository should I change? Use owner/repo.' })
+  missing.push({ field: 'files', step: 'Code changes', connector: 'github', reason: 'Describe the exact files and final contents Alpha should put in the pull request.' })
+  return {
+    id: null,
+    title: 'Create GitHub Pull Request',
+    name: 'Create GitHub Pull Request',
+    description: `Prepare the requested code change${repo ? ` in ${repo}` : ''}, push a branch, and open an unmerged pull request.`,
+    originalRequest: prompt,
+    interpretedGoal: 'Create a reviewable GitHub pull request and ask separately before any merge.',
+    trigger: { type: 'manual', cron: '', nextRun: null },
+    actions: [{ connector: 'github', action: 'create_pull_request', label: 'Create branch, commit files, and open pull request', requiresApproval: true, approvalStatus: 'pending', params: { repo, title: prompt.slice(0, 100), files: [] } }],
+    status: 'awaiting_information',
+    approved: false,
+    missing,
+    creditsNeeded: 1,
+    creditsPerRun: 1,
+    creditsPerStep: [{ step: 'Create pull request', cost: 1, reason: 'Charge only after GitHub confirms a pull request URL' }],
+    approvalPolicy: 'explicit',
+    mergePolicy: 'separate_explicit_approval',
+  }
+}
+
 export function buildCapabilityPlan(prompt, user = null, options = {}) {
   const text = String(prompt || '')
   const capability = detectCapability(text)
@@ -627,6 +663,7 @@ export function buildCapabilityPlan(prompt, user = null, options = {}) {
   }
   if (!capability.supported) return unsupportedResponse(capability, prompt)
   switch (capability.id) {
+    case 'github-pull-request': return buildGitHubPullRequestPlan(prompt)
     case 'linkedin-post': return buildLinkedInPlan(prompt, user, extracted)
     case 'facebook-post': return buildFacebookPlan(prompt, user, extracted)
     case 'calendar-to-email': return buildCalendarToEmailPlan(prompt, user, extracted)
@@ -672,7 +709,7 @@ export const SUPPORTED_CONNECTOR_ACTIONS = {
   google_calendar: ['create_event', 'read_events', 'email_summary'],
   calendar: ['create_event', 'read_events', 'email_summary'],
   google_drive: ['upload_file'],
-  github: ['create_issue', 'summarize_commits'],
+  github: ['create_issue', 'summarize_commits', 'create_pull_request'],
   telegram: ['send_message', 'send_gmail_summary'],
   slack: ['send_message'],
   discord: ['send_message'],

@@ -21,6 +21,11 @@ export function calculateDaysUntilQuestion(message, now = new Date()) {
   const iso = text.match(/\b(\d{4})-(\d{2})-(\d{2})\b/)
   const named = text.match(/\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})(?:,?\s+(\d{4}))?\b/i)
   let target
+  if (/\bchristmas\b/i.test(text)) {
+    let year = now.getUTCFullYear()
+    target = new Date(Date.UTC(year, 11, 25))
+    if (startOfUtcDay(target) < startOfUtcDay(now)) target = new Date(Date.UTC(year + 1, 11, 25))
+  }
   if (iso) target = new Date(Date.UTC(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3])))
   if (named) {
     const month = MONTHS[named[1].toLowerCase()]

@@ -18,9 +18,15 @@ function test(name, fn) {
 const server = fs.readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
 const connectors = fs.readFileSync(new URL('../src/pages/Connectors.tsx', import.meta.url), 'utf8')
 const engine = fs.readFileSync(new URL('../server/alpha/conversationEngine.mjs', import.meta.url), 'utf8')
+const capabilityRegistry = fs.readFileSync(new URL('../server/automation/capabilityRegistry.mjs', import.meta.url), 'utf8')
+const ceoPage = fs.readFileSync(new URL('../src/pages/CeoInbox.tsx', import.meta.url), 'utf8')
 
 test('calculates days to a named date deterministically', () => {
   assert.equal(calculateDaysUntilQuestion('how many days to Dec 31', new Date('2026-07-29T12:00:00Z')), 'There are **155 days** until 31 December 2026.')
+})
+
+test('calculates days to Christmas without an LLM', () => {
+  assert.equal(calculateDaysUntilQuestion('how many days to Christmas', new Date('2026-07-29T12:00:00Z')), 'There are **149 days** until 25 December 2026.')
 })
 
 test('answers capture from permanent brain knowledge', () => {
@@ -68,4 +74,20 @@ test('LinkedIn and image matching remain in the established execution engine', (
   assert.match(engine, /imageStoragePath/)
 })
 
-console.log(`\n${passed}/10 super-computer agent checks passed`)
+test('CEO mode persists suggestions and requires an atomic approval claim', () => {
+  assert.match(server, /claimPendingAction/)
+  assert.match(server, /idempotencyKey: `ceo:/)
+  assert.match(server, /schedule\('\*\/5 \* \* \* \*'/)
+  assert.match(server, /CEO_WATCHER_ENABLED/)
+  assert.match(ceoPage, /Pending Approvals/)
+  assert.match(ceoPage, /Approve/)
+})
+
+test('builder mode creates an unmerged GitHub pull request only from reviewed files', () => {
+  assert.match(capabilityRegistry, /github-pull-request/)
+  assert.match(capabilityRegistry, /mergePolicy: 'separate_explicit_approval'/)
+  assert.match(server, /GitHub pull request requires reviewed file paths and complete contents/)
+  assert.match(server, /draft: params\.draft !== false/)
+})
+
+console.log(`\n${passed}/13 super-computer agent checks passed`)
