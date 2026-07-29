@@ -327,6 +327,54 @@ async function resolveProviderConfig(providerId) {
   return unavailable
 }
 
+async function validateProviderConfig(providerId) {
+  const def = PROVIDER_DEFS[providerId]
+  const configured = await resolveProviderConfig(providerId)
+  if (!def || !composioClient || !configured?.authConfigId) return configured
+
+  try {
+    const exact = await composioClient.authConfigs.get(configured.authConfigId)
+    const exactToolkit = String(exact?.toolkit?.slug || '').toLowerCase()
+    const validToolkit = !exactToolkit || (def.composioAppNames || [def.composioAppName]).includes(exactToolkit)
+    const enabled = String(exact?.status || 'ENABLED').toUpperCase() === 'ENABLED'
+    const managedMatches = def.authMode !== 'managed' || exact?.isComposioManaged !== false
+    if (validToolkit && enabled && managedMatches) return configured
+  } catch {
+    // The deployed API key may belong to a different Composio project. Discover
+    // the matching managed config in that project before rejecting the request.
+  }
+
+  for (const toolkit of def.composioAppNames || [def.composioAppName]) {
+    try {
+      const response = await composioClient.authConfigs.list({
+        toolkit,
+        showDisabled: false,
+        limit: 100,
+        ...(def.authMode === 'managed' ? { isComposioManaged: true } : {}),
+      })
+      const replacement = (response?.items || []).find(item =>
+        String(item?.status || '').toUpperCase() === 'ENABLED' &&
+        (def.authMode !== 'managed' || item?.isComposioManaged !== false)
+      )
+      if (replacement?.id) {
+        const discovered = {
+          authConfigId: replacement.id,
+          enabled: true,
+          configuredEnv: null,
+          discoveredFromComposio: true,
+          toolkit,
+        }
+        providerConfigs[providerId] = discovered
+        return discovered
+      }
+    } catch {
+      // Continue to the next compatible toolkit slug.
+    }
+  }
+
+  throw new Error(`${def.name} cannot use the deployed Composio project. Update COMPOSIO_API_KEY on Render so it belongs to the project containing ${configured.authConfigId}, then redeploy.`)
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -586,7 +634,7 @@ export async function startConnection(user, providerId, callbackUrl) {
   const def = PROVIDER_DEFS[pid]
   if (!def) throw new Error(`Unknown provider: ${providerId}`)
 
-  const config = await resolveProviderConfig(pid)
+  const config = await validateProviderConfig(pid)
   if (!config || !config.enabled || !config.authConfigId) {
     throw new Error(`${def.name} is not configured. ${config?.error || 'Contact support.'}`)
   }
@@ -594,16 +642,54 @@ export async function startConnection(user, providerId, callbackUrl) {
   if (!user || !user.id) throw new Error('Authentication required')
 
   const uid = composioUserId(user.id, user.email)
+  const activeAccounts = await listUserAccounts(user, config, ['ACTIVE']).catch(() => ({ items: [] }))
+  if (activeAccounts.items?.length) {
+    const existing = activeAccounts.items[0]
+    const completedUrl = new URL(callbackUrl || '/connected-apps', 'https://alphatekx.name.ng')
+    completedUrl.searchParams.set('connected', pid === 'twitter' ? 'x' : pid)
+    completedUrl.searchParams.set('provider', pid === 'twitter' ? 'x' : pid)
+    return {
+      authUrl: completedUrl.toString(),
+      provider: pid,
+      connectionId: existing.id,
+      alreadyConnected: true,
+    }
+  }
 
   // Use the current Composio SDK's connectedAccounts.link() for OAuth
-  const connectionRequest = await composioClient.connectedAccounts.link(
-    uid,
-    config.authConfigId,
-    {
-      callbackUrl: callbackUrl || undefined,
-      allowMultiple: false,
+  let connectionRequest
+  try {
+    connectionRequest = await composioClient.connectedAccounts.link(
+      uid,
+      config.authConfigId,
+      {
+        callbackUrl: callbackUrl || undefined,
+        allowMultiple: false,
+      }
+    )
+  } catch (error) {
+    const cause = error?.cause
+    const causeMessage = String(cause?.message || '')
+    const status = Number(cause?.status || error?.statusCode || 0)
+    console.error('[AlphaTekX] Composio link failed', {
+      provider: pid,
+      status: status || undefined,
+      code: error?.code || undefined,
+      reason: sanitizeError(causeMessage || error),
+    })
+    if (status === 401 || status === 403) {
+      throw new Error('AlphaTekx cannot access this Composio Auth Config. Update COMPOSIO_API_KEY on Render from the same Composio project, then redeploy.')
     }
-  )
+    if (status === 404 || /not found|does not exist/i.test(causeMessage)) {
+      throw new Error(`${def.name} Managed Auth Config is not available to the deployed Composio project.`)
+    }
+    if (/callback/i.test(causeMessage)) {
+      throw new Error(`${def.name} rejected the post-connection callback URL. Confirm https://alphatekx.name.ng is allowed in Composio.`)
+    }
+    throw new Error(causeMessage && !/api[-_]?key|secret|token/i.test(causeMessage)
+      ? `${def.name} connection could not start: ${causeMessage.slice(0, 160)}`
+      : `${def.name} connection could not start. Confirm the Render Composio API key and Managed Auth Config belong to the same project.`)
+  }
 
   if (!connectionRequest.redirectUrl) {
     throw new Error(`${def.name} could not generate an OAuth URL.`)
