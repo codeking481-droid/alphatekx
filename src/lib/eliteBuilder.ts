@@ -17,9 +17,38 @@ export type BuilderProject = {
 export const BUILDER_COST = 2
 export const BUILDER_SLUG = /^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])$/
 
+export function normalizeBuilderRuntimeCode(value: string) {
+  let code = String(value || '')
+  const iconBindings: string[] = []
+  const importPattern = /\bimport\s+([\s\S]*?)\s+from\s+(['"])([^'"]+)\2\s*;?/g
+  for (const match of code.matchAll(importPattern)) {
+    if (match[3] !== 'lucide-react') continue
+    const named = match[1].match(/\{([\s\S]*?)\}/)?.[1] || ''
+    for (const entry of named.split(',')) {
+      const parts = entry.trim().split(/\s+as\s+/i)
+      const binding = parts[1] || parts[0]
+      if (/^[A-Za-z_$][\w$]*$/.test(binding)) iconBindings.push(binding)
+    }
+  }
+  code = code
+    .replace(importPattern, '\n')
+    .replace(/\bimport\s+(['"])[^'"]+\1\s*;?/g, '\n')
+    .replace(/\bexport\s+default\s+function\s+App\b/, 'function App')
+    .replace(/\bexport\s+default\s+App\s*;?/g, '')
+    .replace(/(?<!React\.)\b(useState|useEffect|useMemo|useReducer|useRef|useCallback|useContext)\s*\(/g, 'React.$1(')
+    .trim()
+  if (iconBindings.length) {
+    const definitions = Array.from(new Set(iconBindings))
+      .map(name => `const ${name} = (props = {}) => React.createElement("span", { ...props, "aria-hidden": true });`)
+      .join('\n')
+    code = `${definitions}\n${code}`
+  }
+  return code
+}
+
 export function builderSrcDoc(code: string, title = 'AlphaTekX build', options: { slug?: string; selectMode?: boolean } = {}) {
   const safeTitle = title.replace(/[<>&"']/g, '')
-  const encodedCode = JSON.stringify(String(code || '')).replace(/</g, '\\u003c')
+  const encodedCode = JSON.stringify(normalizeBuilderRuntimeCode(code)).replace(/</g, '\\u003c')
   const slug = JSON.stringify(options.slug || 'preview')
   const selectMode = options.selectMode === true ? 'true' : 'false'
   return `<!doctype html>
