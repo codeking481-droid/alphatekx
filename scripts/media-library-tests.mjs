@@ -31,18 +31,22 @@ const tests = [
     const result = generateAdvancedImagePrompt('color blocking sales', 'thrift store promo Lagos', 'instagram')
     return result.keywords.length === 3 && result.advancedPrompt.includes('DSLR') && result.advancedPrompt.includes('8k') && result.negativePrompt.includes('cartoon') && result.negativePrompt.includes('watermark')
   })()],
-  ['Pollinations URL pins Flux quality controls without an API key', (() => {
+  ['Pollinations current URL pins Flux quality controls without exposing an API key', (() => {
     const url = new URL(pollinationsImageUrl('premium photo', 'cartoon', 'fixed-seed'))
-    return url.searchParams.get('model') === 'flux' && url.searchParams.get('enhance') === 'true' && url.searchParams.get('nologo') === 'true' && url.searchParams.get('seed') === 'fixed-seed'
+    return url.hostname === 'gen.pollinations.ai' && !url.searchParams.has('key') && url.searchParams.get('model') === 'flux' && url.searchParams.get('enhance') === 'true' && url.searchParams.get('nologo') === 'true' && url.searchParams.get('seed') === 'fixed-seed'
   })()],
-  ['Pollinations image generation remains free and keyless', (() => {
-    const url = new URL(pollinationsImageUrl('premium photo', 'cartoon', 'fixed-seed'))
-    return url.hostname === 'image.pollinations.ai' && !url.searchParams.has('key') && url.searchParams.get('model') === 'flux'
+  ['Pollinations authentication stays server-side and legacy fallback remains available', (() => {
+    const legacy = new URL(pollinationsImageUrl('premium photo', 'cartoon', 'fixed-seed', { legacy: true }))
+    return service.includes('POLLINATIONS_API_KEY') && service.includes('Authorization: `Bearer ${pollinationsKey}`') && legacy.hostname === 'image.pollinations.ai' && !legacy.searchParams.has('key')
   })()],
-  ['Pollinations fallback uses the public open image route', new URL(pollinationsImageUrl('premium photo', 'cartoon', 'fixed-seed', { backup: true })).pathname.startsWith('/p/')],
+  ['Pollinations fallback uses the verified public legacy image endpoint', (() => {
+    const backup = new URL(pollinationsImageUrl('premium photo', 'cartoon', 'fixed-seed', { backup: true }))
+    return backup.hostname === 'image.pollinations.ai' && backup.pathname.startsWith('/prompt/')
+  })()],
   ['Pollinations generation runs before optional stock-photo fallback', service.indexOf('const delays = [0, 2_000, 5_000]') < service.indexOf('process.env.PEXELS_API_KEY')],
   ['social planner automatically activates image matching for visual platforms', engine.includes("['facebook', 'instagram', 'x', 'twitter']") && engine.includes('automaticImagePlatforms')],
   ['generated images are persisted into the reusable private vault', service.includes("file_type: 'image'") && service.includes("status: 'ready'") && service.includes('image_cache')],
+  ['direct chat can display a verified public image when optional vault persistence fails', service.includes('options.allowEphemeral === true') && engine.includes('{ allowEphemeral: true }') && engine.includes("if (!image?.image_url)")],
   ['image fetch retries and rejects undersized provider output', service.includes('attempt < 3') && service.includes('50 * 1024')],
   ['scheduled posts refresh private image URLs before provider execution', service.includes('refreshMediaUrl') && server.includes('post.imageStoragePath') && server.includes('IMAGE_REFRESH_FAILED')],
   ['campaign review shows the matched image before approval', preview.includes('post.imageUrl') && preview.includes('Matched automatically by Alpha')],

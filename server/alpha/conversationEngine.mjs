@@ -436,13 +436,16 @@ export function createConversationEngine(deps) {
           prompt,
           prompt,
           'media_library',
+          { allowEphemeral: true },
         )
-        if (!image?.image_url || !image?.image_storage_path) throw new Error('The image provider did not return a durable verified image.')
-        addMessage(conversation, 'alpha', `I created and saved this image for you.\n\n![Generated image](${image.image_url})`, {
+        if (!image?.image_url) throw new Error('The image provider did not return a verified image.')
+        const saved = Boolean(image.image_storage_path)
+        addMessage(conversation, 'alpha', `${saved ? 'I created and saved this image for you.' : 'I created this image for you.'}\n\n![Generated image](${image.image_url})`, {
           imageUrl: image.image_url,
-          imageStoragePath: image.image_storage_path,
+          imageStoragePath: image.image_storage_path || undefined,
           imagePrompt: image.image_prompt || prompt,
           imageSource: image.image_source || 'matchmaker',
+          persistenceWarning: image.persistence_warning || undefined,
         })
       } catch (error) {
         addMessage(conversation, 'alpha', `I couldn't create a verified image this time, so nothing was charged. ${error instanceof Error ? error.message : 'Please retry.'}`)

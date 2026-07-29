@@ -3506,7 +3506,7 @@ function getConversationEngine() {
     getServerAgent,
     getUserCredits: user => getUserCredits(user, supabaseConfig()),
     spendUserCredits,
-    getSmartImage: (user, content, objective, platform) => mediaLibrary.findSmartImage(supabaseConfig(), user, content, objective, platform),
+    getSmartImage: (user, content, objective, platform, options) => mediaLibrary.findSmartImage(supabaseConfig(), user, content, objective, platform, options),
     getIntegrationStatus: async (userId, provider, userEmail = '') => {
       if (['youtube', 'instagram', 'x', 'twitter', 'facebook', 'whatsapp'].includes(provider)) {
         const composioStatus = await alphaConnector.getConnectionStatus({ id: userId, email: userEmail }, provider).catch(() => null)
