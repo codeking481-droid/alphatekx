@@ -16,9 +16,11 @@ export type BuilderProject = {
 export const BUILDER_COST = 2
 export const BUILDER_SLUG = /^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])$/
 
-export function builderSrcDoc(code: string, title = 'AlphaTekX build') {
+export function builderSrcDoc(code: string, title = 'AlphaTekX build', options: { slug?: string; selectMode?: boolean } = {}) {
   const safeTitle = title.replace(/[<>&"']/g, '')
   const encodedCode = JSON.stringify(String(code || '')).replace(/</g, '\\u003c')
+  const slug = JSON.stringify(options.slug || 'preview')
+  const selectMode = options.selectMode === true ? 'true' : 'false'
   return `<!doctype html>
 <html>
 <head>
@@ -42,6 +44,17 @@ export function builderSrcDoc(code: string, title = 'AlphaTekX build') {
       parent.postMessage({source:'alphatekx-builder',type:'error',message:event.message || 'Preview failed'}, '*');
     });
     try {
+      window.ALPHA_APP_SLUG = ${slug};
+      window.AlphaAPI = {
+        url: function(entity,id){ return '/api/apps/'+encodeURIComponent(window.ALPHA_APP_SLUG)+'/'+encodeURIComponent(entity)+(id?'/'+encodeURIComponent(id):''); },
+        get: async function(entity,id){ var response=await fetch(this.url(entity,id)); if(!response.ok) throw new Error('Data could not load'); return response.json(); },
+        post: async function(entity,data){ var response=await fetch(this.url(entity),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); if(!response.ok) throw new Error('Sign in is required to save data'); return response.json(); }
+      };
+      if (${selectMode}) document.addEventListener('click', function(event) {
+        event.preventDefault(); event.stopPropagation();
+        var element = event.target;
+        parent.postMessage({source:'alphatekx-builder',type:'element-clicked',tag:element.tagName,html:String(element.outerHTML||'').slice(0,500)}, '*');
+      }, true);
       var source = ${encodedCode};
       var compiled = Babel.transform(source + "\\n;ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));", {presets:['react']}).code;
       (0,eval)(compiled);
@@ -71,6 +84,18 @@ export async function listBuilds() {
 
 export async function deployBuild(id: string, slug: string) {
   return postJson<{ project: BuilderProject; publicUrl: string }>('/api/builder/deploy', { id, slug })
+}
+
+export async function editBuild(projectId: string, instruction: string) {
+  return postJson<{ project: BuilderProject; code: string; provider: string }>('/api/builder/edit', { projectId, instruction }, { timeoutMs: 180_000 })
+}
+
+export async function fixBuild(projectId: string, error: string) {
+  return postJson<{ project: BuilderProject; code: string; provider: string }>('/api/builder/fix', { projectId, error }, { timeoutMs: 180_000 })
+}
+
+export async function requestBuilderDomain(projectId: string, domain: string) {
+  return postJson<{ project: BuilderProject; domain: string; verification: { type: string; name: string; value: string } }>('/api/builder/domain', { projectId, domain })
 }
 
 export async function getPublicBuild(slug: string) {

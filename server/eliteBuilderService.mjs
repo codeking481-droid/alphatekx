@@ -63,6 +63,35 @@ export async function findProjectByRequest(config, user, requestId) {
   return rows?.[0] || null
 }
 
+export async function getOwnerProject(config, user, id) {
+  const rows = await request(config, `builder_projects?id=eq.${encodeURIComponent(id)}&user_id=eq.${encodeURIComponent(user.id)}&select=*&limit=1`)
+  return rows?.[0] || null
+}
+
+export async function updateProjectCode(config, user, id, code, provider) {
+  const rows = await request(config, `builder_projects?id=eq.${encodeURIComponent(id)}&user_id=eq.${encodeURIComponent(user.id)}`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({ code, provider, updated_at: new Date().toISOString() }),
+  })
+  if (!rows?.length) throw Object.assign(new Error('This build could not be found in your account.'), { status: 404 })
+  return rows[0]
+}
+
+export async function requestCustomDomain(config, user, id, domain, token) {
+  const normalized = String(domain || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '')
+  if (!/^(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(normalized)) {
+    throw Object.assign(new Error('Enter a valid domain such as app.example.com.'), { status: 400 })
+  }
+  const rows = await request(config, `builder_projects?id=eq.${encodeURIComponent(id)}&user_id=eq.${encodeURIComponent(user.id)}`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({ custom_domain: normalized, domain_status: 'pending_dns', domain_verification_token: token, updated_at: new Date().toISOString() }),
+  })
+  if (!rows?.length) throw Object.assign(new Error('This build could not be found.'), { status: 404 })
+  return { project: rows[0], domain: normalized, verification: { type: 'TXT', name: `_alphatekx.${normalized}`, value: token } }
+}
+
 export async function saveGeneratedProject(config, user, input) {
   const id = input.id || randomUUID()
   const record = {

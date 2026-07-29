@@ -13,6 +13,9 @@ create table if not exists public.builder_projects (
   charged boolean not null default false,
   public_url text,
   published boolean not null default false,
+  custom_domain text unique,
+  domain_status text not null default 'none',
+  domain_verification_token text,
   views integer not null default 0 check (views >= 0),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -25,6 +28,9 @@ alter table public.builder_projects add column if not exists provider text;
 alter table public.builder_projects add column if not exists request_id text;
 alter table public.builder_projects add column if not exists charged boolean not null default false;
 alter table public.builder_projects add column if not exists published boolean not null default false;
+alter table public.builder_projects add column if not exists custom_domain text;
+alter table public.builder_projects add column if not exists domain_status text not null default 'none';
+alter table public.builder_projects add column if not exists domain_verification_token text;
 alter table public.builder_projects add column if not exists updated_at timestamptz not null default now();
 
 create unique index if not exists idx_builder_projects_user_request
@@ -58,3 +64,15 @@ create policy "Builder owners can delete projects"
 
 revoke all on public.builder_projects from anon;
 grant select, insert, update, delete on public.builder_projects to authenticated;
+
+create table if not exists public.app_entities (
+  id uuid primary key default gen_random_uuid(),
+  app_slug text not null,
+  entity text not null,
+  data jsonb not null default '{}'::jsonb,
+  owner_id uuid,
+  owner_email text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+create index if not exists idx_app_entities_app_entity on public.app_entities(app_slug, entity);
