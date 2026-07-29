@@ -4479,6 +4479,37 @@ async function getUserIntegration(userId, provider, config) {
         }
       }
     } catch (err) { process.stdout.write(`[get integration] connected_accounts lookup failed: ${err instanceof Error ? err.message : err}\n`) }
+    // Production installations created before connected_accounts use the
+    // existing encrypted user_integrations vault. Keep reading it so OAuth
+    // connections remain durable while deployments migrate independently.
+    try {
+      const response = await fetch(`${config.url}/rest/v1/user_integrations?user_id=eq.${encodeURIComponent(userId)}&provider=eq.${encodeURIComponent(provider)}&select=*`, { headers: serviceHeaders(config.service) })
+      if (response.ok) {
+        const rows = await response.json()
+        const row = rows?.[0]
+        if (row?.access_token) {
+          const key = encryptionKey(config)
+          const decrypted = decryptSecret(row.access_token, key)
+          let tokens
+          try { tokens = JSON.parse(decrypted) } catch { tokens = { access_token: decrypted } }
+          if (row.refresh_token && !tokens.refresh_token) tokens.refresh_token = decryptSecret(row.refresh_token, key)
+          if (row.expiry_date && !tokens.expiry) tokens.expiry = Number(row.expiry_date)
+          return {
+            id: row.id,
+            user_id: row.user_id,
+            provider,
+            email: row.email || null,
+            identifier: tokens.author_urn || tokens.authorUrn || row.email || null,
+            tokens,
+            scopes: row.scopes || [],
+            source: 'user_integrations',
+          }
+        }
+      } else {
+        const detail = await response.text().catch(() => '')
+        process.stdout.write(`[get integration] user_integrations lookup failed for ${provider}: HTTP ${response.status}${detail ? ` ${detail.slice(0, 240)}` : ''}\n`)
+      }
+    } catch (err) { process.stdout.write(`[get integration] user_integrations lookup failed: ${err instanceof Error ? err.message : err}\n`) }
     try {
       const fromAuth = await getAuthAppIntegration(userId, provider, config)
       if (fromAuth) return fromAuth
@@ -4497,8 +4528,40 @@ async function saveUserIntegration(userId, provider, data, config) {
     try {
       const response = await fetch(`${config.url}/rest/v1/connected_accounts?on_conflict=user_id,provider`, { method: 'POST', headers: { ...serviceHeaders(config.service), Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(remote) })
       if (response.ok) savedRemote = true
-      else process.stdout.write(`[save integration] connected_accounts save failed for ${provider}: HTTP ${response.status}\n`)
+      else {
+        const detail = await response.text().catch(() => '')
+        process.stdout.write(`[save integration] connected_accounts save failed for ${provider}: HTTP ${response.status}${detail ? ` ${detail.slice(0, 240)}` : ''}\n`)
+      }
     } catch (err) { process.stdout.write(`[save integration] connected_accounts save failed: ${err instanceof Error ? err.message : err}\n`) }
+    if (!savedRemote) {
+      // user_integrations is the original encrypted connector vault and is
+      // present in the baseline Supabase schema. Store the complete provider
+      // payload as authenticated ciphertext so author URNs and future token
+      // fields are preserved without exposing them to the browser.
+      try {
+        const tokens = data.tokens || {}
+        const legacy = {
+          user_id: userId,
+          provider,
+          access_token: encryptSecret(JSON.stringify(tokens), key),
+          refresh_token: tokens.refresh_token ? encryptSecret(String(tokens.refresh_token), key) : null,
+          expiry_date: tokens.expiry || tokens.expires_at || null,
+          email: record.email,
+          scopes: record.scopes,
+          updated_at: record.updated_at,
+        }
+        const response = await fetch(`${config.url}/rest/v1/user_integrations?on_conflict=user_id,provider`, {
+          method: 'POST',
+          headers: { ...serviceHeaders(config.service), Prefer: 'resolution=merge-duplicates,return=minimal' },
+          body: JSON.stringify(legacy),
+        })
+        if (response.ok) savedRemote = true
+        else {
+          const detail = await response.text().catch(() => '')
+          process.stdout.write(`[save integration] user_integrations save failed for ${provider}: HTTP ${response.status}${detail ? ` ${detail.slice(0, 240)}` : ''}\n`)
+        }
+      } catch (err) { process.stdout.write(`[save integration] user_integrations save failed: ${err instanceof Error ? err.message : err}\n`) }
+    }
   }
   if (!remoteRequired) setLocalIntegration(userId, provider, { ...record, tokens: data.tokens || {} })
   return { saved: savedRemote || !remoteRequired, durable: savedRemote || !remoteRequired }

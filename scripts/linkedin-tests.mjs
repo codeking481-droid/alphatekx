@@ -233,6 +233,9 @@ await test('OAuth callback requires durable, verified LinkedIn storage', async (
   assert.match(source, /if \(!saved\.durable\).*could not securely save/s)
   assert.match(source, /const verified = await getUserIntegration\(parsed\.userId, 'linkedin', config\)/)
   assert.match(source, /saved connection could not be verified/)
+  assert.match(source, /user_integrations is the original encrypted connector vault/)
+  assert.match(source, /access_token: encryptSecret\(JSON\.stringify\(tokens\), key\)/)
+  assert.match(source, /source: 'user_integrations'/)
 })
 
 await test('Approved campaign publishes once, charges once, persists history, and survives refresh', async () => {
