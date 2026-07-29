@@ -16,7 +16,7 @@ export type BuilderProject = {
   transient?: boolean
 }
 
-export const BUILDER_COST = 2
+export const BUILDER_COST = 0
 export const BUILDER_SLUG = /^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])$/
 
 export function cleanCodeForPreview(value: string) {

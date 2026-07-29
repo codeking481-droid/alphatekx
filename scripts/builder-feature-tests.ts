@@ -226,14 +226,14 @@ await test('Builder preview includes Tailwind once and catches runtime failures'
   assert(document.includes('React.createElement(App)'), 'preview does not mount the generated App')
 })
 
-await test('Builder API uses durable idempotency and charges only after persistence', () => {
+await test('Builder API uses durable idempotency without charging credits', () => {
   const server = readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
   const save = server.indexOf('saveGeneratedProject(config, user')
-  const spend = server.indexOf('billing.spendCredits(user, eliteBuilder.BUILDER_COST')
   const settle = server.indexOf('markProjectCharged(config, user')
   assert(server.includes('findProjectByRequest(config, user, requestId)'), 'durable request lookup is missing')
-  assert(save > 0 && spend > save && settle > spend, 'project persistence, charging, and settlement are in the wrong order')
-  assert(server.includes('idempotencyKey: `elite-builder:${requestId}`'), 'credit idempotency key is missing')
+  assert(save > 0 && settle > save, 'project persistence and settlement are in the wrong order')
+  assert(!server.includes('billing.spendCredits(user, eliteBuilder.BUILDER_COST'), 'free Builder still deducts credits')
+  assert(!server.includes('This build needs ${eliteBuilder.BUILDER_COST} credits'), 'free Builder still returns a credit 402')
 })
 
 await test('Builder migration is owner-scoped and does not expose source publicly', () => {
@@ -268,22 +268,28 @@ await test('Builder V3 has responsive device previews and durable version histor
   assert(service.includes('nextVersions') && sql.includes('versions jsonb'), 'version persistence is missing')
 })
 
-await test('Builder V3 uses the verified Groq, Gemini and OpenRouter chain before local fallback', () => {
+await test('Builder V3 uses Groq, authenticated Hugging Face and self-hosted inference before local fallback', () => {
   const server = readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
   const groq = server.indexOf('https://api.groq.com/openai/v1/chat/completions')
-  const gemini = server.indexOf('https://generativelanguage.googleapis.com/v1beta/models/')
-  const openRouter = server.indexOf('https://openrouter.ai/api/v1/chat/completions')
+  const huggingFace = server.indexOf('https://router.huggingface.co/v1/chat/completions')
+  const selfHosted = server.indexOf("const selfHostedUrl = String(process.env.SELF_HOSTED_URL")
   const local = server.indexOf("provider: 'alpha-fallback'")
-  assert(groq > 0 && gemini > groq && openRouter > gemini && local > openRouter, 'Builder provider order is incorrect')
+  assert(groq > 0 && huggingFace > groq && selfHosted > huggingFace && local > selfHosted, 'Builder provider order is incorrect')
   assert(server.includes('verifiedBuilderCompletion'), 'hosted output is not verified before preview')
   assert(!server.includes('pollinationsBuilderCompletion'), 'paid Pollinations text generation remains in the Builder path')
 })
 
-await test('Builder V3 offers an explicit browser-only Puter recovery option', () => {
+await test('Builder V3 has no browser-side user-pays AI fallback', () => {
   const ui = readFileSync(new URL('../src/pages/EliteBuilder.tsx', import.meta.url), 'utf8')
-  assert(ui.includes('https://js.puter.com/v2/') && ui.includes('puter.ai.chat'), 'Puter browser integration is missing')
-  assert(ui.includes('Build privately with Puter') && ui.includes('user-pays'), 'Puter consent and cost label are missing')
-  assert(ui.includes('cleanCodeForPreview(puterText(response))'), 'Puter output is not normalized before preview')
+  assert(!ui.includes('https://js.puter.com/v2/') && !ui.includes('puter.ai.chat'), 'user-pays Puter code remains')
+})
+
+await test('Builder Hugging Face and self-hosted routes are authenticated and bounded', () => {
+  const server = readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
+  assert(server.includes("const huggingFaceToken = firstKey('HF_TOKEN')"), 'Hugging Face token gate is missing')
+  assert(server.includes("Authorization: `Bearer ${huggingFaceToken}`"), 'Hugging Face authorization is missing')
+  assert(server.includes("SELF_HOSTED_URL must use HTTPS."), 'self-hosted URL validation is missing')
+  assert(server.includes("const selfHostedToken = firstKey('SELF_HOSTED_TOKEN')"), 'optional self-hosted authentication is missing')
 })
 
 await test('Builder image guidance and local commerce fallback use resilient Pollinations images', () => {

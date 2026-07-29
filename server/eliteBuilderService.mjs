@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { supabaseServiceHeaders } from "./supabaseHeaders.mjs";
 
-export const BUILDER_COST = 2;
+export const BUILDER_COST = 0;
 export const SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])$/;
 
 const missingTable = (message) =>
