@@ -6705,7 +6705,7 @@ async function alphatekxCoderCompletion(messages) {
     body: JSON.stringify({ data: [prompt] }),
   }, 4_000)
   if (!submission?.event_id) throw new Error('AlphaTekX Coder did not issue a generation job.')
-  const remaining = Math.max(1_000, 12_000 - (Date.now() - started))
+  const remaining = Math.max(1_000, 25_000 - (Date.now() - started))
   const events = await fetchText(`${base.origin}/gradio_api/call/generate/${encodeURIComponent(submission.event_id)}`, {
     headers: { ...authorizationHeaders, Accept: 'text/event-stream' },
   }, remaining)

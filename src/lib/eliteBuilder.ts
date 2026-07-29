@@ -43,6 +43,7 @@ export function cleanCodeForPreview(value: string) {
     .replace(/\bexport\s+default\s+(?=(?:function|class)\s+App\b)/g, '')
     .replace(/\bexport\s+default\s+(?=(?:const|let|var)\s+App\b)/g, '')
     .replace(/\bexport\s+(?=(?:const|let|var|function|class)\s+App\b)/g, '')
+    .replace(/\b(?:window|globalThis)\.localStorage\b/g, 'localStorage')
     .replace(/(?<!React\.)\b(useState|useEffect|useMemo|useReducer|useRef|useCallback|useContext)\s*\(/g, 'React.$1(')
     .trim()
   if (iconBindings.length) {
@@ -77,11 +78,40 @@ export function builderSrcDoc(code: string, title = 'AlphaTekX build', options: 
 <body>
   <div id="root"></div><pre id="builder-error"></pre>
   <script>
+    window.__alphaPreviewStorage = (function() {
+      var values = Object.create(null);
+      var storage = {
+        getItem: function(key) {
+          key = String(key);
+          return Object.prototype.hasOwnProperty.call(values, key) ? values[key] : null;
+        },
+        setItem: function(key, value) {
+          values[String(key)] = String(value);
+        },
+        removeItem: function(key) {
+          delete values[String(key)];
+        },
+        clear: function() {
+          values = Object.create(null);
+        },
+        key: function(index) {
+          return Object.keys(values)[Number(index)] || null;
+        }
+      };
+      Object.defineProperty(storage, 'length', {
+        get: function() { return Object.keys(values).length; }
+      });
+      return storage;
+    })();
     window.addEventListener('error', function(event) {
       var box = document.getElementById('builder-error');
       box.style.display = 'block';
       box.textContent = 'Preview could not render: ' + (event.message || 'Unknown runtime error');
       parent.postMessage({source:'alphatekx-builder',type:'error',message:event.message || 'Preview failed'}, '*');
+    });
+    window.addEventListener('unhandledrejection', function(event) {
+      var message = event.reason && event.reason.message ? event.reason.message : String(event.reason || 'Async preview error');
+      parent.postMessage({source:'alphatekx-builder',type:'error',message:message}, '*');
     });
     try {
       window.ALPHA_APP_SLUG = ${slug};
@@ -95,7 +125,7 @@ export function builderSrcDoc(code: string, title = 'AlphaTekX build', options: 
         var element = event.target;
         parent.postMessage({source:'alphatekx-builder',type:'element-clicked',tag:element.tagName,html:String(element.outerHTML||'').slice(0,500)}, '*');
       }, true);
-      var source = ${encodedCode};
+      var source = "const localStorage = window.__alphaPreviewStorage;\\n" + ${encodedCode};
       var compiled = Babel.transform(source + "\\n;ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));", {presets:['react']}).code;
       (0,eval)(compiled);
       parent.postMessage({source:'alphatekx-builder',type:'ready'}, '*');

@@ -224,6 +224,8 @@ await test('Builder preview includes Tailwind once and catches runtime failures'
   assert((document.match(/cdn\.tailwindcss\.com/g) || []).length === 2, 'Tailwind host should appear once in CSP and once as a script')
   assert(document.includes("window.addEventListener('error'"), 'preview error boundary is missing')
   assert(document.includes('React.createElement(App)'), 'preview does not mount the generated App')
+  assert(document.includes('window.__alphaPreviewStorage'), 'sandboxed preview storage runtime is missing')
+  assert(document.includes('const localStorage = window.__alphaPreviewStorage'), 'generated carts cannot use isolated preview storage')
 })
 
 await test('Builder API uses durable idempotency without charging credits', () => {
@@ -291,7 +293,7 @@ await test('Builder uses the deployed Gradio queue contract with a bounded respo
   assert(server.includes('body: JSON.stringify({ data: [prompt] })'), 'Builder does not match the live one-input Gradio contract')
   assert(server.includes("firstKey('HUGGINGFACE_TOKEN', 'HF_TOKEN')"), 'Builder cannot authenticate to the owner Space quota')
   assert(server.includes("headers: { ...authorizationHeaders, Accept: 'text/event-stream' }"), 'Builder does not authenticate the Gradio event stream')
-  assert(server.includes('12_000 - (Date.now() - started)'), 'AlphaTekX Coder request is not bounded')
+  assert(server.includes('25_000 - (Date.now() - started)'), 'AlphaTekX Coder request is not bounded')
   assert(server.includes('}, 6_000)'), 'Groq recovery is not bounded within the Builder response budget')
   assert(server.includes('parseGradioCompletion(events)'), 'Gradio completion parser is missing')
   assert(server.includes('extractAppComponent(content ||'), 'provider prose is not removed before validation')
