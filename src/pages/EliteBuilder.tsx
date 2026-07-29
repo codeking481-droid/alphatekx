@@ -24,6 +24,7 @@ import {
   BUILDER_COST,
   BUILDER_SLUG,
   builderSrcDoc,
+  cleanCodeForPreview,
   deployBuild,
   editBuild,
   fixBuild,
@@ -88,6 +89,52 @@ const BUILD_STAGES = [
   "Preparing live preview",
 ];
 const AGENT_SUPERPOWERS = ["YouTube", "Content", "Gmail", "Calendar"] as const;
+const PUTER_SCRIPT_ID = "alphatekx-puter";
+const PUTER_SCRIPT_URL = "https://js.puter.com/v2/";
+const PUTER_BUILDER_PROMPT = `You are AlphaTekX Builder. Return only a complete React component named App.
+NO IMPORTS, exports, markdown fences, script tags, ReactDOM, external packages, or TypeScript.
+Use React.* hooks, Tailwind classes, inline SVG, responsive layouts, realistic data and working local interactions.
+Every button must work. Build the complete product requested, not a generic waitlist.`;
+
+type PuterClient = {
+  ai: {
+    chat: (messages: { role: string; content: string }[], options?: Record<string, unknown>) => Promise<unknown>;
+  };
+};
+
+declare global {
+  interface Window {
+    puter?: PuterClient;
+  }
+}
+
+function loadPuter() {
+  if (window.puter?.ai?.chat) return Promise.resolve(window.puter);
+  return new Promise<PuterClient>((resolve, reject) => {
+    const existing = document.getElementById(PUTER_SCRIPT_ID) as HTMLScriptElement | null;
+    const script = existing || document.createElement("script");
+    const finish = () =>
+      window.puter?.ai?.chat
+        ? resolve(window.puter)
+        : reject(new Error("Puter AI could not start in this browser."));
+    script.addEventListener("load", finish, { once: true });
+    script.addEventListener("error", () => reject(new Error("Puter AI could not load.")), { once: true });
+    if (!existing) {
+      script.id = PUTER_SCRIPT_ID;
+      script.src = PUTER_SCRIPT_URL;
+      script.async = true;
+      document.head.appendChild(script);
+    }
+  });
+}
+
+function puterText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map(puterText).filter(Boolean).join("\n");
+  if (!value || typeof value !== "object") return "";
+  const record = value as Record<string, unknown>;
+  return puterText(record.message) || puterText(record.content) || puterText(record.text);
+}
 
 export default function EliteBuilder() {
   const [prompt, setPrompt] = useState("");
@@ -219,6 +266,57 @@ export default function EliteBuilder() {
       );
     } finally {
       window.clearInterval(stageTimer);
+      setBusy(false);
+      setBuildStage("");
+    }
+  };
+
+  const buildWithPuter = async () => {
+    const value = prompt.trim();
+    if (value.length < 8 || busy) {
+      setNotice("Describe the product and who it is for so Alpha can build it properly.");
+      return;
+    }
+    setBusy(true);
+    setBuildStage("Opening private browser AI");
+    setNotice("");
+    setPreviewError("");
+    setMobilePanel("workspace");
+    try {
+      const puter = await loadPuter();
+      setBuildStage("Engineering your browser preview");
+      const response = await puter.ai.chat([
+        { role: "system", content: PUTER_BUILDER_PROMPT },
+        { role: "user", content: `Build this production-quality application now: ${value}` },
+      ]);
+      const generated = cleanCodeForPreview(puterText(response));
+      if (
+        generated.length < 300 ||
+        !/(?:function|const)\s+App\b/.test(generated) ||
+        !/\breturn\s*\(?\s*</.test(generated)
+      ) {
+        throw new Error("Puter did not return a complete preview. Try Build with Alpha.");
+      }
+      const title =
+        value.replace(/^(build|create|make|design)\s+(me\s+)?/i, "").split(/[.!?\n]/)[0].trim().slice(0, 72) ||
+        "Browser build";
+      setProject({
+        id: `puter-${Date.now()}`,
+        title,
+        prompt: value,
+        code: generated,
+        provider: "puter-browser",
+        persisted: false,
+        transient: true,
+      });
+      setCode(generated);
+      setTab("preview");
+      setNotice(
+        "Private Puter preview is ready. It was generated in your browser, was not saved, and used no AlphaTekX credits.",
+      );
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Puter could not create this preview.");
+    } finally {
       setBusy(false);
       setBuildStage("");
     }
@@ -518,6 +616,18 @@ export default function EliteBuilder() {
                   </>
                 )}
               </button>
+              {!project && (
+                <button
+                  type="button"
+                  onClick={() => void buildWithPuter()}
+                  disabled={busy || prompt.trim().length < 8}
+                  className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/[.04] px-4 text-xs font-black text-white/70 transition hover:border-cyan-300/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <WandSparkles size={15} />
+                  Build privately with Puter
+                  <span className="font-semibold text-white/35">user-pays</span>
+                </button>
+              )}
               <div className="grid grid-cols-2 gap-2">
                 <button
                   disabled={!project}
