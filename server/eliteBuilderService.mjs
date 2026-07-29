@@ -52,6 +52,12 @@ async function request(config, path, init = {}) {
 
 const isBuilderSchemaError = (error) =>
   ["BUILDER_SCHEMA_MISSING", "BUILDER_SCHEMA_OUTDATED"].includes(error?.code);
+const isBuilderTableMissing = (error) => error?.code === "BUILDER_SCHEMA_MISSING";
+const isBuilderSchemaOutdated = (error) => error?.code === "BUILDER_SCHEMA_OUTDATED";
+const isMissingLegacyTable = (error) =>
+  /(?:could not find the table\s+["']?public\.(?:creations|missions)|relation\s+["']?(?:public\.)?(?:creations|missions)["']?\s+does not exist|schema cache.*(?:creations|missions))/i.test(
+    String(error?.message || error || ""),
+  );
 
 const missingMissionColumn = (error, column) =>
   new RegExp(
@@ -167,12 +173,31 @@ export async function listProjects(config, user) {
     );
     return Array.isArray(rows) ? rows : [];
   } catch (error) {
-    if (!isBuilderSchemaError(error)) throw error;
-    const rows = await request(
-      config,
-      `creations?user_id=eq.${encodeURIComponent(user.id)}&type=eq.builder-v3&select=id,slug,title,code,deployment_url,published,versions,created_at&order=created_at.desc&limit=50`,
-    );
-    return Array.isArray(rows) ? rows.map(legacyProject) : [];
+    if (isBuilderSchemaOutdated(error)) {
+      try {
+        const rows = await request(
+          config,
+          `builder_projects?user_id=eq.${encodeURIComponent(user.id)}&select=*&order=created_at.desc&limit=50`,
+        );
+        return Array.isArray(rows) ? rows.map(legacyProject) : [];
+      } catch (compatibilityError) {
+        if (!isBuilderSchemaError(compatibilityError)) throw compatibilityError;
+      }
+    } else if (!isBuilderTableMissing(error)) {
+      throw error;
+    }
+    try {
+      const rows = await request(
+        config,
+        `creations?user_id=eq.${encodeURIComponent(user.id)}&type=eq.builder-v3&select=id,slug,title,code,deployment_url,published,versions,created_at&order=created_at.desc&limit=50`,
+      );
+      return Array.isArray(rows) ? rows.map(legacyProject) : [];
+    } catch (legacyError) {
+      // History is optional UI data. An installation with neither historical
+      // table must show an honest empty state instead of breaking Builder.
+      if (isMissingLegacyTable(legacyError)) return [];
+      throw legacyError;
+    }
   }
 }
 
@@ -184,12 +209,24 @@ export async function findProjectByRequest(config, user, requestId) {
     );
     return rows?.[0] || null;
   } catch (error) {
-    if (!isBuilderSchemaError(error)) throw error;
-    const rows = await request(
-      config,
-      `creations?id=eq.${encodeURIComponent(requestId)}&user_id=eq.${encodeURIComponent(user.id)}&type=eq.builder-v3&select=*&limit=1`,
-    );
-    return rows?.[0] ? legacyProject(rows[0]) : null;
+    if (isBuilderSchemaOutdated(error)) {
+      const rows = await request(
+        config,
+        `builder_projects?id=eq.${encodeURIComponent(requestId)}&user_id=eq.${encodeURIComponent(user.id)}&select=*&limit=1`,
+      ).catch(() => []);
+      return rows?.[0] ? legacyProject(rows[0]) : null;
+    }
+    if (!isBuilderTableMissing(error)) throw error;
+    try {
+      const rows = await request(
+        config,
+        `creations?id=eq.${encodeURIComponent(requestId)}&user_id=eq.${encodeURIComponent(user.id)}&type=eq.builder-v3&select=*&limit=1`,
+      );
+      return rows?.[0] ? legacyProject(rows[0]) : null;
+    } catch (legacyError) {
+      if (isMissingLegacyTable(legacyError)) return null;
+      throw legacyError;
+    }
   }
 }
 
@@ -323,7 +360,23 @@ export async function saveGeneratedProject(config, user, input) {
     });
     return rows?.[0] || record;
   } catch (error) {
-    if (!isBuilderSchemaError(error)) throw error;
+    if (isBuilderSchemaOutdated(error)) {
+      const compatible = {
+        id,
+        user_id: user.id,
+        slug: record.slug,
+        title: record.title,
+        prompt: record.prompt,
+        code: record.code,
+      };
+      const rows = await request(config, "builder_projects", {
+        method: "POST",
+        headers: { Prefer: "return=representation" },
+        body: JSON.stringify(compatible),
+      });
+      return legacyProject(rows?.[0] || compatible);
+    }
+    if (!isBuilderTableMissing(error)) throw error;
     return saveLegacyProject(config, user, { ...input, id });
   }
 }
@@ -341,7 +394,12 @@ export async function markProjectCharged(config, user, id) {
       },
     );
   } catch (error) {
-    if (!isBuilderSchemaError(error)) throw error;
+    if (isBuilderSchemaOutdated(error)) {
+      const current = await getOwnerProject(config, user, id);
+      if (!current) throw new Error("Builder could not finalize the verified project.");
+      return legacyProject({ ...current, charged: true });
+    }
+    if (!isBuilderTableMissing(error)) throw error;
     rows = await request(
       config,
       `creations?id=eq.${encodeURIComponent(id)}&user_id=eq.${encodeURIComponent(user.id)}&type=eq.builder-v3&select=*`,

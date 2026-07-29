@@ -6573,24 +6573,37 @@ function fallbackEliteComponent(prompt) {
 
 async function pollinationsBuilderCompletion(messages) {
   const pollinationsKey = firstKey('POLLINATIONS_API_KEY')
-  if (!pollinationsKey) throw new Error('Pollinations is not configured.')
-  const delays = [0, 2_000, 5_000]
   let lastError = null
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    if (delays[attempt]) await new Promise(resolve => setTimeout(resolve, delays[attempt]))
+  if (pollinationsKey) {
     try {
       const payload = await fetchJson('https://gen.pollinations.ai/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${pollinationsKey}` },
         body: JSON.stringify({ model: process.env.POLLINATIONS_TEXT_MODEL || 'openai-fast', messages, temperature: 0.25, max_tokens: 9000 }),
-      }, 120000)
+      }, 15_000)
       const result = eliteBuilder.validateBuilderCode(payload?.choices?.[0]?.message?.content || '')
       if (!result.errors.length) return { code: result.code, provider: 'pollinations' }
       lastError = new Error(result.errors.join(' '))
     } catch (error) {
       lastError = error
-      console.error(`[Elite Builder] Pollinations attempt ${attempt + 1}/3 failed:`, error instanceof Error ? error.message : error)
+      console.error('[Elite Builder] Pollinations POST failed:', error instanceof Error ? error.message : error)
     }
+  }
+  // The public text endpoint is an independent recovery path. Keep the prompt
+  // bounded for URL safety and validate the returned component exactly like
+  // authenticated output before it can be saved or charged.
+  try {
+    const userPrompt = String([...messages].reverse().find(message => message.role === 'user')?.content || 'Build a production-ready website').slice(0, 6000)
+    const directPrompt = `BUILD THIS ELITE WEBSITE: ${userPrompt}\n\nReturn only one complete production-quality React App component. Use React.* hooks, Tailwind classes, responsive mobile layouts, real interactions, loading and empty states. Do not use imports, markdown fences, scripts, eval, or createRoot.`
+    const text = await fetchText(`https://text.pollinations.ai/${encodeURIComponent(directPrompt)}`, {
+      headers: { Accept: 'text/plain' },
+    }, 15_000)
+    const result = eliteBuilder.validateBuilderCode(text)
+    if (!result.errors.length) return { code: result.code, provider: 'pollinations-direct' }
+    lastError = new Error(result.errors.join(' '))
+  } catch (error) {
+    lastError = error
+    console.error('[Elite Builder] Pollinations direct fallback failed:', error instanceof Error ? error.message : error)
   }
   throw lastError || new Error('Pollinations did not return a verified application.')
 }
