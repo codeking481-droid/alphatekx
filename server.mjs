@@ -6637,56 +6637,54 @@ async function freeBuilderCompletion(messages) {
     }
   }
 
-  const geminiKey = firstKey('GEMINI_API_KEY')
-  if (geminiKey) {
+  const huggingFaceToken = firstKey('HF_TOKEN')
+  if (huggingFaceToken) {
     try {
-      const model = process.env.GEMINI_BUILDER_MODEL || 'gemini-2.5-flash'
-      const system = messages.find(message => message.role === 'system')?.content || ELITE_BUILDER_PROMPT
-      const contents = messages
-        .filter(message => message.role !== 'system')
-        .map(message => ({
-          role: message.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: String(message.content || '') }],
-        }))
-      const payload = await fetchJson(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(geminiKey)}`, {
+      const payload = await fetchJson('https://router.huggingface.co/v1/chat/completions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          Authorization: `Bearer ${huggingFaceToken}`,
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
-          systemInstruction: { parts: [{ text: system }] },
-          contents,
-          generationConfig: { temperature: 0.7, maxOutputTokens: 6000 },
+          model: process.env.HF_BUILDER_MODEL || 'Qwen/Qwen2.5-Coder-32B-Instruct',
+          messages,
+          temperature: 0.7,
+          max_tokens: 4000,
         }),
       }, 20_000)
-      const content = payload?.candidates?.[0]?.content?.parts?.map(part => part?.text || '').join('\n')
-      return verifiedBuilderCompletion(content, 'gemini')
+      return verifiedBuilderCompletion(payload?.choices?.[0]?.message?.content, 'huggingface')
     } catch (error) {
       lastError = error
-      console.error('[Elite Builder] Gemini failed:', error instanceof Error ? error.message : error)
+      console.error('[Elite Builder] Hugging Face failed:', error instanceof Error ? error.message : error)
     }
   }
 
-  const openRouterKey = firstKey('OPENROUTER_API_KEY')
-  if (openRouterKey) {
+  const selfHostedUrl = String(process.env.SELF_HOSTED_URL || '').trim()
+  if (selfHostedUrl) {
     try {
-      const payload = await fetchJson('https://openrouter.ai/api/v1/chat/completions', {
+      const parsedUrl = new URL(selfHostedUrl)
+      if (parsedUrl.protocol !== 'https:' && parsedUrl.hostname !== 'localhost' && parsedUrl.hostname !== '127.0.0.1') {
+        throw new Error('SELF_HOSTED_URL must use HTTPS.')
+      }
+      const selfHostedToken = firstKey('SELF_HOSTED_TOKEN')
+      const payload = await fetchJson(parsedUrl.toString(), {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${openRouterKey}`,
           'Content-Type': 'application/json',
-          'HTTP-Referer': process.env.PUBLIC_APP_URL || 'https://alphatekx.name.ng',
-          'X-Title': 'AlphaTekX Builder',
+          ...(selfHostedToken ? { Authorization: `Bearer ${selfHostedToken}` } : {}),
         },
         body: JSON.stringify({
-          model: process.env.OPENROUTER_BUILDER_MODEL || 'openrouter/free',
+          model: process.env.SELF_HOSTED_MODEL || 'Qwen/Qwen2.5-Coder-7B-Instruct',
           messages,
           temperature: 0.7,
           max_tokens: 6000,
         }),
-      }, 20_000)
-      return verifiedBuilderCompletion(payload?.choices?.[0]?.message?.content, 'openrouter')
+      }, 25_000)
+      return verifiedBuilderCompletion(payload?.choices?.[0]?.message?.content, 'self-hosted')
     } catch (error) {
       lastError = error
-      console.error('[Elite Builder] OpenRouter failed:', error instanceof Error ? error.message : error)
+      console.error('[Elite Builder] self-hosted provider failed:', error instanceof Error ? error.message : error)
     }
   }
   throw lastError || new Error('No hosted Builder provider is configured.')
