@@ -21,6 +21,9 @@ const engine = fs.readFileSync(new URL('../server/alpha/conversationEngine.mjs',
 const capabilityRegistry = fs.readFileSync(new URL('../server/automation/capabilityRegistry.mjs', import.meta.url), 'utf8')
 const ceoPage = fs.readFileSync(new URL('../src/pages/CeoInbox.tsx', import.meta.url), 'utf8')
 const agentPage = fs.readFileSync(new URL('../src/pages/Agents.tsx', import.meta.url), 'utf8')
+const appRoutes = fs.readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
+const workspaceLayout = fs.readFileSync(new URL('../src/components/workspace/WorkspaceLayout.tsx', import.meta.url), 'utf8')
+const connectorIcons = fs.readFileSync(new URL('../src/components/agents/ConnectorIcon.tsx', import.meta.url), 'utf8')
 
 test('calculates days to a named date deterministically', () => {
   assert.equal(calculateDaysUntilQuestion('how many days to Dec 31', new Date('2026-07-29T12:00:00Z')), 'There are **155 days** until 31 December 2026.')
@@ -53,6 +56,8 @@ test('X uses the configured Composio Auth Config and confirmed provider IDs', ()
   const composioService = fs.readFileSync(new URL('../server/composioConnectorService.mjs', import.meta.url), 'utf8')
   assert.match(authConfigs, /TWITTER: 'ac_75GBYAXRovfm'/)
   assert.match(composioService, /defaultAuthConfigId: AUTH_CONFIGS\.TWITTER/)
+  assert.match(composioService, /authMode: 'custom'/)
+  assert.match(composioService, /validateProviderConfig\(pid\)/)
   assert.match(composioService, /'twitter\.create_post'/)
   assert.match(composioService, /confirmedProviderId/)
   assert.match(server, /alphaConnector\.startConnection\(user, 'x'/)
@@ -74,6 +79,19 @@ test('connection UI uses one secure experience with LinkedIn native and X throug
 
 test('connection UI does not contain raw Auth Config IDs', () => {
   assert.doesNotMatch(connectors, /\bac_[A-Za-z0-9_-]+/)
+})
+
+test('connection cards use official brand SVG data', () => {
+  for (const mark of ['siX', 'siGmail', 'siGithub', 'siGoogledocs', 'siGooglesheets', 'siYoutube', 'siDiscord', 'siWhatsapp', 'siFacebook', 'siInstagram']) {
+    assert.match(connectorIcons, new RegExp(`\\b${mark}\\b`))
+  }
+  assert.match(connectorIcons, /<path fill="currentColor" d=\{brand\.path\}/)
+})
+
+test('Money Loop and CEO Inbox are removed from the product surface without deleting data', () => {
+  assert.doesNotMatch(workspaceLayout, /Money Loop|CEO Inbox/)
+  assert.match(appRoutes, /<Route path="\/leads" element=\{toDashboard\}/)
+  assert.match(appRoutes, /<Route path="\/ceo" element=\{toDashboard\}/)
 })
 
 test('LinkedIn and image matching remain in the established execution engine', () => {
@@ -106,4 +124,4 @@ test('agent workspace is full-screen, mobile-safe, and renders generated images'
   assert.match(connectors, /Connections are secured by Composio and AlphaTekx OAuth/)
 })
 
-console.log(`\n${passed}/14 super-computer agent checks passed`)
+console.log(`\n${passed}/16 super-computer agent checks passed`)

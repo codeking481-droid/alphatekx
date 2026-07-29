@@ -16,8 +16,6 @@ const Privacy = lazy(() => import('./pages/Privacy'))
 const Terms = lazy(() => import('./pages/Terms'))
 const ContentPage = lazy(() => import('./pages/ContentPage'))
 const MediaLibrary = lazy(() => import('./pages/MediaLibrary'))
-const Leads = lazy(() => import('./pages/Leads'))
-const CeoInbox = lazy(() => import('./pages/CeoInbox'))
 const FoundersLegacy = lazy(() => import('./pages/FoundersLegacy'))
 const Admin = lazy(() => import('./pages/Admin'))
 const AdminAgents = lazy(() => import('./pages/AdminAgents'))
@@ -63,8 +61,8 @@ export default function App() {
       <Route path="/connectors" element={protectedPage(<Connectors />)} />
       <Route path="/apps" element={protectedPage(<Connectors />)} />
       <Route path="/media-library" element={protectedPage(<MediaLibrary />)} />
-      <Route path="/leads" element={protectedPage(<Leads />)} />
-      <Route path="/ceo" element={protectedPage(<CeoInbox />)} />
+      <Route path="/leads" element={toDashboard} />
+      <Route path="/ceo" element={toDashboard} />
       <Route path="/settings" element={protectedPage(<Settings />)} />
       <Route path="/help" element={protectedPage(<ContentPage slug="help" workspace />)} />
 

@@ -107,11 +107,13 @@ const PROVIDER_DEFS = {
     authConfigEnv: 'COMPOSIO_TWITTER_AUTH_CONFIG_ID',
     defaultAuthConfigId: AUTH_CONFIGS.TWITTER,
     enabled: false,
-    stage: 'beta',
+    stage: 'live',
     actions: ['create_post', 'create_tweet', 'create_thread', 'create_media_tweet'],
     isNative: false,
     category: 'Social Media',
-    authMode: 'managed',
+    // The AlphaTekx Twitter Auth Config stores its client credentials inside
+    // Composio. Nothing from the X developer app belongs on Render.
+    authMode: 'custom',
   },
   youtube: {
     id: 'youtube',
@@ -373,7 +375,7 @@ async function validateProviderConfig(providerId) {
     }
   }
 
-  throw new Error(`${def.name} cannot use the deployed Composio project. Update COMPOSIO_API_KEY on Render so it belongs to the project containing ${configured.authConfigId}, then redeploy.`)
+  throw new Error(`${def.name} has no enabled ${def.composioAppName} Auth Config in the Composio project connected to AlphaTekx. Enable the existing Auth Config in that Composio project and retry.`)
 }
 
 // ---------------------------------------------------------------------------
@@ -569,7 +571,11 @@ export async function getConnectedApps(user) {
 
   const providers = []
   for (const [pid, def] of Object.entries(PROVIDER_DEFS)) {
-    const config = init.ok ? await resolveProviderConfig(pid) : (providerConfigs[pid] || { enabled: false })
+    const config = init.ok ? await validateProviderConfig(pid).catch(error => ({
+      enabled: false,
+      authConfigId: null,
+      error: sanitizeError(error),
+    })) : (providerConfigs[pid] || { enabled: false })
     let connected = false
     let connectionId = null
     let status = 'disconnected'
@@ -717,7 +723,7 @@ export async function getConnectionStatus(user, providerId) {
   if (!pid) throw new Error(`Unknown provider: ${providerId}`)
 
   const def = PROVIDER_DEFS[pid]
-  const config = await resolveProviderConfig(pid)
+  const config = await validateProviderConfig(pid)
 
   if (!config || !config.enabled) {
     return { connected: false, status: 'unavailable', provider: pid }
@@ -764,7 +770,7 @@ export async function reconnectProvider(user, providerId, callbackUrl) {
   if (!pid) throw new Error(`Unknown provider: ${providerId}`)
 
   const def = PROVIDER_DEFS[pid]
-  const config = await resolveProviderConfig(pid)
+  const config = await validateProviderConfig(pid)
 
   if (!config || !config.enabled || !config.authConfigId) {
     throw new Error(`${def.name} is not configured.`)
@@ -803,7 +809,7 @@ export async function disconnectProvider(user, providerId) {
   const pid = resolveProviderAlias(providerId)
   if (!pid) throw new Error(`Unknown provider: ${providerId}`)
 
-  const config = await resolveProviderConfig(pid)
+  const config = await validateProviderConfig(pid).catch(() => null)
   if (!user || !user.id) throw new Error('Authentication required')
 
   // A connection must remain removable even if its Auth Config was later disabled.
@@ -860,7 +866,7 @@ export async function executeProviderAction(user, providerId, actionId, payload)
     throw new Error(`Action "${actionId}" is not supported for ${def.name}`)
   }
 
-  const config = await resolveProviderConfig(pid)
+  const config = await validateProviderConfig(pid)
   if (!config || !config.enabled || !config.authConfigId) {
     throw new Error(`${def.name} is not configured.`)
   }
