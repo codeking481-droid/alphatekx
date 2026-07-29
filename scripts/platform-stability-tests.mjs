@@ -70,23 +70,10 @@ await test('direct image request interrupts an existing planning context safely'
   assert.equal(fixture.imageCalls, 1)
 })
 
-await test('complete four-platform campaign skips dull questions and builds 28 scheduled previews without recursion', async () => {
+await test('complete four-platform campaign survives incomplete provider output and builds 28 scheduled previews without recursion', async () => {
   const records = new Map()
   let imageCalls = 0
   const platforms = ['facebook', 'x', 'instagram', 'linkedin']
-  const longText = (platform, day) => {
-    if (platform === 'x') return `Day ${day}: ${Array.from({ length: 24 }, (_, index) => `x${day}idea${index}`).join(' ')}. #AI #BuildInPublic`
-    const minimum = platform === 'facebook' ? 215 : platform === 'instagram' ? 165 : 190
-    return Array.from({ length: minimum }, (_, index) => index === 0 ? `Day-${day}-${platform}` : `${platform}${day}topic${index}`).join(' ')
-  }
-  const calendar = Array.from({ length: 7 }, (_, dayIndex) => platforms.map(platform => ({
-    day: dayIndex + 1,
-    slot: { facebook: '09:00', x: '12:00', instagram: '15:00', linkedin: '18:00' }[platform],
-    platforms: [platform],
-    topic: `AlphaTekx campaign day ${dayIndex + 1}`,
-    postType: dayIndex === 6 ? 'cta' : 'product',
-    captions: { [platform]: longText(platform, dayIndex + 1) },
-  }))).flat()
   const engine = createConversationEngine({
     saveServerAgent: async record => { records.set(record.id, structuredClone(record)); return record },
     getServerAgent: async id => structuredClone(records.get(id)),
@@ -98,7 +85,7 @@ await test('complete four-platform campaign skips dull questions and builds 28 s
       return { image_url: `https://images.example/${imageCalls}.jpg`, image_storage_path: `campaign/${imageCalls}.jpg`, image_prompt: `AlphaTekx ${platform}`, image_source: 'test' }
     },
     callLLMForRole: async role => {
-      if (role === 'content') return { result: { calendar }, provider: 'test', model: 'test', generationMode: 'model' }
+      if (role === 'content') return { result: { calendar: [] }, provider: 'test', model: 'test', generationMode: 'model' }
       return { result: {}, provider: 'test', model: 'test', generationMode: 'model' }
     },
   })
@@ -114,6 +101,8 @@ Start NOW. Show all 28 posts for review, then ask for approval.`
   const conversation = await engine.start({ id: 'campaign-regression-user', email: 'owner@example.com' }, prompt)
   assert.equal(conversation.conversationStage, 'awaiting_content_review', JSON.stringify({ missing: conversation.missingFields, known: conversation.knownFields }))
   assert.equal(conversation.generatedContent.length, 28)
+  assert.equal(conversation.generationMode, 'fallback')
+  assert.doesNotMatch(conversation.messages.at(-1).text, /refused to schedule|blocked/i)
   assert.deepEqual(conversation.knownFields.platforms, platforms)
   assert.equal(conversation.knownFields.durationDays, 7)
   assert.equal(conversation.knownFields.totalPosts, 28)

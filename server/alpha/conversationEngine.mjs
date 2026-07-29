@@ -1246,8 +1246,70 @@ Total posts: ${totalPosts}.`
     let generationMode = 'fallback'
     let lastError = null
     let providerLog = null
+    const fallbackDays = new Set()
+
+    async function generateCalendarRequest(requestSystem, requestMeta, expectedCount, stage) {
+      const estimatedTokens = expectedCount === 1 ? 700 : Math.max(1800, Math.min(9000, expectedCount * 500 + 600))
+      const res = await callLLMForRole('content', requestSystem, JSON.stringify({ brand, meta: requestMeta }), { jsonMode: true, maxTokens: estimatedTokens })
+      logModelCall(conversation, res, stage)
+      providerLog = { provider: res.provider, model: res.model, usage: res.usage, latencyMs: res.latencyMs }
+      return res.result?.calendar
+    }
+
+    async function generateCampaignDay(day) {
+      const daySystem = `${system}
+
+CAMPAIGN BATCH: Generate ONLY day ${day} of ${durationDays}.
+Return exactly ${platforms.length} entries for day ${day}: one entry for each of ${platforms.join(', ')}.
+Do not generate any other campaign day. Every entry's "day" must be ${day}.`
+      const dayMeta = { ...meta, campaignDay: day, durationDays: 1, totalPosts: platforms.length, postsPerDay: platforms.length }
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          const requestSystem = attempt === 0 ? daySystem : `${daySystem}\n\nCRITICAL: Return only valid JSON. Meet every platform minimum and include every requested platform exactly once.`
+          const calendar = await generateCalendarRequest(requestSystem, dayMeta, platforms.length, `generate_content_day_${day}${attempt ? '_retry' : ''}`)
+          if (!validateCalendar(calendar, platforms, platforms.length, true)) throw new Error(`Model returned invalid or incomplete content for campaign day ${day}`)
+          return calendar.slice(0, platforms.length).map(post => ({ ...post, day }))
+        } catch (error) {
+          lastError = error
+          console.error(`[conversationEngine] campaign day ${day} attempt ${attempt + 1} failed:`, error)
+        }
+      }
+
+      // A provider outage must not discard a complete campaign request. The
+      // deterministic copy is deliberately held to the same quality validator.
+      fallbackDays.add(day)
+      const fallback = generateFallbackPosts(
+        platforms,
+        business,
+        audience,
+        tone,
+        durationDays,
+        platforms.length,
+        scheduleSlots,
+        startDate,
+        timezone,
+        includeImages,
+        true,
+      )
+      return fallback.filter(post => post.day === day)
+    }
 
     async function tryGenerate(strict = false) {
+      if (separatePlatformPosts && durationDays > 1 && totalPosts > platforms.length) {
+        const calendar = []
+        // Keep provider pressure bounded while avoiding a long serial wait for
+        // campaigns such as seven days across four platforms.
+        for (let day = 1; day <= durationDays; day += 2) {
+          const batchDays = [day, day + 1].filter(value => value <= durationDays)
+          const batch = await Promise.all(batchDays.map(generateCampaignDay))
+          batch.forEach(postsForDay => calendar.push(...postsForDay))
+        }
+        if (!validateCalendar(calendar, platforms, totalPosts, true)) throw new Error('Campaign batches did not produce a complete calendar')
+        const modelCalendar = fallbackDays.size ? calendar.filter(post => !fallbackDays.has(Number(post.day))) : calendar
+        const duplicate = calendarHasDuplicates(modelCalendar, conversation.automationDraft?.contentMemory || [])
+        if (duplicate.duplicate) throw new Error(`Generated calendar repeated prior content (${duplicate.reason})`)
+        return calendar
+      }
       const estimatedTokens = totalPosts === 1 ? 700 : Math.max(1800, Math.min(9000, totalPosts * 300 + 600))
       const res = await callLLMForRole('content', strict ? strictSystem : system, JSON.stringify({ brand, meta }), { jsonMode: true, maxTokens: estimatedTokens })
       logModelCall(conversation, res, 'generate_content')
@@ -1263,14 +1325,14 @@ Total posts: ${totalPosts}.`
     try {
       const calendar = await tryGenerate(false)
       posts = normalizeCalendar(calendar, platforms, scheduleSlots, startDate, timezone, postsPerDay, includeImages, meta)
-      generationMode = 'model'
+      generationMode = fallbackDays.size ? 'fallback' : 'model'
     } catch (err) {
       lastError = err
       console.error('[conversationEngine] generateContent first attempt failed:', err)
       try {
         const calendar = await tryGenerate(true)
         posts = normalizeCalendar(calendar, platforms, scheduleSlots, startDate, timezone, postsPerDay, includeImages, meta)
-        generationMode = 'model'
+        generationMode = fallbackDays.size ? 'fallback' : 'model'
       } catch (err2) {
         lastError = err2
         console.error('[conversationEngine] generateContent retry failed:', err2)
@@ -1527,12 +1589,72 @@ Total posts: ${totalPosts}.`
   }
 
   function generateFallbackCaption(platform, business, audience, tone, postType, day) {
-    const ctas = ['Learn more', 'Shop now', 'Book a session', 'DM us', 'Visit our store', 'Get started today']
-    const cta = ctas[(day - 1) % ctas.length]
-    if (postType === 'educational') return `Day ${day} tip: Quality service is the best marketing. When your ${audience} feels heard, they come back. #BusinessTips #SmallBusiness #${business.replace(/\s+/g, '')}`
-    if (postType === 'product') return `Day ${day}: A quick look at what makes ${business} perfect for ${audience}. Ready when you are. ${cta}. #ProductSpotlight #${business.replace(/\s+/g, '')}`
-    if (postType === 'story') return `Day ${day}: We started ${business} because we saw ${audience} needed better. Every post, every product, every message is for you. #OurStory #${business.replace(/\s+/g, '')}`
-    return `Day ${day}: Big moves only. If you're part of ${audience}, this is for you. ${cta}. #CallToAction #${business.replace(/\s+/g, '')}`
+    const safeBusiness = String(business || 'this business').trim()
+    const safeAudience = String(audience || 'growing teams').trim()
+    const tag = safeBusiness.replace(/[^a-z0-9]/gi, '') || 'Business'
+    const theme = {
+      educational: 'a practical lesson that makes everyday work simpler',
+      product: 'how the product turns a difficult task into a clear next step',
+      story: 'why the team chose to solve this problem in the first place',
+      cta: 'the next step for people who are ready to move from ideas to results',
+    }[postType] || 'a practical way to get a better result'
+    const opening = [
+      `Day ${day}: Better results begin with a clearer system.`,
+      `Day ${day}: A good idea becomes valuable when people can act on it.`,
+      `Day ${day}: Consistency is easier when the right work happens at the right time.`,
+      `Day ${day}: Growth should not depend on repeating the same manual task forever.`,
+      `Day ${day}: The strongest tools make complex work feel surprisingly simple.`,
+      `Day ${day}: Small teams deserve systems that help them operate with confidence.`,
+      `Day ${day}: This is what practical automation should feel like.`,
+    ][(day - 1) % 7]
+    const platformOpening = `${opening.replace(/\.$/, '')} — ${PLATFORM_NAMES[normalizePlatform(platform)] || platform}.`
+    const core = `${platformOpening}
+
+Today we are focusing on ${theme}. ${safeBusiness} is designed for ${safeAudience}: people who want to spend less time managing repetitive steps and more time creating, serving customers, and growing with confidence.
+
+Here are three useful principles to take away:
+
+1. Start with the result you want, not a complicated list of tools.
+2. Review the work before it goes live, so you stay in control.
+3. Measure confirmed outcomes instead of relying on vague promises.
+
+That approach matters because dependable work is not about doing more activity. It is about creating a repeatable process, checking the result, and improving what happens next. The tone should feel ${tone}, but the promise remains simple: useful work, clear approval, and an honest result.
+
+If this sounds like the way your team wants to work, explore ${safeBusiness}, share the task you want to simplify, and see what a clearer workflow could unlock. What is the first repetitive task you would remove from your week?`
+    if (platform === 'x') {
+      const xOpenings = [
+        'Ideas do not need more tabs. They need execution.',
+        'Automation should save time, not create another job.',
+        'Small teams deserve serious operating power.',
+        'The future of work is clear intent followed by verified action.',
+        'Stop repeating work your system can handle safely.',
+        'A useful AI shows its work and confirms the result.',
+        'Build the workflow once. Put your energy into growth.',
+      ]
+      return `${xOpenings[(day - 1) % xOpenings.length]} ${safeBusiness} helps ${safeAudience} turn a clear goal into reviewed, reliable action. Start with one task today. #${tag} #Automation`
+    }
+    if (platform === 'instagram') {
+      return `${core}
+
+#${tag} #Automation #AI #BusinessGrowth #Creators #Startups #SmallBusiness #Productivity #DigitalTools #FutureOfWork`
+    }
+    if (platform === 'facebook') {
+      return `${core}
+
+The best place to begin is one real task that takes time every week. Name it, define the outcome, and keep a human review step before anything is published or sent. That is how automation earns trust: not through noise, but through results you can verify.
+
+#${tag} #BusinessAutomation #SmallBusiness`
+    }
+    if (platform === 'linkedin') {
+      return `${core}
+
+For founders and operators, the strategic advantage is not merely speed. It is the ability to build a consistent operating rhythm without losing judgment, brand standards, or accountability. A well-designed system should make ownership visible and success measurable.
+
+#${tag} #Automation #FutureOfWork #BusinessGrowth`
+    }
+    return `${core}
+
+Reply with the task you want to improve and the outcome you want to see. #${tag} #Automation`
   }
 
   async function checkPublishingCapabilities(platforms, userId, userEmail) {
