@@ -167,14 +167,14 @@ await test('Builder migration is owner-scoped and does not expose source publicl
   assert(!sql.includes('using (true)'), 'allow-all RLS policy must not exist')
 })
 
-await test('Builder V2 exposes verified edit and auto-repair endpoints', () => {
+await test('Builder V3 exposes verified edit and auto-repair endpoints', () => {
   const server = readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
   assert(server.includes("req.url === '/api/builder/edit'"), 'chat-to-edit endpoint is missing')
   assert(server.includes("req.url === '/api/builder/fix'"), 'auto-fix endpoint is missing')
   assert(server.includes('updateProjectCode(config, user'), 'verified revision persistence is missing')
 })
 
-await test('Builder V2 supports visual selection, media, remix and domain verification', () => {
+await test('Builder V3 supports visual selection, media, remix and domain verification', () => {
   const ui = readFileSync(new URL('../src/pages/EliteBuilder.tsx', import.meta.url), 'utf8')
   const publicUi = readFileSync(new URL('../src/pages/PublicBuilderProject.tsx', import.meta.url), 'utf8')
   assert(ui.includes('element-clicked') && ui.includes('Use My Media'), 'visual/media editing is incomplete')
@@ -183,7 +183,23 @@ await test('Builder V2 supports visual selection, media, remix and domain verifi
   assert(publicUi.includes('Remix this app with Alpha'), 'public remix action is missing')
 })
 
-await test('Builder V2 generated apps use the scoped AlphaAPI without browser service keys', () => {
+await test('Builder V3 has responsive device previews and durable version history', () => {
+  const ui = readFileSync(new URL('../src/pages/EliteBuilder.tsx', import.meta.url), 'utf8')
+  const service = readFileSync(new URL('../server/eliteBuilderService.mjs', import.meta.url), 'utf8')
+  const sql = readFileSync(new URL('../supabase/elite-builder.sql', import.meta.url), 'utf8')
+  assert(/["']desktop["']/.test(ui) && /["']tablet["']/.test(ui) && /["']mobile["']/.test(ui), 'device preview controls are missing')
+  assert(ui.includes('requestFullscreen') && ui.includes('Refresh preview'), 'preview controls are incomplete')
+  assert(service.includes('nextVersions') && sql.includes('versions jsonb'), 'version persistence is missing')
+})
+
+await test('Builder V3 uses authenticated Pollinations retries without obsolete endpoint rotation', () => {
+  const server = readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
+  assert(server.includes('pollinationsBuilderCompletion') && server.includes('attempt < 3'), 'Pollinations retry path is missing')
+  assert(server.includes('https://gen.pollinations.ai/v1/chat/completions'), 'official Pollinations endpoint is missing')
+  assert(!server.includes("https://text.pollinations.ai/openai"), 'obsolete Pollinations endpoint must not be used')
+})
+
+await test('Builder V3 generated apps use the scoped AlphaAPI without browser service keys', () => {
   const client = readFileSync(new URL('../src/lib/eliteBuilder.ts', import.meta.url), 'utf8')
   assert(client.includes('window.AlphaAPI'), 'project data bridge is missing')
   assert(!client.includes('SUPABASE_SERVICE_ROLE_KEY'), 'service role credentials must never enter generated apps')

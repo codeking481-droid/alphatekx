@@ -17,6 +17,9 @@ create table if not exists public.builder_projects (
   domain_status text not null default 'none',
   domain_verification_token text,
   views integer not null default 0 check (views >= 0),
+  likes integer not null default 0 check (likes >= 0),
+  versions jsonb not null default '[]'::jsonb,
+  is_public boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint builder_projects_slug_format check (
@@ -32,6 +35,10 @@ alter table public.builder_projects add column if not exists custom_domain text;
 alter table public.builder_projects add column if not exists domain_status text not null default 'none';
 alter table public.builder_projects add column if not exists domain_verification_token text;
 alter table public.builder_projects add column if not exists updated_at timestamptz not null default now();
+alter table public.builder_projects add column if not exists views integer not null default 0;
+alter table public.builder_projects add column if not exists likes integer not null default 0;
+alter table public.builder_projects add column if not exists versions jsonb not null default '[]'::jsonb;
+alter table public.builder_projects add column if not exists is_public boolean not null default true;
 
 create unique index if not exists idx_builder_projects_user_request
   on public.builder_projects(user_id, request_id) where request_id is not null;
