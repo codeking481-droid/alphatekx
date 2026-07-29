@@ -6,6 +6,7 @@ import { selectHookExamples } from '../automation/viralHooks.mjs'
 import { scheduledCreditCost } from '../schedulePricing.mjs'
 import { connectorFeatureAccess, unavailableConnectorMessage, unavailablePromptConnector } from '../featureAccess.mjs'
 import { classifyIntent, clarificationResponse, conversationalResponse, helpResponse, INTENT_CATEGORIES } from './intentClassifier.mjs'
+import { ALPHATEKX_BRAIN, answerFromBrain } from './brainKnowledge.mjs'
 
 const STAGES = [
   'understanding',
@@ -414,6 +415,53 @@ export function createConversationEngine(deps) {
 
   async function understandRequest(conversation, promptOverride = '') {
     const prompt = promptOverride || conversation.originalRequest
+    const directImageRequest = /\b(?:create|generate|make|find|match)\s+(?:an?\s+)?(?:image|picture|photo|visual)\b/i.test(prompt) &&
+      !/\b(?:post|publish|schedule|automation|campaign)\b/i.test(prompt)
+    if (directImageRequest) {
+      conversation.intentClassification = { category: INTENT_CATEGORIES.conversation, confidence: 1, reason: 'direct_image_request' }
+      conversation.intent = 'image_generation'
+      conversation.confidence = 1
+      conversation.currentGoal = ''
+      conversation.knownFields = { imagePrompt: prompt }
+      conversation.missingFields = []
+      conversation.automationDraft = null
+      conversation.conversationStage = 'chatting'
+      if (typeof getSmartImage !== 'function') {
+        addMessage(conversation, 'alpha', 'Image creation is temporarily unavailable. Nothing was charged—please retry when the image service is ready.')
+        return
+      }
+      try {
+        const image = await getSmartImage(
+          { id: conversation.userId, email: conversation.userEmail },
+          prompt,
+          prompt,
+          'media_library',
+        )
+        if (!image?.image_url || !image?.image_storage_path) throw new Error('The image provider did not return a durable verified image.')
+        addMessage(conversation, 'alpha', `I created and saved this image for you.\n\n![Generated image](${image.image_url})`, {
+          imageUrl: image.image_url,
+          imageStoragePath: image.image_storage_path,
+          imagePrompt: image.image_prompt || prompt,
+          imageSource: image.image_source || 'matchmaker',
+        })
+      } catch (error) {
+        addMessage(conversation, 'alpha', `I couldn't create a verified image this time, so nothing was charged. ${error instanceof Error ? error.message : 'Please retry.'}`)
+      }
+      return
+    }
+    const brainAnswer = answerFromBrain(prompt)
+    if (brainAnswer) {
+      conversation.intentClassification = { category: INTENT_CATEGORIES.conversation, confidence: 1, reason: 'deterministic_brain_knowledge' }
+      conversation.intent = INTENT_CATEGORIES.conversation
+      conversation.confidence = 1
+      conversation.currentGoal = ''
+      conversation.knownFields = {}
+      conversation.missingFields = []
+      conversation.automationDraft = null
+      conversation.conversationStage = 'chatting'
+      addMessage(conversation, 'alpha', brainAnswer, { knowledgeSource: 'alphatekx-brain' })
+      return
+    }
     const classification = classifyIntent(prompt)
     conversation.intentClassification = classification
     conversation.intent = classification.category
@@ -1679,6 +1727,15 @@ Return JSON: { "text": "..." }`
   async function continueConversation(id, user, text) {
     const conversation = await loadConversation(id, user)
     addMessage(conversation, 'user', text)
+    const brainAnswer = answerFromBrain(text)
+    if (brainAnswer) {
+      addMessage(conversation, 'alpha', brainAnswer, { knowledgeSource: 'alphatekx-brain' })
+      conversation.conversationStage = 'chatting'
+      conversation.currentGoal = ''
+      conversation.automationDraft = null
+      await saveConversation(conversation)
+      return conversation
+    }
     const hasPlanningContext = !['chatting', 'created', 'blocked', 'unsupported'].includes(conversation.conversationStage)
     const classification = classifyIntent(text, { hasPlanningContext })
     conversation.intentClassification = classification
@@ -1752,3 +1809,5 @@ Return JSON: { "text": "..." }`
     createAutomation,
   }
 }
+
+export { ALPHATEKX_BRAIN }

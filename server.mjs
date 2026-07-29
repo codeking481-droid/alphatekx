@@ -1326,8 +1326,8 @@ async function sendGmailMessage(accessToken, raw) {
   return data
 }
 
-function createOAuthState(userId, config, email = '', redirect = '/agents') {
-  const payload = Buffer.from(JSON.stringify({ userId, email: cleanHeader(email), redirect: String(redirect || '/agents'), expires: Date.now() + 10 * 60_000, nonce: randomBytes(16).toString('hex') })).toString('base64url')
+function createOAuthState(userId, config, email = '', redirect = '/agents', extra = {}) {
+  const payload = Buffer.from(JSON.stringify({ userId, email: cleanHeader(email), redirect: String(redirect || '/agents'), expires: Date.now() + 10 * 60_000, nonce: randomBytes(16).toString('hex'), ...extra })).toString('base64url')
   const signature = createHmac('sha256', oauthStateKey(config)).update(payload).digest('base64url')
   return `${payload}.${signature}`
 }
@@ -1832,6 +1832,8 @@ async function testConnectorHandler(req, res) {
   }
 }
 
+const linkedinRedirectUri = () => String(process.env.LINKEDIN_REDIRECT_URI || `${publicAppUrl()}/api/connectors/linkedin/callback`).trim()
+
 async function startLinkedInOAuth(req, res) {
   const config = supabaseConfig()
   const url = new URL(req.url || '/', 'http://localhost')
@@ -1843,7 +1845,7 @@ async function startLinkedInOAuth(req, res) {
   if (!user?.id) return json(res, 401, { error: 'Authentication required' })
   const clientId = process.env.MASTER_LINKEDIN_CLIENT_ID || process.env.LINKEDIN_CLIENT_ID || ''
   if (!clientId) return json(res, 503, { error: 'LinkedIn client ID not configured' })
-  const redirectUri = `${publicAppUrl()}/api/connectors/linkedin/callback`
+  const redirectUri = linkedinRedirectUri()
   const state = createOAuthState(user.id, config, user.email || '', '/connectors')
   const authUrl = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent('openid profile w_member_social email')}&state=${encodeURIComponent(state)}`
   res.writeHead(302, { Location: authUrl, 'Cache-Control': 'no-store' })
@@ -1859,7 +1861,7 @@ async function startLinkedInConnection(req, res) {
   const clientId = process.env.MASTER_LINKEDIN_CLIENT_ID || process.env.LINKEDIN_CLIENT_ID || ''
   const clientSecret = process.env.MASTER_LINKEDIN_CLIENT_SECRET || process.env.LINKEDIN_CLIENT_SECRET || ''
   if (!clientId || !clientSecret) return json(res, 503, { error: 'LinkedIn client credentials not configured' })
-  const redirectUri = `${publicAppUrl()}/api/connectors/linkedin/callback`
+  const redirectUri = linkedinRedirectUri()
   const requestedRedirect = String(body?.redirect || '/connected-apps')
   const safeRedirect = requestedRedirect.startsWith('/') && !requestedRedirect.startsWith('//') ? requestedRedirect : '/connected-apps'
   const state = createOAuthState(user.id, config, user.email, safeRedirect)
@@ -1884,7 +1886,7 @@ async function linkedinCallback(req, res) {
     const clientId = process.env.MASTER_LINKEDIN_CLIENT_ID || process.env.LINKEDIN_CLIENT_ID || ''
     const clientSecret = process.env.MASTER_LINKEDIN_CLIENT_SECRET || process.env.LINKEDIN_CLIENT_SECRET || ''
     if (!clientId || !clientSecret) throw new Error('LinkedIn client credentials not configured')
-    const redirectUri = `${publicAppUrl()}/api/connectors/linkedin/callback`
+    const redirectUri = linkedinRedirectUri()
     const body = new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: redirectUri, client_id: clientId, client_secret: clientSecret })
     const tokenResponse = await fetch('https://www.linkedin.com/oauth/v2/accessToken', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body })
     const tokenData = await tokenResponse.json()
@@ -1910,6 +1912,95 @@ async function linkedinCallback(req, res) {
   } catch (error) {
     destination = new URL('/connected-apps?connected=error', publicAppUrl())
     destination.searchParams.set('reason', error instanceof Error ? error.message.slice(0, 180) : 'LinkedIn connection failed')
+  }
+  res.writeHead(302, { Location: destination.toString(), 'Cache-Control': 'no-store' })
+  return res.end()
+}
+
+function xOAuthCredentials() {
+  return {
+    clientId: String(process.env.X_CLIENT_ID || '').trim(),
+    clientSecret: String(process.env.X_CLIENT_SECRET || '').trim(),
+    redirectUri: String(process.env.X_REDIRECT_URI || `${publicAppUrl()}/api/x/callback`).trim(),
+  }
+}
+
+async function startXConnection(req, res) {
+  const config = supabaseConfig()
+  const body = req.method === 'POST' ? await readBody(req) : {}
+  const localUser = body?.localUser ? { id: String(body.localUser.id || ''), email: String(body.localUser.email || '') } : localUserFromRequest(req)
+  const user = config.url && config.anon ? (await authenticatedUser(req, config.url, config.anon).catch(() => null) || localUser) : localUser
+  if (!user?.id || !user?.email) return json(res, 401, { error: 'Authentication required' })
+  const { clientId, redirectUri } = xOAuthCredentials()
+  if (!clientId) return json(res, 503, { error: 'X OAuth needs X_CLIENT_ID on Render, followed by a redeploy.' })
+  const verifier = randomBytes(48).toString('base64url')
+  const challenge = createHash('sha256').update(verifier).digest('base64url')
+  const requestedRedirect = String(body?.redirect || '/connected-apps')
+  const safeRedirect = requestedRedirect.startsWith('/') && !requestedRedirect.startsWith('//') ? requestedRedirect : '/connected-apps'
+  const state = createOAuthState(user.id, config, user.email, safeRedirect, {
+    provider: 'x',
+    verifier: encryptSecret(verifier, encryptionKey(config)),
+  })
+  const params = new URLSearchParams({
+    response_type: 'code',
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    scope: 'tweet.read tweet.write users.read offline.access',
+    state,
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
+  })
+  const authUrl = `https://x.com/i/oauth2/authorize?${params.toString()}`
+  if (req.method === 'GET') {
+    res.writeHead(302, { Location: authUrl, 'Cache-Control': 'no-store' })
+    return res.end()
+  }
+  return json(res, 200, { url: authUrl })
+}
+
+async function xCallback(req, res) {
+  const config = supabaseConfig()
+  const url = new URL(req.url || '/', 'http://localhost')
+  let destination = new URL('/connected-apps?connected=x', publicAppUrl())
+  try {
+    const denied = url.searchParams.get('error_description') || url.searchParams.get('error')
+    if (denied) throw new Error(`X authorization was denied: ${denied}`)
+    const code = url.searchParams.get('code')
+    const state = url.searchParams.get('state')
+    if (!code || !state) throw new Error('Missing X authorization code or state')
+    const parsed = verifyOAuthState(state, config)
+    if (parsed.provider !== 'x' || !parsed.verifier) throw new Error('Invalid X connection state')
+    const verifier = decryptSecret(parsed.verifier, encryptionKey(config))
+    const { clientId, clientSecret, redirectUri } = xOAuthCredentials()
+    if (!clientId) throw new Error('X client ID is not configured')
+    const tokenBody = new URLSearchParams({ code, grant_type: 'authorization_code', redirect_uri: redirectUri, code_verifier: verifier, client_id: clientId })
+    const tokenHeaders = { 'Content-Type': 'application/x-www-form-urlencoded' }
+    if (clientSecret) tokenHeaders.Authorization = `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`
+    const tokenResponse = await fetch('https://api.x.com/2/oauth2/token', { method: 'POST', headers: tokenHeaders, body: tokenBody })
+    const tokenData = await tokenResponse.json().catch(() => ({}))
+    if (!tokenResponse.ok || !tokenData.access_token) throw new Error(tokenData.error_description || tokenData.error || 'X token exchange failed')
+    const meResponse = await fetch('https://api.x.com/2/users/me?user.fields=username,name', { headers: { Authorization: `Bearer ${tokenData.access_token}` } })
+    const meData = await meResponse.json().catch(() => ({}))
+    if (!meResponse.ok || !meData.data?.id) throw new Error(meData.detail || 'Could not verify the connected X account')
+    await saveUserIntegration(parsed.userId, 'x', {
+      email: parsed.email,
+      identifier: String(meData.data.id),
+      tokens: {
+        access_token: tokenData.access_token,
+        refresh_token: tokenData.refresh_token || '',
+        username: meData.data.username || '',
+        expiry: tokenData.expires_in ? Date.now() + Number(tokenData.expires_in) * 1000 : undefined,
+        isMaster: false,
+        hasOwnKey: true,
+      },
+      scopes: normalizeLinkedInScopes(tokenData.scope || 'tweet.read tweet.write users.read offline.access'),
+    }, config)
+    const safeRedirect = String(parsed.redirect || '').startsWith('/') && !String(parsed.redirect || '').startsWith('//') ? String(parsed.redirect) : '/connected-apps'
+    destination = new URL(safeRedirect, publicAppUrl())
+    destination.searchParams.set('connected', 'x')
+  } catch (error) {
+    destination = new URL('/connected-apps?connected=error', publicAppUrl())
+    destination.searchParams.set('reason', error instanceof Error ? error.message.slice(0, 180) : 'X connection failed')
   }
   res.writeHead(302, { Location: destination.toString(), 'Cache-Control': 'no-store' })
   return res.end()
@@ -2833,7 +2924,7 @@ function campaignNextRun(campaign) {
   return next?.scheduledAt
 }
 
-const composioPublishingPlatforms = new Set(['youtube', 'instagram', 'x', 'twitter', 'facebook', 'whatsapp'])
+const composioPublishingPlatforms = new Set(['youtube', 'instagram', 'facebook', 'whatsapp'])
 function composioCampaignAction(platform, post, caption, campaign) {
   const imageUrl = post.imageUrl || post.image_url || ''
   if (platform === 'instagram') {
@@ -4889,9 +4980,10 @@ async function postToX(creds, params) {
   const token = creds.accessToken
   if (!token) throw new Error('X access token missing')
   const bodyText = params.imageUrl && !text.includes(params.imageUrl) ? `${text}\n\n${params.imageUrl}` : text
-  const response = await fetch('https://api.twitter.com/2/tweets', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ text: bodyText }) })
+  const response = await fetch('https://api.x.com/2/tweets', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ text: bodyText }) })
   const data = await response.json()
   if (!response.ok) throw new Error(data.detail || data.title || 'X post failed')
+  if (!data.data?.id) throw new Error('X did not return a confirmed post identifier')
   return { id: data.data?.id, data }
 }
 
@@ -6318,6 +6410,21 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'GET' && req.url?.startsWith('/api/connectors/linkedin/callback')) {
     try { return await linkedinCallback(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'LinkedIn callback failed' }) }
+  }
+  if (req.method === 'GET' && req.url === '/api/linkedin/auth') {
+    try { return await startLinkedInOAuth(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'LinkedIn auth failed' }) }
+  }
+  if (req.method === 'POST' && req.url === '/api/linkedin/auth') {
+    try { return await startLinkedInConnection(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'LinkedIn auth failed' }) }
+  }
+  if (req.method === 'GET' && req.url?.startsWith('/api/linkedin/callback')) {
+    try { return await linkedinCallback(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'LinkedIn callback failed' }) }
+  }
+  if ((req.method === 'GET' || req.method === 'POST') && req.url === '/api/x/auth') {
+    try { return await startXConnection(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'X auth failed' }) }
+  }
+  if (req.method === 'GET' && req.url?.startsWith('/api/x/callback')) {
+    try { return await xCallback(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'X callback failed' }) }
   }
   if (req.method === 'POST' && req.url === '/api/connectors/facebook/start') {
     try {

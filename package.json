@@ -39,7 +39,8 @@
     "test:media-library": "node scripts/media-library-tests.mjs",
     "test:money-loop": "node scripts/money-loop-tests.mjs",
     "test:home-edition": "node scripts/home-edition-tests.mjs",
-    "test:platform-recolour": "node scripts/platform-recolour-tests.mjs"
+    "test:platform-recolour": "node scripts/platform-recolour-tests.mjs",
+    "test:super-computer": "node scripts/super-computer-agent-tests.mjs"
   },
   "engines": {
     "node": ">=22.0.0"
