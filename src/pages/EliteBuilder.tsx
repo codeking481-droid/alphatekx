@@ -128,8 +128,9 @@ export default function EliteBuilder() {
     setLoadingHistory(true);
     try {
       setHistory((await listBuilds()).projects || []);
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Build history could not load.");
+    } catch {
+      // History is supporting information and must never prevent a new build.
+      setHistory([]);
     } finally {
       setLoadingHistory(false);
     }
@@ -555,7 +556,7 @@ export default function EliteBuilder() {
                   <div className="h-16 animate-pulse rounded-xl bg-white/5" />
                 ) : history.length === 0 ? (
                   <p className="rounded-xl border border-dashed border-white/10 p-4 text-xs font-semibold text-white/30">
-                    Your verified builds will appear here.
+                    No builds yet.
                   </p>
                 ) : (
                   history.map((item) => (

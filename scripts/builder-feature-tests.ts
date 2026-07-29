@@ -192,10 +192,12 @@ await test('Builder V3 has responsive device previews and durable version histor
   assert(service.includes('nextVersions') && sql.includes('versions jsonb'), 'version persistence is missing')
 })
 
-await test('Builder V3 uses authenticated Pollinations retries without obsolete endpoint rotation', () => {
+await test('Builder V3 uses a bounded authenticated Pollinations request with a verified direct fallback', () => {
   const server = readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
-  assert(server.includes('pollinationsBuilderCompletion') && server.includes('attempt < 3'), 'Pollinations retry path is missing')
+  assert(server.includes('pollinationsBuilderCompletion') && server.includes("15_000"), 'Pollinations timeout is missing')
   assert(server.includes('https://gen.pollinations.ai/v1/chat/completions'), 'official Pollinations endpoint is missing')
+  assert(server.includes('https://text.pollinations.ai/'), 'direct Pollinations recovery endpoint is missing')
+  assert(server.includes("provider: 'pollinations-direct'"), 'direct output is not verified before use')
   assert(!server.includes("https://text.pollinations.ai/openai"), 'obsolete Pollinations endpoint must not be used')
 })
 
@@ -258,6 +260,43 @@ await test('Builder compatibility storage accepts missions.description when prod
     assert('goal' in missionBodies[0], 'legacy mission insert was not attempted')
     assert(missionBodies[1].description === 'Build a production website', 'description-compatible mission was not written')
     assert(!('goal' in missionBodies[1]), 'rejected goal column remained in the compatibility retry')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+await test('Builder stays on builder_projects when production has an older column set', async () => {
+  const originalFetch = globalThis.fetch
+  const bodies: Record<string, unknown>[] = []
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input)
+    if (!url.endsWith('/builder_projects')) {
+      return new Response(JSON.stringify({ message: `Legacy table must not be queried: ${url}` }), { status: 500 })
+    }
+    const body = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>
+    bodies.push(body)
+    if ('charged' in body) {
+      return new Response(JSON.stringify({ message: "Could not find the 'charged' column of 'builder_projects' in the schema cache" }), { status: 400 })
+    }
+    return new Response(JSON.stringify([body]), { status: 201, headers: { 'content-type': 'application/json' } })
+  }) as typeof fetch
+  try {
+    const saved = await saveGeneratedProject(
+      { url: 'https://supabase.test', service: 'service-role' },
+      { id: '11111111-1111-4111-8111-111111111111' },
+      {
+        id: '33333333-3333-4333-8333-333333333333',
+        title: 'Compatible Builder Project',
+        prompt: 'Build a production website',
+        code: 'function App(){return <main>Ready</main>}',
+        requestId: '33333333-3333-4333-8333-333333333333',
+      },
+    )
+    assert(saved.id === '33333333-3333-4333-8333-333333333333', 'project was not saved to compatible builder storage')
+    assert(bodies.length === 2, `expected one compatible retry, got ${bodies.length}`)
+    assert('charged' in bodies[0], 'full current schema insert was not attempted first')
+    assert(!('charged' in bodies[1]), 'unsupported column remained in compatibility insert')
+    assert(bodies[1].prompt === 'Build a production website', 'compatible Builder data was not preserved')
   } finally {
     globalThis.fetch = originalFetch
   }
