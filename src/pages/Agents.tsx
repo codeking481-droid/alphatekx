@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { isAdminUser } from '../lib/adminAccess'
-import { ArrowRight, CalendarDays, CheckCircle2, Clock3, Edit3, LoaderCircle, Send, Sparkles, X } from 'lucide-react'
+import { ArrowRight, CalendarDays, CheckCircle2, Clock3, Download, Edit3, LoaderCircle, Send, Sparkles, X } from 'lucide-react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import CampaignPreview from '../components/agents/CampaignPreview'
@@ -247,7 +247,7 @@ export default function Agents() {
               {conversation.messages?.map((message, index) => <div key={`${message.ts}-${index}`} className={message.role === 'user' ? 'ml-auto max-w-[88%] sm:max-w-[75%]' : 'max-w-full'}>
                 <div className={message.role === 'user' ? 'rounded-3xl rounded-br-lg bg-violet-600 px-4 py-3 text-sm leading-6 text-white sm:px-5' : 'text-sm leading-7 text-slate-100'}>
                   {message.role === 'alpha' && <p className="mb-1.5 text-xs font-black text-violet-300">Alpha</p>}
-                  <ReactMarkdown components={{ img: props => <img {...props} className="mt-3 max-h-[420px] w-full rounded-2xl border border-violet-300/15 object-contain" loading="lazy"/>, p: props => <p {...props} className="whitespace-pre-wrap"/> }}>{message.text}</ReactMarkdown>
+                  <ReactMarkdown components={{ img: props => <figure className="mt-3"><img {...props} className="max-h-[420px] w-full rounded-2xl border border-violet-300/15 object-contain" loading="lazy"/>{props.src&&<a href={props.src} download="alphatekx-image" target="_blank" rel="noreferrer" className="mt-2 inline-flex min-h-10 items-center gap-2 rounded-xl border border-violet-300/15 bg-white/5 px-3 text-xs font-black text-violet-200 hover:bg-violet-500/10"><Download size={14}/>Save image</a>}</figure>, p: props => <p {...props} className="whitespace-pre-wrap"/> }}>{message.text}</ReactMarkdown>
                 </div>
               </div>)}
               {creating && <div className="flex items-center gap-2 text-sm text-slate-400"><LoaderCircle className="animate-spin" size={16}/>Alpha is thinking…</div>}

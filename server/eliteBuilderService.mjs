@@ -141,14 +141,18 @@ export async function deployProject(config, user, input, baseUrl) {
   if (!SLUG_PATTERN.test(slug)) throw Object.assign(new Error('Use 3–30 lowercase letters, numbers, or hyphens. Start and end with a letter or number.'), { status: 400 })
   const conflict = await request(config, `builder_projects?slug=eq.${encodeURIComponent(slug)}&id=neq.${encodeURIComponent(id)}&select=id&limit=1`)
   if (conflict?.length) throw Object.assign(new Error('That Builder address is already taken. Choose another slug.'), { status: 409 })
-  const publicUrl = `${String(baseUrl).replace(/\/$/, '')}/b/${slug}`
+  const appBase = new URL(String(baseUrl))
+  const publicUrl = appBase.hostname === 'alphatekx.name.ng'
+    ? `${appBase.protocol}//${slug}.alphatekx.name.ng`
+    : `${String(baseUrl).replace(/\/$/, '')}/b/${slug}`
+  const pathUrl = `${String(baseUrl).replace(/\/$/, '')}/b/${slug}`
   const rows = await request(config, `builder_projects?id=eq.${encodeURIComponent(id)}&user_id=eq.${encodeURIComponent(user.id)}`, {
     method: 'PATCH',
     headers: { Prefer: 'return=representation' },
     body: JSON.stringify({ slug, public_url: publicUrl, published: true, updated_at: new Date().toISOString() }),
   })
   if (!rows?.length) throw Object.assign(new Error('This build could not be found in your account.'), { status: 404 })
-  return { project: rows[0], publicUrl }
+  return { project: rows[0], publicUrl, pathUrl }
 }
 
 export async function getPublicProject(config, slug) {

@@ -100,6 +100,10 @@ export async function createSmartImage(content: string, objective = '', platform
   return postJson<{ image_url: string; image_storage_path: string; image_prompt: string; image_keywords: string[]; image_source: string }>('/api/media/smart-image', { content, objective, platform })
 }
 
+export async function createSmartVideo(prompt: string, options: { duration?: number; aspectRatio?: '16:9' | '9:16' } = {}) {
+  return postJson<{ item: MediaItem; video_url: string; video_storage_path: string; model: string }>('/api/media/generate-video', { prompt, ...options })
+}
+
 export async function publishMedia(id: string) {
   return mediaRequest<{ id: string; status: 'published'; providerId: string; duplicate?: boolean }>(`/api/media/${id}/publish`, {
     method: 'POST',

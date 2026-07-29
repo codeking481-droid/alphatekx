@@ -4144,7 +4144,11 @@ async function fetchPublishedCreation(slug) {
   const response = await fetch(`${config.url}/rest/v1/creations?slug=eq.${encodeURIComponent(slug)}&published=eq.true&select=id,title,slug,code&limit=1`, { headers: deploymentReadHeaders(config) })
   const payload = await response.json()
   if (!response.ok) throw new Error(payload.message || 'Could not load the published app. Run supabase/path-deploy.sql once.')
-  return payload?.[0] || null
+  if (payload?.[0]) return payload[0]
+  const builderResponse = await fetch(`${config.url}/rest/v1/builder_projects?slug=eq.${encodeURIComponent(slug)}&published=eq.true&select=id,title,slug,code&limit=1`, { headers: deploymentReadHeaders(config) })
+  const builderPayload = await builderResponse.json()
+  if (!builderResponse.ok) throw new Error(builderPayload.message || 'Could not load the published Builder app. Run supabase/elite-builder.sql once.')
+  return builderPayload?.[0] || null
 }
 
 async function servePublishedCreation(req, res, slug) {
@@ -6959,6 +6963,22 @@ const server = http.createServer(async (req, res) => {
     } catch (error) {
       const code = error?.code || 'IMAGE_PROVIDER_ERROR'
       return json(res, code === 'DB_ERROR' ? 503 : 502, { error: error instanceof Error ? error.message : 'Alpha could not prepare an image.', code })
+    }
+  }
+  if (req.url === '/api/media/generate-video' && req.method === 'POST') {
+    try {
+      const config = supabaseConfig()
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      if (!user) return json(res, 401, { error: 'Authentication required' })
+      const body = await readBody(req)
+      return json(res, 201, await mediaLibrary.generateVideo(config, user, body.prompt, {
+        duration: body.duration,
+        aspectRatio: body.aspectRatio,
+      }))
+    } catch (error) {
+      const code = error?.code || 'VIDEO_PROVIDER_ERROR'
+      const status = code === 'INVALID_CONTENT' ? 400 : code === 'VIDEO_PROVIDER_NOT_CONFIGURED' ? 503 : code === 'DB_ERROR' ? 503 : 502
+      return json(res, status, { error: error instanceof Error ? error.message : 'Alpha could not generate a verified video.', code, charged: false })
     }
   }
   if (/^\/api\/media\/[0-9a-f-]+$/i.test(req.url || '') && ['PATCH', 'DELETE'].includes(req.method || '')) {

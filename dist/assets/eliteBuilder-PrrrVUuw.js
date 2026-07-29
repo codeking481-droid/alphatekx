@@ -1,4 +1,4 @@
-import{g as o,p as r}from"./apiClient-bkiGLFn5.js";const l=2,u=/^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])$/;function p(e,t="AlphaTekX build",n={}){const s=t.replace(/[<>&"']/g,""),i=JSON.stringify(String(e||"")).replace(/</g,"\\u003c"),a=JSON.stringify(n.slug||"preview"),c=n.selectMode===!0?"true":"false";return`<!doctype html>
+import{g as o,p as r}from"./apiClient-BYghOJQi.js";const l=2,u=/^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])$/;function p(e,t="AlphaTekX build",n={}){const s=t.replace(/[<>&"']/g,""),i=JSON.stringify(String(e||"")).replace(/</g,"\\u003c"),a=JSON.stringify(n.slug||"preview"),c=n.selectMode===!0?"true":"false";return`<!doctype html>
 <html>
 <head>
   <meta charset="utf-8"/>

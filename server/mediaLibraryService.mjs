@@ -352,6 +352,78 @@ async function persistGenerated(config, user, bytes, mime, metadata) {
   }
 }
 
+async function downloadVideo(url, timeoutMs = 180_000, requestHeaders = {}) {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const response = await fetch(url, { signal: controller.signal, headers: { Accept: 'video/mp4,video/*', ...requestHeaders } })
+    if (!response.ok) throw new Error(`Video provider returned HTTP ${response.status}.`)
+    const mime = String(response.headers.get('content-type') || 'video/mp4').split(';')[0]
+    if (!mime.startsWith('video/')) throw new Error('Video provider did not return a video.')
+    const bytes = Buffer.from(await response.arrayBuffer())
+    if (bytes.length < 100 * 1024 || bytes.length > 500 * 1024 * 1024) throw new Error('Generated video failed the quality-size check.')
+    return { bytes, mime: ALLOWED_TYPES.has(mime) ? mime : 'video/mp4' }
+  } finally { clearTimeout(timeout) }
+}
+
+export async function generateVideo(config, user, prompt, options = {}) {
+  assertConfig(config)
+  await ensureBucket(config)
+  const key = String(process.env.POLLINATIONS_API_KEY || '').trim()
+  if (!key) {
+    const error = new Error('Video generation is not configured yet. Add POLLINATIONS_API_KEY on Render, then redeploy.')
+    error.code = 'VIDEO_PROVIDER_NOT_CONFIGURED'
+    throw error
+  }
+  const cleanPrompt = String(prompt || '').trim()
+  if (cleanPrompt.length < 10) throw Object.assign(new Error('Describe the video in at least 10 characters.'), { code: 'INVALID_CONTENT' })
+  const model = String(process.env.POLLINATIONS_VIDEO_MODEL || 'wan-fast').trim()
+  const duration = Math.min(10, Math.max(4, Number(options.duration) || 5))
+  const aspectRatio = options.aspectRatio === '9:16' ? '9:16' : '16:9'
+  const params = new URLSearchParams({ model, duration: String(duration), aspectRatio, enhance: 'true' })
+  const url = `https://gen.pollinations.ai/video/${encodeURIComponent(cleanPrompt)}?${params.toString()}`
+  const delays = [0, 2_000, 5_000]
+  let downloaded = null
+  let lastError = null
+  for (let attempt = 0; attempt < 3 && !downloaded; attempt += 1) {
+    if (delays[attempt]) await wait(delays[attempt])
+    try { downloaded = await downloadVideo(url, 180_000, { Authorization: `Bearer ${key}` }) }
+    catch (error) {
+      lastError = error
+      console.warn(`[AlphaTekX] Pollinations video attempt ${attempt + 1} failed: ${error instanceof Error ? error.message : error}`)
+    }
+  }
+  if (!downloaded) throw Object.assign(new Error(`Alpha could not verify a generated video after three attempts. ${lastError instanceof Error ? lastError.message : ''}`.trim()), { code: 'VIDEO_PROVIDER_ERROR' })
+
+  const extension = extensionForMime(downloaded.mime) || 'mp4'
+  const storagePath = `${user.id}/auto-generated-video/${Date.now()}-${randomUUID()}.${extension}`
+  await responseJson(await fetch(`${config.url}/storage/v1/object/${BUCKET}/${storagePath}`, {
+    method: 'POST',
+    headers: headers(config.service, { 'Content-Type': downloaded.mime, 'x-upsert': 'false' }),
+    body: downloaded.bytes,
+  }))
+  const rows = await responseJson(await fetch(`${config.url}/rest/v1/media_library`, {
+    method: 'POST',
+    headers: headers(config.service, { 'Content-Type': 'application/json', Prefer: 'return=representation' }),
+    body: JSON.stringify({
+      user_id: user.id,
+      storage_path: storagePath,
+      file_name: `alpha-video-${Date.now()}.${extension}`,
+      file_type: 'video',
+      mime_type: downloaded.mime,
+      file_size: downloaded.bytes.length,
+      title: cleanPrompt.slice(0, 120),
+      description: cleanPrompt,
+      tags: ['alpha-generated', model],
+      status: 'ready',
+    }),
+  }))
+  const item = rows?.[0]
+  if (!item?.id) throw Object.assign(new Error('The generated video was stored but its media record could not be confirmed.'), { code: 'DB_ERROR' })
+  const fileUrl = await signedUrl(config, storagePath, 86400)
+  return { item: { ...item, file_url: fileUrl }, video_url: fileUrl, video_storage_path: storagePath, model }
+}
+
 export async function findSmartImage(config, user, content, objective = '', platform = '', options = {}) {
   assertConfig(config)
   await ensureBucket(config)

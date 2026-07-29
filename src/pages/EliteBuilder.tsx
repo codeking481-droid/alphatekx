@@ -19,6 +19,7 @@ const templates = [
 ] as const
 
 type Tab = 'preview' | 'code' | 'deploy'
+const BUILD_STAGES = ['Understanding your product', 'Designing the application structure', 'Applying the visual system', 'Testing interactions', 'Preparing live preview']
 
 export default function EliteBuilder() {
   const [prompt, setPrompt] = useState('')
@@ -28,6 +29,8 @@ export default function EliteBuilder() {
   const [tab, setTab] = useState<Tab>('preview')
   const [slug, setSlug] = useState('')
   const [busy, setBusy] = useState(false)
+  const [buildStage, setBuildStage] = useState('')
+  const [mobilePanel, setMobilePanel] = useState<'prompt' | 'workspace'>('prompt')
   const [loadingHistory, setLoadingHistory] = useState(true)
   const [notice, setNotice] = useState('')
   const [previewError, setPreviewError] = useState('')
@@ -77,7 +80,9 @@ export default function EliteBuilder() {
     const value = prompt.trim()
     if (value.length < 8) { setNotice('Describe the product and who it is for so Alpha can build it properly.'); return }
     if (credits < BUILDER_COST) { setNotice('You need 2 credits for a verified build. Buy credits to continue.'); return }
-    setBusy(true); setNotice(''); setPreviewError(''); setPublicUrl('')
+    setBusy(true); setBuildStage(BUILD_STAGES[0]); setNotice(''); setPreviewError(''); setPublicUrl(''); setMobilePanel('workspace')
+    let stage = 0
+    const stageTimer = window.setInterval(() => { stage = Math.min(stage + 1, BUILD_STAGES.length - 1); setBuildStage(BUILD_STAGES[stage]) }, 1800)
     try {
       const requestId = crypto.randomUUID()
       const result = await generateBuild(value, requestId)
@@ -89,7 +94,7 @@ export default function EliteBuilder() {
       setNotice(`Build complete with ${result.provider}. Two credits were charged after verification.`)
       await refreshHistory()
     } catch (error) { setNotice(error instanceof Error ? error.message : 'Alpha is resting. Retry this build in a moment.') }
-    finally { setBusy(false) }
+    finally { window.clearInterval(stageTimer); setBusy(false); setBuildStage('') }
   }
 
   const deploy = async () => {
@@ -169,19 +174,20 @@ export default function EliteBuilder() {
     setCopied(true); window.setTimeout(() => setCopied(false), 1400)
   }
 
-  return <div className="min-h-[calc(100dvh-4rem)] bg-[#0A0A0F] px-3 py-4 text-[#E9E7FF] sm:px-5 lg:px-7">
-    <div className="mx-auto max-w-[1600px]">
+  return <div className="h-[calc(100dvh-4rem)] min-h-[620px] overflow-hidden bg-[#0A0A0F] px-2 py-2 text-[#E9E7FF] sm:px-4 sm:py-3 lg:px-6">
+    <div className="mx-auto flex h-full max-w-[1600px] min-w-0 flex-col">
       <header className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-[#111119] px-5 py-4 shadow-2xl shadow-black/20">
         <div><div className="flex items-center gap-2"><WandSparkles className="text-violet-400" size={19}/><h1 className="text-xl font-black">Builder V2</h1><span className="rounded-full bg-violet-500/15 px-2 py-1 text-[9px] font-black tracking-wider text-violet-300">10×</span></div><p className="mt-1 text-xs font-semibold text-white/45">Built with AlphaTekX Builder · full-stack, self-healing and deployable</p></div>
         <div className="rounded-xl border border-violet-400/20 bg-violet-500/10 px-3.5 py-2 text-sm font-black text-violet-200">{credits} Credits</div>
       </header>
 
-      <div className="grid min-h-[720px] overflow-hidden rounded-3xl border border-white/10 bg-[#111119] shadow-[0_30px_90px_rgba(0,0,0,.38)] lg:grid-cols-[minmax(310px,35%)_1fr]">
-        <aside className="flex min-h-0 flex-col border-b border-white/10 bg-[#101017] lg:border-b-0 lg:border-r">
+      <div className="mb-2 grid grid-cols-2 gap-2 lg:hidden"><button onClick={()=>setMobilePanel('prompt')} className={`min-h-10 rounded-xl text-xs font-black ${mobilePanel==='prompt'?'bg-violet-600':'bg-white/5 text-white/50'}`}>Describe & edit</button><button onClick={()=>setMobilePanel('workspace')} className={`min-h-10 rounded-xl text-xs font-black ${mobilePanel==='workspace'?'bg-violet-600':'bg-white/5 text-white/50'}`}>Preview & deploy</button></div>
+      <div className="grid min-h-0 flex-1 overflow-hidden rounded-3xl border border-white/10 bg-[#111119] shadow-[0_30px_90px_rgba(0,0,0,.38)] lg:grid-cols-[minmax(310px,35%)_1fr]">
+        <aside className={`${mobilePanel==='prompt'?'flex':'hidden'} min-h-0 flex-col overflow-y-auto border-b border-white/10 bg-[#101017] lg:flex lg:border-b-0 lg:border-r`}>
           <div className="space-y-5 p-4 sm:p-5">
             <div><label htmlFor="builder-prompt" className="text-xs font-black uppercase tracking-[.16em] text-white/45">{project?'Chat to edit':'What should Alpha build?'}</label>{selectedElement&&<p className="mt-2 rounded-lg bg-cyan-400/10 p-2 text-[10px] font-bold text-cyan-200">Element selected. Tell Alpha how it should change.</p>}<textarea id="builder-prompt" value={prompt} onChange={event=>setPrompt(event.target.value)} onKeyDown={event=>{if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){event.preventDefault();project?void revise():void build()}}} rows={7} placeholder={project?'Try “make the navbar glassy”, “change the accent to pink”, or “add a checkout drawer”…':'Describe what you want to build… e.g. A luxury thrift fashion landing page for Lagos girls with shop, cart and checkout.'} className="mt-3 w-full resize-none rounded-2xl border border-white/10 bg-[#1A1A23] p-4 text-sm font-semibold leading-6 text-white outline-none placeholder:text-white/25 focus:border-violet-500 focus:ring-4 focus:ring-violet-500/10"/></div>
             <div><p className="mb-2 text-[10px] font-black uppercase tracking-[.16em] text-white/35">Elite templates</p><div className="flex flex-wrap gap-2">{templates.map(([label,value])=><button key={label} onClick={()=>setPrompt(value)} className="rounded-full border border-white/10 bg-white/[.035] px-3 py-2 text-[11px] font-bold text-white/65 transition hover:border-violet-400/40 hover:bg-violet-500/10 hover:text-white">{label}</button>)}</div></div>
-            <button onClick={()=>project?void revise():void build()} disabled={busy||prompt.trim().length<(project?3:8)||(!project&&credits<BUILDER_COST)} className="flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-[#7C3AED] px-5 text-sm font-black text-white shadow-xl shadow-violet-950/35 transition hover:-translate-y-0.5 hover:bg-violet-500 disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-45">{busy?<><LoaderCircle className="animate-spin" size={18}/>Alpha is engineering…</>:<><Sparkles size={18}/>{project?'Apply verified edit':'Build with Alpha'} <span className="text-white/55">⌘↵</span></>}</button>
+            <button onClick={()=>project?void revise():void build()} disabled={busy||prompt.trim().length<(project?3:8)||(!project&&credits<BUILDER_COST)} className="flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-[#7C3AED] px-5 text-sm font-black text-white shadow-xl shadow-violet-950/35 transition hover:-translate-y-0.5 hover:bg-violet-500 disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-45">{busy?<><LoaderCircle className="animate-spin" size={18}/>{buildStage || 'Engineering your app…'}</>:<><Sparkles size={18}/>{project?'Apply verified edit':'Build with Alpha'} <span className="text-white/55">⌘↵</span></>}</button>
             <div className="grid grid-cols-2 gap-2"><button disabled={!project} onClick={()=>setSelectMode(value=>!value)} className={`flex min-h-11 items-center justify-center gap-2 rounded-xl border text-xs font-black disabled:opacity-30 ${selectMode?'border-cyan-300 bg-cyan-400/15 text-cyan-200':'border-white/10 bg-white/[.035] text-white/60'}`}><MousePointer2 size={15}/>{selectMode?'Select mode on':'Click to edit'}</button><button disabled={!project} onClick={()=>void openMedia()} className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[.035] text-xs font-black text-white/60 disabled:opacity-30"><Image size={15}/>Use My Media</button></div>
             <div className="flex items-center justify-between text-[11px] font-bold text-white/40"><span>{project?'Edits preserve the current app':'Verified build'}</span><span>{project?'No rebuild':'2 credits'}</span></div>
             {notice&&<p className="rounded-xl border border-violet-400/15 bg-violet-500/10 p-3 text-xs font-semibold leading-5 text-violet-100">{notice}</p>}
@@ -189,10 +195,11 @@ export default function EliteBuilder() {
           <div className="min-h-0 flex-1 border-t border-white/10 p-4 sm:p-5"><div className="mb-3 flex items-center gap-2 text-xs font-black uppercase tracking-[.14em] text-white/45"><History size={14}/>My builds</div><div className="max-h-64 space-y-2 overflow-y-auto pr-1 lg:max-h-[360px]">{loadingHistory?<div className="h-16 animate-pulse rounded-xl bg-white/5"/>:history.length===0?<p className="rounded-xl border border-dashed border-white/10 p-4 text-xs font-semibold text-white/30">Your verified builds will appear here.</p>:history.map(item=><button key={item.id} onClick={()=>selectProject(item)} className={`w-full rounded-xl border p-3 text-left transition ${project?.id===item.id?'border-violet-500/50 bg-violet-500/10':'border-white/5 bg-white/[.025] hover:bg-white/5'}`}><span className="block truncate text-xs font-black text-white/85">{item.title}</span><span className="mt-1 flex items-center justify-between text-[10px] font-semibold text-white/35"><span>{item.provider||'Alpha'}</span><span>{item.published?'Live':'Draft'}</span></span></button>)}</div></div>
         </aside>
 
-        <section className="flex min-h-[620px] min-w-0 flex-col">
+        <section className={`${mobilePanel==='workspace'?'flex':'hidden'} min-h-0 min-w-0 flex-col lg:flex`}>
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-[#12121B] px-3 py-3 sm:px-4"><div className="flex rounded-xl border border-white/10 bg-black/20 p-1">{([['preview','Preview',Eye],['code','Code',Code2],['deploy','Deploy',Rocket]] as const).map(([id,label,Icon])=><button key={id} onClick={()=>setTab(id)} className={`flex min-h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-black transition ${tab===id?'bg-white/10 text-white':'text-white/40 hover:text-white/75'}`}><Icon size={14}/>{label}</button>)}</div>{project&&<span className="max-w-[220px] truncate text-xs font-bold text-white/35">{project.title}</span>}</div>
 
           <div className="relative min-h-0 flex-1 bg-[#09090E]">
+            {busy&&buildStage&&<div className="absolute inset-0 z-30 grid place-items-center overflow-hidden bg-[#09090E]/95 p-6"><div className="w-full max-w-md text-center"><div className="relative mx-auto size-20"><div className="absolute inset-0 animate-ping rounded-full bg-violet-500/15"/><div className="absolute inset-2 grid place-items-center rounded-3xl border border-violet-300/25 bg-violet-500/15 shadow-[0_0_55px_rgba(124,58,237,.32)]"><WandSparkles className="text-violet-300" size={28}/></div></div><p className="mt-7 text-[10px] font-black uppercase tracking-[.22em] text-violet-300">AlphaTekX Builder</p><h2 className="mt-3 text-xl font-black sm:text-2xl">{buildStage}</h2><div className="mx-auto mt-6 flex max-w-xs gap-1.5">{BUILD_STAGES.map((label,index)=><span key={label} className={`h-1.5 flex-1 rounded-full transition-all duration-500 ${index<=BUILD_STAGES.indexOf(buildStage)?'bg-violet-500':'bg-white/10'}`}/>)}</div><p className="mt-4 text-xs font-semibold text-white/40">Your workspace stays clean while Alpha builds and validates the result.</p></div></div>}
             {!code&&<div className="absolute inset-0 grid place-items-center p-8 text-center"><div><span className="mx-auto grid size-16 place-items-center rounded-2xl border border-violet-400/20 bg-violet-500/10 text-violet-300"><Monitor size={28}/></span><h2 className="mt-5 text-xl font-black">Your live build appears here</h2><p className="mx-auto mt-2 max-w-sm text-sm font-semibold leading-6 text-white/35">Choose a template or describe your idea. Alpha will generate a verified, interactive React experience.</p></div></div>}
             {code&&tab==='preview'&&<div className="absolute inset-0 p-2 sm:p-3">{previewError&&<div className="absolute inset-x-4 top-4 z-10 rounded-xl border border-rose-400/20 bg-rose-950/90 p-3 text-xs font-bold text-rose-200">Preview issue: {previewError}</div>}<iframe title="Builder live preview" sandbox="allow-scripts allow-forms allow-modals" srcDoc={preview} className="h-full min-h-[580px] w-full rounded-xl border border-white/10 bg-white" referrerPolicy="no-referrer"/></div>}
             {code&&tab==='code'&&<div className="absolute inset-0 flex flex-col p-3"><div className="flex items-center justify-between rounded-t-xl border border-white/10 bg-[#15151F] px-4 py-3"><span className="flex items-center gap-2 text-xs font-bold text-white/45"><Code2 size={14}/>App.jsx</span><button onClick={()=>void copyCode()} className="flex items-center gap-1.5 rounded-lg bg-white/5 px-3 py-2 text-xs font-black hover:bg-white/10">{copied?<Check size={14}/>:<Copy size={14}/>} {copied?'Copied':'Copy'}</button></div><pre className="min-h-0 flex-1 overflow-auto rounded-b-xl border-x border-b border-white/10 bg-[#0B0B11] p-5 text-xs leading-6 text-cyan-100"><code>{code}</code></pre></div>}
