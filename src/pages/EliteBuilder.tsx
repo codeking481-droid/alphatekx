@@ -209,10 +209,10 @@ export default function EliteBuilder() {
         setCreditBalance(result.credits);
       }
       setTab("preview");
-      setNotice(
-        `Build complete with ${result.provider}. Two credits were charged after verification.`,
-      );
-      await refreshHistory();
+      setNotice(result.persisted === false
+        ? (result.storageWarning || "Preview is ready. Storage is unavailable, so nothing was charged and deployment is disabled.")
+        : `Build complete with ${result.provider}. Two credits were charged after verification.`);
+      if (result.persisted !== false) await refreshHistory();
     } catch (error) {
       setNotice(
         error instanceof Error ? error.message : "Alpha is resting. Retry this build in a moment.",
@@ -225,7 +225,7 @@ export default function EliteBuilder() {
   };
 
   const deploy = async () => {
-    if (!project || !slugValid || busy) return;
+    if (!project || project.transient || project.persisted === false || !slugValid || busy) return;
     setBusy(true);
     setNotice("");
     try {
@@ -242,7 +242,7 @@ export default function EliteBuilder() {
   };
 
   const revise = async (instruction = prompt) => {
-    if (!project || instruction.trim().length < 3 || busy) return;
+    if (!project || project.transient || project.persisted === false || instruction.trim().length < 3 || busy) return;
     setBusy(true);
     setNotice("");
     try {
@@ -269,7 +269,7 @@ export default function EliteBuilder() {
   };
 
   useEffect(() => {
-    if (!previewError || !project || repairCount >= 3 || busy) return;
+    if (!previewError || !project || project.transient || project.persisted === false || repairCount >= 3 || busy) return;
     const timer = window.setTimeout(async () => {
       setBusy(true);
       setNotice(`Alpha detected a runtime issue. Auto-repair ${repairCount + 1}/3…`);
@@ -502,7 +502,7 @@ export default function EliteBuilder() {
               </div>
               <button
                 onClick={() => (project ? void revise() : void build())}
-                disabled={busy || prompt.trim().length < (project ? 3 : 8) || false}
+                disabled={busy || prompt.trim().length < (project ? 3 : 8) || Boolean(project?.transient || project?.persisted === false)}
                 className="flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-[#7C3AED] px-5 text-sm font-black text-white shadow-xl shadow-violet-950/35 transition hover:-translate-y-0.5 hover:bg-violet-500 disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-45"
               >
                 {busy ? (
@@ -811,7 +811,7 @@ export default function EliteBuilder() {
                     )}
                     <button
                       onClick={() => void deploy()}
-                      disabled={!project || !slugValid || busy}
+                      disabled={!project || Boolean(project.transient || project.persisted === false) || !slugValid || busy}
                       className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#7C3AED] font-black text-white disabled:opacity-40"
                     >
                       {busy ? (

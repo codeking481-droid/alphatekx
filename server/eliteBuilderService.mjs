@@ -192,6 +192,36 @@ export function validateBuilderCode(value) {
 
 export function contextualFallbackBuilderCode(prompt) {
   const request = String(prompt || "").trim();
+  if (/\b(?:e-?commerce|online store|shop|thrift|gown|fashion store|product grid)\b/i.test(request)) {
+    return `function App() {
+  const products = [
+    { id: 1, name: 'Midnight Silk Gown', category: 'Evening', price: 48000, color: 'from-violet-700 to-fuchsia-400' },
+    { id: 2, name: 'Lagos Linen Set', category: 'Everyday', price: 32000, color: 'from-amber-500 to-orange-300' },
+    { id: 3, name: 'Emerald Aso-Ebi', category: 'Occasion', price: 65000, color: 'from-emerald-700 to-teal-300' },
+    { id: 4, name: 'Rose Draped Dress', category: 'Evening', price: 42000, color: 'from-rose-700 to-pink-300' },
+    { id: 5, name: 'Indigo Two-Piece', category: 'Everyday', price: 29000, color: 'from-indigo-800 to-blue-400' },
+    { id: 6, name: 'Golden Ceremony Gown', category: 'Occasion', price: 72000, color: 'from-yellow-600 to-amber-200' }
+  ];
+  const [query, setQuery] = React.useState('');
+  const [category, setCategory] = React.useState('All');
+  const [cart, setCart] = React.useState(() => { try { return JSON.parse(localStorage.getItem('alpha-thrift-cart') || '[]'); } catch { return []; } });
+  const [cartOpen, setCartOpen] = React.useState(false);
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const [ordered, setOrdered] = React.useState(false);
+  React.useEffect(() => { localStorage.setItem('alpha-thrift-cart', JSON.stringify(cart)); }, [cart]);
+  const visible = products.filter(item => (category === 'All' || item.category === category) && item.name.toLowerCase().includes(query.toLowerCase()));
+  const total = cart.reduce((sum, item) => sum + item.price, 0);
+  const add = product => { setCart(current => [...current, product]); setCartOpen(true); };
+  const remove = index => setCart(current => current.filter((_, itemIndex) => itemIndex !== index));
+  return <main className="min-h-screen bg-[#F7F4EF] text-[#191714]">
+    <header className="sticky top-0 z-40 border-b border-black/10 bg-[#F7F4EF]/95 backdrop-blur-xl"><div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4"><button onClick={() => setMenuOpen(!menuOpen)} className="grid size-11 place-items-center rounded-full border border-black/15 text-xl lg:hidden" aria-label="Toggle menu">{menuOpen ? '×' : '☰'}</button><strong className="text-xl font-black tracking-[-.04em] sm:text-2xl">SECOND STORY</strong><nav className="hidden gap-7 text-sm font-bold lg:flex">{['New in','Dresses','Sets','Our story'].map(item => <button key={item} className="hover:text-violet-700">{item}</button>)}</nav><button onClick={() => setCartOpen(true)} className="rounded-full bg-[#191714] px-5 py-3 text-sm font-black text-white">Bag · {cart.length}</button></div>{menuOpen && <nav className="grid gap-2 border-t border-black/10 p-5 lg:hidden">{['New in','Dresses','Sets','Our story'].map(item => <button key={item} className="rounded-xl p-3 text-left font-bold hover:bg-black/5">{item}</button>)}</nav>}</header>
+    <section className="mx-auto grid max-w-7xl gap-10 px-5 py-14 lg:grid-cols-[1.05fr_.95fr] lg:items-center lg:py-24"><div><p className="text-xs font-black uppercase tracking-[.24em] text-violet-700">Curated in Lagos · Worldwide delivery</p><h1 className="mt-5 text-5xl font-black leading-[.92] tracking-[-.06em] sm:text-7xl">Beautiful clothes deserve a second story.</h1><p className="mt-6 max-w-xl text-lg leading-8 text-black/60">Shop verified pre-loved gowns and limited fashion pieces selected for quality, fit and character.</p><button onClick={() => document.getElementById('shop')?.scrollIntoView({behavior:'smooth'})} className="mt-8 rounded-full bg-violet-700 px-7 py-4 font-black text-white shadow-xl shadow-violet-700/20 transition hover:-translate-y-1">Shop the collection</button></div><div className="grid aspect-[4/3] grid-cols-2 gap-3 rounded-[2rem] bg-[#211C2D] p-3 shadow-2xl"><div className="rounded-[1.5rem] bg-gradient-to-br from-violet-600 to-fuchsia-300"/><div className="grid gap-3"><div className="rounded-[1.5rem] bg-gradient-to-br from-amber-400 to-orange-200"/><div className="rounded-[1.5rem] bg-gradient-to-br from-emerald-700 to-teal-300"/></div></div></section>
+    <section id="shop" className="mx-auto max-w-7xl px-5 pb-24"><div className="flex flex-col justify-between gap-5 border-b border-black/10 pb-6 md:flex-row md:items-end"><div><p className="text-xs font-black uppercase tracking-[.2em] text-violet-700">Freshly listed</p><h2 className="mt-2 text-4xl font-black">Shop all pieces</h2></div><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search the collection" className="w-full rounded-full border border-black/15 bg-white px-5 py-3 outline-none focus:border-violet-600 md:max-w-xs"/></div><div className="my-6 flex gap-2 overflow-auto pb-2">{['All','Evening','Everyday','Occasion'].map(item => <button key={item} onClick={() => setCategory(item)} className={'shrink-0 rounded-full px-5 py-2.5 text-sm font-black ' + (category === item ? 'bg-violet-700 text-white' : 'border border-black/15 bg-white')}>{item}</button>)}</div>{visible.length ? <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{visible.map(product => <article key={product.id} className="group overflow-hidden rounded-[1.75rem] border border-black/10 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-xl"><div className={'aspect-[4/3] bg-gradient-to-br ' + product.color}/><div className="p-5"><p className="text-xs font-black uppercase tracking-wider text-black/45">{product.category}</p><div className="mt-2 flex items-start justify-between gap-4"><h3 className="text-xl font-black">{product.name}</h3><strong className="shrink-0">₦{product.price.toLocaleString()}</strong></div><button onClick={() => add(product)} className="mt-5 w-full rounded-xl bg-[#191714] py-3 font-black text-white transition active:scale-95">Add to bag</button></div></article>)}</div> : <div className="rounded-3xl border border-dashed border-black/20 p-16 text-center"><h3 className="text-xl font-black">No pieces found</h3><button onClick={() => {setQuery('');setCategory('All')}} className="mt-3 font-bold text-violet-700">Clear filters</button></div>}</section>
+    {cartOpen && <div className="fixed inset-0 z-50 flex justify-end bg-black/45" onClick={() => setCartOpen(false)}><aside className="flex h-full w-full max-w-md flex-col bg-white p-6 shadow-2xl" onClick={event => event.stopPropagation()}><div className="flex items-center justify-between"><h2 className="text-2xl font-black">Your bag</h2><button onClick={() => setCartOpen(false)} className="grid size-10 place-items-center rounded-full bg-black/5 text-xl">×</button></div>{ordered ? <div className="grid flex-1 place-items-center text-center"><div><span className="text-5xl">✓</span><h3 className="mt-5 text-2xl font-black">Order reserved</h3><p className="mt-2 text-black/55">This demo checkout saved your selection locally.</p><button onClick={() => {setOrdered(false);setCart([]);setCartOpen(false)}} className="mt-6 font-black text-violet-700">Continue shopping</button></div></div> : <><div className="mt-6 flex-1 space-y-3 overflow-auto">{cart.length ? cart.map((item,index) => <div key={index} className="flex items-center gap-4 rounded-2xl bg-[#F7F4EF] p-4"><div className={'size-16 rounded-xl bg-gradient-to-br ' + item.color}/><div className="min-w-0 flex-1"><p className="truncate font-black">{item.name}</p><p className="text-sm text-black/55">₦{item.price.toLocaleString()}</p></div><button onClick={() => remove(index)} className="text-sm font-bold text-red-600">Remove</button></div>) : <div className="grid h-full place-items-center text-center text-black/50">Your bag is empty.</div>}</div><div className="border-t border-black/10 pt-5"><p className="flex justify-between text-lg font-black"><span>Total</span><span>₦{total.toLocaleString()}</span></p><button disabled={!cart.length} onClick={() => setOrdered(true)} className="mt-4 w-full rounded-xl bg-violet-700 py-4 font-black text-white disabled:cursor-not-allowed disabled:opacity-40">Demo checkout</button></div></>}</aside></div>}
+    <footer className="border-t border-black/10 bg-white px-5 py-10"><div className="mx-auto flex max-w-7xl flex-col justify-between gap-3 sm:flex-row"><strong>SECOND STORY</strong><p className="text-sm text-black/50">Verified thrift fashion · Secure delivery · Lagos, Nigeria</p></div></footer>
+  </main>;
+}`;
+  }
   if (!/\b(?:school|academy|college|nursery|primary|secondary|university|education)\b/i.test(request)) return "";
   return `function App() {
   const [menuOpen, setMenuOpen] = React.useState(false);
@@ -237,6 +267,24 @@ export function contextualFallbackBuilderCode(prompt) {
     <footer className="bg-slate-950 px-5 py-10 text-slate-400"><div className="mx-auto flex max-w-7xl flex-col justify-between gap-4 sm:flex-row"><p className="font-bold text-white">Alpha Heights School</p><p>12 Learning Avenue · Lagos · admissions@alphaheights.edu</p></div></footer>
   </main>;
 }`;
+}
+
+export function transientBuilderProject(input = {}) {
+  const id = input.id || randomUUID();
+  return {
+    id,
+    slug: null,
+    title: String(input.title || "Untitled build").trim().slice(0, 120),
+    prompt: String(input.prompt || "").trim().slice(0, 6000),
+    code: String(input.code || ""),
+    provider: String(input.provider || "alpha"),
+    public_url: null,
+    published: false,
+    charged: false,
+    persisted: false,
+    transient: true,
+    created_at: new Date().toISOString(),
+  };
 }
 
 export async function listProjects(config, user) {

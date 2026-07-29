@@ -6,7 +6,7 @@ import {
 } from '../src/lib/builderVerifier.ts'
 import { fallbackAlphaBuilder } from '../alphaFallback.mjs'
 import { readFileSync } from 'node:fs'
-import { contextualFallbackBuilderCode, SLUG_PATTERN, saveGeneratedProject, validateBuilderCode } from '../server/eliteBuilderService.mjs'
+import { contextualFallbackBuilderCode, SLUG_PATTERN, saveGeneratedProject, transientBuilderProject, validateBuilderCode } from '../server/eliteBuilderService.mjs'
 import { builderSrcDoc, normalizeBuilderRuntimeCode } from '../src/lib/eliteBuilder.ts'
 
 globalThis.localStorage = {
@@ -170,6 +170,23 @@ await test('Builder fallback produces a real interactive school website when pro
   assert(code.includes('React.useState'), 'school fallback is not interactive')
   assert(code.includes('md:hidden'), 'school fallback does not include mobile navigation')
   assert(!code.includes('create a simple html code'), 'school fallback exposed the raw instruction as a headline')
+})
+
+await test('Builder fallback produces a working thrift store with persisted cart and checkout', () => {
+  const code = contextualFallbackBuilderCode('Build me a thrift gown store with product grid')
+  const result = validateBuilderCode(code)
+  assert(result.errors.length === 0, `thrift fallback is invalid: ${result.errors.join(' ')}`)
+  for (const expected of ['Shop all pieces', 'Add to bag', 'Demo checkout', 'localStorage']) {
+    assert(code.includes(expected), `thrift fallback is missing ${expected}`)
+  }
+})
+
+await test('verified code can become an honest uncharged transient preview', () => {
+  const project = transientBuilderProject({ title: 'Thrift Store', prompt: 'Build a thrift store', code: 'function App(){ return <main>Store</main> }', provider: 'test' })
+  assert(project.persisted === false, 'transient preview must not claim persistence')
+  assert(project.transient === true, 'transient preview must be identified')
+  assert(project.charged === false, 'transient preview must not be charged')
+  assert(project.published === false, 'transient preview must not claim publication')
 })
 
 await test('Elite Builder validates complete single-component output', () => {
