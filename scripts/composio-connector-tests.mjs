@@ -124,6 +124,11 @@ async function runTests() {
     assert(authConfigsSource.includes(id), `Managed Auth Config ${id} is registered`)
   }
   assert(serverSource.includes("/api/composio/toolkits"), 'Managed toolkit catalog endpoint exists')
+  assert(serviceSource.includes('validateProviderConfig'), 'Connect validates that the deployed API key can access the selected Auth Config')
+  assert(serviceSource.includes('isComposioManaged: true'), 'Managed Auth fallback discovers only Composio-managed configs')
+  assert(serviceSource.includes('error?.cause'), 'Link failures preserve the underlying Composio cause for diagnosis')
+  assert(serviceSource.includes('same Composio project'), 'Project/key mismatch returns an actionable connection error')
+  assert(serviceSource.includes('alreadyConnected: true'), 'An existing active account is reused instead of creating a duplicate link')
   assert(serverSource.includes("/^\\/api\\/(tiktok|snapchat)\\/auth$/"), 'TikTok and Snapchat custom OAuth starts are server-side')
   assert(serverSource.includes("createOAuthState(user.id"), 'Custom OAuth uses signed expiring state')
   assert(connectorPageSource.includes("comingSoon: true"), 'TikTok and Snapchat are honestly marked Coming Soon')
