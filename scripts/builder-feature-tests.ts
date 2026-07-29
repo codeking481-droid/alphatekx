@@ -5,6 +5,9 @@ import {
   featureSummary,
 } from '../src/lib/builderVerifier.ts'
 import { fallbackAlphaBuilder } from '../alphaFallback.mjs'
+import { readFileSync } from 'node:fs'
+import { SLUG_PATTERN, validateBuilderCode } from '../server/eliteBuilderService.mjs'
+import { builderSrcDoc } from '../src/lib/eliteBuilder.ts'
 
 globalThis.localStorage = {
   getItem: () => null,
@@ -115,6 +118,53 @@ await test('validateGeneratedApp reports missing requested features for generic 
     errors.some((e) => e.includes('missing requested features')),
     `expected missing-features error, got: ${errors.join('; ')}`,
   )
+})
+
+await test('Elite Builder validates complete single-component output', () => {
+  const result = validateBuilderCode(`function App(){ const [open,setOpen]=React.useState(false); return <main className="min-h-screen bg-black text-white"><h1>Launch Lagos</h1><button onClick={()=>setOpen(!open)}>Toggle</button>{open&&<p>Ready for customers with a complete mobile experience and helpful content.</p>}<section>${'Premium product experience. '.repeat(20)}</section></main>; }`)
+  assert(result.errors.length === 0, `unexpected elite validation errors: ${result.errors.join(', ')}`)
+})
+
+await test('Elite Builder rejects unsafe generated execution', () => {
+  const result = validateBuilderCode(`function App(){ eval("alert(1)"); return <main>${'Unsafe content '.repeat(30)}</main>; }`)
+  assert(result.errors.some(error => error.includes('unsafe')), 'unsafe generated code should be rejected')
+})
+
+await test('Builder deployment slug validation matches the public route contract', () => {
+  assert(SLUG_PATTERN.test('lagos-fashion'), 'valid slug was rejected')
+  assert(!SLUG_PATTERN.test('-bad') && !SLUG_PATTERN.test('A Bad Slug') && !SLUG_PATTERN.test('ab'), 'invalid slug was accepted')
+})
+
+await test('Builder preview is isolated from the AlphaTekX origin', () => {
+  const source = readFileSync(new URL('../src/pages/EliteBuilder.tsx', import.meta.url), 'utf8')
+  const publicSource = readFileSync(new URL('../src/pages/PublicBuilderProject.tsx', import.meta.url), 'utf8')
+  assert(source.includes('sandbox="allow-scripts allow-forms allow-modals"'), 'workspace iframe sandbox is missing')
+  assert(publicSource.includes('sandbox="allow-scripts allow-forms allow-modals"'), 'public iframe sandbox is missing')
+  assert(!source.includes('allow-same-origin') && !publicSource.includes('allow-same-origin'), 'generated code must not share the application origin')
+})
+
+await test('Builder preview includes Tailwind once and catches runtime failures', () => {
+  const document = builderSrcDoc('function App(){ return <main>Ready</main>; }', 'Test')
+  assert((document.match(/cdn\.tailwindcss\.com/g) || []).length === 2, 'Tailwind host should appear once in CSP and once as a script')
+  assert(document.includes("window.addEventListener('error'"), 'preview error boundary is missing')
+  assert(document.includes('React.createElement(App)'), 'preview does not mount the generated App')
+})
+
+await test('Builder API uses durable idempotency and charges only after persistence', () => {
+  const server = readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
+  const save = server.indexOf('saveGeneratedProject(config, user')
+  const spend = server.indexOf('billing.spendCredits(user, eliteBuilder.BUILDER_COST')
+  const settle = server.indexOf('markProjectCharged(config, user')
+  assert(server.includes('findProjectByRequest(config, user, requestId)'), 'durable request lookup is missing')
+  assert(save > 0 && spend > save && settle > spend, 'project persistence, charging, and settlement are in the wrong order')
+  assert(server.includes('idempotencyKey: `elite-builder:${requestId}`'), 'credit idempotency key is missing')
+})
+
+await test('Builder migration is owner-scoped and does not expose source publicly', () => {
+  const sql = readFileSync(new URL('../supabase/elite-builder.sql', import.meta.url), 'utf8')
+  assert(sql.includes('auth.uid()::text = user_id::text'), 'owner-scoped RLS policy is missing')
+  assert(sql.includes('revoke all on public.builder_projects from anon'), 'anonymous table access must be revoked')
+  assert(!sql.includes('using (true)'), 'allow-all RLS policy must not exist')
 })
 
 const passed = results.filter((r) => r.passed).length

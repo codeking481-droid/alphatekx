@@ -25,6 +25,7 @@ The API runs on port 3001 and Vite proxies `/api/*` to it.
 2. Open the SQL editor and run [`supabase/schema.sql`](supabase/schema.sql).
    Run [`supabase/fingerprint-credits.sql`](supabase/fingerprint-credits.sql) to enable the Google-only, one-device human-verification welcome bonus.
    Run [`supabase/media-library.sql`](supabase/media-library.sql) to create the private Media Library bucket, ownership policies, image cache, and durable vault publishing queue. Then run [`supabase/money-loop.sql`](supabase/money-loop.sql) for leads and content insights. Both migrations are required before deploying their UI routes.
+   Run [`supabase/elite-builder.sql`](supabase/elite-builder.sql) to enable private Builder drafts and public `/b/:slug` deployments.
    Run [`supabase/atomic-credit-execution.sql`](supabase/atomic-credit-execution.sql) to enable atomic, idempotent credit settlement for confirmed Composio executions. LinkedIn remains on AlphaTekx's native publishing and billing path.
    Run [`supabase/money-loop.sql`](supabase/money-loop.sql) to enable owner-scoped lead, performance, approved-outreach, and learned-insight records.
    Existing Phase 3 projects should run [`supabase/phase4.sql`](supabase/phase4.sql) instead to add marketplace revenue safely.
