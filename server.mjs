@@ -19,7 +19,7 @@ import { createConversationEngine } from './server/alpha/conversationEngine.mjs'
 import { ALPHATEKX_BRAIN } from './server/alpha/brainKnowledge.mjs'
 import * as providerHealth from './server/alpha/providerHealth.mjs'
 import * as billing from './server/billing.mjs'
-import { normalizeLinkedInScopes, publishLinkedInTextPost } from './server/linkedin.mjs'
+import { hasUsableLinkedInStorage, normalizeLinkedInScopes, publishLinkedInTextPost } from './server/linkedin.mjs'
 import { allowedWhatsAppRecipients, applyWhatsAppStatusEvent, executeApprovedWhatsAppMessage, sendWhatsAppText, verifyWhatsAppPhoneRegistration, verifyWhatsAppWebhookSignature, whatsappCredentials, whatsappWebhookEvents } from './server/whatsapp.mjs'
 import { connectorFeatureAccess, featureStatusForUser, refreshFeatureConfig, unavailableConnectorMessage, unavailablePromptConnector } from './server/featureAccess.mjs'
 import * as alphaConnector from './server/composioConnectorService.mjs'
@@ -4464,6 +4464,15 @@ async function getAuthAppIntegration(userId, provider, config) {
   return { id: `${userId}-${provider}`, user_id: userId, provider, email: record.email || null, identifier: record.identifier || record.email || tokens.identifier || null, tokens, scopes: record.scopes || [], source: 'auth_app_metadata' }
 }
 
+function hasUsableStoredIntegration(provider, tokens) {
+  if (!tokens || typeof tokens !== 'object') return false
+  const accessToken = tokens.api_key || tokens.access_token || tokens.token || tokens.bot_token || ''
+  if (provider === 'linkedin') {
+    return hasUsableLinkedInStorage(tokens)
+  }
+  return Boolean(accessToken || tokens.refresh_token || tokens.webhook_url || tokens.webhookUrl || Object.keys(tokens).length)
+}
+
 async function getUserIntegration(userId, provider, config) {
   if (provider === 'google') return getGoogleIntegration(userId, config)
   if (config.url && config.service) {
@@ -4475,7 +4484,13 @@ async function getUserIntegration(userId, provider, config) {
         if (row) {
           const key = encryptionKey(config)
           const tokens = decryptGenericTokens(row.tokens, key)
-          return { id: row.id, user_id: row.user_id, provider, email: row.email || null, identifier: row.email || tokens.identifier || null, tokens, scopes: row.scopes || [], source: 'connected_accounts' }
+          // Old Composio/native rows may share the provider name without
+          // containing usable native credentials. Do not let such a stale row
+          // hide a newer encrypted OAuth record in user_integrations.
+          if (hasUsableStoredIntegration(provider, tokens)) {
+            return { id: row.id, user_id: row.user_id, provider, email: row.email || null, identifier: row.email || tokens.identifier || null, tokens, scopes: row.scopes || [], source: 'connected_accounts' }
+          }
+          process.stdout.write(`[get integration] ignored unusable connected_accounts row for ${provider}\n`)
         }
       }
     } catch (err) { process.stdout.write(`[get integration] connected_accounts lookup failed: ${err instanceof Error ? err.message : err}\n`) }

@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { buildCapabilityPlan, detectCapability } from '../server/automation/capabilityRegistry.mjs'
 import { createConversationEngine } from '../server/alpha/conversationEngine.mjs'
-import { publishLinkedInTextPost, validateLinkedInCredentials } from '../server/linkedin.mjs'
+import { hasUsableLinkedInStorage, publishLinkedInTextPost, validateLinkedInCredentials } from '../server/linkedin.mjs'
 
 const tests = []
 async function test(name, fn) {
@@ -14,6 +14,11 @@ async function test(name, fn) {
 }
 
 const validCredentials = { accessToken: 'token', authorUrn: 'urn:li:person:test-member', scopes: ['w_member_social'], expiry: Date.now() + 60_000 }
+
+await test('LinkedIn storage ignores stale rows without native publishing credentials', () => {
+  assert.equal(hasUsableLinkedInStorage({ connectionId: 'stale-composio-row' }), false)
+  assert.equal(hasUsableLinkedInStorage({ access_token: 'token', author_urn: 'urn:li:person:member' }), true)
+})
 
 await test('LinkedIn capability detection and plan', () => {
   assert.equal(detectCapability('Schedule a LinkedIn post about AlphaTekx every Monday')?.id, 'linkedin-post')

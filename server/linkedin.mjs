@@ -3,6 +3,12 @@ export function normalizeLinkedInScopes(value) {
   return Array.from(new Set(entries.flatMap(entry => String(entry || '').split(/[\s,]+/)).filter(Boolean)))
 }
 
+export function hasUsableLinkedInStorage(tokens) {
+  const accessToken = tokens?.access_token || tokens?.accessToken || ''
+  const author = tokens?.author_urn || tokens?.authorUrn || ''
+  return Boolean(accessToken && String(author).startsWith('urn:li:person:'))
+}
+
 export function validateLinkedInCredentials(creds, now = Date.now()) {
   const token = creds?.accessToken || creds?.access_token || ''
   const author = creds?.authorUrn || creds?.author_urn || creds?.identifier || ''

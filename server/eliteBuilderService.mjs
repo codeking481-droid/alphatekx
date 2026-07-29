@@ -133,13 +133,31 @@ export function normalizeBuilderCode(value) {
   let code = String(value || "").trim();
   const fence = code.match(/```(?:jsx|tsx|javascript|js)?\s*([\s\S]*?)```/i);
   if (fence) code = fence[1].trim();
+  const iconBindings = [];
+  const importPattern = /\bimport\s+([\s\S]*?)\s+from\s+(['"])([^'"]+)\2\s*;?/g;
+  for (const match of code.matchAll(importPattern)) {
+    if (match[3] !== "lucide-react") continue;
+    const named = match[1].match(/\{([\s\S]*?)\}/)?.[1] || "";
+    for (const entry of named.split(",")) {
+      const parts = entry.trim().split(/\s+as\s+/i);
+      const binding = parts[1] || parts[0];
+      if (/^[A-Za-z_$][\w$]*$/.test(binding)) iconBindings.push(binding);
+    }
+  }
   code = code
-    .replace(/^\s*import\s+[\s\S]*?from\s+['"][^'"]+['"];?\s*$/gm, "")
-    .replace(/^\s*import\s+['"][^'"]+['"];?\s*$/gm, "")
+    .replace(importPattern, "\n")
+    .replace(/\bimport\s+(['"])[^'"]+\1\s*;?/g, "\n")
     .replace(/\bexport\s+default\s+function\s+App\b/, "function App")
     .replace(/\bexport\s+default\s+App\s*;?/g, "")
     .replace(/\bexport\s+(?=(?:const|function|class)\s+)/g, "")
+    .replace(/(?<!React\.)\b(useState|useEffect|useMemo|useReducer|useRef|useCallback|useContext)\s*\(/g, "React.$1(")
     .trim();
+  if (iconBindings.length) {
+    const definitions = Array.from(new Set(iconBindings))
+      .map(name => `const ${name} = (props = {}) => React.createElement("span", { ...props, "aria-hidden": true });`)
+      .join("\n");
+    code = `${definitions}\n${code}`;
+  }
   return code;
 }
 
@@ -156,11 +174,16 @@ export function validateBuilderCode(value) {
     errors.push("The generated application contained unsafe dynamic execution.");
   if (/<script\b/i.test(code))
     errors.push("The generated component contained an embedded script tag.");
-  if (/^\s*import\s/m.test(raw))
+  const unsupportedImports = Array.from(raw.matchAll(/\bimport\s+[\s\S]*?\s+from\s+['"]([^'"]+)['"]/g))
+    .map(match => match[1])
+    .filter(moduleName => !["react", "lucide-react"].includes(moduleName));
+  if (unsupportedImports.length)
     errors.push("The generated application depended on unavailable imports.");
+  if (/\bimport\s+/.test(code))
+    errors.push("The generated application contained an unhandled import.");
   if (/\b(?:ReactDOM\.)?createRoot\s*\(/.test(code))
     errors.push("The generated application attempted to mount itself.");
-  if (/(?<!React\.)\b(?:useState|useEffect|useMemo|useReducer|useRef)\s*\(/.test(code))
+  if (/(?<!React\.)\b(?:useState|useEffect|useMemo|useReducer|useRef|useCallback|useContext)\s*\(/.test(code))
     errors.push("The generated application used an unavailable bare React hook.");
   return { code, errors };
 }

@@ -7,7 +7,7 @@ import {
 import { fallbackAlphaBuilder } from '../alphaFallback.mjs'
 import { readFileSync } from 'node:fs'
 import { SLUG_PATTERN, saveGeneratedProject, validateBuilderCode } from '../server/eliteBuilderService.mjs'
-import { builderSrcDoc } from '../src/lib/eliteBuilder.ts'
+import { builderSrcDoc, normalizeBuilderRuntimeCode } from '../src/lib/eliteBuilder.ts'
 
 globalThis.localStorage = {
   getItem: () => null,
@@ -118,6 +118,26 @@ await test('validateGeneratedApp reports missing requested features for generic 
     errors.some((e) => e.includes('missing requested features')),
     `expected missing-features error, got: ${errors.join('; ')}`,
   )
+})
+
+await test('Builder preview removes inline and multiline imports before live execution', () => {
+  const generated = `import React, {
+    useState
+  } from "react"; import { ShoppingBag, Menu as MenuIcon } from "lucide-react";
+  function App() {
+    const [open, setOpen] = useState(false);
+    const products = ["Aso-ebi gown", "Silk dress", "Senator set"];
+    return <main className="min-h-screen bg-white p-8 text-slate-950"><header className="flex justify-between"><h1>Lagos Atelier</h1><ShoppingBag/></header><section className="grid gap-4 md:grid-cols-3">{products.map(product => <article key={product} className="rounded-2xl border p-5"><h2>{product}</h2><button onClick={() => setOpen(!open)}>View collection</button></article>)}</section>{open && <aside>Collection open</aside>}<MenuIcon/></main>;
+  }`
+  const serverResult = validateBuilderCode(generated)
+  assert(serverResult.errors.length === 0, `server rejected recoverable imports: ${serverResult.errors.join(' ')}`)
+  assert(!/\bimport\s/.test(serverResult.code), 'server left an import in executable code')
+  assert(serverResult.code.includes('React.useState('), 'server did not bind the React hook')
+  const runtime = normalizeBuilderRuntimeCode(generated)
+  assert(!/\bimport\s/.test(runtime), 'live preview left an import in executable code')
+  assert(runtime.includes('React.useState('), 'live preview did not bind the React hook')
+  const html = builderSrcDoc(generated)
+  assert(!html.includes('import React'), 'preview HTML still contains the generated import')
 })
 
 await test('Elite Builder validates complete single-component output', () => {
