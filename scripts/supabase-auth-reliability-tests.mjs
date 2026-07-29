@@ -41,6 +41,9 @@ test('Google OAuth always starts a fresh account-specific flow', () => {
 test('deep health reports durable Supabase and AI readiness without secrets', () => {
   const source = read('server.mjs')
   assert.match(source, /searchParams\.get\('deep'\) !== '1'/)
+  assert.match(source, /getProviderOrder\(\)\.filter\(name => Boolean\(getProviderKey\(name\)\)\)/)
+  assert.doesNotMatch(source, /providerOrder\(\)\.filter\(name => Boolean\(providerApiKey\(name\)\)\)/)
+  assert.match(source, /\[health\] deep check failed:/)
   assert.match(source, /supabaseAuth: authStatus/)
   assert.match(source, /durableAgents: databaseStatus/)
   assert.match(source, /aiProvider: providers\.length \? 'ready' : 'missing'/)

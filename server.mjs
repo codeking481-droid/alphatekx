@@ -7671,35 +7671,50 @@ const server = http.createServer(async (req, res) => {
     } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Could not load logs' }) }
   }
   if (req.method === 'GET' && req.url?.startsWith('/api/health')) {
-    const requestUrl = new URL(req.url, 'http://localhost')
-    if (requestUrl.searchParams.get('deep') !== '1') {
-      return json(res, 200, { ok: true, timestamp: new Date().toISOString(), uptimeSeconds: schedulerState.uptime() })
+    try {
+      const requestUrl = new URL(req.url, 'http://localhost')
+      if (requestUrl.searchParams.get('deep') !== '1') {
+        return json(res, 200, { ok: true, timestamp: new Date().toISOString(), uptimeSeconds: schedulerState.uptime() })
+      }
+      const config = supabaseConfig()
+      const providers = getProviderOrder().filter(name => Boolean(getProviderKey(name)))
+      let authStatus = 'missing'
+      let databaseStatus = 'missing'
+      if (config.url && config.service) {
+        const signal = AbortSignal.timeout(8_000)
+        const [authCheck, databaseCheck] = await Promise.allSettled([
+          fetch(`${config.url}/auth/v1/admin/users?page=1&per_page=1`, { headers: serviceHeaders(config.service), signal }),
+          fetch(`${config.url}/rest/v1/agents?select=id&limit=1`, { headers: serviceHeaders(config.service), signal }),
+        ])
+        authStatus = authCheck.status === 'fulfilled' && authCheck.value.ok ? 'ready' : 'failed'
+        databaseStatus = databaseCheck.status === 'fulfilled' && databaseCheck.value.ok ? 'ready' : 'failed'
+      }
+      const dependencies = {
+        supabaseAuth: authStatus,
+        durableAgents: databaseStatus,
+        aiProvider: providers.length ? 'ready' : 'missing',
+        aiProviders: providers,
+      }
+      return json(res, 200, {
+        ok: Object.values(dependencies).every(value => Array.isArray(value) || value === 'ready'),
+        timestamp: new Date().toISOString(),
+        uptimeSeconds: schedulerState.uptime(),
+        dependencies,
+      })
+    } catch (error) {
+      console.error('[health] deep check failed:', error instanceof Error ? error.message : error)
+      return json(res, 200, {
+        ok: false,
+        timestamp: new Date().toISOString(),
+        uptimeSeconds: schedulerState.uptime(),
+        dependencies: {
+          supabaseAuth: 'failed',
+          durableAgents: 'failed',
+          aiProvider: 'failed',
+          aiProviders: [],
+        },
+      })
     }
-    const config = supabaseConfig()
-    const providers = providerOrder().filter(name => Boolean(providerApiKey(name)))
-    let authStatus = 'missing'
-    let databaseStatus = 'missing'
-    if (config.url && config.service) {
-      const signal = AbortSignal.timeout(8_000)
-      const [authCheck, databaseCheck] = await Promise.allSettled([
-        fetch(`${config.url}/auth/v1/admin/users?page=1&per_page=1`, { headers: serviceHeaders(config.service), signal }),
-        fetch(`${config.url}/rest/v1/agents?select=id&limit=1`, { headers: serviceHeaders(config.service), signal }),
-      ])
-      authStatus = authCheck.status === 'fulfilled' && authCheck.value.ok ? 'ready' : 'failed'
-      databaseStatus = databaseCheck.status === 'fulfilled' && databaseCheck.value.ok ? 'ready' : 'failed'
-    }
-    const dependencies = {
-      supabaseAuth: authStatus,
-      durableAgents: databaseStatus,
-      aiProvider: providers.length ? 'ready' : 'missing',
-      aiProviders: providers,
-    }
-    return json(res, 200, {
-      ok: Object.values(dependencies).every(value => Array.isArray(value) || value === 'ready'),
-      timestamp: new Date().toISOString(),
-      uptimeSeconds: schedulerState.uptime(),
-      dependencies,
-    })
   }
   const agentIdMatch = req.url?.match(/^\/api\/agents\/([^/]+)(?:\/run)?\/?$/)
   if (agentIdMatch) {
