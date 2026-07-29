@@ -12,6 +12,8 @@ export type BuilderProject = {
   views?: number
   versions?: { id: string; code: string; provider?: string; created_at: string }[]
   created_at?: string
+  persisted?: boolean
+  transient?: boolean
 }
 
 export const BUILDER_COST = 2
@@ -109,7 +111,7 @@ export function builderSrcDoc(code: string, title = 'AlphaTekX build', options: 
 }
 
 export async function generateBuild(prompt: string, requestId: string) {
-  return postJson<{ project: BuilderProject; code: string; provider: string; credits: number | null }>(
+  return postJson<{ project: BuilderProject; code: string; provider: string; credits: number | null; persisted?: boolean; charged?: boolean; storageWarning?: string }>(
     '/api/builder/generate',
     { prompt, requestId },
     { timeoutMs: 180_000 },

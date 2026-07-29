@@ -6601,25 +6601,28 @@ async function pollinationsBuilderCompletion(messages) {
   const pollinationsKey = firstKey('POLLINATIONS_API_KEY')
   let lastError = null
   if (pollinationsKey) {
-    try {
-      const payload = await fetchJson('https://gen.pollinations.ai/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${pollinationsKey}` },
-        body: JSON.stringify({ model: process.env.POLLINATIONS_TEXT_MODEL || 'openai-fast', messages, temperature: 0.25, max_tokens: 9000 }),
-      }, 15_000)
-      const result = eliteBuilder.validateBuilderCode(payload?.choices?.[0]?.message?.content || '')
-      if (!result.errors.length) return { code: result.code, provider: 'pollinations' }
-      lastError = new Error(result.errors.join(' '))
-    } catch (error) {
-      lastError = error
-      console.error('[Elite Builder] Pollinations POST failed:', error instanceof Error ? error.message : error)
+    const models = [...new Set([process.env.POLLINATIONS_TEXT_MODEL, 'openai', 'openai-fast'].filter(Boolean))]
+    for (const model of models) {
+      try {
+        const payload = await fetchJson('https://gen.pollinations.ai/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${pollinationsKey}` },
+          body: JSON.stringify({ model, messages, temperature: 0.35, max_tokens: 9000 }),
+        }, 45_000)
+        const result = eliteBuilder.validateBuilderCode(payload?.choices?.[0]?.message?.content || '')
+        if (!result.errors.length) return { code: result.code, provider: `pollinations-${model}` }
+        lastError = new Error(result.errors.join(' '))
+      } catch (error) {
+        lastError = error
+        console.error(`[Elite Builder] Pollinations ${model} failed:`, error instanceof Error ? error.message : error)
+      }
     }
   }
-  // The public text endpoint is an independent recovery path. Keep the prompt
-  // bounded for URL safety and validate the returned component exactly like
-  // authenticated output before it can be saved or charged.
+  // Legacy public text is a best-effort recovery path. Keep it deliberately
+  // short so the URL is accepted by proxies; production uses the authenticated
+  // OpenAI-compatible endpoint above.
   try {
-    const userPrompt = String([...messages].reverse().find(message => message.role === 'user')?.content || 'Build a production-ready website').slice(0, 6000)
+    const userPrompt = String([...messages].reverse().find(message => message.role === 'user')?.content || 'Build a production-ready website').slice(0, 900)
     const directPrompt = `BUILD THIS ELITE WEBSITE: ${userPrompt}\n\nIMPORTANT: NO IMPORTS ALLOWED. Return only function App() {...} with no import lines. Use only React.useState, React.useEffect, React.useRef, React.useMemo and other React.* hooks, Tailwind classes, responsive mobile layouts, real interactions, loading and empty states. For icons use inline SVG or Unicode, never lucide-react. Do not use exports, markdown fences, scripts, eval, ReactDOM, TypeScript types, or createRoot.`
     const text = await fetchText(`https://text.pollinations.ai/${encodeURIComponent(directPrompt)}`, {
       headers: { Accept: 'text/plain' },
@@ -6728,14 +6731,29 @@ async function builderGenerateHandler(req, res) {
     const generated = await generateEliteCode(prompt)
     const title = prompt.replace(/^(build|create|make|design)\s+(me\s+)?/i, '').split(/[.!?\n]/)[0].trim().slice(0, 72) || 'Untitled build'
     if (existing?.id) await eliteBuilder.deleteProject(config, user, existing.id).catch(() => {})
-    project = await eliteBuilder.saveGeneratedProject(config, user, { title, prompt, code: generated.code, provider: generated.provider, requestId })
+    try {
+      project = await eliteBuilder.saveGeneratedProject(config, user, { title, prompt, code: generated.code, provider: generated.provider, requestId })
+    } catch (storageError) {
+      console.error('[Elite Builder] verified preview could not persist:', storageError instanceof Error ? storageError.message : storageError)
+      const transient = eliteBuilder.transientBuilderProject({ title, prompt, code: generated.code, provider: generated.provider })
+      const balance = isAdminAuthUser(user) ? null : await billing.getUserCredits(user, config).catch(() => null)
+      return json(res, 200, {
+        project: transient,
+        code: generated.code,
+        provider: generated.provider,
+        credits: Number.isFinite(balance) ? balance : null,
+        persisted: false,
+        charged: false,
+        storageWarning: 'Preview is ready, but Builder storage is unavailable. Nothing was charged. Deployment and editing require the Builder database.',
+      })
+    }
     const charged = await billing.spendCredits(user, eliteBuilder.BUILDER_COST, config, { idempotencyKey: `elite-builder:${requestId}`, reason: `Elite Builder: ${title}`, builderProjectId: project.id })
     if (!charged.ok) {
       await eliteBuilder.deleteProject(config, user, project.id).catch(() => {})
       return json(res, 402, { error: 'Your credit balance changed before completion. The draft was removed and nothing was charged.' })
     }
     project = await eliteBuilder.markProjectCharged(config, user, project.id)
-    return json(res, 200, { project, code: generated.code, provider: generated.provider, credits: Number.isFinite(charged.remaining) ? charged.remaining : null })
+    return json(res, 200, { project, code: generated.code, provider: generated.provider, credits: Number.isFinite(charged.remaining) ? charged.remaining : null, persisted: true, charged: true })
   } catch (error) {
     if (project?.id) await eliteBuilder.deleteProject(config, user, project.id).catch(() => {})
     return json(res, 503, { error: error instanceof Error ? error.message : 'Alpha is resting. Retry this build in a moment.' })
