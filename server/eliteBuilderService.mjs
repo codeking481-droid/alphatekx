@@ -53,6 +53,12 @@ async function request(config, path, init = {}) {
 const isBuilderSchemaError = (error) =>
   ["BUILDER_SCHEMA_MISSING", "BUILDER_SCHEMA_OUTDATED"].includes(error?.code);
 
+const missingMissionColumn = (error, column) =>
+  new RegExp(
+    `(?:could not find the\\s+["']?${column}["']?\\s+column\\s+of\\s+["']?missions|column\\s+(?:missions\\.)?["']?${column}["']?\\s+does not exist)`,
+    "i",
+  ).test(String(error?.message || error || ""));
+
 function legacyProject(row = {}) {
   return {
     ...row,
@@ -71,18 +77,32 @@ async function saveLegacyProject(config, user, input) {
   const title = String(input.title || "Untitled build")
     .trim()
     .slice(0, 120);
-  await request(config, "missions", {
-    method: "POST",
-    headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-    body: JSON.stringify({
-      id,
-      user_id: user.id,
-      title,
-      goal: String(input.prompt || title).slice(0, 6000),
-      status: "active",
-      progress: 100,
-    }),
-  });
+  const description = String(input.prompt || title).slice(0, 6000);
+  const mission = {
+    id,
+    user_id: user.id,
+    title,
+    goal: description,
+    status: "active",
+    progress: 100,
+  };
+  try {
+    await request(config, "missions", {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify(mission),
+    });
+  } catch (error) {
+    if (!missingMissionColumn(error, "goal")) throw error;
+    // Newer AlphaTekx installations use `description`; older ones require
+    // `goal`. Retry only the rejected insert so no duplicate mission is made.
+    const { goal: _legacyGoal, ...compatibleMission } = mission;
+    await request(config, "missions", {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({ ...compatibleMission, description }),
+    });
+  }
   const rows = await request(config, "creations", {
     method: "POST",
     headers: { Prefer: "resolution=merge-duplicates,return=representation" },
