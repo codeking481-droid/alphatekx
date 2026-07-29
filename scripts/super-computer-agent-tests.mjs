@@ -48,20 +48,28 @@ test('brain is loaded before generic unknown-intent handling', () => {
   assert.match(engine, /knowledgeSource: 'alphatekx-brain'/)
 })
 
-test('native X uses OAuth 2.0 PKCE and confirmed provider IDs', () => {
-  assert.match(server, /code_challenge_method: 'S256'/)
-  assert.match(server, /tweet\.read tweet\.write users\.read offline\.access/)
-  assert.match(server, /X did not return a confirmed post identifier/)
+test('X uses the configured Composio Auth Config and confirmed provider IDs', () => {
+  const authConfigs = fs.readFileSync(new URL('../server/composioAuthConfigs.mjs', import.meta.url), 'utf8')
+  const composioService = fs.readFileSync(new URL('../server/composioConnectorService.mjs', import.meta.url), 'utf8')
+  assert.match(authConfigs, /TWITTER: 'ac_75GBYAXRovfm'/)
+  assert.match(composioService, /defaultAuthConfigId: AUTH_CONFIGS\.TWITTER/)
+  assert.match(composioService, /'twitter\.create_post'/)
+  assert.match(composioService, /confirmedProviderId/)
+  assert.match(server, /alphaConnector\.startConnection\(user, 'x'/)
+  assert.doesNotMatch(server, /req\.url === '\/api\/x\/auth'\) \{\s*try \{ return await startXConnection/)
 })
 
-test('X no longer executes through the Composio publishing set', () => {
-  assert.match(server, /const composioPublishingPlatforms = new Set\(\['youtube', 'instagram', 'facebook', 'whatsapp'\]\)/)
+test('X executes through the Composio publishing set', () => {
+  assert.match(server, /const composioPublishingPlatforms = new Set\(\['youtube', 'instagram', 'facebook', 'whatsapp', 'x', 'twitter'\]\)/)
 })
 
-test('connection UI separates native and nine managed tools', () => {
-  assert.match(connectors, /Native — AlphaTekx direct/)
-  assert.match(connectors, /Nine secure Composio-managed tools/)
-  assert.match(connectors, /startXAuth/)
+test('connection UI uses one secure experience with LinkedIn native and X through Composio', () => {
+  assert.match(connectors, /const nativeOAuthProviders = new Set\(\['linkedin'\]\)/)
+  assert.match(connectors, /composioOAuthProviders = new Set\(\[[^\n]*'x'\]\)/)
+  assert.match(connectors, /startLinkedInAuth/)
+  assert.doesNotMatch(connectors, /startXAuth/)
+  assert.doesNotMatch(connectors, /Native — AlphaTekx direct/)
+  assert.doesNotMatch(connectors, /Managed connections/)
 })
 
 test('connection UI does not contain raw Auth Config IDs', () => {
@@ -95,7 +103,7 @@ test('agent workspace is full-screen, mobile-safe, and renders generated images'
   assert.match(agentPage, /alpha-chat-screen/)
   assert.match(agentPage, /h-\[calc\(100dvh-8rem\)\]/)
   assert.match(agentPage, /ReactMarkdown/)
-  assert.match(connectors, /Connections are secured by Composio/)
+  assert.match(connectors, /Connections are secured by Composio and AlphaTekx OAuth/)
 })
 
 console.log(`\n${passed}/14 super-computer agent checks passed`)

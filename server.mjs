@@ -2927,7 +2927,7 @@ function campaignNextRun(campaign) {
   return next?.scheduledAt
 }
 
-const composioPublishingPlatforms = new Set(['youtube', 'instagram', 'facebook', 'whatsapp'])
+const composioPublishingPlatforms = new Set(['youtube', 'instagram', 'facebook', 'whatsapp', 'x', 'twitter'])
 function composioCampaignAction(platform, post, caption, campaign) {
   const imageUrl = post.imageUrl || post.image_url || ''
   if (platform === 'instagram') {
@@ -6579,7 +6579,15 @@ const server = http.createServer(async (req, res) => {
     try { return await linkedinCallback(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'LinkedIn callback failed' }) }
   }
   if ((req.method === 'GET' || req.method === 'POST') && req.url === '/api/x/auth') {
-    try { return await startXConnection(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'X auth failed' }) }
+    try {
+      const config = supabaseConfig()
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      if (!user) return json(res, 401, { error: 'Authentication required' })
+      const result = await alphaConnector.startConnection(user, 'x', `${getRequestOrigin(req)}/api/connect/callback?provider=x`)
+      return json(res, 200, { url: result.authUrl, ...result })
+    } catch (error) {
+      return json(res, 502, { error: error instanceof Error ? error.message : 'X connection failed through Composio' })
+    }
   }
   if (req.method === 'GET' && req.url?.startsWith('/api/x/callback')) {
     try { return await xCallback(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'X callback failed' }) }

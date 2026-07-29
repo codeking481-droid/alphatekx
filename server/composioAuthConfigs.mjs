@@ -10,5 +10,5 @@ export const AUTH_CONFIGS = Object.freeze({
   WHATSAPP: 'ac_mVq6qm6ivr3x',
   FACEBOOK: 'ac_KxXKh4E240Vi',
   INSTAGRAM: 'ac_0Lzm_WFhC38W',
+  TWITTER: 'ac_75GBYAXRovfm',
 })
-

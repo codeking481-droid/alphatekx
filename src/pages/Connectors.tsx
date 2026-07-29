@@ -6,13 +6,13 @@ import { getConnector } from '../lib/agents/connectorRegistry'
 import type { Connector } from '../lib/agents/types'
 import { useAuth } from '../lib/auth'
 import { connectProvider, disconnectProvider, getConnectedApps, reconnectProvider, type ConnectedAppStatus } from '../lib/connectors/connectorApi'
-import { deleteIntegration, getIntegrationStatus, startCustomOAuth, startLinkedInAuth, startXAuth } from '../lib/integrations'
+import { deleteIntegration, getIntegrationStatus, startCustomOAuth, startLinkedInAuth } from '../lib/integrations'
 
 const CACHE_KEY = 'alphatekx_connections_cache'
 const CACHE_TTL = 5 * 60_000
-const composioOAuthProviders = new Set(['gmail', 'github', 'googledocs', 'googlesheets', 'discord', 'whatsapp', 'facebook', 'instagram', 'youtube'])
+const composioOAuthProviders = new Set(['gmail', 'github', 'googledocs', 'googlesheets', 'discord', 'whatsapp', 'facebook', 'instagram', 'youtube', 'x'])
 const customOAuthProviders = new Set(['tiktok', 'snapchat'])
-const nativeOAuthProviders = new Set(['x', 'linkedin'])
+const nativeOAuthProviders = new Set(['linkedin'])
 const serverManagedProviders = new Set<string>()
 // Public tools active. Readiness remains equivalent to service(id).connected && service(id).ready.
 
@@ -21,8 +21,8 @@ function backendReady(state: { connected?: boolean; ready?: boolean }) {
 }
 
 const releasedPlatforms = [
-  { id: 'x', name: 'X', color: '#111827', description: 'Native OAuth 2.0 publishing with verified post IDs.', authMode: 'Native' },
-  { id: 'linkedin', name: 'LinkedIn', color: '#0A66C2', description: 'Native personal-profile text publishing.', authMode: 'Native' },
+  { id: 'x', name: 'X', color: '#111827', description: 'Securely publish posts and threads through your connected account.', authMode: 'Managed' },
+  { id: 'linkedin', name: 'LinkedIn', color: '#0A66C2', description: 'Secure personal-profile publishing with confirmed post IDs.', authMode: 'Native' },
   { id: 'tiktok', name: 'TikTok', color: '#111827', description: 'Custom TikTok API foundation awaiting approved app credentials.', authMode: 'Custom API', comingSoon: true },
   { id: 'snapchat', name: 'Snapchat', color: '#EAB308', description: 'Custom Snapchat API foundation awaiting approved app credentials.', authMode: 'Custom API', comingSoon: true },
   { id: 'gmail', name: 'Gmail', color: '#EA4335', description: 'Send and manage approved business email.', authMode: 'Managed' },
@@ -65,7 +65,6 @@ export default function Connectors() {
   const [slow, setSlow] = useState(false)
   const [notice, setNotice] = useState('')
   const [search, setSearch] = useState('')
-  const [authFilter, setAuthFilter] = useState<'all' | 'managed' | 'custom'>('all')
   const [wabaReady, setWabaReady] = useState(false)
   const slowTimer = useRef<number | null>(null)
   const autoStarted = useRef(false)
@@ -150,10 +149,6 @@ export default function Connectors() {
         await startLinkedInAuth(session?.access_token, '/connected-apps')
         return
       }
-      if (id === 'x') {
-        await startXAuth(session?.access_token, '/connected-apps')
-        return
-      }
       if (customOAuthProviders.has(id)) {
         await startCustomOAuth(id as 'tiktok' | 'snapchat', session?.access_token)
         return
@@ -211,30 +206,25 @@ export default function Connectors() {
     <p className="text-xs font-black uppercase tracking-[.18em] text-violet-300">AlphaTekx connections</p>
     <h1 className="mt-2 text-3xl font-black">Super Computer Connections</h1>
     <p className="mt-2 text-sm font-semibold text-slate-300">Connect once. AlphaTekx uses the approved account only when your reviewed automation runs.</p>
-    <div className="mt-4 flex items-center gap-2 rounded-xl border border-emerald-300/15 bg-emerald-300/10 px-4 py-3 text-sm font-black text-emerald-100"><CheckCircle2 size={17} className="shrink-0"/>Connections are secured by Composio. AlphaTekx never exposes provider tokens in your browser.</div>
+    <div className="mt-4 flex items-center gap-2 rounded-xl border border-emerald-300/15 bg-emerald-300/10 px-4 py-3 text-sm font-black text-emerald-100"><CheckCircle2 size={17} className="shrink-0"/>Connections are secured by Composio and AlphaTekx OAuth. Provider tokens are never exposed in your browser.</div>
     <div className="mt-4 rounded-xl border border-emerald-300/15 bg-emerald-300/10 p-3 text-sm font-bold text-emerald-100">No data? Upload with small data. AlphaTekx posts even when your phone is off.</div>
 
     {notice && <div role="status" className="mt-4 rounded-xl border border-violet-300/20 bg-violet-300/10 p-3 text-sm font-bold text-violet-100">{notice}</div>}
     {slow && <div className="mt-4 rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-sm font-bold text-amber-100">Network slow? <button onClick={() => { setConnecting(null); setSlow(false); void load() }} className="ml-2 underline">Retry connection</button></div>}
 
-    <div className="mt-6 grid gap-3 sm:grid-cols-[1fr_auto]">
+    <div className="mt-6">
       <input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search connected tools" className="min-h-12 rounded-xl border border-violet-300/20 bg-slate-950/30 px-4 font-bold text-white outline-none placeholder:text-slate-400 focus:border-violet-400"/>
-      <div className="flex rounded-xl border border-violet-300/20 bg-slate-950/30 p-1">
-        {(['all', 'managed', 'custom'] as const).map(value => <button key={value} onClick={() => setAuthFilter(value)} className={`rounded-lg px-3 py-2 text-xs font-black capitalize ${authFilter === value ? 'bg-violet-600 text-white' : 'text-slate-300'}`}>{value === 'custom' ? 'Custom API' : value}</button>)}
-      </div>
     </div>
 
     {loading ? <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{releasedPlatforms.map(item => <div key={item.id} className="skeleton h-52 rounded-[20px]"/>)}</div> :
       <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {releasedPlatforms.filter(item => item.name.toLowerCase().includes(search.trim().toLowerCase()) && (authFilter === 'all' || (authFilter === 'custom' ? item.authMode === 'Custom API' : item.authMode === 'Managed'))).map(item => {
+        {releasedPlatforms.filter(item => item.name.toLowerCase().includes(search.trim().toLowerCase())).map(item => {
           const connected = status[item.id]
           const comingSoon = 'comingSoon' in item && item.comingSoon
           const busy = connecting === item.id
           const removing = disconnecting === item.id
           const connector = getConnector(item.id) || fallbackConnector(item.id, item.name)
           return <Fragment key={item.id}>
-            {item.id === 'x' && <div className="col-span-full"><h2 className="text-xl font-black">Native — AlphaTekx direct</h2><p className="mt-1 text-sm font-semibold text-slate-400">Direct OAuth connections for verified publishing. TikTok and Snapchat remain clearly marked until their provider apps are approved.</p></div>}
-            {item.id === 'gmail' && <div className="col-span-full mt-4"><h2 className="text-xl font-black">Managed connections</h2><p className="mt-1 text-sm font-semibold text-slate-400">Nine secure Composio-managed tools. Internal Auth Config IDs stay server-side.</p></div>}
           <article id={`platform-${item.id}`} className="liquid-glass min-w-0 rounded-[20px] p-4 sm:p-5">
             <div className="flex items-center gap-3"><span className="grid size-12 place-items-center rounded-full text-white" style={{ background: item.id === 'instagram' ? 'linear-gradient(135deg,#F58529,#DD2A7B,#8134AF)' : item.color }}><ConnectorIcon connector={connector}/></span><div><h2 className="font-black">{item.name}</h2><div className="mt-1"><span className={`inline-flex rounded-full border px-2 py-1 text-[11px] font-bold ${connected ? 'border-emerald-300/25 bg-emerald-300/10 text-emerald-200' : 'border-violet-400/20 bg-violet-500/10 text-slate-300'}`}>{connected ? '● Connected' : '○ Not Connected'}</span></div></div></div>
             <p className="mt-4 min-h-10 text-xs font-semibold text-slate-300">{item.description}</p>
