@@ -128,6 +128,18 @@ Start NOW. Show all 28 posts for review, then ask for approval.`
   }
   const firstDay = conversation.generatedContent.slice(0, 4)
   assert.deepEqual(firstDay.map(post => new Date(post.scheduledAt).getUTCHours()), [8, 11, 14, 17])
+
+  const stale = structuredClone(conversation)
+  stale.conversationStage = 'blocked'
+  stale.generatedContent = []
+  stale.automationDraft = null
+  stale.approvalRequired = false
+  records.set(stale.id, stale)
+  const recovered = await engine.continue(stale.id, { id: 'campaign-regression-user', email: 'owner@example.com' }, 'approve')
+  assert.equal(recovered.conversationStage, 'awaiting_content_review')
+  assert.equal(recovered.generatedContent.length, 28)
+  assert.match(recovered.messages.at(-1).text, /preview is ready again/i)
+  assert.doesNotMatch(recovered.messages.at(-1).text, /I'm ready when you are/i)
 })
 
 await test('approval persists a separate active automation without charging credits', async () => {
