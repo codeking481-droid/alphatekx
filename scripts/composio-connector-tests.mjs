@@ -109,6 +109,8 @@ async function runTests() {
   assert(serviceSource.includes('Disconnected provider but could not persist connector history'), 'Confirmed provider deletion is not falsely reported as failed when history persistence is unavailable')
   assert(serverSource.includes("req.url === '/api/composio/status'"), 'Canonical Composio status endpoint exists')
   assert(serverSource.includes("req.url === '/api/composio/execute'"), 'Canonical Composio execute endpoint exists')
+  assert(/\/api\/composio\/callback[\s\S]{0,900}backend\.composio\.dev\/api\/v3\.1\/toolkits\/auth\/callback/.test(serverSource), 'Custom OAuth callback is proxied to the current Composio token callback')
+  assert(serverSource.includes("'Referrer-Policy': 'no-referrer'"), 'OAuth callback proxy does not leak callback parameters through referrers')
   assert(migrationSource.includes('UNIQUE(user_id, idempotency_key)'), 'Database enforces per-user execution idempotency')
   assert(migrationSource.includes("connection_backend = 'native'"), 'Migration preserves existing native connections')
   assert(!migrationSource.toLowerCase().includes('access_token'), 'Composio migration stores no provider token')

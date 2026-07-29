@@ -9,6 +9,7 @@ function localUserHeaders(): Record<string, string> {
 }
 
 import { supabase } from './supabase'
+import { repairOversizedSession } from './sessionRepair'
 
 async function authToken(): Promise<string | undefined> {
   try {
@@ -42,6 +43,13 @@ async function requestJson<T>(url: string, init: RequestInit, options: { token?:
       signal: controller.signal,
     })
     let response = await makeRequest()
+    if (response.status === 431 && token) {
+      const repairedToken = await repairOversizedSession(token)
+      if (repairedToken) {
+        token = repairedToken
+        response = await makeRequest()
+      }
+    }
     if (response.status === 401 && supabase) {
       const refreshed = await supabase.auth.refreshSession().catch(() => null)
       token = refreshed?.data?.session?.access_token || ''
@@ -50,7 +58,7 @@ async function requestJson<T>(url: string, init: RequestInit, options: { token?:
     const raw = await response.text()
     let payload: Record<string, unknown> = {}
     try { payload = raw ? JSON.parse(raw) as Record<string, unknown> : {} } catch {}
-    if (response.status === 431) throw new Error('Alpha could not complete the request because the browser sent oversized saved headers. Refresh once; if it continues, clear AlphaTekx site data and sign in again.')
+    if (response.status === 431) throw new Error('Alpha could not refresh your sign-in session automatically. Please sign out and sign in again.')
     if (!response.ok) throw new Error(String(payload.error || raw || `Alpha returned HTTP ${response.status}.`))
     return payload as T
   } catch (error) {
