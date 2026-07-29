@@ -167,6 +167,29 @@ await test('Builder migration is owner-scoped and does not expose source publicl
   assert(!sql.includes('using (true)'), 'allow-all RLS policy must not exist')
 })
 
+await test('Builder V2 exposes verified edit and auto-repair endpoints', () => {
+  const server = readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
+  assert(server.includes("req.url === '/api/builder/edit'"), 'chat-to-edit endpoint is missing')
+  assert(server.includes("req.url === '/api/builder/fix'"), 'auto-fix endpoint is missing')
+  assert(server.includes('updateProjectCode(config, user'), 'verified revision persistence is missing')
+})
+
+await test('Builder V2 supports visual selection, media, remix and domain verification', () => {
+  const ui = readFileSync(new URL('../src/pages/EliteBuilder.tsx', import.meta.url), 'utf8')
+  const publicUi = readFileSync(new URL('../src/pages/PublicBuilderProject.tsx', import.meta.url), 'utf8')
+  assert(ui.includes('element-clicked') && ui.includes('Use My Media'), 'visual/media editing is incomplete')
+  assert(ui.includes('repairCount >= 3'), 'auto-repair must stop after three attempts')
+  assert(ui.includes('requestBuilderDomain'), 'custom domain verification UI is missing')
+  assert(publicUi.includes('Remix this app with Alpha'), 'public remix action is missing')
+})
+
+await test('Builder V2 generated apps use the scoped AlphaAPI without browser service keys', () => {
+  const client = readFileSync(new URL('../src/lib/eliteBuilder.ts', import.meta.url), 'utf8')
+  assert(client.includes('window.AlphaAPI'), 'project data bridge is missing')
+  assert(!client.includes('SUPABASE_SERVICE_ROLE_KEY'), 'service role credentials must never enter generated apps')
+  assert(client.includes('Sign in is required to save data'), 'write failures must remain honest')
+})
+
 const passed = results.filter((r) => r.passed).length
 const failed = results.length - passed
 process.stdout.write(`BUILDER_FEATURE_TESTS:\n- Total: ${results.length}\n- Passed: ${passed}\n- Failed: ${failed}\n`)

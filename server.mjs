@@ -6420,8 +6420,8 @@ async function buildMissionFiles(req, res) {
   return json(res, 200, { missionId, generatedPath: `generated/${missionId}`, files, code: files.find(file => file.path === 'src/App.jsx')?.code || '', logs })
 }
 
-const ELITE_BUILDER_PROMPT = `You are AlphaTekX Elite Builder, a senior product engineer and interface designer.
-Build a complete, polished application, not a wireframe.
+const ELITE_BUILDER_PROMPT = `You are AlphaTekX Builder V2 with 60 years combined experience shipping products at Stripe, Linear, Apple and Vercel.
+Build an Apple-quality, complete application, not an ugly MVP or static wireframe.
 Return only one JSX code block containing a single React component named App.
 - No imports, exports, explanation, script tags, eval, or Function constructors.
 - Use React.useState/useEffect directly. React is already available.
@@ -6431,6 +6431,11 @@ Return only one JSX code block containing a single React component named App.
 - Use inline SVG or text symbols for icons and Unsplash only when imagery helps.
 - Landing pages need navigation, hero, proof, features, pricing, FAQ, CTA, and footer.
 - Apps need useful navigation, data views, forms, and interactive state.
+- Use glass, bento layouts, large typography, a 12-column rhythm, micro-interactions, skeletons, empty states and honest error states.
+- Mobile experiences need a real hamburger or bottom sheet, not merely shrinking desktop UI.
+- For e-commerce include product grid, cart drawer, checkout mock and order-success state. Never claim a real payment occurred.
+- For dashboards include sidebar, stats, CSS charts, table and filters.
+- For apps that save data, use window.AlphaAPI.get/post/put/del with an entity name. AlphaAPI is the secure project-scoped backend; never embed Supabase keys.
 - Do not claim payment, authentication, database, or external API behavior that is not implemented.`
 
 function fallbackEliteComponent(prompt) {
@@ -6474,6 +6479,52 @@ async function generateEliteCode(prompt) {
   const fallback = eliteBuilder.validateBuilderCode(fallbackEliteComponent(prompt))
   if (fallback.errors.length) throw new Error('Alpha could not produce a verified build.')
   return { code: fallback.code, provider: 'alpha-fallback' }
+}
+
+async function generateEliteRevision(currentCode, instruction, error = '') {
+  const task = error
+    ? `The existing app failed with this runtime error: ${error}. Repair the root cause and preserve every working feature.`
+    : `Edit the existing app exactly as requested: ${instruction}. Preserve every feature the user did not ask to change.`
+  const messages = [
+    { role: 'system', content: `${ELITE_BUILDER_PROMPT}\nYou are editing existing verified code. Return the complete corrected App component only.` },
+    { role: 'user', content: `${task}\n\nEXISTING CODE:\n${currentCode}` },
+  ]
+  for (const name of getProviderOrder().filter(provider => getProviderKey(provider) && providerHealth.canAttempt(provider))) {
+    try {
+      const response = await callProvider(name, messages, true, false, 9000)
+      const result = eliteBuilder.validateBuilderCode(response.data?.choices?.[0]?.message?.content || '')
+      if (!result.errors.length) return { code: result.code, provider: name }
+    } catch (providerError) { console.error(`[Elite Builder edit] ${name}:`, providerError instanceof Error ? providerError.message : providerError) }
+  }
+  throw new Error('Alpha could not produce a verified edit. Your current build was preserved.')
+}
+
+async function builderRevisionHandler(req, res, fixing = false) {
+  const config = supabaseConfig()
+  const user = await currentOrLocalUser(req, config.url, config.anon)
+  if (!user) return json(res, 401, { error: 'Authentication required.' })
+  const body = await readBody(req)
+  const project = await eliteBuilder.getOwnerProject(config, user, String(body.projectId || ''))
+  if (!project) return json(res, 404, { error: 'This build could not be found.' })
+  const instruction = String(body.instruction || '').trim()
+  const runtimeError = String(body.error || '').trim().slice(0, 1500)
+  if (!fixing && instruction.length < 3) return json(res, 400, { error: 'Tell Alpha what should change.' })
+  if (fixing && !runtimeError) return json(res, 400, { error: 'A runtime error is required for auto-repair.' })
+  try {
+    const revised = await generateEliteRevision(project.code, instruction, runtimeError)
+    const updated = await eliteBuilder.updateProjectCode(config, user, project.id, revised.code, `${revised.provider}-${fixing ? 'auto-fix' : 'edit'}`)
+    return json(res, 200, { project: updated, code: revised.code, provider: revised.provider })
+  } catch (error) { return json(res, 503, { error: error instanceof Error ? error.message : 'Alpha could not verify this edit.' }) }
+}
+
+async function builderDomainHandler(req, res) {
+  const config = supabaseConfig()
+  const user = await currentOrLocalUser(req, config.url, config.anon)
+  if (!user) return json(res, 401, { error: 'Authentication required.' })
+  try {
+    const body = await readBody(req)
+    return json(res, 200, await eliteBuilder.requestCustomDomain(config, user, body.projectId, body.domain, `alphatekx-${randomUUID()}`))
+  } catch (error) { return json(res, Number(error?.status) || 503, { error: error instanceof Error ? error.message : 'Custom domain setup could not start.' }) }
 }
 
 async function builderGenerateHandler(req, res) {
@@ -6557,8 +6608,11 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 204, {})
   if (String(req.url || '').startsWith('/api/')) await refreshFeatureConfig(supabaseConfig()).catch(() => {})
   if (req.method === 'POST' && req.url === '/api/builder/generate') return builderGenerateHandler(req, res)
+  if (req.method === 'POST' && req.url === '/api/builder/edit') return builderRevisionHandler(req, res, false)
+  if (req.method === 'POST' && req.url === '/api/builder/fix') return builderRevisionHandler(req, res, true)
   if (req.method === 'GET' && req.url === '/api/builder/projects') return builderProjectsHandler(req, res)
   if (req.method === 'POST' && req.url === '/api/builder/deploy') return builderDeployHandler(req, res)
+  if (req.method === 'POST' && req.url === '/api/builder/domain') return builderDomainHandler(req, res)
   if (req.method === 'GET' && /^\/api\/builder\/public\/[a-z0-9-]+$/.test(req.url || '')) {
     return builderPublicHandler(req, res, decodeURIComponent(String(req.url).split('/').pop() || ''))
   }
