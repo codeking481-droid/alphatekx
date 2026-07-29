@@ -1843,13 +1843,23 @@ const linkedinOAuthScopes = () => {
 }
 
 const linkedinRedirectUri = () => {
-  const value = String(process.env.LINKEDIN_REDIRECT_URI || `${publicAppUrl()}/api/connectors/linkedin/callback`).trim()
+  const canonical = `${publicAppUrl()}/api/connectors/linkedin/callback`
+  let value = String(process.env.LINKEDIN_REDIRECT_URI || canonical)
+    .trim()
+    .replace(/^LINKEDIN_REDIRECT_URI\s*=\s*/i, '')
+    .trim()
+  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+    value = value.slice(1, -1).trim()
+  }
   let parsed
-  try { parsed = new URL(value) } catch { throw new Error('LINKEDIN_REDIRECT_URI must be a complete HTTPS URL.') }
+  try { parsed = new URL(value) } catch {
+    process.stdout.write('[linkedin oauth] Invalid LINKEDIN_REDIRECT_URI; using the canonical AlphaTekx callback.\n')
+    return canonical
+  }
   const local = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1'
-  if (parsed.protocol !== 'https:' && !local) throw new Error('LINKEDIN_REDIRECT_URI must use HTTPS.')
-  if (parsed.pathname !== '/api/connectors/linkedin/callback' || parsed.search || parsed.hash) {
-    throw new Error('LINKEDIN_REDIRECT_URI must end exactly with /api/connectors/linkedin/callback and contain no query or fragment.')
+  if ((parsed.protocol !== 'https:' && !local) || parsed.pathname !== '/api/connectors/linkedin/callback' || parsed.search || parsed.hash) {
+    process.stdout.write('[linkedin oauth] Unsafe LINKEDIN_REDIRECT_URI; using the canonical AlphaTekx callback.\n')
+    return canonical
   }
   return parsed.toString()
 }
