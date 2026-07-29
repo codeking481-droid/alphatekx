@@ -226,14 +226,14 @@ await test('Builder preview includes Tailwind once and catches runtime failures'
   assert(document.includes('React.createElement(App)'), 'preview does not mount the generated App')
 })
 
-await test('Builder API uses durable idempotency and charges only after persistence', () => {
+await test('Builder API uses durable idempotency without charging credits', () => {
   const server = readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
   const save = server.indexOf('saveGeneratedProject(config, user')
-  const spend = server.indexOf('billing.spendCredits(user, eliteBuilder.BUILDER_COST')
   const settle = server.indexOf('markProjectCharged(config, user')
   assert(server.includes('findProjectByRequest(config, user, requestId)'), 'durable request lookup is missing')
-  assert(save > 0 && spend > save && settle > spend, 'project persistence, charging, and settlement are in the wrong order')
-  assert(server.includes('idempotencyKey: `elite-builder:${requestId}`'), 'credit idempotency key is missing')
+  assert(save > 0 && settle > save, 'project persistence and settlement are in the wrong order')
+  assert(!server.includes('billing.spendCredits(user, eliteBuilder.BUILDER_COST'), 'free Builder still deducts credits')
+  assert(!server.includes('This build needs ${eliteBuilder.BUILDER_COST} credits'), 'free Builder still returns a credit 402')
 })
 
 await test('Builder migration is owner-scoped and does not expose source publicly', () => {

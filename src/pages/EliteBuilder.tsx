@@ -21,7 +21,6 @@ import {
 } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import {
-  BUILDER_COST,
   BUILDER_SLUG,
   builderSrcDoc,
   deployBuild,
@@ -211,7 +210,7 @@ export default function EliteBuilder() {
       setTab("preview");
       setNotice(result.persisted === false
         ? (result.storageWarning || "Preview is ready. Storage is unavailable, so nothing was charged and deployment is disabled.")
-        : `Build complete with ${result.provider}. Two credits were charged after verification.`);
+        : `Build complete with ${result.provider}. Builder is free, so no credits were charged.`);
       if (result.persisted !== false) await refreshHistory();
     } catch (error) {
       setNotice(

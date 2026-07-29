@@ -6760,9 +6760,6 @@ async function builderGenerateHandler(req, res) {
     const balance = isAdminAuthUser(user) ? null : await billing.getUserCredits(user, config)
     return json(res, 200, { project: existing, code: existing.code, provider: existing.provider, credits: balance, duplicate: true })
   }
-  if (!isAdminAuthUser(user) && await billing.getUserCredits(user, config) < eliteBuilder.BUILDER_COST) {
-    return json(res, 402, { error: `This build needs ${eliteBuilder.BUILDER_COST} credits. Buy credits to continue.` })
-  }
   let project = null
   try {
     const generated = await generateEliteCode(prompt)
@@ -6784,13 +6781,9 @@ async function builderGenerateHandler(req, res) {
         storageWarning: 'Preview is ready, but Builder storage is unavailable. Nothing was charged. Deployment and editing require the Builder database.',
       })
     }
-    const charged = await billing.spendCredits(user, eliteBuilder.BUILDER_COST, config, { idempotencyKey: `elite-builder:${requestId}`, reason: `Elite Builder: ${title}`, builderProjectId: project.id })
-    if (!charged.ok) {
-      await eliteBuilder.deleteProject(config, user, project.id).catch(() => {})
-      return json(res, 402, { error: 'Your credit balance changed before completion. The draft was removed and nothing was charged.' })
-    }
     project = await eliteBuilder.markProjectCharged(config, user, project.id)
-    return json(res, 200, { project, code: generated.code, provider: generated.provider, credits: Number.isFinite(charged.remaining) ? charged.remaining : null, persisted: true, charged: true })
+    const balance = isAdminAuthUser(user) ? null : await billing.getUserCredits(user, config).catch(() => null)
+    return json(res, 200, { project, code: generated.code, provider: generated.provider, credits: Number.isFinite(balance) ? balance : null, persisted: true, charged: false })
   } catch (error) {
     if (project?.id) await eliteBuilder.deleteProject(config, user, project.id).catch(() => {})
     return json(res, 503, { error: error instanceof Error ? error.message : 'Alpha is resting. Retry this build in a moment.' })
