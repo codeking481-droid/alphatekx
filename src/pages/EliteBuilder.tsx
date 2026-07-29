@@ -80,7 +80,7 @@ const templates = [
 
 type Tab = "preview" | "code" | "deploy" | "versions";
 const BUILD_STAGES = [
-  "Connecting to AlphaTekX Coder",
+  "Building with AlphaTekX Infinite Engine",
   "Designing the application structure",
   "Applying the visual system",
   "Testing interactions",
@@ -112,6 +112,7 @@ export default function EliteBuilder() {
   const [domainHelp, setDomainHelp] = useState("");
   const [device, setDevice] = useState<"desktop" | "tablet" | "mobile">("desktop");
   const [previewKey, setPreviewKey] = useState(0);
+  const [previewReady, setPreviewReady] = useState(false);
   const [superpowers, setSuperpowers] = useState<string[]>([]);
   const previewShell = useRef<HTMLDivElement>(null);
   const [searchParams] = useSearchParams();
@@ -157,9 +158,14 @@ export default function EliteBuilder() {
   useEffect(() => {
     const listener = (event: MessageEvent) => {
       if (event.data?.source !== "alphatekx-builder") return;
-      if (event.data.type === "error")
+      if (event.data.type === "error") {
+        setPreviewReady(false);
         setPreviewError(String(event.data.message || "Preview could not render."));
-      if (event.data.type === "ready") setPreviewError("");
+      }
+      if (event.data.type === "ready") {
+        setPreviewReady(true);
+        setPreviewError("");
+      }
       if (event.data.type === "element-clicked") {
         setSelectedElement(String(event.data.html || ""));
         setNotice(
@@ -170,6 +176,9 @@ export default function EliteBuilder() {
     window.addEventListener("message", listener);
     return () => window.removeEventListener("message", listener);
   }, []);
+  useEffect(() => {
+    if (code) setPreviewReady(false);
+  }, [preview, previewKey, code]);
 
   const build = async () => {
     const value = prompt.trim();
@@ -693,7 +702,15 @@ export default function EliteBuilder() {
                       Alpha detected a preview issue and is repairing it: {previewError}
                     </div>
                   )}
-                  <div className="min-h-0 flex-1 overflow-hidden rounded-xl bg-black/30 p-1">
+                  <div className="relative min-h-0 flex-1 overflow-hidden rounded-xl border border-white/10 bg-white">
+                    {!previewReady && !previewError && (
+                      <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-[#09090E]">
+                        <div className="text-center">
+                          <LoaderCircle className="mx-auto animate-spin text-violet-300" size={24} />
+                          <p className="mt-3 text-xs font-black text-white/70">Launching your live website...</p>
+                        </div>
+                      </div>
+                    )}
                     <iframe
                       key={previewKey}
                       title="Builder live preview"
@@ -703,7 +720,7 @@ export default function EliteBuilder() {
                         width:
                           device === "desktop" ? "100%" : device === "tablet" ? "768px" : "390px",
                       }}
-                      className="mx-auto h-full max-w-full rounded-lg border border-white/10 bg-white transition-[width] duration-300"
+                      className="mx-auto block h-full max-w-full border-0 bg-white transition-[width] duration-300"
                       referrerPolicy="no-referrer"
                     />
                   </div>
