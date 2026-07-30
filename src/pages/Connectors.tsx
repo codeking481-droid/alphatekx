@@ -4,11 +4,11 @@ import { ArrowLeft, CheckCircle2, LoaderCircle, X, ExternalLink, AlertCircle } f
 import { FaFacebook, FaInstagram, FaLinkedin, FaXTwitter, FaTiktok, FaYoutube, FaGoogle } from 'react-icons/fa6'
 import { useAuth } from '../lib/auth'
 import { getConnectedApps, connectProvider } from '../lib/connectors/connectorApi'
-import { startLinkedInAuth, startFacebookAuth, startGmailConnection } from '../lib/integrations'
+import { startLinkedInAuth, startGmailConnection } from '../lib/integrations'
 
 const PLATFORM_LIST = [
   { id: 'linkedin', label: 'LinkedIn', icon: FaLinkedin, color: '#0A66C2', description: 'Professional publishing', native: true },
-  { id: 'facebook', label: 'Facebook', icon: FaFacebook, color: '#1877F2', description: 'Pages and publishing', native: true },
+  { id: 'facebook', label: 'Facebook', icon: FaFacebook, color: '#1877F2', description: 'Pages and publishing', native: false },
   { id: 'instagram', label: 'Instagram', icon: FaInstagram, color: '#E4405F', description: 'Posts, reels and stories', native: false },
   { id: 'x', label: 'X / Twitter', icon: FaXTwitter, color: '#000000', description: 'Posts and threads', native: false },
   { id: 'gmail', label: 'Gmail', icon: FaGoogle, color: '#EA4335', description: 'Email and attachments', native: true },
@@ -55,10 +55,6 @@ export default function Connectors() {
       // Native connections open OAuth directly
       if (platformId === 'linkedin') {
         await startLinkedInAuth(session.access_token, '/connected-apps')
-        return
-      }
-      if (platformId === 'facebook') {
-        await startFacebookAuth(session.access_token, '/connected-apps')
         return
       }
       if (platformId === 'gmail') {
