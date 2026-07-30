@@ -5445,6 +5445,53 @@ const server = http.createServer(async (req, res) => {
       }
     }
   }
+  // ─── Planner / Agent Generation Routes ────────────────────────────────
+  if (req.method === 'POST' && req.url === '/api/agent/generate') {
+    try {
+      const { default: handler } = await import('./api/agent/generate.mjs')
+      return await handler(req, res)
+    } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Generation failed' }) }
+  }
+  if (req.method === 'GET' && req.url?.startsWith('/api/agent/generate/progress')) {
+    try {
+      const { default: handler } = await import('./api/agent/generate/progress.mjs')
+      return await handler(req, res)
+    } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Progress check failed' }) }
+  }
+  if (req.method === 'POST' && req.url === '/api/agent/generate/confirm') {
+    try {
+      const { default: handler } = await import('./api/agent/generate/confirm.mjs')
+      return await handler(req, res)
+    } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Confirmation failed' }) }
+  }
+  if (req.method === 'POST' && req.url === '/api/agent/learn') {
+    try {
+      const { default: handler } = await import('./api/agent/learn.mjs')
+      return await handler(req, res)
+    } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Learn failed' }) }
+  }
+  if (req.url === '/api/connections/check') {
+    try {
+      const { default: handler } = await import('./api/connections/check.mjs')
+      return await handler(req, res)
+    } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Connection check failed' }) }
+  }
+  if (req.method === 'GET' && req.url === '/api/automations') {
+    try {
+      const config = supabaseConfig()
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      if (!user) return json(res, 401, { error: 'Authentication required' })
+      const supabase = createClient(config.url, config.service)
+      const { data, error } = await supabase
+        .from('automation_plans')
+        .select('*')
+        .eq('user_id', user.id)
+        .in('status', ['active', 'paused', 'ready_for_confirmation'])
+        .order('created_at', { ascending: false })
+      if (error) return json(res, 500, { error: error.message })
+      return json(res, 200, { automations: data || [] })
+    } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Failed to load automations' }) }
+  }
     if (req.url?.startsWith('/api/')) return json(res, 404, { error: 'API route not found' })
   if (req.method === 'GET' && req.url === '/debug/dist') {
     try {
