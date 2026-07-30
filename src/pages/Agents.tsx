@@ -10,6 +10,7 @@ import type { Agent } from '../lib/agents/types'
 import { useAuth } from '../lib/auth'
 import { getCredits } from '../lib/creditStore'
 import { getIntegrationStatus, getLocalUser, type IntegrationStatus } from '../lib/integrations'
+import MatureAutomationWizard, { useMatureWizard } from '../components/automation/MatureAutomationWizard'
 
 type ConversationMessage = { role: 'user' | 'alpha' | 'system'; text: string; ts: string; generatedCount?: number; totalCredits?: number }
 type AlphaConversation = {
@@ -59,6 +60,7 @@ export default function Agents() {
   const [notice, setNotice] = useState('')
   const composer = useRef<HTMLTextAreaElement>(null)
   const messageEnd = useRef<HTMLDivElement>(null)
+  const wizard = useMatureWizard()
   const isAdmin = isAdminUser(user)
 
   const authHeaders = (): Record<string, string> => {
@@ -148,6 +150,14 @@ export default function Agents() {
   const send = async (overrideMessage?: string) => {
     const message = String(overrideMessage ?? input).trim()
     if (!message || creating) return
+    // Check if message is about creating an automation -> open wizard
+    const autoKeywords = ['run automation','create automation','new automation','post on','i want to automate','another automation','start posting','post on linkedin','post on instagram','post on facebook','post on x','post on twitter','every monday','every day','schedule post']
+    const lower = message.toLowerCase()
+    if (autoKeywords.some(k => lower.includes(k))) {
+      setCreating(false)
+      wizard.openWizard()
+      return
+    }
     setCreating(true)
     setNotice('')
     setInput('')
@@ -270,6 +280,7 @@ export default function Agents() {
 
     {pendingAgent?.type === 'campaign' && <CampaignPreview agent={pendingAgent} integrationStatus={integrationStatus} credits={getCredits()} isAdmin={isAdmin} authHeaders={authHeaders} onClose={() => setPendingAgent(null)} onActivated={created}/>}
     {pendingAgent && pendingAgent.type !== 'campaign' && <WorkflowPlan agent={pendingAgent} integrationStatus={integrationStatus} credits={getCredits()} isAdmin={isAdmin} onClose={() => setPendingAgent(null)} onApprove={approveGeneral}/>}
+    <MatureAutomationWizard open={wizard.open} onComplete={wizard.close} />
   </main>
 }
 

@@ -446,10 +446,15 @@ export function useMatureWizard() {
     } catch { setChecked(true) }
   }, [checked])
 
+  const openWizard = useCallback(() => {
+    setOpen(true)
+    setChecked(true)
+  }, [])
+
   const close = () => {
     setOpen(false)
     try { localStorage.setItem(WIZARD_DONE_KEY, '1') } catch {}
   }
 
-  return { open, checkAndOpen, close }
+  return { open, checkAndOpen, close, openWizard }
 }
