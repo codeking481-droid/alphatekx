@@ -238,7 +238,7 @@ export async function getUserCredits(user, config) {
 export async function getUserBilling(user, config) {
   if (isAdmin(user)) {
     return {
-      credits: 1000000000,
+      credits: 999999,
       plan: 'admin',
       planName: 'Admin (unlimited)',
       monthlyCredits: 0,
