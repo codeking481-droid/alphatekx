@@ -391,7 +391,7 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
 
   return (
     <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={handleBackdropClick}>
-      <div className="relative w-full max-w-[640px] animate-slide-up rounded-t-3xl bg-[#0A0A0B] p-0 shadow-2xl overflow-hidden" style={{ height: '90vh' }} onClick={e => e.stopPropagation()}>
+      <div className="relative w-full max-w-[640px] animate-slide-up rounded-t-3xl bg-[#0A0A0B] p-0 shadow-2xl overflow-hidden max-h-[90dvh] sm:max-h-[90vh]" onClick={e => e.stopPropagation()}>
         {/* Skip confirm modal */}
         <AnimatePresence>
           {showSkipConfirm && (
@@ -420,7 +420,7 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
         </div>
 
         {/* Content */}
-        <div className="overflow-y-auto px-6 pb-8" style={{ height: 'calc(90vh - 48px)' }}>
+        <div className="overflow-y-auto px-6 pb-8" style={{ maxHeight: 'calc(90dvh - 60px)' }}>
           <AnimatePresence mode="wait" custom={direction}>
             <motion.div key={step} custom={direction} variants={slideVariants} initial="enter" animate="center" exit="exit" transition={{ type: 'spring', stiffness: 300, damping: 30 }}>
               {renderStep()}
