@@ -1,10 +1,14 @@
-import{g as o,p as r}from"./apiClient-LilbbFKn.js";const l=/^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])$/;function u(e,t="AlphaTekX build",n={}){const s=t.replace(/[<>&"']/g,""),i=JSON.stringify(String(e||"")).replace(/</g,"\\u003c"),a=JSON.stringify(n.slug||"preview"),c=n.selectMode===!0?"true":"false";return`<!doctype html>
+import{g as d,p as o}from"./apiClient-aCfgGzLB.js";const f=/^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])$/;function u(t){var a;let e=String(t||"");const n=[],i=/\bimport\s+(?:type\s+)?([\s\S]*?)\s+from\s+(['"])([^'"]+)\2\s*;?/g;for(const r of e.matchAll(i)){if(r[3]!=="lucide-react")continue;const s=((a=r[1].match(/\{([\s\S]*?)\}/))==null?void 0:a[1])||"";for(const l of s.split(",")){const c=l.trim().split(/\s+as\s+/i),p=c[1]||c[0];/^[A-Za-z_$][\w$]*$/.test(p)&&n.push(p)}}return e=e.replace(i,`
+`).replace(/\bimport\s+(?:type\s+)?(['"])[^'"]+\1\s*;?/g,`
+`).replace(/\bexport\s+default\s+function\s+App\b/,"function App").replace(/\bexport\s+default\s+App\s*;?/g,"").replace(/\bexport\s+default\s+(?=(?:function|class)\s+App\b)/g,"").replace(/\bexport\s+default\s+(?=(?:const|let|var)\s+App\b)/g,"").replace(/\bexport\s+(?=(?:const|let|var|function|class)\s+App\b)/g,"").replace(new RegExp("(?<!React\\.)\\b(useState|useEffect|useMemo|useReducer|useRef|useCallback|useContext)\\s*\\(","g"),"React.$1(").trim(),n.length&&(e=`${Array.from(new Set(n)).map(s=>`const ${s} = (props = {}) => React.createElement("span", { ...props, "aria-hidden": true });`).join(`
+`)}
+${e}`),e}function g(t,e="AlphaTekX build",n={}){const i=e.replace(/[<>&"']/g,""),a=JSON.stringify(u(t)).replace(/</g,"\\u003c"),r=JSON.stringify(n.slug||"preview"),s=n.selectMode===!0?"true":"false";return`<!doctype html>
 <html>
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src https://cdn.tailwindcss.com https://unpkg.com 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src https: data:; font-src https: data:; connect-src https:;"/>
-  <title>${s}</title>
+  <title>${i}</title>
   <script src="https://cdn.tailwindcss.com"><\/script>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"><\/script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"><\/script>
@@ -21,18 +25,18 @@ import{g as o,p as r}from"./apiClient-LilbbFKn.js";const l=/^[a-z0-9](?:[a-z0-9-
       parent.postMessage({source:'alphatekx-builder',type:'error',message:event.message || 'Preview failed'}, '*');
     });
     try {
-      window.ALPHA_APP_SLUG = ${a};
+      window.ALPHA_APP_SLUG = ${r};
       window.AlphaAPI = {
         url: function(entity,id){ return '/api/apps/'+encodeURIComponent(window.ALPHA_APP_SLUG)+'/'+encodeURIComponent(entity)+(id?'/'+encodeURIComponent(id):''); },
         get: async function(entity,id){ var response=await fetch(this.url(entity,id)); if(!response.ok) throw new Error('Data could not load'); return response.json(); },
         post: async function(entity,data){ var response=await fetch(this.url(entity),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); if(!response.ok) throw new Error('Sign in is required to save data'); return response.json(); }
       };
-      if (${c}) document.addEventListener('click', function(event) {
+      if (${s}) document.addEventListener('click', function(event) {
         event.preventDefault(); event.stopPropagation();
         var element = event.target;
         parent.postMessage({source:'alphatekx-builder',type:'element-clicked',tag:element.tagName,html:String(element.outerHTML||'').slice(0,500)}, '*');
       }, true);
-      var source = ${i};
+      var source = ${a};
       var compiled = Babel.transform(source + "\\n;ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));", {presets:['react']}).code;
       (0,eval)(compiled);
       parent.postMessage({source:'alphatekx-builder',type:'ready'}, '*');
@@ -44,4 +48,4 @@ import{g as o,p as r}from"./apiClient-LilbbFKn.js";const l=/^[a-z0-9](?:[a-z0-9-
     }
   <\/script>
 </body>
-</html>`}async function p(e,t){return r("/api/builder/generate",{prompt:e,requestId:t},{timeoutMs:18e4})}async function m(){return o("/api/builder/projects")}async function y(e,t){return r("/api/builder/deploy",{id:e,slug:t})}async function g(e,t){return r("/api/builder/edit",{projectId:e,instruction:t},{timeoutMs:18e4})}async function f(e,t){return r("/api/builder/fix",{projectId:e,error:t},{timeoutMs:18e4})}async function b(e,t){return r("/api/builder/domain",{projectId:e,domain:t})}async function h(e){return o(`/api/builder/public/${encodeURIComponent(e)}`)}export{l as B,p as a,u as b,y as d,g as e,f,h as g,m as l,b as r};
+</html>`}async function b(t,e){return o("/api/builder/generate",{prompt:t,requestId:e},{timeoutMs:18e4})}async function y(){return d("/api/builder/projects")}async function h(t,e){return o("/api/builder/deploy",{id:t,slug:e})}async function v(t,e){return o("/api/builder/edit",{projectId:t,instruction:e},{timeoutMs:18e4})}async function w(t,e){return o("/api/builder/fix",{projectId:t,error:e},{timeoutMs:18e4})}async function x(t,e){return o("/api/builder/domain",{projectId:t,domain:e})}async function k(t){return d(`/api/builder/public/${encodeURIComponent(t)}`)}export{f as B,b as a,g as b,u as c,h as d,v as e,w as f,k as g,y as l,x as r};
