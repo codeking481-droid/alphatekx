@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ArrowUp, Bot, Check, CheckCircle2, ChevronDown, Code2, Copy, Download, ExternalLink, Eye, FileCode, FileText, Folder, Globe, LayoutGrid, Library, LoaderCircle, Lock, Maximize, MessageCircle, Monitor, Plus, RefreshCw, Redo2, Rocket, RotateCcw, ShoppingBag, Smartphone, Sparkles, Square, Tablet, Terminal, Undo2, UploadCloud, Wallet } from 'lucide-react'
+import { ArrowUp, Bot, Check, CheckCircle2, ChevronDown, Code2, Copy, Download, ExternalLink, Eye, FileCode, FileText, Folder, Globe, LayoutGrid, Library, LoaderCircle, Maximize, MessageCircle, Monitor, Plus, RefreshCw, Redo2, Rocket, RotateCcw, ShoppingBag, Smartphone, Square, Tablet, Terminal, Undo2, UploadCloud, Wallet } from 'lucide-react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { buildFromMission, buildFromPlan, planMission, refineFromMission } from '../lib/alphaBuilder'
 import { getCredits, spendCredits } from '../lib/creditStore'
@@ -75,8 +75,7 @@ export default function Builder() {
   const previewIframeRef = useRef<HTMLIFrameElement | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
   const { user } = useAuth()
-  const ADMIN_EMAILS = (import.meta.env.VITE_ADMIN_EMAILS || 'iamdan4live@gmail.com').split(',').map((e: string) => e.trim().toLowerCase())
-  const isAdmin = user?.email ? ADMIN_EMAILS.includes(user.email.toLowerCase()) : false
+  const isAdmin = user?.email?.toLowerCase() === 'iamdan4live@gmail.com'
   const [aiInput, setAiInput] = useState('')
   const [aiDraft, setAiDraft] = useState<Agent | null>(null)
   const [aiBusy, setAiBusy] = useState(false)
@@ -360,24 +359,6 @@ export default function Builder() {
   const appLike = previewMode === 'phone' || (previewMode === 'auto' && autoAppLike)
   const previewFrameClass = previewMode === 'phone' ? 'w-full max-w-[414px]' : previewMode === 'tablet' ? 'w-full max-w-[820px]' : 'w-full'
   const chats = mission?.messages.filter(message => message.type === 'chat') ?? []
-  if (!isAdmin) {
-    return (
-      <div className="grid min-h-screen place-items-center bg-[#0A0A0F] p-6 text-center">
-        <div>
-          <div className="mx-auto w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mb-4">
-            <Lock size={28} className="text-amber-400" />
-          </div>
-          <h1 className="text-xl font-semibold text-white">Builder Private Beta</h1>
-          <p className="mt-2 text-sm text-zinc-400">Builder is currently in private beta - admin only.</p>
-          <p className="mt-1 text-xs text-zinc-500">Contact the AlphaTekX team for access.</p>
-          <Link to="/planner" className="mt-6 inline-flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-semibold text-black transition-all hover:bg-zinc-100">
-            <Sparkles size={16} /> Go to Planner
-          </Link>
-        </div>
-      </div>
-    )
-  }
-
   if (!mission) return <div className="grid min-h-screen place-items-center bg-background p-6 text-center"><div><h1 className="text-xl font-semibold">Mission not found</h1><Link to="/workspace" className="mt-5 inline-flex rounded-lg bg-white px-5 py-3 text-sm text-black transition-all hover:bg-zinc-100">Return to dashboard</Link></div></div>
 
   return (

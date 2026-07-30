@@ -11,7 +11,6 @@ const Automations = lazy(() => import('./pages/Agents'))
 const Connectors = lazy(() => import('./pages/Connectors'))
 const History = lazy(() => import('./pages/History'))
 const Settings = lazy(() => import('./pages/Settings'))
-const Planner = lazy(() => import('./pages/Planner'))
 const Admin = lazy(() => import('./pages/Admin'))
 const AdminAgents = lazy(() => import('./pages/AdminAgents'))
 const AdminWithdrawals = lazy(() => import('./pages/AdminWithdrawals'))
@@ -36,7 +35,6 @@ export default function App() {
       <Route path="/auth" element={suspended(<AuthRoute />)} />
 
       {/* Core authenticated product */}
-      <Route path="/planner" element={protectedPage(<Planner />)} />
       <Route path="/dashboard" element={protectedPage(<Home />)} />
       <Route path="/automations" element={protectedPage(<Automations />)} />
       <Route path="/history" element={protectedPage(<History />)} />
