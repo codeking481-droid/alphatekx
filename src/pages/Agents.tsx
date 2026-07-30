@@ -157,7 +157,7 @@ export default function Agents() {
     const message = String(overrideMessage ?? input).trim()
     if (!message || creating) return
     // Check if message is about creating an automation -> open wizard
-    const autoKeywords = ['run automation','create automation','new automation','post on','i want to automate','another automation','start posting','post on linkedin','post on instagram','post on facebook','post on x','post on twitter','every monday','every day','schedule post']
+    const autoKeywords = ['run automation','create automation','new automation','post on','i want to automate','another automation','start posting','post on linkedin','post on instagram','post on facebook','post on x','post on twitter','every monday','every day','schedule post',' post ','post on',' i want to post','create a post','make a post','schedule']
     const lower = message.toLowerCase()
     if (autoKeywords.some(k => lower.includes(k))) {
       setCreating(false)
