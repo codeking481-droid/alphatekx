@@ -100,6 +100,12 @@ export default function Agents() {
   useEffect(() => {
     for (const key of ['alphatekx:planning-conversation', 'alphatekx:planning-prompt', 'alphatekx:creation-success', 'alphatekx:pending-agent']) sessionStorage.removeItem(key)
   }, [])
+
+  // Auto-popup wizard for new accounts
+  useEffect(() => {
+    const cleanup = wizard.checkAndOpen()
+    return () => { if (typeof cleanup === 'function') cleanup() }
+  }, [wizard.checkAndOpen])
   useEffect(() => {
     if (conversation) sessionStorage.setItem(CONVERSATION_KEY, JSON.stringify(conversation))
     else sessionStorage.removeItem(CONVERSATION_KEY)
