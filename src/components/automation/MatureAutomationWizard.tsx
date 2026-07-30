@@ -186,16 +186,16 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
         <div>
           <div className="flex items-center gap-3 mb-4">
             <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-pink-500 text-white shadow-lg"><Sparkles size={20} /></div>
-            <div><h2 className="text-lg font-bold text-[#0A0A0B]">What do you want to post about?</h2><p className="text-sm text-zinc-500">Be specific — agent will use this to create content</p></div>
+            <div><h2 className="text-lg font-bold text-white">What do you want to post about?</h2><p className="text-sm text-zinc-400">Be specific — agent will use this to create content</p></div>
           </div>
           <div className="grid grid-cols-2 gap-2.5">
             {TOPIC_OPTIONS.map(t => (
-              <button key={t} onClick={() => handleTopicSelect(t)} className={`min-h-[48px] rounded-xl border-2 px-3 py-2.5 text-left text-sm font-semibold transition-all ${data.topic === t ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300 hover:shadow-sm'}`}>{t}</button>
+              <button key={t} onClick={() => handleTopicSelect(t)} className={`min-h-[48px] rounded-xl border px-3 py-2.5 text-left text-sm font-semibold transition-all ${data.topic === t ? 'border-indigo-500 bg-indigo-500/20 text-white' : 'border-zinc-800 bg-zinc-900/50 text-zinc-300 hover:border-zinc-700'}`}>{t}</button>
             ))}
           </div>
           <div className="mt-4">
-            <textarea value={customTopic} onChange={e => setCustomTopic(e.target.value)} placeholder="Or describe in your own words… e.g. I sell luxury sneakers for Gen Z in Lagos" className="w-full min-h-[80px] rounded-xl border-2 border-zinc-200 bg-white p-3 text-sm text-zinc-800 outline-none placeholder:text-zinc-400 focus:border-indigo-400 resize-none" />
-            <button onClick={handleCustomTopic} disabled={!customTopic.trim()} className="mt-2 w-full min-h-10 rounded-xl bg-[#0A0A0B] text-sm font-semibold text-white hover:opacity-90 disabled:opacity-30">Continue</button>
+            <textarea value={customTopic} onChange={e => setCustomTopic(e.target.value)} placeholder="Or describe in your own words… e.g. I sell luxury sneakers for Gen Z in Lagos" className="w-full min-h-[80px] rounded-xl border border-zinc-800 bg-zinc-900/50 p-3 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-indigo-500 resize-none" />
+            <button onClick={handleCustomTopic} disabled={!customTopic.trim()} className="mt-2 w-full min-h-10 rounded-xl bg-indigo-600 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-30">Continue</button>
           </div>
         </div>
       )
@@ -204,16 +204,16 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
         <div>
           <div className="flex items-center gap-3 mb-4">
             <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-emerald-500 to-indigo-500 text-white shadow-lg"><Target size={20} /></div>
-            <div><h2 className="text-lg font-bold text-[#0A0A0B]">What is your goal?</h2><p className="text-sm text-zinc-500">This changes how the agent writes</p></div>
+            <div><h2 className="text-lg font-bold text-white">What is your goal?</h2><p className="text-sm text-zinc-400">This changes how the agent writes</p></div>
           </div>
           <div className="grid grid-cols-2 gap-2.5">
             {GOAL_OPTIONS.map(g => (
-              <button key={g} onClick={() => handleGoalSelect(g)} className={`min-h-[48px] rounded-xl border-2 px-3 py-2.5 text-left text-sm font-semibold transition-all ${data.goal === g ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300 hover:shadow-sm'}`}>{g}</button>
+              <button key={g} onClick={() => handleGoalSelect(g)} className={`min-h-[48px] rounded-xl border px-3 py-2.5 text-left text-sm font-semibold transition-all ${data.goal === g ? 'border-indigo-500 bg-indigo-500/20 text-white' : 'border-zinc-800 bg-zinc-900/50 text-zinc-300 hover:border-zinc-700'}`}>{g}</button>
             ))}
           </div>
           <div className="mt-4">
-            <input value={customGoal} onChange={e => setCustomGoal(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleCustomGoal()} placeholder="Or type your own goal…" className="w-full min-h-10 rounded-xl border-2 border-zinc-200 bg-white px-3 text-sm text-zinc-800 outline-none placeholder:text-zinc-400 focus:border-indigo-400" />
-            <button onClick={handleCustomGoal} disabled={!customGoal.trim()} className="mt-2 w-full min-h-10 rounded-xl bg-[#0A0A0B] text-sm font-semibold text-white hover:opacity-90 disabled:opacity-30">Continue</button>
+            <input value={customGoal} onChange={e => setCustomGoal(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleCustomGoal()} placeholder="Or type your own goal…" className="w-full min-h-10 rounded-xl border border-zinc-800 bg-zinc-900/50 px-3 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-indigo-500" />
+            <button onClick={handleCustomGoal} disabled={!customGoal.trim()} className="mt-2 w-full min-h-10 rounded-xl bg-indigo-600 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-30">Continue</button>
           </div>
         </div>
       )
@@ -391,7 +391,7 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
 
   return (
     <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={handleBackdropClick}>
-      <div className="relative w-full max-w-[640px] animate-slide-up rounded-t-3xl bg-white p-0 shadow-2xl overflow-hidden" style={{ height: '90vh' }} onClick={e => e.stopPropagation()}>
+      <div className="relative w-full max-w-[640px] animate-slide-up rounded-t-3xl bg-[#0A0A0B] p-0 shadow-2xl overflow-hidden" style={{ height: '90vh' }} onClick={e => e.stopPropagation()}>
         {/* Skip confirm modal */}
         <AnimatePresence>
           {showSkipConfirm && (
