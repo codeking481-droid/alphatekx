@@ -12,7 +12,6 @@ const Connectors = lazy(() => import('./pages/Connectors'))
 const History = lazy(() => import('./pages/History'))
 const Settings = lazy(() => import('./pages/Settings'))
 const Planner = lazy(() => import('./pages/Planner'))
-const Builder = lazy(() => import('./pages/Builder'))
 const Admin = lazy(() => import('./pages/Admin'))
 const AdminAgents = lazy(() => import('./pages/AdminAgents'))
 const AdminWithdrawals = lazy(() => import('./pages/AdminWithdrawals'))
@@ -72,7 +71,7 @@ export default function App() {
       <Route path="/brain" element={toDashboard} />
       <Route path="/chat" element={toDashboard} />
       <Route path="/standards" element={toDashboard} />
-      <Route path="/builder" element={protectedPage(<Builder />)} />
+      <Route path="/builder" element={toDashboard} />
       <Route path="/build-start" element={toDashboard} />
       <Route path="/marketplace" element={toDashboard} />
       <Route path="/marketplace/new" element={toDashboard} />
