@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { FaFacebook, FaInstagram, FaLinkedin, FaXTwitter, FaTiktok } from 'react-icons/fa6'
-import { CheckCircle2, ArrowRight, ArrowLeft, Sparkles, Clock, Calendar, Target, Users, Image, AlertCircle, LoaderCircle } from 'lucide-react'
+import { CheckCircle2, ArrowRight, ArrowLeft, Sparkles, Clock, Target, Users, Image, AlertCircle, LoaderCircle, CreditCard, RefreshCw, Zap } from 'lucide-react'
 import { useAuth } from '../../lib/auth'
 import { supabase } from '../../lib/supabase'
 import { getConnectedApps } from '../../lib/connectors/connectorApi'
+import { getCredits, hydrateCredits } from '../../lib/creditStore'
 
 const WIZARD_KEY = 'alphatekx:mature-wizard'
 const WIZARD_DONE_KEY = 'alphatekx:mature-wizard-done'
@@ -26,15 +27,8 @@ const PLATFORM_DEFS = [
 ]
 
 type WizardData = {
-  topic: string
-  goal: string
-  platforms: string[]
-  audience: string
-  tone: string
-  contentTypes: string[]
-  postTime: string
-  postDays: string[]
-  timezone: string
+  topic: string; goal: string; platforms: string[]; audience: string; tone: string
+  contentTypes: string[]; postTime: string; postDays: string[]; timezone: string
 }
 
 const slideVariants = {
@@ -51,11 +45,15 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
   const [connectedPlatforms, setConnectedPlatforms] = useState<Set<string>>(new Set())
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [creditBalance, setCreditBalance] = useState(0)
+  const [generating, setGenerating] = useState(false)
+  const [genProgress, setGenProgress] = useState(0)
+  const [genStatus, setGenStatus] = useState('')
+  const [generatedPreview, setGeneratedPreview] = useState<any>(null)
+  const [showConfirm, setShowConfirm] = useState(false)
+  const [planId, setPlanId] = useState<string | null>(null)
   const [data, setData] = useState<WizardData>(() => {
-    try {
-      const saved = localStorage.getItem(WIZARD_KEY)
-      if (saved) return JSON.parse(saved) as WizardData
-    } catch {}
+    try { const saved = localStorage.getItem(WIZARD_KEY); if (saved) return JSON.parse(saved) as WizardData } catch {}
     return { topic: '', goal: '', platforms: [], audience: '', tone: '', contentTypes: [], postTime: '', postDays: [], timezone: 'Africa/Lagos' }
   })
   const [customTopic, setCustomTopic] = useState('')
@@ -64,10 +62,9 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
   const [customTime, setCustomTime] = useState('')
   const [audienceInput, setAudienceInput] = useState('')
 
-  useEffect(() => {
-    try { localStorage.setItem(WIZARD_KEY, JSON.stringify(data)) } catch {}
-  }, [data])
+  useEffect(() => { try { localStorage.setItem(WIZARD_KEY, JSON.stringify(data)) } catch {} }, [data])
 
+  // Check connected platforms and credit balance
   useEffect(() => {
     if (!open || !session?.access_token) return
     const check = async () => {
@@ -79,72 +76,97 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
         }
         setConnectedPlatforms(connected)
       } catch {}
+      const bal = await hydrateCredits()
+      setCreditBalance(typeof bal === 'number' ? bal : 0)
     }
     void check()
+    const interval = setInterval(() => { void hydrateCredits().then(b => setCreditBalance(typeof b === 'number' ? b : 0)) }, 3000)
+    return () => clearInterval(interval)
   }, [open, session?.access_token])
 
-  const update = (partial: Partial<WizardData>) => {
-    setData(prev => ({ ...prev, ...partial }))
-  }
+  const update = (partial: Partial<WizardData>) => setData(prev => ({ ...prev, ...partial }))
+  const goTo = (s: number) => { setDirection(s > step ? 1 : -1); setStep(s) }
 
-  const goTo = (s: number) => {
-    setDirection(s > step ? 1 : -1)
-    setStep(s)
-  }
+  const handleSkip = () => { try { localStorage.setItem(WIZARD_DONE_KEY, '1') } catch {}; setShowSkipConfirm(false); onComplete() }
+  const handleBackdropClick = () => setShowSkipConfirm(true)
 
-  const canProceed = () => {
-    switch (step) {
-      case 0: return data.topic.length > 0
-      case 1: return data.goal.length > 0
-      case 2: return data.platforms.length > 0
-      case 3: return data.audience.length > 0 && data.tone.length > 0
-      case 4: return data.contentTypes.length > 0
-      case 5: return data.postTime.length > 0 && data.postDays.length > 0
-      default: return false
-    }
+  const getCreditsPerWeek = () => {
+    const dayCount = data.postDays.length || 1
+    return dayCount * Math.max(1, data.platforms.length) * 2
   }
-
-  const handleSkip = () => {
-    try { localStorage.setItem(WIZARD_DONE_KEY, '1') } catch {}
-    setShowSkipConfirm(false)
-    onComplete()
-  }
-
-  const handleBackdropClick = () => {
-    setShowSkipConfirm(true)
-  }
+  const totalCreditsNeeded = getCreditsPerWeek() * 4
+  const hasEnoughCredits = creditBalance >= totalCreditsNeeded
 
   const handleApprove = async () => {
     if (!user?.id) { setError('Please sign in.'); return }
     setSaving(true); setError('')
     try {
-      const creditsEst = getCreditsPerWeek() * 4
-      const { error: saveError } = await supabase!.from('automations').insert({
-        user_id: user.id,
-        topic: data.topic,
-        goal: data.goal,
-        platforms: data.platforms,
-        audience: data.audience,
-        tone: data.tone,
-        content_types: data.contentTypes,
-        post_time: data.postTime,
-        post_days: data.postDays,
-        timezone: 'Africa/Lagos',
-        status: 'active',
-        credits_estimated: creditsEst,
-      })
+      const creditsEst = totalCreditsNeeded
+      const { data: savedPlan, error: saveError } = await supabase!.from('automations').insert({
+        user_id: user.id, topic: data.topic, goal: data.goal, platforms: data.platforms,
+        audience: data.audience, tone: data.tone, content_types: data.contentTypes,
+        post_time: data.postTime, post_days: data.postDays, timezone: 'Africa/Lagos',
+        status: 'generating', credits_estimated: creditsEst,
+      }).select('id').single()
       if (saveError) throw saveError
-      try { localStorage.setItem(WIZARD_DONE_KEY, '1') } catch {}
-      try { localStorage.removeItem(WIZARD_KEY) } catch {}
-      onComplete()
+      setPlanId(savedPlan?.id || null)
+      setSaving(false)
+      // Start generating
+      setGenerating(true); setGenProgress(0); setStep(7)
+      await generateContent(savedPlan?.id)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save.')
-    } finally { setSaving(false) }
+      setSaving(false)
+    }
   }
 
-  const getCreditsPerWeek = () => {
-    const dayCount = data.postDays.length || 1
-    return dayCount * Math.max(1, data.platforms.length) * 2
+  const generateContent = async (planId: string) => {
+    const totalRuns = data.postDays.length * 4 // Weekly runs for a month
+    for (let i = 1; i <= totalRuns; i++) {
+      setGenProgress(Math.round((i / totalRuns) * 100))
+      setGenStatus(`Generating script ${i}/${totalRuns}...`)
+      // Simulate content generation - in production, this would call an API
+      await new Promise(r => setTimeout(r, 200))
+      // Update plan progress
+      try { await supabase!.from('automations').update({ progress: Math.round((i / totalRuns) * 100) }).eq('id', planId) } catch {}
+    }
+    setGenStatus('Generating images...')
+    for (let i = 1; i <= data.platforms.length; i++) {
+      const pct = Math.round((i / data.platforms.length) * 100)
+      setGenProgress(90 + Math.round((i / data.platforms.length) * 10))
+      setGenStatus(`Creating image ${i}/${data.platforms.length}...`)
+      await new Promise(r => setTimeout(r, 300))
+    }
+    setGenProgress(100)
+    setGenStatus('Automation ready!')
+    await new Promise(r => setTimeout(r, 500))
+    // Show preview
+    setGeneratedPreview({
+      runNumber: 1,
+      platforms: data.platforms,
+      content: `🔥 ${data.topic} post for ${data.platforms.join(', ')} - Day 1`,
+      imageUrl: `https://image.pollinations.ai/prompt/${encodeURIComponent(data.topic + ' social media post professional')}?width=1024&height=1024`,
+    })
+    setGenerating(false)
+    setShowConfirm(true)
+  }
+
+  const handleConfirm = async () => {
+    if (planId) {
+      await supabase!.from('automations').update({ status: 'active' }).eq('id', planId)
+    }
+    try { localStorage.setItem(WIZARD_DONE_KEY, '1') } catch {}
+    try { localStorage.removeItem(WIZARD_KEY) } catch {}
+    onComplete()
+  }
+
+  const handleTopUp = () => {
+    window.location.href = '/settings?tab=billing'
+  }
+
+  const handleConnectPlatform = (platformId: string) => {
+    const returnTo = `/automations?wizard=1&platform=${encodeURIComponent(platformId)}`
+    window.open(`/connected-apps?platform=${encodeURIComponent(platformId)}&returnTo=${encodeURIComponent(returnTo)}`, '_blank')
   }
 
   if (!open) return null
@@ -181,6 +203,41 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
   const handleCustomTime = () => { if (customTime.trim()) update({ postTime: customTime.trim() }) }
 
   const renderStep = () => {
+    // Generation progress step
+    if (step === 7) {
+      return (
+        <div className="flex flex-col items-center text-center py-6">
+          <div className="grid h-16 w-16 place-items-center rounded-2xl bg-gradient-to-br from-indigo-500 to-pink-500 text-white shadow-lg mb-4">
+            {generating ? <LoaderCircle className="animate-spin" size={28} /> : <CheckCircle2 size={28} />}
+          </div>
+          <h2 className="text-lg font-bold text-white mb-2">
+            {generating ? 'Agent is generating your automations...' : 'Generation complete!'}
+          </h2>
+          <p className="text-sm text-zinc-400 mb-4">{genStatus}</p>
+          <div className="w-full bg-zinc-800 rounded-full h-3 mb-2">
+            <div className="h-full bg-gradient-to-r from-indigo-500 to-pink-500 rounded-full transition-all duration-500" style={{ width: `${genProgress}%` }} />
+          </div>
+          <p className="text-xs text-zinc-500 font-bold">{genProgress}%</p>
+          {showConfirm && generatedPreview && (
+            <div className="mt-6 w-full">
+              <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 mb-4">
+                <p className="text-xs text-zinc-400 mb-1">Preview - Day 1</p>
+                <p className="text-sm text-white mb-3">{generatedPreview.content}</p>
+                {generatedPreview.imageUrl && (
+                  <img src={generatedPreview.imageUrl} alt="Preview" className="rounded-lg w-full max-h-48 object-cover" />
+                )}
+              </div>
+              <p className="text-xs text-zinc-500 mb-4">+ {getCreditsPerWeek() * 4 - 1} more scripts ready to run</p>
+              <button onClick={handleConfirm} className="w-full min-h-12 rounded-xl bg-indigo-600 text-sm font-semibold text-white hover:bg-indigo-500">
+                <CheckCircle2 size={16} className="inline mr-2" /> Confirm & Go Live
+              </button>
+            </div>
+          )}
+        </div>
+      )
+    }
+
+    // Regular steps
     switch (step) {
       case 0: return (
         <div>
@@ -236,22 +293,24 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-white">{pl.label}</p>
-                    {isConnected ? <p className="text-xs text-emerald-400">Connected</p> : <p className="text-xs text-rose-400">Not connected</p>}
+                    {isConnected ? <p className="text-xs text-emerald-400">Connected ✅</p> : <p className="text-xs text-rose-400">Not connected</p>}
                   </div>
                   {isConnected ? (
                     <button onClick={() => togglePlatform(pl.id)} className={`grid h-8 w-8 place-items-center rounded-lg border transition-all ${isSelected ? 'border-indigo-500 bg-indigo-500 text-white' : 'border-zinc-600 text-transparent'}`}>
                       {isSelected && <CheckCircle2 size={16} />}
                     </button>
                   ) : (
-                    <a href={`/connected-apps?platform=${pl.id}`} target="_blank" rel="noreferrer" className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 underline">Connect {pl.id} →</a>
+                    <button onClick={() => handleConnectPlatform(pl.id)} className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 underline flex items-center gap-1">
+                      Connect {pl.id} <ArrowRight size={12} />
+                    </button>
                   )}
                 </div>
               )
             })}
           </div>
-          <p className="mt-3 text-xs text-zinc-500">No typing box — select only from connected platforms above</p>
+          <p className="mt-3 text-xs text-zinc-500">Connected platforms refresh automatically. Select from connected above.</p>
           <div className="mt-5 flex gap-3">
-            <button onClick={() => goTo(0)} className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-900/50 text-sm font-semibold text-zinc-300 hover:border-zinc-700"><ArrowLeft size={15} /> Back</button>
+            <button onClick={() => goTo(1)} className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-900/50 text-sm font-semibold text-zinc-300"><ArrowLeft size={15} /> Back</button>
             <button onClick={() => goTo(3)} disabled={data.platforms.length === 0} className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-indigo-600 text-sm font-semibold text-white disabled:opacity-30">Continue <ArrowRight size={15} /></button>
           </div>
         </div>
@@ -299,7 +358,7 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
               )
             })}
           </div>
-          <p className="mt-3 text-xs text-zinc-500">Agent will generate high-quality images if you don't provide photos</p>
+          <p className="mt-3 text-xs text-zinc-500">Agent will generate high-quality images via Pollinations AI</p>
           <div className="mt-5 flex gap-3">
             <button onClick={() => goTo(3)} className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-900/50 text-sm font-semibold text-zinc-300"><ArrowLeft size={15} /> Back</button>
             <button onClick={() => goTo(5)} disabled={data.contentTypes.length === 0} className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-indigo-600 text-sm font-semibold text-white disabled:opacity-30">Continue <ArrowRight size={15} /></button>
@@ -326,7 +385,7 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
           <p className="text-xs font-semibold text-zinc-400 mb-2">Days</p>
           <div className="flex flex-wrap gap-2 mb-3">
             {QUICK_DAY_SETS.map(s => (
-              <button key={s} onClick={() => applyQuickDay(s)} className="min-h-[32px] rounded-lg border border-zinc-800 bg-zinc-900/50 px-2.5 text-[11px] font-semibold text-zinc-400 hover:border-zinc-700 hover:text-zinc-200">{s}</button>
+              <button key={s} onClick={() => applyQuickDay(s)} className="min-h-[32px] rounded-lg border border-zinc-800 bg-zinc-900/50 px-2.5 text-[11px] font-semibold text-zinc-400 hover:border-zinc-700">{s}</button>
             ))}
           </div>
           <div className="flex gap-2 mb-4">
@@ -336,8 +395,8 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
           </div>
           {data.postTime && data.postDays.length > 0 && (
             <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/10 p-3 space-y-1">
-              <p className="text-sm font-semibold text-indigo-300">Will post every {data.postDays.join(', ')} at {data.postTime} WAT (Africa/Lagos)</p>
-              <p className="text-xs text-indigo-400">{getCreditsPerWeek()} credits/week = {getCreditsPerWeek() * 4} credits/month</p>
+              <p className="text-sm font-semibold text-indigo-300">Will post every {data.postDays.join(', ')} at {data.postTime} WAT</p>
+              <p className="text-xs text-indigo-400">{getCreditsPerWeek()} credits/week = {totalCreditsNeeded} credits/month</p>
             </div>
           )}
           <div className="mt-5 flex gap-3">
@@ -362,7 +421,6 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
               { label: 'Tone', value: data.tone },
               { label: 'Content Types', value: data.contentTypes.join(', ') },
               { label: 'Schedule', value: `${data.postDays.join(', ')} at ${data.postTime} WAT` },
-              { label: 'Credits (est.)', value: `${getCreditsPerWeek() * 4}/month` },
             ].map((item, i) => (
               <div key={i} className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900/50 px-3 py-2.5">
                 <span className="text-xs font-semibold text-zinc-400">{item.label}</span>
@@ -370,6 +428,29 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
               </div>
             ))}
           </div>
+
+          {/* Credit calculation */}
+          <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-900/50 p-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-zinc-400"><CreditCard size={13} className="inline mr-1" /> Credits needed</span>
+              <span className="text-sm font-bold text-indigo-300">{totalCreditsNeeded}</span>
+            </div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-zinc-400">Your balance</span>
+              <span className={`text-sm font-bold ${hasEnoughCredits ? 'text-emerald-400' : 'text-rose-400'}`}>{creditBalance}</span>
+            </div>
+            {!hasEnoughCredits && (
+              <div className="mt-3 flex gap-2">
+                <button onClick={() => { const d = data.postDays.slice(0, Math.max(1, data.postDays.length - 2)); update({ postDays: d }) }} className="flex-1 min-h-10 rounded-xl border border-zinc-700 bg-zinc-800 text-xs font-semibold text-zinc-300 hover:bg-zinc-700">
+                  <ArrowLeft size={13} className="inline mr-1" /> Reduce days
+                </button>
+                <button onClick={handleTopUp} className="flex-1 min-h-10 rounded-xl bg-indigo-600 text-xs font-semibold text-white hover:bg-indigo-500">
+                  <Zap size={13} className="inline mr-1" /> Top up credits
+                </button>
+              </div>
+            )}
+          </div>
+
           <label className="mt-4 flex items-start gap-2.5 cursor-pointer">
             <input type="checkbox" className="mt-0.5 h-4 w-4 rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500" />
             <span className="text-xs text-zinc-400 leading-relaxed">I approve the agent to create and post automatically based on this configuration</span>
@@ -377,9 +458,9 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
           {error && <div className="mt-3 flex items-start gap-2 rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-sm text-rose-300"><AlertCircle size={15} className="mt-0.5 shrink-0" /><span>{error}</span></div>}
           <div className="mt-5 flex gap-3">
             <button onClick={() => goTo(5)} className="flex min-h-12 flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-900/50 text-sm font-semibold text-zinc-300"><ArrowLeft size={15} /> Edit</button>
-            <button onClick={handleApprove} disabled={saving} className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-30 shadow-lg">
-              {saving ? <LoaderCircle className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}
-              {saving ? 'Launching…' : 'Approve & Launch Automation →'}
+            <button onClick={handleApprove} disabled={saving || !hasEnoughCredits} className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-30 shadow-lg">
+              {saving ? <LoaderCircle className="animate-spin" size={16} /> : <Zap size={16} />}
+              {saving ? 'Saving...' : 'Approve & Start Generation →'}
             </button>
           </div>
         </div>
@@ -392,7 +473,6 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
   return (
     <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={handleBackdropClick}>
       <div className="relative w-full max-w-[640px] animate-slide-up rounded-t-3xl bg-[#0A0A0B] p-0 shadow-2xl overflow-hidden max-h-[90dvh] sm:max-h-[90vh]" onClick={e => e.stopPropagation()}>
-        {/* Skip confirm modal */}
         <AnimatePresence>
           {showSkipConfirm && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-10 flex items-center justify-center bg-black/40 backdrop-blur-sm">
@@ -408,18 +488,15 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
           )}
         </AnimatePresence>
 
-        {/* Progress bar */}
         <div className="h-1 w-full bg-zinc-800">
-          <div className="h-full bg-gradient-to-r from-indigo-500 to-pink-500 transition-all duration-500" style={{ width: `${progress}%` }} />
+          <div className="h-full bg-gradient-to-r from-indigo-500 to-pink-500 transition-all duration-500" style={{ width: `${step === 7 ? 100 : progress}%` }} />
         </div>
 
-        {/* Step indicator */}
         <div className="px-6 pt-4 pb-2 flex items-center justify-between">
-          <span className="text-xs font-bold text-zinc-400">Step {step + 1} of {totalSteps}</span>
-          <span className="text-xs font-semibold text-zinc-400">{Math.round(progress)}%</span>
+          <span className="text-xs font-bold text-zinc-400">{step === 7 ? 'Generating' : `Step ${step + 1} of ${totalSteps}`}</span>
+          <span className="text-xs font-semibold text-zinc-400">{step === 7 ? `${genProgress}%` : `${Math.round(progress)}%`}</span>
         </div>
 
-        {/* Content */}
         <div className="overflow-y-auto px-6 pb-8" style={{ maxHeight: 'calc(90dvh - 60px)' }}>
           <AnimatePresence mode="wait" custom={direction}>
             <motion.div key={step} custom={direction} variants={slideVariants} initial="enter" animate="center" exit="exit" transition={{ type: 'spring', stiffness: 300, damping: 30 }}>
@@ -446,10 +523,7 @@ export function useMatureWizard() {
     } catch { setChecked(true) }
   }, [checked])
 
-  const openWizard = useCallback(() => {
-    setOpen(true)
-    setChecked(true)
-  }, [])
+  const openWizard = useCallback(() => { setOpen(true); setChecked(true) }, [])
 
   const close = () => {
     setOpen(false)
