@@ -14,6 +14,7 @@ CREATE TABLE public.automations (
   timezone text NOT NULL DEFAULT 'Africa/Lagos',
   status text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused', 'completed')),
   credits_estimated integer NOT NULL DEFAULT 0,
+  progress integer NOT NULL DEFAULT 0,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
