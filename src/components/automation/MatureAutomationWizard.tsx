@@ -9,6 +9,7 @@ import { getCredits, hydrateCredits } from '../../lib/creditStore'
 
 const WIZARD_KEY = 'alphatekx:mature-wizard'
 const WIZARD_DONE_KEY = 'alphatekx:mature-wizard-done'
+const CONNECTED_CACHE_KEY = 'alphatekx:connected-platforms'
 
 const TOPIC_OPTIONS = ['My Business / Product', 'Personal Brand', 'Educational', 'Motivational', 'Tech News', 'Memes / Funny']
 const GOAL_OPTIONS = ['Get more customers', 'Build followers', 'Go viral', 'Educate audience', 'Drive website traffic', 'Get leads']
@@ -42,7 +43,13 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
   const [step, setStep] = useState(0)
   const [direction, setDirection] = useState(1)
   const [showSkipConfirm, setShowSkipConfirm] = useState(false)
-  const [connectedPlatforms, setConnectedPlatforms] = useState<Set<string>>(new Set())
+  const [connectedPlatforms, setConnectedPlatforms] = useState<Set<string>>(() => {
+    try {
+      const cached = localStorage.getItem(CONNECTED_CACHE_KEY)
+      if (cached) return new Set(JSON.parse(cached))
+    } catch {}
+    return new Set()
+  })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [creditBalance, setCreditBalance] = useState(0)
@@ -75,6 +82,7 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
           if (provider.connected) connected.add(provider.provider === 'twitter' ? 'x' : provider.provider)
         }
         setConnectedPlatforms(connected)
+        try { localStorage.setItem(CONNECTED_CACHE_KEY, JSON.stringify([...connected])) } catch {}
       } catch {}
       const bal = await hydrateCredits()
       setCreditBalance(typeof bal === 'number' ? bal : 0)

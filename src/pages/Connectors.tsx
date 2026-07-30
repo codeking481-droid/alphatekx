@@ -6,6 +6,8 @@ import { useAuth } from '../lib/auth'
 import { getConnectedApps, connectProvider } from '../lib/connectors/connectorApi'
 import { startLinkedInAuth, startGmailConnection } from '../lib/integrations'
 
+const CONNECTED_CACHE_KEY = 'alphatekx:connected-platforms'
+
 const PLATFORM_LIST = [
   { id: 'linkedin', label: 'LinkedIn', icon: FaLinkedin, color: '#0A66C2', description: 'Professional publishing', native: true },
   { id: 'facebook', label: 'Facebook', icon: FaFacebook, color: '#1877F2', description: 'Pages and publishing', native: false },
@@ -20,7 +22,13 @@ export default function Connectors() {
   const { session } = useAuth()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const [connected, setConnected] = useState<Set<string>>(new Set())
+  const [connected, setConnected] = useState<Set<string>>(() => {
+    try {
+      const cached = localStorage.getItem(CONNECTED_CACHE_KEY)
+      if (cached) return new Set(JSON.parse(cached))
+    } catch {}
+    return new Set()
+  })
   const [connecting, setConnecting] = useState<string | null>(null)
   const [notice, setNotice] = useState('')
   const platformParam = searchParams.get('platform')
@@ -42,6 +50,7 @@ export default function Connectors() {
           if (status.gmail?.connected) ready.add('gmail')
         } catch {}
         setConnected(ready)
+        try { localStorage.setItem(CONNECTED_CACHE_KEY, JSON.stringify([...ready])) } catch {}
       } catch {}
     }
     void check()
