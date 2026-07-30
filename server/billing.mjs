@@ -229,7 +229,7 @@ async function writeProfile(user, config, patch) {
 }
 
 export async function getUserCredits(user, config) {
-  if (isAdmin(user)) return Infinity
+  if (isAdmin(user)) return 999999
   const profile = await readProfile(user, config)
   if (!profile) return 0
   return Number(profile.credits) || 0

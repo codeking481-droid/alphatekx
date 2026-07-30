@@ -81,8 +81,10 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
         for (const provider of apps.providers) {
           if (provider.connected) connected.add(provider.provider === 'twitter' ? 'x' : provider.provider)
         }
-        setConnectedPlatforms(connected)
-        try { localStorage.setItem(CONNECTED_CACHE_KEY, JSON.stringify([...connected])) } catch {}
+        // Merge with existing cache so native connections (like LinkedIn) persist even if API doesn't return them
+        const merged = new Set([...connected, ...connectedPlatforms])
+        setConnectedPlatforms(merged)
+        try { localStorage.setItem(CONNECTED_CACHE_KEY, JSON.stringify([...merged])) } catch {}
       } catch {}
       const bal = await hydrateCredits()
       setCreditBalance(typeof bal === 'number' ? bal : 0)

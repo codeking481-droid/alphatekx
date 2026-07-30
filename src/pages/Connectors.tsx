@@ -49,8 +49,10 @@ export default function Connectors() {
           if (status.linkedin?.connected) ready.add('linkedin')
           if (status.gmail?.connected) ready.add('gmail')
         } catch {}
-        setConnected(ready)
-        try { localStorage.setItem(CONNECTED_CACHE_KEY, JSON.stringify([...ready])) } catch {}
+        // Merge with existing cache so native connections (like LinkedIn) persist even if API doesn't return them
+        const merged = new Set([...ready, ...connected])
+        setConnected(merged)
+        try { localStorage.setItem(CONNECTED_CACHE_KEY, JSON.stringify([...merged])) } catch {}
       } catch {}
     }
     void check()
