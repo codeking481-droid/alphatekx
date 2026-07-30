@@ -1,1 +1,0 @@
-import{g as e,p as o}from"./apiClient-Pqt5Fz9s.js";async function s(n){return e("/api/connected-apps",{token:n,timeoutMs:12e3})}async function p(n,t){return o(`/api/connectors/${n}/connect`,{},{token:t,timeoutMs:2e4})}export{p as c,s as g};

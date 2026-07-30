@@ -222,7 +222,7 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
         <div>
           <div className="flex items-center gap-3 mb-4">
             <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 text-white shadow-lg"><FaFacebook size={18} /></div>
-            <div><h2 className="text-lg font-bold text-[#0A0A0B]">Where should we post?</h2><p className="text-sm text-zinc-500">Connect platforms to continue</p></div>
+            <div><h2 className="text-lg font-bold text-white">Where should we post?</h2><p className="text-sm text-zinc-400">Connect platforms to continue</p></div>
           </div>
           <div className="space-y-2.5">
             {PLATFORM_DEFS.map(pl => {
@@ -230,29 +230,29 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
               const isSelected = data.platforms.includes(pl.id)
               const Icon = pl.icon
               return (
-                <div key={pl.id} className={`flex items-center gap-3 rounded-xl border-2 p-3 transition-all ${isSelected ? 'border-indigo-500 bg-indigo-50' : isConnected ? 'border-zinc-200 bg-white' : 'border-zinc-100 bg-zinc-50 opacity-60'}`}>
-                  <div className="grid h-10 w-10 place-items-center rounded-lg" style={{ backgroundColor: pl.color + '15' }}>
+                <div key={pl.id} className={`flex items-center gap-3 rounded-xl border p-3 transition-all ${isSelected ? 'border-indigo-500 bg-indigo-500/20' : isConnected ? 'border-zinc-800 bg-zinc-900/50' : 'border-zinc-800 bg-zinc-900/30 opacity-50'}`}>
+                  <div className="grid h-10 w-10 place-items-center rounded-lg" style={{ backgroundColor: pl.color + '20' }}>
                     <Icon style={{ color: pl.color }} size={22} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-[#0A0A0B]">{pl.label}</p>
-                    {isConnected ? <p className="text-xs text-emerald-600">Connected</p> : <p className="text-xs text-rose-500">Not connected</p>}
+                    <p className="text-sm font-semibold text-white">{pl.label}</p>
+                    {isConnected ? <p className="text-xs text-emerald-400">Connected</p> : <p className="text-xs text-rose-400">Not connected</p>}
                   </div>
                   {isConnected ? (
-                    <button onClick={() => togglePlatform(pl.id)} className={`grid h-8 w-8 place-items-center rounded-lg border-2 transition-all ${isSelected ? 'border-indigo-500 bg-indigo-500 text-white' : 'border-zinc-300 text-transparent'}`}>
+                    <button onClick={() => togglePlatform(pl.id)} className={`grid h-8 w-8 place-items-center rounded-lg border transition-all ${isSelected ? 'border-indigo-500 bg-indigo-500 text-white' : 'border-zinc-600 text-transparent'}`}>
                       {isSelected && <CheckCircle2 size={16} />}
                     </button>
                   ) : (
-                    <a href={`/connected-apps?platform=${pl.id}`} target="_blank" rel="noreferrer" className="text-xs font-semibold text-indigo-600 hover:text-indigo-500 underline">Connect {pl.id} →</a>
+                    <a href={`/connected-apps?platform=${pl.id}`} target="_blank" rel="noreferrer" className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 underline">Connect {pl.id} →</a>
                   )}
                 </div>
               )
             })}
           </div>
-          <p className="mt-3 text-xs text-zinc-400">No typing box — select only from connected platforms above</p>
+          <p className="mt-3 text-xs text-zinc-500">No typing box — select only from connected platforms above</p>
           <div className="mt-5 flex gap-3">
-            <button onClick={() => goTo(0)} className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border-2 border-zinc-200 bg-white text-sm font-semibold text-zinc-600 hover:border-zinc-300"><ArrowLeft size={15} /> Back</button>
-            <button onClick={() => goTo(3)} disabled={data.platforms.length === 0} className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#0A0A0B] text-sm font-semibold text-white disabled:opacity-30">Continue <ArrowRight size={15} /></button>
+            <button onClick={() => goTo(0)} className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-900/50 text-sm font-semibold text-zinc-300 hover:border-zinc-700"><ArrowLeft size={15} /> Back</button>
+            <button onClick={() => goTo(3)} disabled={data.platforms.length === 0} className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-indigo-600 text-sm font-semibold text-white disabled:opacity-30">Continue <ArrowRight size={15} /></button>
           </div>
         </div>
       )
@@ -261,23 +261,23 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
         <div>
           <div className="flex items-center gap-3 mb-4">
             <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-violet-500 to-indigo-500 text-white shadow-lg"><Users size={20} /></div>
-            <div><h2 className="text-lg font-bold text-[#0A0A0B]">Who & How?</h2><p className="text-sm text-zinc-500">Who are you talking to and what's the vibe?</p></div>
+            <div><h2 className="text-lg font-bold text-white">Who & How?</h2><p className="text-sm text-zinc-400">Who are you talking to and what's the vibe?</p></div>
           </div>
-          <p className="text-xs font-semibold text-zinc-500 mb-2">Audience</p>
-          <input value={audienceInput || data.audience} onChange={e => { setAudienceInput(e.target.value); update({ audience: e.target.value }) }} placeholder="e.g. Young entrepreneurs in Nigeria, 18-30" className="w-full min-h-10 rounded-xl border-2 border-zinc-200 bg-white px-3 text-sm text-zinc-800 outline-none placeholder:text-zinc-400 focus:border-indigo-400" />
-          <p className="text-xs font-semibold text-zinc-500 mt-4 mb-2">Tone</p>
+          <p className="text-xs font-semibold text-zinc-400 mb-2">Audience</p>
+          <input value={audienceInput || data.audience} onChange={e => { setAudienceInput(e.target.value); update({ audience: e.target.value }) }} placeholder="e.g. Young entrepreneurs in Nigeria, 18-30" className="w-full min-h-10 rounded-xl border border-zinc-800 bg-zinc-900/50 px-3 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-indigo-500" />
+          <p className="text-xs font-semibold text-zinc-400 mt-4 mb-2">Tone</p>
           <div className="grid grid-cols-2 gap-2">
             {TONE_OPTIONS.map(t => (
-              <button key={t} onClick={() => handleToneSelect(t)} className={`min-h-[42px] rounded-xl border-2 px-3 text-sm font-semibold transition-all ${data.tone === t ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300'}`}>{t}</button>
+              <button key={t} onClick={() => handleToneSelect(t)} className={`min-h-[42px] rounded-xl border px-3 text-sm font-semibold transition-all ${data.tone === t ? 'border-indigo-500 bg-indigo-500/20 text-white' : 'border-zinc-800 bg-zinc-900/50 text-zinc-300 hover:border-zinc-700'}`}>{t}</button>
             ))}
           </div>
           <div className="mt-3 flex gap-2">
-            <input value={customTone} onChange={e => setCustomTone(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleCustomTone()} placeholder="Custom tone…" className="flex-1 min-h-10 rounded-xl border-2 border-zinc-200 bg-white px-3 text-sm text-zinc-800 outline-none placeholder:text-zinc-400 focus:border-indigo-400" />
-            <button onClick={handleCustomTone} disabled={!customTone.trim()} className="min-h-10 rounded-xl bg-[#0A0A0B] px-4 text-sm font-semibold text-white disabled:opacity-30">Set</button>
+            <input value={customTone} onChange={e => setCustomTone(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleCustomTone()} placeholder="Custom tone…" className="flex-1 min-h-10 rounded-xl border border-zinc-800 bg-zinc-900/50 px-3 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-indigo-500" />
+            <button onClick={handleCustomTone} disabled={!customTone.trim()} className="min-h-10 rounded-xl bg-indigo-600 px-4 text-sm font-semibold text-white disabled:opacity-30">Set</button>
           </div>
           <div className="mt-5 flex gap-3">
-            <button onClick={() => goTo(2)} className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border-2 border-zinc-200 bg-white text-sm font-semibold text-zinc-600"><ArrowLeft size={15} /> Back</button>
-            <button onClick={() => goTo(4)} disabled={!data.audience || !data.tone} className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#0A0A0B] text-sm font-semibold text-white disabled:opacity-30">Continue <ArrowRight size={15} /></button>
+            <button onClick={() => goTo(2)} className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-900/50 text-sm font-semibold text-zinc-300"><ArrowLeft size={15} /> Back</button>
+            <button onClick={() => goTo(4)} disabled={!data.audience || !data.tone} className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-indigo-600 text-sm font-semibold text-white disabled:opacity-30">Continue <ArrowRight size={15} /></button>
           </div>
         </div>
       )
@@ -286,23 +286,23 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
         <div>
           <div className="flex items-center gap-3 mb-4">
             <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-pink-500 to-indigo-500 text-white shadow-lg"><Image size={20} /></div>
-            <div><h2 className="text-lg font-bold text-[#0A0A0B]">Content Type & Media</h2><p className="text-sm text-zinc-500">What should the agent create?</p></div>
+            <div><h2 className="text-lg font-bold text-white">Content Type & Media</h2><p className="text-sm text-zinc-400">What should the agent create?</p></div>
           </div>
           <div className="space-y-2">
             {CONTENT_OPTIONS.map(c => {
               const sel = data.contentTypes.includes(c)
               return (
-                <button key={c} onClick={() => toggleContent(c)} className={`w-full flex items-center gap-3 rounded-xl border-2 p-3 text-left transition-all ${sel ? 'border-indigo-500 bg-indigo-50' : 'border-zinc-200 bg-white hover:border-zinc-300'}`}>
-                  <div className={`grid h-6 w-6 place-items-center rounded-md border-2 transition-all ${sel ? 'border-indigo-500 bg-indigo-500 text-white' : 'border-zinc-300'}`}>{sel && <CheckCircle2 size={14} />}</div>
-                  <span className={`text-sm font-semibold ${sel ? 'text-indigo-700' : 'text-zinc-700'}`}>{c}</span>
+                <button key={c} onClick={() => toggleContent(c)} className={`w-full flex items-center gap-3 rounded-xl border p-3 text-left transition-all ${sel ? 'border-indigo-500 bg-indigo-500/20' : 'border-zinc-800 bg-zinc-900/50 hover:border-zinc-700'}`}>
+                  <div className={`grid h-6 w-6 place-items-center rounded-md border transition-all ${sel ? 'border-indigo-500 bg-indigo-500 text-white' : 'border-zinc-600'}`}>{sel && <CheckCircle2 size={14} />}</div>
+                  <span className={`text-sm font-semibold ${sel ? 'text-white' : 'text-zinc-300'}`}>{c}</span>
                 </button>
               )
             })}
           </div>
-          <p className="mt-3 text-xs text-zinc-400">Agent will generate high-quality images if you don't provide photos</p>
+          <p className="mt-3 text-xs text-zinc-500">Agent will generate high-quality images if you don't provide photos</p>
           <div className="mt-5 flex gap-3">
-            <button onClick={() => goTo(3)} className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border-2 border-zinc-200 bg-white text-sm font-semibold text-zinc-600"><ArrowLeft size={15} /> Back</button>
-            <button onClick={() => goTo(5)} disabled={data.contentTypes.length === 0} className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#0A0A0B] text-sm font-semibold text-white disabled:opacity-30">Continue <ArrowRight size={15} /></button>
+            <button onClick={() => goTo(3)} className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-900/50 text-sm font-semibold text-zinc-300"><ArrowLeft size={15} /> Back</button>
+            <button onClick={() => goTo(5)} disabled={data.contentTypes.length === 0} className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-indigo-600 text-sm font-semibold text-white disabled:opacity-30">Continue <ArrowRight size={15} /></button>
           </div>
         </div>
       )
@@ -311,38 +311,38 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
         <div>
           <div className="flex items-center gap-3 mb-4">
             <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-amber-500 to-indigo-500 text-white shadow-lg"><Clock size={20} /></div>
-            <div><h2 className="text-lg font-bold text-[#0A0A0B]">Schedule</h2><p className="text-sm text-zinc-500">Strict Africa/Lagos (WAT, UTC+1)</p></div>
+            <div><h2 className="text-lg font-bold text-white">Schedule</h2><p className="text-sm text-zinc-400">Strict Africa/Lagos (WAT, UTC+1)</p></div>
           </div>
-          <p className="text-xs font-semibold text-zinc-500 mb-2">Time</p>
+          <p className="text-xs font-semibold text-zinc-400 mb-2">Time</p>
           <div className="flex flex-wrap gap-2 mb-3">
             {TIME_OPTIONS.map(t => (
-              <button key={t} onClick={() => handleTimeSelect(t)} className={`min-h-[36px] rounded-lg border-2 px-3 text-sm font-semibold transition-all ${data.postTime === t ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300'}`}>{t}</button>
+              <button key={t} onClick={() => handleTimeSelect(t)} className={`min-h-[36px] rounded-lg border px-3 text-sm font-semibold transition-all ${data.postTime === t ? 'border-indigo-500 bg-indigo-500/20 text-white' : 'border-zinc-800 bg-zinc-900/50 text-zinc-300 hover:border-zinc-700'}`}>{t}</button>
             ))}
           </div>
           <div className="flex gap-2 mb-4">
-            <input value={customTime} onChange={e => setCustomTime(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleCustomTime()} placeholder="Custom time e.g. 7:30 PM" className="flex-1 min-h-10 rounded-xl border-2 border-zinc-200 bg-white px-3 text-sm text-zinc-800 outline-none placeholder:text-zinc-400 focus:border-indigo-400" />
-            <button onClick={handleCustomTime} disabled={!customTime.trim()} className="min-h-10 rounded-xl bg-[#0A0A0B] px-4 text-sm font-semibold text-white disabled:opacity-30">Set</button>
+            <input value={customTime} onChange={e => setCustomTime(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleCustomTime()} placeholder="Custom time e.g. 7:30 PM" className="flex-1 min-h-10 rounded-xl border border-zinc-800 bg-zinc-900/50 px-3 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-indigo-500" />
+            <button onClick={handleCustomTime} disabled={!customTime.trim()} className="min-h-10 rounded-xl bg-indigo-600 px-4 text-sm font-semibold text-white disabled:opacity-30">Set</button>
           </div>
-          <p className="text-xs font-semibold text-zinc-500 mb-2">Days</p>
+          <p className="text-xs font-semibold text-zinc-400 mb-2">Days</p>
           <div className="flex flex-wrap gap-2 mb-3">
             {QUICK_DAY_SETS.map(s => (
-              <button key={s} onClick={() => applyQuickDay(s)} className="min-h-[32px] rounded-lg border border-zinc-200 bg-white px-2.5 text-[11px] font-semibold text-zinc-500 hover:border-zinc-300 hover:text-zinc-700">{s}</button>
+              <button key={s} onClick={() => applyQuickDay(s)} className="min-h-[32px] rounded-lg border border-zinc-800 bg-zinc-900/50 px-2.5 text-[11px] font-semibold text-zinc-400 hover:border-zinc-700 hover:text-zinc-200">{s}</button>
             ))}
           </div>
           <div className="flex gap-2 mb-4">
             {DAY_OPTIONS.map(d => (
-              <button key={d} onClick={() => toggleDay(d)} className={`grid h-10 w-10 place-items-center rounded-xl border-2 text-sm font-bold transition-all ${data.postDays.includes(d) ? 'border-indigo-500 bg-indigo-500 text-white' : 'border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300'}`}>{d}</button>
+              <button key={d} onClick={() => toggleDay(d)} className={`grid h-10 w-10 place-items-center rounded-xl border text-sm font-bold transition-all ${data.postDays.includes(d) ? 'border-indigo-500 bg-indigo-500 text-white' : 'border-zinc-800 bg-zinc-900/50 text-zinc-400 hover:border-zinc-700'}`}>{d}</button>
             ))}
           </div>
           {data.postTime && data.postDays.length > 0 && (
-            <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-3 space-y-1">
-              <p className="text-sm font-semibold text-indigo-700">Will post every {data.postDays.join(', ')} at {data.postTime} WAT (Africa/Lagos)</p>
-              <p className="text-xs text-indigo-500">{getCreditsPerWeek()} credits/week = {getCreditsPerWeek() * 4} credits/month</p>
+            <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/10 p-3 space-y-1">
+              <p className="text-sm font-semibold text-indigo-300">Will post every {data.postDays.join(', ')} at {data.postTime} WAT (Africa/Lagos)</p>
+              <p className="text-xs text-indigo-400">{getCreditsPerWeek()} credits/week = {getCreditsPerWeek() * 4} credits/month</p>
             </div>
           )}
           <div className="mt-5 flex gap-3">
-            <button onClick={() => goTo(4)} className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border-2 border-zinc-200 bg-white text-sm font-semibold text-zinc-600"><ArrowLeft size={15} /> Back</button>
-            <button onClick={() => goTo(6)} disabled={!data.postTime || data.postDays.length === 0} className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#0A0A0B] text-sm font-semibold text-white disabled:opacity-30">Continue <ArrowRight size={15} /></button>
+            <button onClick={() => goTo(4)} className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-900/50 text-sm font-semibold text-zinc-300"><ArrowLeft size={15} /> Back</button>
+            <button onClick={() => goTo(6)} disabled={!data.postTime || data.postDays.length === 0} className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-indigo-600 text-sm font-semibold text-white disabled:opacity-30">Continue <ArrowRight size={15} /></button>
           </div>
         </div>
       )
@@ -351,7 +351,7 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
         <div>
           <div className="flex items-center gap-3 mb-4">
             <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-emerald-500 to-indigo-500 text-white shadow-lg"><CheckCircle2 size={20} /></div>
-            <div><h2 className="text-lg font-bold text-[#0A0A0B]">Review & Launch</h2><p className="text-sm text-zinc-500">Check everything before we go live</p></div>
+            <div><h2 className="text-lg font-bold text-white">Review & Launch</h2><p className="text-sm text-zinc-400">Check everything before we go live</p></div>
           </div>
           <div className="space-y-2">
             {[
@@ -364,20 +364,20 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
               { label: 'Schedule', value: `${data.postDays.join(', ')} at ${data.postTime} WAT` },
               { label: 'Credits (est.)', value: `${getCreditsPerWeek() * 4}/month` },
             ].map((item, i) => (
-              <div key={i} className="flex items-center justify-between rounded-xl border border-zinc-200 bg-white px-3 py-2.5">
+              <div key={i} className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900/50 px-3 py-2.5">
                 <span className="text-xs font-semibold text-zinc-400">{item.label}</span>
-                <span className="text-sm font-semibold text-[#0A0A0B] text-right max-w-[60%] truncate">{item.value}</span>
+                <span className="text-sm font-semibold text-white text-right max-w-[60%] truncate">{item.value}</span>
               </div>
             ))}
           </div>
           <label className="mt-4 flex items-start gap-2.5 cursor-pointer">
-            <input type="checkbox" className="mt-0.5 h-4 w-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500" />
-            <span className="text-xs text-zinc-500 leading-relaxed">I approve the agent to create and post automatically based on this configuration</span>
+            <input type="checkbox" className="mt-0.5 h-4 w-4 rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500" />
+            <span className="text-xs text-zinc-400 leading-relaxed">I approve the agent to create and post automatically based on this configuration</span>
           </label>
-          {error && <div className="mt-3 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-600"><AlertCircle size={15} className="mt-0.5 shrink-0" /><span>{error}</span></div>}
+          {error && <div className="mt-3 flex items-start gap-2 rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-sm text-rose-300"><AlertCircle size={15} className="mt-0.5 shrink-0" /><span>{error}</span></div>}
           <div className="mt-5 flex gap-3">
-            <button onClick={() => goTo(5)} className="flex min-h-12 flex-1 items-center justify-center gap-1.5 rounded-xl border-2 border-zinc-200 bg-white text-sm font-semibold text-zinc-600"><ArrowLeft size={15} /> Edit</button>
-            <button onClick={handleApprove} disabled={saving} className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-[#0A0A0B] text-sm font-semibold text-white hover:opacity-90 disabled:opacity-30 shadow-lg">
+            <button onClick={() => goTo(5)} className="flex min-h-12 flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-900/50 text-sm font-semibold text-zinc-300"><ArrowLeft size={15} /> Edit</button>
+            <button onClick={handleApprove} disabled={saving} className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-30 shadow-lg">
               {saving ? <LoaderCircle className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}
               {saving ? 'Launching…' : 'Approve & Launch Automation →'}
             </button>
@@ -396,12 +396,12 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
         <AnimatePresence>
           {showSkipConfirm && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-10 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-              <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="mx-4 w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl text-center">
-                <p className="text-base font-bold text-[#0A0A0B]">You need to finish setup to start automation.</p>
-                <p className="mt-2 text-sm text-zinc-500">Are you sure you want to skip?</p>
+              <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="mx-4 w-full max-w-sm rounded-2xl bg-[#0F0F0F] p-6 shadow-xl text-center border border-zinc-800">
+                <p className="text-base font-bold text-white">You need to finish setup to start automation.</p>
+                <p className="mt-2 text-sm text-zinc-400">Are you sure you want to skip?</p>
                 <div className="mt-5 flex gap-3">
-                  <button onClick={() => setShowSkipConfirm(false)} className="flex-1 min-h-10 rounded-xl border-2 border-zinc-200 bg-white text-sm font-semibold text-zinc-600">Continue setup</button>
-                  <button onClick={handleSkip} className="flex-1 min-h-10 rounded-xl bg-zinc-100 text-sm font-semibold text-zinc-500 hover:bg-zinc-200">Skip for now</button>
+                  <button onClick={() => setShowSkipConfirm(false)} className="flex-1 min-h-10 rounded-xl border border-zinc-800 bg-zinc-900/50 text-sm font-semibold text-zinc-300">Continue setup</button>
+                  <button onClick={handleSkip} className="flex-1 min-h-10 rounded-xl bg-zinc-800 text-sm font-semibold text-zinc-400 hover:bg-zinc-700">Skip for now</button>
                 </div>
               </motion.div>
             </motion.div>
@@ -409,7 +409,7 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
         </AnimatePresence>
 
         {/* Progress bar */}
-        <div className="h-1 w-full bg-zinc-100">
+        <div className="h-1 w-full bg-zinc-800">
           <div className="h-full bg-gradient-to-r from-indigo-500 to-pink-500 transition-all duration-500" style={{ width: `${progress}%` }} />
         </div>
 
