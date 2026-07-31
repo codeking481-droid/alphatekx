@@ -3,6 +3,7 @@ import type { Session, User } from '@supabase/supabase-js'
 import { isSupabaseConfigured, supabase } from './supabase'
 import { hydrateCredits } from './creditStore'
 import { userEmail } from './adminAccess'
+import { clearAgentCache } from './agents/agentStore'
 
 type LocalUser = { id: string; email: string; name?: string }
 type AuthUser = User | LocalUser
@@ -22,6 +23,19 @@ const AuthContext = createContext<AuthValue | null>(null)
 
 const LOCAL_USER_KEY = 'alphatekx:local-user'
 const PROFILE_TIMEOUT_MS = 10_000
+
+function clearUserArtifacts() {
+  try {
+    for (const key of ['alphatekx:connected-platforms', 'alphatekx:running-automation', 'alphatekx:mature-wizard', 'alphatekx:mature-wizard-done']) {
+      localStorage.removeItem(key)
+    }
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index)
+      if (key?.startsWith('alphatekx:connected-platforms:')) localStorage.removeItem(key)
+    }
+  } catch {}
+  clearAgentCache()
+}
 
 function readLocalUser(): LocalUser | null {
   try {
@@ -85,6 +99,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     if (!supabase) { setLoading(false); return }
     supabase.auth.getSession().then(({ data }) => {
+      const currentUserId = session?.user?.id ?? null
+      if (data.session?.user?.id && currentUserId && data.session.user.id !== currentUserId) {
+        clearUserArtifacts()
+      }
       setSession(data.session)
       setLoading(false)
       if (data.session) {
@@ -99,16 +117,21 @@ export function AuthProvider({ children }: PropsWithChildren) {
       setLoading(false)
     })
     const { data } = supabase.auth.onAuthStateChange((_event, next) => {
+      const changedUser = Boolean(session?.user?.id && next?.user?.id && session.user.id !== next.user.id)
+      if (!next || changedUser) clearUserArtifacts()
       setSession(next)
       setLoading(false)
       if (next) {
         localStorage.removeItem(LOCAL_USER_KEY)
         setLocalUser(null)
         void refreshProfile()
-      } else setProfile(null)
+      } else {
+        clearUserArtifacts()
+        setProfile(null)
+      }
     })
     return () => data.subscription.unsubscribe()
-  }, [])
+  }, [session?.user?.id])
 
   const user: AuthUser | null = useMemo(() => {
     return session?.user ?? localUser
@@ -123,9 +146,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }
 
   const signOut = async () => {
-    await supabase?.auth.signOut()
+    try { await supabase?.auth.signOut() } catch {}
+    clearUserArtifacts()
     localStorage.removeItem(LOCAL_USER_KEY)
+    setSession(null)
     setLocalUser(null)
+    setProfile(null)
   }
 
   const value = useMemo<AuthValue>(() => ({ session, user, profile, loading, configured: isSupabaseConfigured, refreshProfile, signOut, localSignIn }), [session, user, profile, loading])

@@ -6,7 +6,9 @@ import { useAuth } from '../lib/auth'
 import { getConnectedApps, connectProvider, disconnectProvider } from '../lib/connectors/connectorApi'
 import { startLinkedInAuth, startGmailConnection } from '../lib/integrations'
 
-const CONNECTED_CACHE_KEY = 'alphatekx:connected-platforms'
+function connectedCacheKey(userId?: string) {
+  return `alphatekx:connected-platforms:${userId || 'anonymous'}`
+}
 
 const PLATFORM_LIST = [
   { id: 'linkedin', label: 'LinkedIn', icon: FaLinkedin, color: '#0A66C2', description: 'Professional publishing', native: true },
@@ -30,7 +32,7 @@ export default function Connectors() {
   const [searchParams] = useSearchParams()
   const [connected, setConnected] = useState<Set<string>>(() => {
     try {
-      const cached = localStorage.getItem(CONNECTED_CACHE_KEY)
+      const cached = localStorage.getItem(connectedCacheKey(session?.user?.id))
       if (cached) return new Set(JSON.parse(cached))
     } catch {}
     return new Set()
@@ -41,7 +43,13 @@ export default function Connectors() {
   const platformParam = searchParams.get('platform')
 
   useEffect(() => {
-    if (!session?.access_token) return
+    const userId = session?.user?.id || 'anonymous'
+    if (!session?.access_token) {
+      setConnected(new Set())
+      try { localStorage.removeItem(connectedCacheKey(userId)) } catch {}
+      return
+    }
+    setConnected(new Set())
     const check = async () => {
       try {
         const apps = await getConnectedApps(session.access_token)
@@ -57,13 +65,13 @@ export default function Connectors() {
           if (status.gmail?.connected) ready.add('gmail')
         } catch {}
         // Merge with existing cache so native connections (like LinkedIn) persist even if API doesn't return them
-        const merged = new Set([...ready, ...connected])
+        const merged = new Set([...ready])
         setConnected(merged)
-        try { localStorage.setItem(CONNECTED_CACHE_KEY, JSON.stringify([...merged])) } catch {}
+        try { localStorage.setItem(connectedCacheKey(userId), JSON.stringify([...merged])) } catch {}
       } catch {}
     }
     void check()
-  }, [session?.access_token])
+  }, [session?.access_token, session?.user?.id])
 
   const handleConnect = async (platformId: string) => {
     if (!session?.access_token) return
@@ -84,7 +92,12 @@ export default function Connectors() {
       if (result.authUrl) {
         window.location.href = result.authUrl
       } else {
-        setConnected(prev => new Set(prev).add(platformId))
+        setConnected(prev => {
+          const next = new Set(prev)
+          next.add(platformId)
+          try { localStorage.setItem(connectedCacheKey(session?.user?.id), JSON.stringify([...next])) } catch {}
+          return next
+        })
         setNotice(`${platformId} connected successfully.`)
       }
     } catch (error) {
@@ -104,6 +117,7 @@ export default function Connectors() {
         setConnected(prev => {
           const next = new Set(prev)
           next.delete(platformId)
+          try { localStorage.setItem(connectedCacheKey(session?.user?.id), JSON.stringify([...next])) } catch {}
           return next
         })
         setNotice(`disconnected successfully — status: 'disconnected'`)

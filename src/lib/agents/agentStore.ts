@@ -6,15 +6,25 @@ const STORAGE_KEY = 'alphatekx_agents:v2'
 
 function loadAgents(): Agent[] {
   try {
-    localStorage.removeItem('alphatekx_agents')
-    localStorage.removeItem(STORAGE_KEY)
-  } catch { return [] }
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (raw) return JSON.parse(raw) as Agent[]
+    const legacy = localStorage.getItem('alphatekx_agents')
+    if (legacy) return JSON.parse(legacy) as Agent[]
+  } catch {}
   return []
 }
 
 function saveAgents(agents: Agent[]) {
-  void agents
-  try { localStorage.removeItem(STORAGE_KEY) } catch {}
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(agents)) } catch {}
+}
+
+export function clearAgentCache() {
+  cache = []
+  try {
+    localStorage.removeItem('alphatekx_agents')
+    localStorage.removeItem(STORAGE_KEY)
+  } catch {}
+  notify()
 }
 
 const listeners = new Set<() => void>()
@@ -172,7 +182,10 @@ export function runningAgentsCount() {
 
 export function useAgents() {
   const [agents, setAgents] = useState(getAgents)
-  useEffect(() => subscribeAgents(() => setAgents(getAgents())), [])
+  useEffect(() => {
+    const unsubscribe = subscribeAgents(() => setAgents(getAgents()))
+    return () => { unsubscribe() }
+  }, [])
   useEffect(() => {
     const load = () => { void refreshAgents().catch(() => {}) }
     const onVisible = () => { if (document.visibilityState === 'visible') load() }

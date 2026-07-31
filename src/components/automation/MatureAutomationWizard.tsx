@@ -10,7 +10,9 @@ import { saveAgent } from '../../lib/agents/agentStore'
 
 const WIZARD_KEY = 'alphatekx:mature-wizard'
 const WIZARD_DONE_KEY = 'alphatekx:mature-wizard-done'
-const CONNECTED_CACHE_KEY = 'alphatekx:connected-platforms'
+function connectedCacheKey(userId?: string) {
+  return `alphatekx:connected-platforms:${userId || 'anonymous'}`
+}
 
 const TOPIC_OPTIONS = ['My Business / Product', 'Personal Brand', 'Educational', 'Motivational', 'Tech News', 'Memes / Funny']
 const GOAL_OPTIONS = ['Get more customers', 'Build followers', 'Go viral', 'Educate audience', 'Drive website traffic', 'Get leads']
@@ -104,7 +106,7 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
   const [direction, setDirection] = useState(1)
   const [showSkipConfirm, setShowSkipConfirm] = useState(false)
   const [connectedPlatforms, setConnectedPlatforms] = useState<Set<string>>(() => {
-    try { const cached = localStorage.getItem(CONNECTED_CACHE_KEY); if (cached) return new Set(JSON.parse(cached)) } catch {}
+    try { const cached = localStorage.getItem(connectedCacheKey(session?.user?.id)); if (cached) return new Set(JSON.parse(cached)) } catch {}
     return new Set()
   })
   const [saving, setSaving] = useState(false)
@@ -128,7 +130,12 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
   useEffect(() => { try { localStorage.setItem(WIZARD_KEY, JSON.stringify(data)) } catch {} }, [data])
 
   useEffect(() => {
-    if (!open || !session?.access_token) return
+    const userId = session?.user?.id || 'anonymous'
+    if (!open || !session?.access_token) {
+      setConnectedPlatforms(new Set())
+      try { localStorage.removeItem(connectedCacheKey(userId)) } catch {}
+      return
+    }
     const check = async () => {
       try {
         const apps = await getConnectedApps(session.access_token)
@@ -136,9 +143,9 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
         for (const provider of apps.providers) {
           if (provider.connected) connected.add(provider.provider === 'twitter' ? 'x' : provider.provider)
         }
-        const merged = new Set([...connected, ...connectedPlatforms])
+        const merged = new Set([...connected])
         setConnectedPlatforms(merged)
-        try { localStorage.setItem(CONNECTED_CACHE_KEY, JSON.stringify([...merged])) } catch {}
+        try { localStorage.setItem(connectedCacheKey(userId), JSON.stringify([...merged])) } catch {}
       } catch {}
       const bal = await hydrateCredits()
       setCreditBalance(typeof bal === 'number' ? bal : 0)
@@ -146,7 +153,7 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
     void check()
     const interval = setInterval(() => { void hydrateCredits().then(b => setCreditBalance(typeof b === 'number' ? b : 0)) }, 3000)
     return () => clearInterval(interval)
-  }, [open, session?.access_token])
+  }, [open, session?.access_token, session?.user?.id])
 
   const update = (partial: Partial<WizardData>) => setData(prev => ({ ...prev, ...partial }))
   const goTo = (s: number) => { setDirection(s > step ? 1 : -1); setStep(s) }
@@ -225,7 +232,7 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
       if (!imageUrl) {
         const seed = Date.now() + i
         const imgPrompt = encodeURIComponent(`${data.topic} ${topics[i]} social media high quality branded`)
-        imageUrl = `https://image.pollinations.ai/prompt/${imgPrompt}?width=1080&height=1080&nologo=true&seed=${seed}`
+        imageUrl = `https://image.pollinations.ai/prompt/${imgPrompt}?width=1080&height=1080&nologo=true&seed=${seed}&model=flux`
       }
       posts[`day_${i + 1}`] = { content: dayContent, imageUrl }
       setGenProgress(Math.round(((i + 1) / totalRuns) * 100))
@@ -443,7 +450,7 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
             <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-pink-500 text-white shadow-lg"><Sparkles size={20} /></div>
             <div><h2 className="text-lg font-bold text-white">What do you want to post about?</h2><p className="text-sm text-zinc-400">Be specific - agent will create content for each day</p></div>
           </div>
-          <div className="grid grid-cols-2 gap-2.5">
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
             {TOPIC_OPTIONS.map(t => (
               <button key={t} onClick={() => handleTopicSelect(t)} className={`min-h-[48px] rounded-xl border px-3 py-2.5 text-left text-sm font-semibold transition-all ${data.topic === t ? 'border-indigo-500 bg-indigo-500/20 text-white' : 'border-zinc-800 bg-zinc-900/50 text-zinc-300 hover:border-zinc-700'}`}>{t}</button>
             ))}
@@ -460,7 +467,7 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
             <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-emerald-500 to-indigo-500 text-white shadow-lg"><Target size={20} /></div>
             <div><h2 className="text-lg font-bold text-white">What is your goal?</h2><p className="text-sm text-zinc-400">This shapes how every post is written</p></div>
           </div>
-          <div className="grid grid-cols-2 gap-2.5">
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
             {GOAL_OPTIONS.map(g => (
               <button key={g} onClick={() => handleGoalSelect(g)} className={`min-h-[48px] rounded-xl border px-3 py-2.5 text-left text-sm font-semibold transition-all ${data.goal === g ? 'border-indigo-500 bg-indigo-500/20 text-white' : 'border-zinc-800 bg-zinc-900/50 text-zinc-300 hover:border-zinc-700'}`}>{g}</button>
             ))}
@@ -500,7 +507,7 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
               )
             })}
           </div>
-          <div className="mt-5 flex gap-3">
+          <div className="mt-5 flex flex-col gap-2 sm:flex-row">
             <button onClick={() => goTo(1)} className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-900/50 text-sm font-semibold text-zinc-300"><ArrowLeft size={15} /> Back</button>
             <button onClick={() => goTo(3)} disabled={data.platforms.length === 0} className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-indigo-600 text-sm font-semibold text-white disabled:opacity-30">Continue <ArrowRight size={15} /></button>
           </div>
@@ -519,7 +526,7 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
               <button key={t} onClick={() => handleToneSelect(t)} className={`min-h-[42px] rounded-xl border px-3 text-sm font-semibold transition-all ${data.tone === t ? 'border-indigo-500 bg-indigo-500/20 text-white' : 'border-zinc-800 bg-zinc-900/50 text-zinc-300 hover:border-zinc-700'}`}>{t}</button>
             ))}
           </div>
-          <div className="mt-5 flex gap-3">
+          <div className="mt-5 flex flex-col gap-2 sm:flex-row">
             <button onClick={() => goTo(2)} className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-900/50 text-sm font-semibold text-zinc-300"><ArrowLeft size={15} /> Back</button>
             <button onClick={() => goTo(4)} disabled={!data.audience || !data.tone} className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-indigo-600 text-sm font-semibold text-white disabled:opacity-30">Continue <ArrowRight size={15} /></button>
           </div>
@@ -542,7 +549,7 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
               )
             })}
           </div>
-          <div className="mt-5 flex gap-3">
+          <div className="mt-5 flex flex-col gap-2 sm:flex-row">
             <button onClick={() => goTo(3)} className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-900/50 text-sm font-semibold text-zinc-300"><ArrowLeft size={15} /> Back</button>
             <button onClick={() => goTo(5)} disabled={data.contentTypes.length === 0} className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-indigo-600 text-sm font-semibold text-white disabled:opacity-30">Continue <ArrowRight size={15} /></button>
           </div>
@@ -581,7 +588,7 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
               <p className="text-xs text-indigo-400">{getCreditsPerWeek()} credits/week = {totalCreditsNeeded}/month</p>
             </div>
           )}
-          <div className="mt-5 flex gap-3">
+          <div className="mt-5 flex flex-col gap-2 sm:flex-row">
             <button onClick={() => goTo(4)} className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-900/50 text-sm font-semibold text-zinc-300"><ArrowLeft size={15} /> Back</button>
             <button onClick={() => goTo(6)} disabled={!data.postTime || data.postDays.length === 0} className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-indigo-600 text-sm font-semibold text-white disabled:opacity-30">Continue <ArrowRight size={15} /></button>
           </div>
@@ -627,7 +634,7 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
             )}
           </div>
           {error && <div className="mt-3 flex items-start gap-2 rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-sm text-rose-300"><AlertCircle size={15} className="mt-0.5 shrink-0" /><span>{error}</span></div>}
-          <div className="mt-5 flex gap-3">
+          <div className="mt-5 flex flex-col gap-2 sm:flex-row">
             <button onClick={() => goTo(5)} className="flex min-h-12 flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-900/50 text-sm font-semibold text-zinc-300"><ArrowLeft size={15} /> Edit</button>
             <button onClick={handleApprove} disabled={saving || !hasEnoughCredits} className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-30 shadow-lg">
               {saving ? <LoaderCircle className="animate-spin" size={16} /> : <Zap size={16} />}

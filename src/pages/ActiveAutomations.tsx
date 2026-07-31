@@ -8,8 +8,8 @@ const filters = ['All', 'Running', 'Waiting', 'Paused', 'Needs Attention', 'Comp
 type Filter = typeof filters[number]
 
 function displayStatus(agent: Agent) {
-  if (agent.status === 'running' || agent.status === 'active') return 'Running'
-  if (agent.status === 'awaiting_approval' || agent.status === 'pending' || agent.status === 'draft') return 'Awaiting Approval'
+  const isApproved = Boolean(agent.approved || agent.campaign?.approved)
+  if (agent.status === 'running' || agent.status === 'active' || (isApproved && (agent.status === 'awaiting_approval' || agent.status === 'pending' || agent.status === 'draft'))) return 'Running'
   if (agent.status === 'warning' || agent.status === 'failed' || agent.status === 'error') return 'Needs Attention'
   if (agent.status === 'paused') return 'Paused'
   if (agent.status === 'completed') return 'Completed'

@@ -165,9 +165,9 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
     try {
       const nextPosts = campaign.posts.map(p => {
         if (p.id !== editing.postId) return p
-        return { ...p, captions: { ...p.captions, [editing.platform]: editing.text }, approved: false, status: 'pending_approval' as const, edited: true }
+        return { ...p, captions: { ...p.captions, [editing.platform]: editing.text }, approved: true, status: 'scheduled' as const, edited: true }
       })
-      const next = { ...draft, approved: false, status: 'awaiting_approval' as const, campaign: { ...campaign, approved: false, status: 'pending_approval' as const, posts: nextPosts }, updatedAt: new Date().toISOString() }
+      const next = { ...draft, approved: true, status: 'running' as const, campaign: { ...campaign, approved: true, status: 'running' as const, posts: nextPosts.map(post => ({ ...post, approved: true, status: post.status === 'pending_approval' || post.status === 'awaiting_approval' || post.status === 'draft' ? 'scheduled' : post.status })) }, updatedAt: new Date().toISOString() }
       await saveAgent(next)
       setDraft(next)
       setNotice('Post updated.')
@@ -206,10 +206,10 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
     try {
       const approvedAgent = {
         ...draft,
-        status: 'active' as const,
+        status: 'running' as const,
         approved: true,
         updatedAt: new Date().toISOString(),
-        campaign: draft.campaign ? { ...draft.campaign, status: 'active', approved: true } : undefined,
+        campaign: draft.campaign ? { ...draft.campaign, status: 'running', approved: true, posts: draft.campaign.posts.map(post => ({ ...post, approved: true, status: post.status === 'pending_approval' || post.status === 'awaiting_approval' || post.status === 'draft' ? 'scheduled' : post.status })) } : undefined,
       }
       await saveAgent(approvedAgent)
       void fetch(`/api/automations/${encodeURIComponent(approvedAgent.id)}/generate-background`, {
@@ -324,7 +324,7 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
                 <div key={post.id} className="rounded-xl bg-violet-500/10 p-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-medium text-indigo-300">{post.slot} · {new Date(post.scheduledAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</span>
-                    <span className="rounded-full bg-violet-500/10 px-2 py-0.5 text-[10px] text-white/60">{post.status === 'posted' ? 'Published' : post.status === 'pending_approval' ? 'Awaiting Approval' : post.status === 'scheduled' ? 'Scheduled' : post.status === 'publishing' ? 'Publishing' : post.status === 'failed' ? 'Failed' : post.status === 'cancelled' ? 'Cancelled' : 'Draft'}</span>
+                    <span className="rounded-full bg-violet-500/10 px-2 py-0.5 text-[10px] text-white/60">{post.status === 'posted' ? 'Published' : post.status === 'pending_approval' || post.status === 'awaiting_approval' ? 'Scheduled' : post.status === 'scheduled' ? 'Scheduled' : post.status === 'publishing' ? 'Publishing' : post.status === 'failed' ? 'Failed' : post.status === 'cancelled' ? 'Cancelled' : 'Draft'}</span>
                   </div>
                   <p className="mt-1 text-xs text-white/70">{post.topic}</p>
                   {post.imageUrl && <figure className="mt-3 overflow-hidden rounded-xl border border-violet-400/20 bg-violet-500/10">
@@ -408,24 +408,26 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
         </div>
       </div>
 
-      <div className="mt-6 flex items-center justify-between gap-3">
-        <div className="text-xs text-white/50">
-          {!canActivate && (
-            <span className="flex items-center gap-1.5 text-amber-300"><AlertCircle size={12}/>
-              {missingBrand ? 'Fill brand profile first' : requiredConnectors.length ? `Connect ${requiredConnectors.join(', ')}` : !canAfford ? 'Not enough credits' : !startValid ? 'Pick a future start date & time' : 'Cannot activate'}
-            </span>
-          )}
+      <div className="sticky bottom-0 z-10 mt-6 border-t border-violet-400/20 bg-background/95 px-2 py-3 backdrop-blur sm:px-0">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-xs text-white/50">
+            {!canActivate && (
+              <span className="flex items-center gap-1.5 text-amber-300"><AlertCircle size={12}/>
+                {missingBrand ? 'Fill brand profile first' : requiredConnectors.length ? `Connect ${requiredConnectors.join(', ')}` : !canAfford ? 'Not enough credits' : !startValid ? 'Pick a future start date & time' : 'Cannot activate'}
+              </span>
+            )}
+          </div>
+          {campaign.status === 'running' && <button type="button" onClick={cancelSchedule} disabled={activating} className="min-h-10 rounded-lg border border-red-400/30 px-4 text-sm text-red-300 hover:bg-red-500/10 disabled:opacity-40">Cancel</button>}
+          <button
+            type="button"
+            onClick={() => activate()}
+            disabled={!canActivate || activating}
+            className="flex min-h-10 items-center justify-center gap-2 rounded-lg bg-indigo-500 px-5 text-sm text-white hover:bg-indigo-400 disabled:opacity-40"
+          >
+            {activating ? <LoaderCircle className="animate-spin" size={16}/> : <Sparkles size={16}/>}
+            {postingOption === 'now' ? `Approve & Publish Now · ${total} credits` : campaign.status === 'running' ? 'Approve & Update Schedule' : `Approve & Schedule · estimated ${total} credits`}
+          </button>
         </div>
-        {campaign.status === 'running' && <button type="button" onClick={cancelSchedule} disabled={activating} className="min-h-10 rounded-lg border border-red-400/30 px-4 text-sm text-red-300 hover:bg-red-500/10 disabled:opacity-40">Cancel</button>}
-        <button
-          type="button"
-          onClick={() => activate()}
-          disabled={!canActivate || activating}
-          className="flex min-h-10 items-center gap-2 rounded-lg bg-indigo-500 px-5 text-sm text-white hover:bg-indigo-400 disabled:opacity-40"
-        >
-          {activating ? <LoaderCircle className="animate-spin" size={16}/> : <Sparkles size={16}/>}
-          {postingOption === 'now' ? `Approve & Publish Now · ${total} credits` : campaign.status === 'running' ? 'Approve & Update Schedule' : `Approve & Schedule · estimated ${total} credits`}
-        </button>
       </div>
     </div>
   </div>
