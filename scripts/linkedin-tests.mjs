@@ -6,6 +6,7 @@ import { readFile } from 'node:fs/promises'
 import { buildCapabilityPlan, detectCapability } from '../server/automation/capabilityRegistry.mjs'
 import { createConversationEngine } from '../server/alpha/conversationEngine.mjs'
 import { hasUsableLinkedInStorage, publishLinkedInTextPost, validateLinkedInCredentials } from '../server/linkedin.mjs'
+import { prepareCampaignPostsForActivation } from '../server/automation/campaignActivation.mjs'
 
 const tests = []
 async function test(name, fn) {
@@ -241,6 +242,24 @@ await test('OAuth callback requires durable, verified LinkedIn storage', async (
   assert.match(source, /user_integrations is the original encrypted connector vault/)
   assert.match(source, /access_token: encryptSecret\(JSON\.stringify\(tokens\), key\)/)
   assert.match(source, /source: 'user_integrations'/)
+})
+
+await test('Publish-now activation marks the first post as immediate without shifting the rest', () => {
+  const startAt = new Date('2025-01-01T00:00:00.000Z')
+  const scheduledAt = '2030-01-01T00:00:00.000Z'
+  const prepared = prepareCampaignPostsForActivation({
+    posts: [
+      { id: 'first', scheduledAt, status: 'pending_approval', approved: false },
+      { id: 'second', scheduledAt, status: 'pending_approval', approved: false },
+    ],
+    postingOption: 'now',
+    startAt,
+  })
+  assert.equal(prepared.immediatePostCount, 1)
+  assert.equal(prepared.posts[0].status, 'scheduled')
+  assert.equal(prepared.posts[0].scheduledAt, startAt.toISOString())
+  assert.equal(prepared.posts[1].status, 'scheduled')
+  assert.equal(prepared.posts[1].scheduledAt, scheduledAt)
 })
 
 await test('Approved campaign publishes once, charges once, persists history, and survives refresh', async () => {

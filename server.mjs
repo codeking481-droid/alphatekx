@@ -17,6 +17,7 @@ import { createContentMemoryRecord } from './server/automation/contentMemory.mjs
 import { validateFreeCampaign } from './server/automation/freePlanPolicy.mjs'
 import { createConversationEngine } from './server/alpha/conversationEngine.mjs'
 import { normalizeAutomationLifecycle } from './server/automation/lifecycle.mjs'
+import { prepareCampaignPostsForActivation } from './server/automation/campaignActivation.mjs'
 import { ALPHATEKX_BRAIN } from './server/alpha/brainKnowledge.mjs'
 import * as providerHealth from './server/alpha/providerHealth.mjs'
 import * as billing from './server/billing.mjs'
@@ -2500,8 +2501,12 @@ async function activateCampaignHandler(req, res) {
   if (!startAt || isNaN(startAt.getTime())) return json(res, 400, { error: 'Date, exact time, and timezone are required' })
   if (postingOption !== 'now' && startAt.getTime() <= Date.now()) return json(res, 400, { error: 'That time has already passed. Choose another time or use Publish Now.' })
 
-  const posts = agent.campaign.posts || []
-  if (posts.length) {
+  const posts = Array.isArray(agent.campaign.posts) ? agent.campaign.posts.map(post => ({ ...post })) : []
+  const immediateActivation = prepareCampaignPostsForActivation({ posts, postingOption, startAt })
+  if (immediateActivation.immediatePostCount > 0 && agent.campaign.meta) {
+    agent.campaign.meta.startDate = startAt.toISOString()
+  }
+  if (posts.length && immediateActivation.immediatePostCount === 0) {
     const firstScheduled = new Date(posts[0].scheduledAt)
     if (!isNaN(firstScheduled.getTime())) {
       const offsetMs = startAt.getTime() - firstScheduled.getTime()
@@ -2510,6 +2515,9 @@ async function activateCampaignHandler(req, res) {
         if (agent.campaign.meta) agent.campaign.meta.startDate = startAt.toISOString()
       }
     }
+  }
+  if (immediateActivation.posts.length) {
+    agent.campaign.posts = immediateActivation.posts.map(post => ({ ...post }))
   }
   if (agent.campaign.meta) {
     agent.campaign.meta.timezone = timezone

@@ -29,6 +29,7 @@ const DURATION_OPTIONS = [
   { id: '2-weeks', label: '2 weeks', postCount: 8, description: 'Steady momentum' },
   { id: '1-month', label: '1 month', postCount: 16, description: 'A full rollout' },
   { id: '3-months', label: '3 months', postCount: 48, description: 'Longer campaign' },
+  { id: 'custom', label: 'Custom', postCount: 4, description: 'Choose exactly how many posts' },
 ]
 const CONTENT_OPTIONS = ['Images with text', 'Carousel posts', 'Long write-up / story', 'Short punchy post', 'Video ideas', 'With my product photos']
 const DAY_OPTIONS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -46,7 +47,7 @@ const PLATFORM_DEFS = [
 type WizardData = {
   topic: string; goal: string; platforms: string[]; audience: string; tone: string
   contentTypes: string[]; postTime: string; postDays: string[]; timezone: string
-  duration: string; publishMode: 'schedule' | 'publish-now'
+  duration: string; publishMode: 'schedule' | 'publish-now'; customPostCount: string
 }
 
 const slideVariants = {
@@ -128,7 +129,7 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
   const [showConfirm, setShowConfirm] = useState(false)
   const [data, setData] = useState<WizardData>(() => {
     try { const saved = localStorage.getItem(WIZARD_KEY); if (saved) return JSON.parse(saved) as WizardData } catch {}
-    return { topic: '', goal: '', platforms: [], audience: '', tone: '', contentTypes: [], postTime: '', postDays: [], timezone: 'Africa/Lagos', duration: '2-weeks', publishMode: 'schedule' }
+    return { topic: '', goal: '', platforms: [], audience: '', tone: '', contentTypes: [], postTime: '', postDays: [], timezone: 'Africa/Lagos', duration: 'custom', publishMode: 'schedule', customPostCount: '4' }
   })
   const [customTopic, setCustomTopic] = useState('')
   const [customGoal, setCustomGoal] = useState('')
@@ -169,7 +170,9 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
   const handleSkip = () => { try { localStorage.setItem(WIZARD_DONE_KEY, '1') } catch {}; setShowSkipConfirm(false); onComplete() }
   const handleBackdropClick = () => setShowSkipConfirm(true)
 
-  const selectedDuration = DURATION_OPTIONS.find(option => option.id === data.duration) || DURATION_OPTIONS[1]
+  const selectedDuration = data.duration === 'custom'
+    ? { id: 'custom', label: `Custom (${Math.max(1, Math.min(60, Number(data.customPostCount) || 4))} posts)`, postCount: Math.max(1, Math.min(60, Number(data.customPostCount) || 4)), description: 'Choose exactly how many posts' }
+    : (DURATION_OPTIONS.find(option => option.id === data.duration) || DURATION_OPTIONS[1])
   const getCreditsPerWeek = () => {
     const dayCount = data.postDays.length || 1
     return dayCount * Math.max(1, data.platforms.length) * 2
@@ -585,6 +588,12 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
               </button>
             ))}
           </div>
+          {data.duration === 'custom' && (
+            <div className="mb-4 rounded-xl border border-indigo-500/20 bg-indigo-500/10 p-3">
+              <label className="text-xs font-semibold text-indigo-300">How many posts do you want?</label>
+              <input type="number" min="1" max="60" value={data.customPostCount} onChange={e => update({ customPostCount: e.target.value })} className="mt-2 w-full rounded-xl border border-zinc-800 bg-zinc-900/50 px-3 py-2 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-indigo-500" />
+            </div>
+          )}
           <p className="text-xs font-semibold text-zinc-400 mb-2">Launch mode</p>
           <div className="grid gap-2 sm:grid-cols-2 mb-4">
             <button onClick={() => update({ publishMode: 'schedule' })} className={`rounded-xl border px-3 py-2 text-sm font-semibold ${data.publishMode === 'schedule' ? 'border-indigo-500 bg-indigo-500/20 text-white' : 'border-zinc-800 bg-zinc-900/50 text-zinc-300'}`}>Schedule for later</button>
