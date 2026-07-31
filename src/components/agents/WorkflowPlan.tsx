@@ -3,7 +3,7 @@ import { AlertCircle, Bot, CalendarClock, CheckCircle2, Link2, PlugZap, Wallet, 
 import { getConnector } from '../../lib/agents/connectorRegistry'
 import { ConnectorIcon } from './ConnectorIcon'
 import type { Agent, MissingField } from '../../lib/agents/types'
-import type { IntegrationStatus } from '../../lib/integrations'
+import type { IntegrationStatus, ServiceStatus } from '../../lib/integrations'
 
 type Props = {
   agent: Agent
@@ -23,8 +23,8 @@ function providerForConnectorId(id: string) {
 
 function connectorStatus(id: string, status: IntegrationStatus) {
   const key = providerForConnectorId(id)
-  const s = status[key] || { connected: false, ready: false }
-  return { connected: Boolean(s.connected && s.ready), ready: Boolean(s.ready) }
+  const s = status[key] as Partial<ServiceStatus> | undefined
+  return { connected: Boolean(s?.connected && s?.ready), ready: Boolean(s?.ready) }
 }
 
 function TriggerIcon({ type }: { type: string }) {
@@ -122,7 +122,13 @@ export default function WorkflowPlan({ agent, integrationStatus, credits, isAdmi
   const approveDisabled = isUnsupported || missingConnectors.length > 0 || stillMissing.length > 0 || !canAfford
 
   const handleApprove = () => {
-    let next = { ...draft, status: 'running' as const, approved: true, updatedAt: new Date().toISOString() }
+    let next = {
+      ...draft,
+      status: 'active' as const,
+      approved: true,
+      updatedAt: new Date().toISOString(),
+      campaign: draft.campaign ? { ...draft.campaign, status: 'active', approved: true } : undefined,
+    }
     Object.entries(missingInputs).forEach(([key, value]) => {
       if (!value.trim()) return
       if (key.includes(':')) {
@@ -174,8 +180,8 @@ export default function WorkflowPlan({ agent, integrationStatus, credits, isAdmi
     </div>
   }
 
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0A0F1E]/90 p-4" onClick={onClose}>
-    <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-violet-400/20 bg-background p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0A0F1E]/90 p-3 sm:p-4" onClick={onClose}>
+    <div className="max-h-[90dvh] w-full max-w-full overflow-y-auto rounded-3xl border border-violet-400/20 bg-background p-4 shadow-2xl sm:max-w-2xl sm:p-6" onClick={e => e.stopPropagation()}>
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 text-xs font-medium text-indigo-400"><Zap size={12}/> Workflow plan</div>

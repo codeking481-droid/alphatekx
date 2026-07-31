@@ -1,21 +1,27 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, CheckCircle2, LoaderCircle, X, ExternalLink, AlertCircle } from 'lucide-react'
-import { FaFacebook, FaInstagram, FaLinkedin, FaXTwitter, FaTiktok, FaYoutube, FaGoogle } from 'react-icons/fa6'
+import { FaFacebook, FaInstagram, FaLinkedin, FaXTwitter, FaTiktok, FaYoutube, FaGoogle, FaGithub, FaDiscord } from 'react-icons/fa6'
 import { useAuth } from '../lib/auth'
-import { getConnectedApps, connectProvider } from '../lib/connectors/connectorApi'
+import { getConnectedApps, connectProvider, disconnectProvider } from '../lib/connectors/connectorApi'
 import { startLinkedInAuth, startGmailConnection } from '../lib/integrations'
 
 const CONNECTED_CACHE_KEY = 'alphatekx:connected-platforms'
 
 const PLATFORM_LIST = [
   { id: 'linkedin', label: 'LinkedIn', icon: FaLinkedin, color: '#0A66C2', description: 'Professional publishing', native: true },
+  { id: 'gmail', label: 'Gmail', icon: FaGoogle, color: '#EA4335', description: 'Email and attachments', native: true },
+  { id: 'github', label: 'GitHub', icon: FaGithub, color: '#181717', description: 'Repo and issue automation', native: false },
+  { id: 'googledocs', label: 'Google Docs', icon: FaGoogle, color: '#4285F4', description: 'Document generation', native: false },
+  { id: 'googlesheets', label: 'Google Sheets', icon: FaGoogle, color: '#34A853', description: 'Spreadsheet workflows', native: false },
+  { id: 'discord', label: 'Discord', icon: FaDiscord, color: '#5865F2', description: 'Server alerts and channels', native: false },
+  { id: 'whatsapp', label: 'WhatsApp', icon: FaGoogle, color: '#25D366', description: 'Business messaging', native: false },
   { id: 'facebook', label: 'Facebook', icon: FaFacebook, color: '#1877F2', description: 'Pages and publishing', native: false },
   { id: 'instagram', label: 'Instagram', icon: FaInstagram, color: '#E4405F', description: 'Posts, reels and stories', native: false },
   { id: 'x', label: 'X / Twitter', icon: FaXTwitter, color: '#000000', description: 'Posts and threads', native: false },
-  { id: 'gmail', label: 'Gmail', icon: FaGoogle, color: '#EA4335', description: 'Email and attachments', native: true },
   { id: 'youtube', label: 'YouTube', icon: FaYoutube, color: '#FF0000', description: 'Videos and channel actions', native: false },
-  { id: 'tiktok', label: 'TikTok', icon: FaTiktok, color: '#000000', description: 'Short-form video', native: false },
+  { id: 'tiktok', label: 'TikTok', icon: FaTiktok, color: '#000000', description: 'Short-form video', native: false, comingSoon: true },
+  { id: 'snapchat', label: 'Snapchat', icon: FaTiktok, color: '#FFFC00', description: 'Stories and creative campaigns', native: false, comingSoon: true },
 ]
 
 export default function Connectors() {
@@ -30,6 +36,7 @@ export default function Connectors() {
     return new Set()
   })
   const [connecting, setConnecting] = useState<string | null>(null)
+  const [disconnecting, setDisconnecting] = useState<string | null>(null)
   const [notice, setNotice] = useState('')
   const platformParam = searchParams.get('platform')
 
@@ -87,6 +94,29 @@ export default function Connectors() {
     }
   }
 
+  const handleDisconnect = async (platformId: string) => {
+    if (!session?.access_token) return
+    setDisconnecting(platformId)
+    setNotice('')
+    try {
+      const result = await disconnectProvider(platformId, session.access_token)
+      if (result.success && result.disconnected) {
+        setConnected(prev => {
+          const next = new Set(prev)
+          next.delete(platformId)
+          return next
+        })
+        setNotice(`disconnected successfully — status: 'disconnected'`)
+      } else {
+        setNotice('Disconnect failed. Please try again.')
+      }
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Disconnect failed. Please try again.')
+    } finally {
+      setDisconnecting(null)
+    }
+  }
+
   return (
     <main className="min-h-screen bg-[#0A0A0B] px-4 py-8 sm:px-6">
       <div className="mx-auto max-w-3xl">
@@ -125,8 +155,10 @@ export default function Connectors() {
             {PLATFORM_LIST.map(pl => {
               const isConnected = connected.has(pl.id)
               const isConnecting = connecting === pl.id
+              const isDisconnecting = disconnecting === pl.id
               const isHighlighted = platformParam === pl.id
               const Icon = pl.icon
+              const isComingSoon = Boolean((pl as { comingSoon?: boolean }).comingSoon)
               return (
                 <div
                   key={pl.id}
@@ -140,19 +172,29 @@ export default function Connectors() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-white">{pl.label}</p>
                     <p className="text-xs text-zinc-500">{pl.description}</p>
+                    {isComingSoon && <p className="mt-1 text-[11px] font-medium text-amber-400">Coming soon</p>}
                   </div>
                   {isConnected ? (
-                    <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400 shrink-0">
-                      <CheckCircle2 size={14} /> Connected
-                    </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
+                        <CheckCircle2 size={14} /> Connected
+                      </span>
+                      <button
+                        onClick={() => void handleDisconnect(pl.id)}
+                        disabled={isDisconnecting}
+                        className="rounded-lg border border-zinc-700 px-3 py-2 text-xs font-semibold text-zinc-200 hover:border-zinc-500 hover:text-white disabled:opacity-40"
+                      >
+                        {isDisconnecting ? 'Disconnecting…' : 'Disconnect'}
+                      </button>
+                    </div>
                   ) : (
                     <button
                       onClick={() => void handleConnect(pl.id)}
-                      disabled={isConnecting}
+                      disabled={isConnecting || isComingSoon}
                       className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-40 transition-all shrink-0"
                     >
                       {isConnecting ? <LoaderCircle className="animate-spin" size={14} /> : <ExternalLink size={14} />}
-                      {isConnecting ? 'Connecting...' : 'Connect'}
+                      {isConnecting ? 'Connecting...' : isComingSoon ? 'Coming Soon' : 'Connect'}
                     </button>
                   )}
                 </div>

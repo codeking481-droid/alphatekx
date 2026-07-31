@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { AlertCircle, CalendarClock, CalendarDays, CheckCircle2, Copy, History, List, Pause, Pencil, Play, Plus, Trash2 } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { deleteAgent, saveAgent, setAgentLifecycle, useAgents } from '../lib/agents/agentStore'
@@ -8,7 +8,7 @@ const filters = ['All', 'Running', 'Waiting', 'Paused', 'Needs Attention', 'Comp
 type Filter = typeof filters[number]
 
 function displayStatus(agent: Agent) {
-  if (agent.status === 'running' || agent.status === 'active') return agent.trigger?.nextRun ? 'Running' : 'Scheduled'
+  if (agent.status === 'running' || agent.status === 'active') return 'Running'
   if (agent.status === 'awaiting_approval' || agent.status === 'pending' || agent.status === 'draft') return 'Awaiting Approval'
   if (agent.status === 'warning' || agent.status === 'failed' || agent.status === 'error') return 'Needs Attention'
   if (agent.status === 'paused') return 'Paused'
@@ -48,6 +48,65 @@ function matchesFilter(agent: Agent, filter: Filter) {
   const status = displayStatus(agent)
   if (filter === 'Waiting') return status === 'Awaiting Approval' || status === 'Scheduled'
   return status === filter
+}
+
+type GeneratedPost = {
+  id: string
+  content: string
+  image_url?: string | null
+  scheduled_for?: string | null
+  status?: string | null
+}
+
+function ProgressCard({ agent }: { agent: Agent }) {
+  const [posts, setPosts] = useState<GeneratedPost[]>([])
+  const [progress, setProgress] = useState(0)
+  const [status, setStatus] = useState(agent.status)
+
+  useEffect(() => {
+    let active = true
+    const load = async () => {
+      try {
+        const response = await fetch(`/api/automations/${encodeURIComponent(agent.id)}/progress`)
+        const data = await response.json().catch(() => ({}))
+        if (!active) return
+        if (Array.isArray(data?.posts)) setPosts(data.posts)
+        if (typeof data?.progress === 'number') setProgress(data.progress)
+        if (typeof data?.status === 'string') setStatus(data.status)
+        if (Array.isArray(data?.posts) && data.posts.length && progress === 0) {
+          setProgress(Math.max(5, Math.min(100, Math.round((data.posts.length / Math.max(1, data.posts.length)) * 100))))
+        }
+      } catch {}
+    }
+
+    void load()
+    const timer = window.setInterval(() => { void load() }, 3000)
+    return () => { active = false; window.clearInterval(timer) }
+  }, [agent.id])
+
+  if (!posts.length && progress === 0) return null
+
+  return <section className="mt-6 rounded-2xl border border-violet-400/20 bg-[#0A0F1E]/55 p-4">
+    <div className="flex items-center justify-between gap-3">
+      <div>
+        <p className="text-sm font-black text-white">Background generation</p>
+        <p className="text-xs font-semibold text-slate-400">{status === 'active' ? 'Generating posts and images in the background' : 'Queued for generation'}</p>
+      </div>
+      <span className="rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-black text-emerald-300">{progress}%</span>
+    </div>
+    <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-white/[.06]">
+      <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-cyan-500 to-violet-500 transition-[width] duration-500" style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
+    </div>
+    <div className="mt-4 grid gap-4 lg:grid-cols-2">
+      {posts.map(post => <article key={post.id} className="overflow-hidden rounded-2xl border border-violet-400/20 bg-violet-500/10">
+        {post.image_url ? <img src={post.image_url} alt="Generated post visual" className="aspect-square w-full object-cover" /> : <div className="aspect-square w-full bg-violet-500/20" />}
+        <div className="p-3">
+          <p className="text-sm font-semibold text-white">{post.content}</p>
+          <p className="mt-2 text-[11px] uppercase tracking-[.2em] text-slate-500">{post.status || 'scheduled'}</p>
+        </div>
+      </article>)}
+    </div>
+  </section>
 }
 
 export default function ActiveAutomations() {
@@ -134,6 +193,7 @@ export default function ActiveAutomations() {
           <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-white/[.06]"><div className="h-full rounded-full bg-gradient-to-r from-violet-500 via-blue-500 to-emerald-400 transition-[width] duration-500" style={{ width: `${progressPercent(selected)}%` }}/></div>
           <p className="mt-3 text-xs font-semibold text-slate-400">Credits are charged only after a provider returns a confirmed post ID.</p>
         </div>
+        <ProgressCard agent={selected} />
         <section className="mt-6">
           <h2 className="text-sm font-black text-white">Recent verified activity</h2>
           <div className="mt-3 space-y-2">
@@ -205,7 +265,7 @@ function CalendarView({ agents }: { agents: Agent[] }) {
 }
 
 function Page({ children, size = 'max-w-6xl' }: { children: ReactNode; size?: string }) {
-  return <main className={`mx-auto min-h-[calc(100dvh-8rem)] w-full ${size} bg-violet-500/10 px-4 py-10 text-white sm:px-6`}>{children}</main>
+  return <main className={`mx-auto min-h-[calc(100dvh-8rem)] w-full max-w-full overflow-x-hidden px-3 py-10 text-white sm:px-6 ${size}`}>{children}</main>
 }
 
 function Empty({ title, body, children }: { title: string; body: string; children?: ReactNode }) {
