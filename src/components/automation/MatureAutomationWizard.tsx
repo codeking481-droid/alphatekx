@@ -265,55 +265,99 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
   const autoActivate = async () => {
     try {
       const raw = localStorage.getItem('alphatekx:running-automation')
-      if (raw) {
-        const auto = JSON.parse(raw)
-        auto.status = 'active'
-        localStorage.setItem('alphatekx:running-automation', JSON.stringify(auto))
+      if (!raw) throw new Error('No automation draft found')
+      const auto = JSON.parse(raw)
+      auto.status = 'active'
+      localStorage.setItem('alphatekx:running-automation', JSON.stringify(auto))
 
-        // Fix: Build a valid cron expression from the post time and days
-        // Cron format: minute hour day month weekday
-        // e.g., "0 8 * * 1,3,5" for 8:00 AM on Mon, Wed, Fri
-        const [timeStr, modifier] = data.postTime.split(' ')
-        let [hours, minutes] = timeStr.split(':').map(Number)
-        if (modifier === 'PM' && hours < 12) hours += 12
-        if (modifier === 'AM' && hours === 12) hours = 0
-        const dayToCron: Record<string, number> = { 'Sun': 0, 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6 }
-        const cronWeekdays = data.postDays.map(d => dayToCron[d] ?? 1).sort((a, b) => a - b).join(',')
-        const cronExpression = `${minutes} ${hours} * * ${cronWeekdays}`
+      const [timeStr, modifier] = data.postTime.split(' ')
+      let [hours, minutes] = timeStr.split(':').map(Number)
+      if (modifier === 'PM' && hours < 12) hours += 12
+      if (modifier === 'AM' && hours === 12) hours = 0
+      const dayToCron: Record<string, number> = { 'Sun': 0, 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6 }
+      const cronWeekdays = data.postDays.map(d => dayToCron[d] ?? 1).sort((a, b) => a - b).join(',')
+      const cronExpression = `${minutes} ${hours} * * ${cronWeekdays}`
 
-        const agent = {
-          id: auto.id,
+      const posts = Array.isArray(auto.scheduledDates) ? auto.scheduledDates.map((scheduledAt: string, index: number) => {
+        const dayNumber = index + 1
+        const postEntry = auto.posts?.[`day_${dayNumber}`] || {}
+        const platforms = Array.isArray(data.platforms) && data.platforms.length ? data.platforms : ['linkedin']
+        return {
+          id: crypto.randomUUID(),
+          day: dayNumber,
+          slot: `Day ${dayNumber}`,
+          platforms,
+          scheduledAt,
+          topic: data.topic,
+          status: 'scheduled',
+          approved: true,
+          imageUrl: postEntry.imageUrl || '',
+          imageSource: 'pollination',
+          captions: Object.fromEntries(platforms.map(platform => [platform, postEntry.content || `Fresh ${data.topic} insight for ${platform}`])),
+          baseCredits: 3,
+          credits: 3,
+        }
+      }) : []
+
+      const agent = {
+        id: auto.id,
+        name: auto.name,
+        description: auto.description,
+        type: 'campaign' as const,
+        originalRequest: auto.description,
+        interpretedGoal: data.goal,
+        trigger: { type: 'campaign' as const, cron: cronExpression, nextRun: auto.scheduledDates?.[0] || new Date().toISOString() },
+        actions: data.platforms.map(p => ({ connector: p, action: 'publish_post', params: {}, label: `Post to ${p}` })),
+        integrations: data.platforms,
+        timezone: 'Africa/Lagos',
+        schedule: { time: data.postTime, timezone: 'Africa/Lagos', frequency: 'weekly' as const },
+        status: 'running' as const,
+        approved: true,
+        approvalPolicy: 'implicit' as const,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        executionHistory: [],
+        successRate: 0,
+        permissions: data.platforms,
+        executionsDone: 0,
+        executionsTotal: auto.totalRuns,
+        creditsNeeded: totalCreditsNeeded,
+        creditsPerRun: totalCreditsNeeded,
+        nextRunAt: auto.scheduledDates?.[0] || new Date().toISOString(),
+        campaign: {
+          id: crypto.randomUUID(),
           name: auto.name,
           description: auto.description,
-          trigger: { type: 'schedule' as const, cron: cronExpression, nextRun: auto.scheduledDates?.[0] || new Date().toISOString() },
-          actions: data.platforms.map(p => ({ connector: p, action: 'publish_post', params: {}, label: `Post to ${p}` })),
-          integrations: data.platforms,
-          timezone: 'Africa/Lagos',
-          schedule: { time: data.postTime, timezone: 'Africa/Lagos', frequency: 'weekly' as const },
-          status: 'active' as const,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          executionHistory: [],
-          successRate: 0,
-          permissions: data.platforms,
-          type: 'automation' as const,
-          executionsDone: 0,
-          executionsTotal: auto.totalRuns,
-          creditsNeeded: totalCreditsNeeded,
+          brand: { business: data.topic, audience: data.audience, tone: data.tone },
+          meta: {
+            totalPosts: auto.totalRuns,
+            platforms: data.platforms,
+            postingOption: 'recurring',
+            publishingMode: 'recurring',
+            frequencyText: `${data.postDays.join(', ')} · ${data.postTime}`,
+            timezone: 'Africa/Lagos',
+            endDate: auto.scheduledDates?.[auto.scheduledDates.length - 1] || undefined,
+          },
+          posts,
+          totalCredits: totalCreditsNeeded,
+          status: 'running',
           approved: true,
-          approvalPolicy: 'implicit' as const,
-          nextRunAt: auto.scheduledDates?.[0] || new Date().toISOString(),
-          // Fix: Include pre-generated posts so the server can use them when running
-          wizardPosts: auto.posts,
-          wizardScheduledDates: auto.scheduledDates,
-          wizardTopic: data.topic,
-          wizardGoal: data.goal,
-          wizardAudience: data.audience,
-          wizardTone: data.tone,
-        }
-        try { await saveAgent(agent as any) } catch {}
+          charged: false,
+          autoPublish: true,
+        },
+        wizardPosts: auto.posts,
+        wizardScheduledDates: auto.scheduledDates,
+        wizardTopic: data.topic,
+        wizardGoal: data.goal,
+        wizardAudience: data.audience,
+        wizardTone: data.tone,
       }
-    } catch {}
+
+      await saveAgent(agent as any)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not activate the automation.')
+      return
+    }
     try { localStorage.setItem(WIZARD_DONE_KEY, '1') } catch {}
     try { localStorage.removeItem(WIZARD_KEY) } catch {}
     onComplete()

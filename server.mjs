@@ -7798,6 +7798,19 @@ const server = http.createServer(async (req, res) => {
         merged.status = (merged.missing && merged.missing.length) ? 'awaiting_information' : 'running'
       }
       if (merged.status === 'running' || merged.status === 'active') {
+        merged.status = 'running'
+        merged.approved = true
+        if (merged.campaign) {
+          merged.campaign.status = 'running'
+          merged.campaign.approved = true
+          merged.campaign.charged = false
+          merged.campaign.posts = (merged.campaign.posts || []).map(post => {
+            if (post.status === 'pending_approval' || post.status === 'draft' || post.status === 'awaiting_approval') {
+              return { ...post, status: 'scheduled', approved: true, charged: false, providerPostId: undefined, providerUrl: undefined, executionKey: undefined }
+            }
+            return post
+          })
+        }
         const allAgents = await listServerAgentsForUser(user.id)
         const activeCount = allAgents.filter(a => (a.status === 'running' || a.status === 'active') && a.id !== agentId).length
         const canCreate = await billing.canCreateAgent(user, config, activeCount)
