@@ -29,6 +29,7 @@ import * as eliteBuilder from './server/eliteBuilderService.mjs'
 import { claimPendingAction, createPendingAction, finishPendingAction, listPendingActions } from './server/ceoPendingActions.mjs'
 import { scheduledCreditCost } from './server/schedulePricing.mjs'
 import generatePostHandler from './api/ai/generate-post.mjs'
+import { applyBackgroundGenerationOutcomeToPost, createBackgroundGenerationOutcome } from './src/lib/automation/backgroundGeneration.ts'
 
 function loadEnv() {
   for (const filename of ['.env.local', '.env']) {
@@ -1841,11 +1842,12 @@ async function testConnectorHandler(req, res) {
   const platform = String(body.platform || body.provider || '')
   if (!requireConnectorFeature(req, res, user, platform)) return
   const text = String(body.text || body.message || 'AlphaTekX connector test')
-  const imageUrl = String(body.imageUrl || '')
+  const imageUrl = String(body.imageUrl || body.image_url || '')
+  const videoUrl = String(body.videoUrl || body.video_url || '')
   const to = String(body.to || body.phone || body.phoneNumber || '')
-  if (!['linkedin', 'discord', 'slack', 'telegram', 'x', 'facebook', 'whatsapp'].includes(platform)) return json(res, 400, { error: 'Unsupported platform' })
+  if (!['linkedin', 'discord', 'slack', 'telegram', 'x', 'twitter', 'facebook', 'instagram', 'youtube', 'whatsapp'].includes(platform)) return json(res, 400, { error: 'Unsupported platform' })
   try {
-    const result = await postToSocial(platform, user, { text, imageUrl, to })
+    const result = await postToSocial(platform, user, { text, imageUrl, videoUrl, to })
     return json(res, 200, { success: true, platform, result })
   } catch (error) {
     if (error.message === 'FREE_LIMIT_REACHED') return json(res, 402, { success: false, error: 'FREE_LIMIT_REACHED', message: "You've used 2 free posts! Add your own API key for unlimited free posts or upgrade to Pro." })
@@ -2414,6 +2416,65 @@ async function executeAgentAction(agent, action) {
   }
 }
 
+async function getAutomationProgressPayload(agent) {
+  const generatedPosts = Array.isArray(agent.generatedPosts) ? agent.generatedPosts : []
+  const total = Math.max(1, Array.isArray(agent.campaign?.posts) ? agent.campaign.posts.length : generatedPosts.length)
+  const progress = typeof agent.backgroundProgress === 'number'
+    ? agent.backgroundProgress
+    : (generatedPosts.length ? Math.round((generatedPosts.length / total) * 100) : 0)
+  return {
+    ok: true,
+    progress: Math.max(0, Math.min(100, progress)),
+    status: agent.status || 'active',
+    posts: generatedPosts,
+  }
+}
+
+async function runAutomationBackgroundGeneration(agentId, userId) {
+  try {
+    const agent = await getServerAgent(agentId, userId)
+    if (!agent) return
+    const posts = Array.isArray(agent.campaign?.posts) ? agent.campaign.posts : []
+    const total = Math.max(1, posts.length)
+    const existingPosts = Array.isArray(agent.generatedPosts) ? agent.generatedPosts : []
+    const generated = [...existingPosts]
+    const topic = String(agent.campaign?.brand?.business || agent.name || 'your business growth')
+    const goal = String(agent.campaign?.description || agent.description || 'Grow reach and trust')
+    const audience = String(agent.campaign?.brand?.audience || 'ideal audience')
+    const tone = String(agent.campaign?.brand?.tone || 'confident and professional')
+    const length = 'medium'
+    const platform = 'linkedin'
+
+    for (let index = 0; index < total; index += 1) {
+      const post = posts[index]
+      const scheduledFor = post?.scheduledAt ? new Date(post.scheduledAt) : new Date()
+      const outcome = await createBackgroundGenerationOutcome({
+        topic,
+        goal,
+        audience,
+        tone,
+        length,
+        platform,
+        index: index + 1,
+        scheduledFor,
+      })
+      generated.push({
+        id: `${agent.id}-${index + 1}`,
+        content: outcome.content,
+        image_url: outcome.imageUrl || null,
+        scheduled_for: outcome.scheduledFor,
+        status: outcome.status,
+      })
+      const progress = Math.max(0, Math.min(100, Math.round(((index + 1) / total) * 100)))
+      await saveServerAgent({ ...agent, generatedPosts: generated.slice(-total), backgroundProgress: progress, status: 'running', updated_at: new Date().toISOString() })
+    }
+
+    await saveServerAgent({ ...agent, generatedPosts: generated.slice(-total), backgroundProgress: 100, status: 'running', updated_at: new Date().toISOString() })
+  } catch {
+    // Keep the automation visible even if generation is unavailable.
+  }
+}
+
 async function activateCampaignHandler(req, res) {
   const match = String(req.url || '').match(/^\/api\/agents\/campaign\/([^/]+)\/activate\/?$/)
   const agentId = match ? decodeURIComponent(match[1]) : ''
@@ -2499,7 +2560,35 @@ async function activateCampaignHandler(req, res) {
   agent.campaign.status = 'running'
   agent.approved = true
   agent.status = 'running'
-  agent.campaign.posts = (agent.campaign.posts || []).map(p => ({ ...p, approved: true, charged: p.charged === true, timezone, postingOption, scheduledLocalDate: body.localDate || null, scheduledLocalTime: body.localTime || null, status: p.status === 'pending_approval' || p.status === 'draft' ? 'scheduled' : p.status }))
+  const preparedPosts = []
+  for (let index = 0; index < (agent.campaign.posts || []).length; index += 1) {
+    const post = agent.campaign.posts[index]
+    const platforms = Array.isArray(post?.platforms) && post.platforms.length ? post.platforms : ['linkedin']
+    const primaryPlatform = platforms[0] || 'linkedin'
+    const hasCaption = String(post?.captions?.[primaryPlatform] || '').trim().length > 0
+    const base = { ...post, approved: true, charged: post.charged === true, timezone, postingOption, scheduledLocalDate: body.localDate || null, scheduledLocalTime: body.localTime || null, status: post.status === 'pending_approval' || post.status === 'draft' ? 'scheduled' : post.status }
+    if (hasCaption) {
+      preparedPosts.push(base)
+      continue
+    }
+    const topic = String(agent.campaign?.brand?.business || agent.name || 'your business growth')
+    const goal = String(agent.campaign?.description || agent.description || 'Grow reach and trust')
+    const audience = String(agent.campaign?.brand?.audience || 'ideal audience')
+    const tone = String(agent.campaign?.brand?.tone || 'confident and professional')
+    const scheduledFor = post?.scheduledAt ? new Date(post.scheduledAt) : new Date()
+    const outcome = await createBackgroundGenerationOutcome({
+      topic,
+      goal,
+      audience,
+      tone,
+      length: 'medium',
+      platform: primaryPlatform,
+      index: index + 1,
+      scheduledFor,
+    })
+    preparedPosts.push(applyBackgroundGenerationOutcomeToPost(base, { ...outcome, scheduledFor: outcome.scheduledFor || scheduledFor.toISOString(), createdAt: new Date().toISOString() }, primaryPlatform))
+  }
+  agent.campaign.posts = preparedPosts
   agent.trigger = { type: 'campaign', nextRun: campaignNextRun(agent.campaign), cron: agent.campaign.meta?.frequencyText || 'campaign' }
   await saveServerAgent(agent)
   if (postingOption === 'now') {
@@ -5289,11 +5378,82 @@ async function postToSocial(platform, user, params) {
   if (!fullUser) throw new Error('User not found')
   const isAdmin = isAdminAuthUser(fullUser)
   const text = String(params.text || params.message || '')
-  if (!text && !params.imageUrl) throw new Error('Social post requires text or image')
+  const imageUrl = String(params.imageUrl || params.image_url || '')
+  const videoUrl = String(params.videoUrl || params.video_url || '')
+  if (!text && !imageUrl && !videoUrl) throw new Error('Social post requires text or image')
+
+  const usesComposio = composioPublishingPlatforms.has(platform)
+  if (usesComposio) {
+    const connection = await alphaConnector.getConnectionStatus(fullUser, platform).catch(() => ({ connected: false }))
+    if (connection.connected === true) {
+      const approvalId = String(params.approvalId || `manual:${platform}:${Date.now()}`).trim()
+      const idempotencyKey = String(params.idempotencyKey || `manual:${platform}:${userId}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`).trim()
+      const actionPayload = {
+        ...params,
+        approvalId,
+        idempotencyKey,
+        _skipFreeLimit: true,
+      }
+      delete actionPayload.text
+      delete actionPayload.message
+      delete actionPayload.imageUrl
+      delete actionPayload.image_url
+      delete actionPayload.videoUrl
+      delete actionPayload.video_url
+      delete actionPayload.to
+      delete actionPayload.phone
+      delete actionPayload.phoneNumber
+
+      if (platform === 'instagram') {
+        if (!imageUrl) throw new Error('Instagram requires a confirmed image. Regenerate this post before publishing.')
+        return await alphaConnector.executeProviderAction(fullUser, platform, 'create_post', {
+          ...actionPayload,
+          caption: text,
+          image_url: imageUrl,
+        })
+      }
+      if (platform === 'facebook') {
+        return await alphaConnector.executeProviderAction(fullUser, platform, 'create_page_post', {
+          ...actionPayload,
+          message: text,
+          ...(imageUrl ? { image_url: imageUrl } : {}),
+        })
+      }
+      if (platform === 'x' || platform === 'twitter') {
+        return await alphaConnector.executeProviderAction(fullUser, platform, text.length > 280 ? 'create_thread' : 'create_tweet', {
+          ...actionPayload,
+          text,
+          ...(imageUrl ? { image_url: imageUrl } : {}),
+        })
+      }
+      if (platform === 'whatsapp') {
+        const to = String(params.to || params.phone || params.phoneNumber || '')
+        if (!to) throw new Error('WhatsApp message requires a recipient phone number in `to` or `phone`.')
+        return await alphaConnector.executeProviderAction(fullUser, platform, 'send_message', {
+          ...actionPayload,
+          to,
+          message: text,
+        })
+      }
+      if (platform === 'youtube') {
+        if (!videoUrl) throw new Error('YouTube needs a video selected from Media Library before publishing.')
+        return await alphaConnector.executeProviderAction(fullUser, platform, 'upload_video', {
+          ...actionPayload,
+          title: String(params.title || params.topic || 'AlphaTekx video').slice(0, 100),
+          description: text || String(params.description || 'Published by AlphaTekx after explicit approval.'),
+          tags: Array.isArray(params.tags) ? params.tags.slice(0, 20) : [],
+          privacyStatus: String(params.privacyStatus || 'public'),
+          video_url: videoUrl,
+        })
+      }
+    }
+  }
+
   const creds = await getPostingCredentials(fullUser, platform, { ...params, _skipFreeLimit: params._skipFreeLimit || isAdmin })
   let result
   switch (platform) {
-    case 'x': result = await postToX(creds, params); break
+    case 'x':
+    case 'twitter': result = await postToX(creds, params); break
     case 'linkedin': result = await postToLinkedIn(creds, params); break
     case 'facebook': result = await postToFacebook(creds, params); break
     case 'whatsapp': result = await postToWhatsApp(creds, params); break
@@ -7576,6 +7736,29 @@ const server = http.createServer(async (req, res) => {
       const agent = await parseAgentFromNL(prompt, user)
       return json(res, 200, { agent })
     } catch (error) { return json(res, error instanceof Error && error.message.includes('No AI provider') ? 503 : 400, { error: error instanceof Error ? error.message : 'Parse failed' }) }
+  }
+  if (req.method === 'GET' && /^\/api\/automations\/[^/]+\/progress\/?$/.test(req.url || '')) {
+    const match = new URL(req.url || '/', 'http://localhost').pathname.match(/^\/api\/automations\/([^/]+)\/progress\/?$/)
+    const automationId = match ? decodeURIComponent(match[1]) : ''
+    if (!automationId) return json(res, 400, { error: 'Missing automation id' })
+    const config = supabaseConfig()
+    const user = await currentOrLocalUser(req, config.url, config.anon)
+    if (!user) return json(res, 401, { error: 'Authentication required' })
+    const agent = await getServerAgent(automationId, user.id).catch(() => null)
+    if (!agent) return json(res, 404, { error: 'Automation not found' })
+    return json(res, 200, await getAutomationProgressPayload(agent))
+  }
+  if (req.method === 'POST' && /^\/api\/automations\/[^/]+\/generate-background\/?$/.test(req.url || '')) {
+    const match = new URL(req.url || '/', 'http://localhost').pathname.match(/^\/api\/automations\/([^/]+)\/generate-background\/?$/)
+    const automationId = match ? decodeURIComponent(match[1]) : ''
+    if (!automationId) return json(res, 400, { error: 'Missing automation id' })
+    const config = supabaseConfig()
+    const user = await currentOrLocalUser(req, config.url, config.anon)
+    if (!user) return json(res, 401, { error: 'Authentication required' })
+    const agent = await getServerAgent(automationId, user.id).catch(() => null)
+    if (!agent) return json(res, 404, { error: 'Automation not found' })
+    void runAutomationBackgroundGeneration(automationId, user.id)
+    return json(res, 200, { ok: true, started: true })
   }
   if (req.method === 'GET' && req.url === '/api/agents') {
     try {

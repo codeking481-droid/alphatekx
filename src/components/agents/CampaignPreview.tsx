@@ -4,7 +4,7 @@ import { ConnectorIcon } from './ConnectorIcon'
 import { getConnector } from '../../lib/agents/connectorRegistry'
 import { getAgents, saveAgent, setCache } from '../../lib/agents/agentStore'
 import type { Agent } from '../../lib/agents/types'
-import type { IntegrationStatus } from '../../lib/integrations'
+import type { IntegrationStatus, ServiceStatus } from '../../lib/integrations'
 import { scheduleDistanceMultiplier } from '../../lib/schedulePricing'
 
 type Props = {
@@ -47,14 +47,25 @@ function defaultStartAt() {
   return d.toISOString()
 }
 
+function isServiceStatus(value: unknown): value is Partial<ServiceStatus> {
+  return Boolean(value && typeof value === 'object' && ('connected' in value || 'ready' in value))
+}
+
 function connectorConnected(id: string, status: IntegrationStatus) {
-  const s = status[id] || status[(id === 'x' ? 'twitter' : id)] || { connected: false, ready: false }
+  const s = status[id] || status[(id === 'x' ? 'twitter' : id)]
+  if (!isServiceStatus(s)) return false
   return Boolean(s.connected && s.ready)
 }
 
 export default function CampaignPreview({ agent, integrationStatus, credits, isAdmin, authHeaders, onClose, onActivated }: Props) {
   const [draft, setDraft] = useState<Agent>(agent)
-  const [brand, setBrand] = useState<BrandForm>(agent.campaign?.brand || { business: '', audience: '', tone: '', website: '', dontPost: '' })
+  const [brand, setBrand] = useState<BrandForm>({
+    business: agent.campaign?.brand?.business || '',
+    audience: agent.campaign?.brand?.audience || '',
+    tone: agent.campaign?.brand?.tone || '',
+    website: agent.campaign?.brand?.website || '',
+    dontPost: Array.isArray(agent.campaign?.brand?.dontPost) ? agent.campaign.brand.dontPost.join(', ') : (agent.campaign?.brand?.dontPost || ''),
+  })
   const [savingBrand, setSavingBrand] = useState(false)
   const [activating, setActivating] = useState(false)
   const [notice, setNotice] = useState('')
@@ -193,7 +204,19 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
     setActivating(true)
     setNotice('Saving your approval and activating the LinkedIn schedule…')
     try {
-      await saveAgent(draft)
+      const approvedAgent = {
+        ...draft,
+        status: 'active' as const,
+        approved: true,
+        updatedAt: new Date().toISOString(),
+        campaign: draft.campaign ? { ...draft.campaign, status: 'active', approved: true } : undefined,
+      }
+      await saveAgent(approvedAgent)
+      void fetch(`/api/automations/${encodeURIComponent(approvedAgent.id)}/generate-background`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ automationId: approvedAgent.id }),
+      }).catch(() => {})
       const controller = new AbortController()
       const timer = window.setTimeout(() => controller.abort(), 30_000)
       const res = await fetch(`/api/agents/campaign/${encodeURIComponent(draft.id)}/activate`, {
@@ -235,7 +258,7 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
   }
 
   return <div className="fixed inset-0 z-50 flex items-end justify-center bg-[#0A0F1E]/90 p-0 sm:items-center sm:p-4" onClick={onClose} role="dialog" aria-modal="true" aria-label="Review and approve automation">
-    <div className="max-h-[94dvh] w-full max-w-3xl overflow-y-auto rounded-t-3xl border border-violet-400/20 bg-background p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl sm:rounded-3xl sm:p-6" onClick={e => e.stopPropagation()}>
+    <div className="max-h-[94dvh] w-full max-w-full overflow-y-auto rounded-t-3xl border border-violet-400/20 bg-background p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl sm:max-w-3xl sm:rounded-3xl sm:p-6" onClick={e => e.stopPropagation()}>
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 text-xs font-medium text-indigo-400"><Zap size={12}/> Content Employee plan</div>
@@ -312,7 +335,7 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
                     {post.platforms.map(platform => (
                       <div key={platform} className="rounded-lg border border-violet-400/20 bg-[#0A0F1E]/45 p-2">
                         <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-1.5 text-[10px] font-medium text-white/50"><ConnectorIcon connector={getConnector(platform) || { id: platform, name: platformNames[platform] || platform, icon: 'bot', color: '#6366f1', authType: 'apiKey', description: '', triggers: [], actions: [], permissions: [] }}/> {platformNames[platform] || platform}</div>
+                          <div className="flex items-center gap-1.5 text-[10px] font-medium text-white/50"><ConnectorIcon connector={getConnector(platform) || { id: platform, name: platformNames[platform] || platform, icon: 'bot', color: '#6366f1', authType: 'apiKey', category: 'Communication', description: '', triggers: [], actions: [], permissions: [] }}/> {platformNames[platform] || platform}</div>
                           {editing?.postId === post.id && editing?.platform === platform ? null : <button onClick={() => startEditPost(post.id, platform, post.captions[platform] || '')} className="text-[10px] text-indigo-300 hover:text-white">Edit</button>}
                         </div>
                         {editing?.postId === post.id && editing?.platform === platform ? (
@@ -376,7 +399,7 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
         <div className="mt-2 space-y-2">
           {platformIds.map(id => {
             const connected = connectorConnected(id, integrationStatus)
-            const C = getConnector(id) || { id, name: platformNames[id] || id, icon: 'bot', color: '#6366f1', authType: 'apiKey', description: '', triggers: [], actions: [], permissions: [] }
+            const C = getConnector(id) || { id, name: platformNames[id] || id, icon: 'bot', color: '#6366f1', authType: 'apiKey', category: 'Communication', description: '', triggers: [], actions: [], permissions: [] }
             return <div key={id} className="flex items-center justify-between text-xs">
               <span className="flex items-center gap-2"><ConnectorIcon connector={C}/> {C.name}</span>
               {connected ? <span className="text-emerald-400 flex items-center gap-1"><CheckCircle2 size={12}/> Connected personal profile</span> : <a href={`/connected-apps?service=${id}`} className="text-indigo-400 hover:underline">Connect</a>}

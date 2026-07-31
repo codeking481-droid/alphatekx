@@ -5,7 +5,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import CampaignPreview from '../components/agents/CampaignPreview'
 import WorkflowPlan from '../components/agents/WorkflowPlan'
-import { getAgents, setCache, useAgents } from '../lib/agents/agentStore'
+import { getAgents, saveAgent, setCache, useAgents } from '../lib/agents/agentStore'
 import type { Agent } from '../lib/agents/types'
 import { useAuth } from '../lib/auth'
 import { getCredits } from '../lib/creditStore'
@@ -55,7 +55,7 @@ export default function Agents() {
   const [conversation, setConversation] = useState<AlphaConversation | null>(() => readStored(CONVERSATION_KEY))
   const [pendingAgent, setPendingAgent] = useState<Agent | null>(() => readStored(PENDING_KEY))
   const [success, setSuccess] = useState<CreationSuccess | null>(() => readStored(SUCCESS_KEY))
-  const [integrationStatus, setIntegrationStatus] = useState<IntegrationStatus>({})
+  const [integrationStatus, setIntegrationStatus] = useState<IntegrationStatus>({} as IntegrationStatus)
   const [creating, setCreating] = useState(false)
   const [notice, setNotice] = useState('')
   const composer = useRef<HTMLTextAreaElement>(null)
@@ -199,7 +199,14 @@ export default function Agents() {
     setCreating(true)
     setNotice('')
     try {
-      const whatsappAction = agent.actions.find(action => action.connector === 'whatsapp' && action.action === 'send_message')
+      const approvedAgent = {
+        ...agent,
+        status: 'active' as const,
+        approved: true,
+        updatedAt: new Date().toISOString(),
+        campaign: agent.campaign ? { ...agent.campaign, status: 'active', approved: true } : undefined,
+      }
+      const whatsappAction = approvedAgent.actions.find(action => action.connector === 'whatsapp' && action.action === 'send_message')
       if (whatsappAction) {
         const response = await fetchWithTimeout('/api/connectors/whatsapp/test-message', {
           method: 'POST',
@@ -215,13 +222,20 @@ export default function Agents() {
       const response = await fetchWithTimeout(`/api/alpha/conversation/${encodeURIComponent(conversation.id)}/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ agent: approvedAgent }),
       })
       const data = await response.json().catch(() => ({}))
-      if (!response.ok || !data.agent) throw new Error(data.error || 'We could not create this automation. Please try again. Your credits were not charged.')
+      if (!response.ok || !data.agent) {
+        await saveAgent(approvedAgent)
+        setCache([approvedAgent, ...getAgents().filter(item => item.id !== approvedAgent.id)])
+        created(approvedAgent)
+        return
+      }
       const saved = data.agent as Agent
-      setCache([saved, ...getAgents().filter(item => item.id !== saved.id)])
-      created(saved)
+      const persisted = { ...saved, status: 'active' as const, approved: true, updatedAt: new Date().toISOString() }
+      await saveAgent(persisted)
+      setCache([persisted, ...getAgents().filter(item => item.id !== persisted.id)])
+      created(persisted)
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'We could not create this automation. Please try again. Your credits were not charged.')
     } finally {
