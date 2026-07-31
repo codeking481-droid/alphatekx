@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "api": "node server.mjs",
-    "start": "node server.mjs",
+    "api": "node --experimental-strip-types server.mjs",
+    "start": "node --experimental-strip-types server.mjs",
     "postinstall": "npm run build",
     "build": "node scripts/build.mjs",
     "lint": "eslint . --quiet",
