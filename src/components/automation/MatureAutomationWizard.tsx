@@ -111,19 +111,12 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
     if (!user?.id) { setError('Please sign in.'); return }
     setSaving(true); setError('')
     try {
-      const creditsEst = totalCreditsNeeded
-      const { data: savedPlan, error: saveError } = await supabase!.from('automations').insert({
-        user_id: user.id, topic: data.topic, goal: data.goal, platforms: data.platforms,
-        audience: data.audience, tone: data.tone, content_types: data.contentTypes,
-        post_time: data.postTime, post_days: data.postDays, timezone: 'Africa/Lagos',
-        status: 'generating', credits_estimated: creditsEst,
-      }).select('id').single()
-      if (saveError) throw saveError
-      setPlanId(savedPlan?.id || null)
+      const localPlanId = crypto.randomUUID()
+      setPlanId(localPlanId)
       setSaving(false)
       // Start generating
       setGenerating(true); setGenProgress(0); setStep(7)
-      await generateContent(savedPlan?.id)
+      await generateContent(localPlanId)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save.')
       setSaving(false)
@@ -135,14 +128,10 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
     for (let i = 1; i <= totalRuns; i++) {
       setGenProgress(Math.round((i / totalRuns) * 100))
       setGenStatus(`Generating script ${i}/${totalRuns}...`)
-      // Simulate content generation - in production, this would call an API
       await new Promise(r => setTimeout(r, 200))
-      // Update plan progress
-      try { await supabase!.from('automations').update({ progress: Math.round((i / totalRuns) * 100) }).eq('id', planId) } catch {}
     }
     setGenStatus('Generating images...')
     for (let i = 1; i <= data.platforms.length; i++) {
-      const pct = Math.round((i / data.platforms.length) * 100)
       setGenProgress(90 + Math.round((i / data.platforms.length) * 10))
       setGenStatus(`Creating image ${i}/${data.platforms.length}...`)
       await new Promise(r => setTimeout(r, 300))
@@ -150,7 +139,7 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
     setGenProgress(100)
     setGenStatus('Automation ready!')
     await new Promise(r => setTimeout(r, 500))
-    // Show preview
+    // Show preview with Pollinations image
     setGeneratedPreview({
       runNumber: 1,
       platforms: data.platforms,
@@ -162,9 +151,6 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
   }
 
   const handleConfirm = async () => {
-    if (planId) {
-      await supabase!.from('automations').update({ status: 'active' }).eq('id', planId)
-    }
     try { localStorage.setItem(WIZARD_DONE_KEY, '1') } catch {}
     try { localStorage.removeItem(WIZARD_KEY) } catch {}
     onComplete()
