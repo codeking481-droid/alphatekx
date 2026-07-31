@@ -162,6 +162,8 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
       setSaving(false)
       setGenerating(true); setGenProgress(0); setStep(7)
       await generateContent()
+      // Auto-activate after generation
+      await autoActivate()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Generation failed.')
       setSaving(false)
@@ -223,12 +225,13 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
     setShowConfirm(true)
   }
 
-  const handleConfirm = async () => {
+  const autoActivate = async () => {
     try {
       const raw = localStorage.getItem('alphatekx:running-automation')
       if (raw) {
         const auto = JSON.parse(raw)
-        // Create an agent that matches the Agent type so it shows in ActiveAutomations
+        auto.status = 'active'
+        localStorage.setItem('alphatekx:running-automation', JSON.stringify(auto))
         const agent = {
           id: auto.id,
           name: auto.name,
@@ -250,6 +253,7 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
           creditsNeeded: totalCreditsNeeded,
           approved: true,
           approvalPolicy: 'implicit' as const,
+          nextRunAt: auto.scheduledDates?.[0] || '',
         }
         try { await saveAgent(agent as any) } catch {}
       }
@@ -323,7 +327,7 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
                 )}
               </div>
               <p className="text-xs text-zinc-500 mb-4">+ {generatedPreview.totalRuns - 1} more posts ready to publish according to your schedule</p>
-              <button onClick={handleConfirm} className="w-full min-h-12 rounded-xl bg-indigo-600 text-sm font-semibold text-white hover:bg-indigo-500">
+              <button onClick={autoActivate} className="w-full min-h-12 rounded-xl bg-indigo-600 text-sm font-semibold text-white hover:bg-indigo-500">
                 <CheckCircle2 size={16} className="inline mr-2" /> Go Live
               </button>
             </div>
