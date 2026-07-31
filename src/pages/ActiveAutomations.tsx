@@ -25,6 +25,17 @@ function nextRunOf(agent: Agent) {
   return agent.trigger?.nextRun || agent.nextRunAt
 }
 
+function formatCountdown(target?: string, now = Date.now()) {
+  if (!target) return 'No upcoming run'
+  const diff = new Date(target).getTime() - now
+  if (diff <= 0) return 'Live now'
+  const minutes = Math.max(1, Math.floor(diff / 60000))
+  const hours = Math.floor(minutes / 60)
+  const remainingMinutes = minutes % 60
+  if (hours > 0) return `Starts in ${hours}h ${remainingMinutes}m`
+  return `Starts in ${minutes}m`
+}
+
 function lastResult(agent: Agent) {
   const run = agent.executionHistory?.[0]
   if (!run) return 'No runs yet'
@@ -116,8 +127,14 @@ export default function ActiveAutomations() {
   const [filter, setFilter] = useState<Filter>('All')
   const [view, setView] = useState<'list' | 'calendar'>('list')
   const [notice, setNotice] = useState('')
+  const [now, setNow] = useState(Date.now())
   const selected = id ? agents.find(agent => agent.id === id) : null
   const visible = useMemo(() => agents.filter(agent => agent.status !== 'deleted' && matchesFilter(agent, filter)), [agents, filter])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000)
+    return () => window.clearInterval(timer)
+  }, [])
 
   const changeStatus = async (agent: Agent, status: AgentStatus) => {
     try {
@@ -166,6 +183,7 @@ export default function ActiveAutomations() {
   if (selected) {
     const nextRun = nextRunOf(selected)
     const lastRun = selected.lastRunAt || selected.executionHistory?.[0]?.at
+    const nextRunLabel = nextRun ? `${new Date(nextRun).toLocaleString()} · ${formatCountdown(nextRun, now)}` : 'No future run'
     return <Page size="max-w-4xl">
       <button onClick={() => navigate('/active-automations')} className="text-sm font-bold text-violet-300 hover:text-violet-200">← Running Automations</button>
       {notice && <Notice>{notice}</Notice>}
@@ -183,7 +201,7 @@ export default function ActiveAutomations() {
           <Info label="Progress" value={progress(selected)} />
           <Info label="Schedule" value={selected.campaign?.meta?.frequencyText || selected.trigger?.cron || 'One time'} icon={<CalendarClock size={15}/>} />
           <Info label="Timezone" value={selected.timezone || selected.campaign?.meta?.timezone || 'UTC'} />
-          <Info label="Next run" value={nextRun ? new Date(nextRun).toLocaleString() : 'No future run'} />
+          <Info label="Next run" value={nextRunLabel} />
           <Info label="Last confirmed run" value={lastRun ? new Date(lastRun).toLocaleString() : 'No runs yet'} />
           <Info label="Approval" value={selected.approvalPolicy === 'implicit' ? 'Automatic after your approved plan' : 'Review before publishing'} />
           <Info label="Last result" value={lastResult(selected)} />
@@ -236,9 +254,17 @@ export default function ActiveAutomations() {
 
 function AutomationCard({ agent }: { agent: Agent }) {
   const nextRun = nextRunOf(agent)
+  const [now, setNow] = useState(Date.now())
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  const nextRunLabel = nextRun ? `${new Date(nextRun).toLocaleString()} · ${formatCountdown(nextRun, now)}` : 'No future run'
   return <Link to={`/active-automations/${agent.id}`} className="rounded-3xl border border-violet-400/20 bg-violet-500/10 p-6 shadow-[0_18px_45px_rgba(30,41,59,.10)] transition hover:-translate-y-1 hover:border-violet-300 hover:shadow-[0_24px_60px_rgba(109,40,217,.16)]">
     <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-xs font-black uppercase tracking-[.16em] text-violet-300">{platformNames(agent)}</p><h2 className="mt-2 truncate text-lg font-black text-white">{agent.name}</h2></div><span className="rounded-full bg-violet-500/10 px-3 py-1 text-[11px] font-black text-violet-200">{displayStatus(agent)}</span></div>
-    <dl className="mt-6 grid grid-cols-2 gap-4 text-sm"><CardStat label="Schedule" value={agent.campaign?.meta?.frequencyText || agent.trigger?.cron || 'One time'} /><CardStat label="Progress" value={progress(agent)} /><CardStat label="Next run" value={nextRun ? new Date(nextRun).toLocaleString() : 'No future run'} /><CardStat label="Last result" value={lastResult(agent)} /></dl>
+    <dl className="mt-6 grid grid-cols-2 gap-4 text-sm"><CardStat label="Schedule" value={agent.campaign?.meta?.frequencyText || agent.trigger?.cron || 'One time'} /><CardStat label="Progress" value={progress(agent)} /><CardStat label="Next run" value={nextRunLabel} /><CardStat label="Last result" value={lastResult(agent)} /></dl>
     <div className="mt-5 h-2 overflow-hidden rounded-full bg-white/[.06]"><div className="h-full rounded-full bg-gradient-to-r from-violet-500 to-blue-500" style={{ width: `${progressPercent(agent)}%` }}/></div>
     {displayStatus(agent) === 'Needs Attention' && <p className="mt-4 flex items-center gap-2 text-xs font-bold text-amber-300"><AlertCircle size={14}/>Open to see what needs attention.</p>}
   </Link>

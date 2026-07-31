@@ -7,6 +7,8 @@ import { supabase } from '../../lib/supabase'
 import { getConnectedApps } from '../../lib/connectors/connectorApi'
 import { hydrateCredits } from '../../lib/creditStore'
 import { saveAgent } from '../../lib/agents/agentStore'
+import { getApprovalBadgeState } from '../../lib/automation/approvalState'
+import { buildCampaignSchedulePlan, getPartsInTimeZone } from '../../lib/scheduling/nextPostCalculator'
 
 const WIZARD_KEY = 'alphatekx:mature-wizard'
 const WIZARD_DONE_KEY = 'alphatekx:mature-wizard-done'
@@ -21,6 +23,12 @@ const LENGTH_OPTIONS = [
   { id: 'short', label: 'Short (30-60 words)', desc: 'Punchy, quick posts' },
   { id: 'medium', label: 'Medium (80-120 words)', desc: 'Balanced, standard posts' },
   { id: 'long', label: 'Long (150-250 words)', desc: 'In-depth, mature write-ups' },
+]
+const DURATION_OPTIONS = [
+  { id: '1-week', label: '1 week', postCount: 4, description: 'A quick test run' },
+  { id: '2-weeks', label: '2 weeks', postCount: 8, description: 'Steady momentum' },
+  { id: '1-month', label: '1 month', postCount: 16, description: 'A full rollout' },
+  { id: '3-months', label: '3 months', postCount: 48, description: 'Longer campaign' },
 ]
 const CONTENT_OPTIONS = ['Images with text', 'Carousel posts', 'Long write-up / story', 'Short punchy post', 'Video ideas', 'With my product photos']
 const DAY_OPTIONS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -38,6 +46,7 @@ const PLATFORM_DEFS = [
 type WizardData = {
   topic: string; goal: string; platforms: string[]; audience: string; tone: string
   contentTypes: string[]; postTime: string; postDays: string[]; timezone: string
+  duration: string; publishMode: 'schedule' | 'publish-now'
 }
 
 const slideVariants = {
@@ -119,7 +128,7 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
   const [showConfirm, setShowConfirm] = useState(false)
   const [data, setData] = useState<WizardData>(() => {
     try { const saved = localStorage.getItem(WIZARD_KEY); if (saved) return JSON.parse(saved) as WizardData } catch {}
-    return { topic: '', goal: '', platforms: [], audience: '', tone: '', contentTypes: [], postTime: '', postDays: [], timezone: 'Africa/Lagos' }
+    return { topic: '', goal: '', platforms: [], audience: '', tone: '', contentTypes: [], postTime: '', postDays: [], timezone: 'Africa/Lagos', duration: '2-weeks', publishMode: 'schedule' }
   })
   const [customTopic, setCustomTopic] = useState('')
   const [customGoal, setCustomGoal] = useState('')
@@ -160,11 +169,12 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
   const handleSkip = () => { try { localStorage.setItem(WIZARD_DONE_KEY, '1') } catch {}; setShowSkipConfirm(false); onComplete() }
   const handleBackdropClick = () => setShowSkipConfirm(true)
 
+  const selectedDuration = DURATION_OPTIONS.find(option => option.id === data.duration) || DURATION_OPTIONS[1]
   const getCreditsPerWeek = () => {
     const dayCount = data.postDays.length || 1
     return dayCount * Math.max(1, data.platforms.length) * 2
   }
-  const totalCreditsNeeded = getCreditsPerWeek() * 4
+  const totalCreditsNeeded = getCreditsPerWeek() * Math.max(1, Math.round(selectedDuration.postCount / Math.max(1, data.postDays.length || 1)))
   const hasEnoughCredits = creditBalance >= totalCreditsNeeded
 
   const handleApprove = async () => {
@@ -183,31 +193,18 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
   }
 
   const generateContent = async () => {
-    const totalRuns = data.postDays.length * 4
+    const totalRuns = selectedDuration.postCount
     const posts: Record<string, { content: string; imageUrl: string }> = {}
-    // Fix: getDay() returns 0=Sunday, 1=Monday, ..., 6=Saturday
-    const dayAbbr = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
     const now = new Date()
-
-    // Fix: Parse the post time (e.g., "8:00 AM") into hours and minutes
-    const [timeStr, modifier] = data.postTime.split(' ')
-    let [hours, minutes] = timeStr.split(':').map(Number)
-    if (modifier === 'PM' && hours < 12) hours += 12
-    if (modifier === 'AM' && hours === 12) hours = 0
-
-    const scheduledDates: string[] = []
-    let currentIdx = 0
-    while (scheduledDates.length < totalRuns) {
-      const d = new Date(now)
-      d.setDate(d.getDate() + currentIdx)
-      const dayName = dayAbbr[d.getDay()]
-      if (data.postDays.includes(dayName as any)) {
-        // Fix: Include time in the ISO timestamp so the server can schedule properly
-        d.setHours(hours, minutes, 0, 0)
-        scheduledDates.push(d.toISOString())
-      }
-      currentIdx++
-    }
+    const timezone = data.timezone || 'Africa/Lagos'
+    const schedulePlan = buildCampaignSchedulePlan({
+      postTime: data.postTime,
+      postDays: data.postDays,
+      timezone,
+      totalRuns,
+      now,
+    })
+    const scheduledDates = schedulePlan.scheduledDates
 
     const topics = generateTopicVariations(data.topic, totalRuns)
     for (let i = 0; i < totalRuns; i++) {
@@ -252,7 +249,8 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
       description: `Auto-posting ${data.topic} on ${data.platforms.join(', ')}`,
       topic: data.topic, goal: data.goal, platforms: data.platforms,
       audience: data.audience, tone: data.tone, contentTypes: data.contentTypes,
-      postTime: data.postTime, postDays: data.postDays, timezone: 'Africa/Lagos',
+      postTime: data.postTime, postDays: data.postDays, timezone,
+      duration: data.duration, publishMode: data.publishMode,
       totalRuns, posts, scheduledDates,
       createdAt: new Date().toISOString(), status: 'ready_for_confirmation',
     }
@@ -277,13 +275,14 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
       auto.status = 'active'
       localStorage.setItem('alphatekx:running-automation', JSON.stringify(auto))
 
-      const [timeStr, modifier] = data.postTime.split(' ')
-      let [hours, minutes] = timeStr.split(':').map(Number)
-      if (modifier === 'PM' && hours < 12) hours += 12
-      if (modifier === 'AM' && hours === 12) hours = 0
+      const timezone = data.timezone || 'Africa/Lagos'
+      const firstScheduled = Array.isArray(auto.scheduledDates) && auto.scheduledDates.length ? new Date(auto.scheduledDates[0]) : null
+      const firstScheduledParts = firstScheduled ? getPartsInTimeZone(firstScheduled, timezone) : null
+      const localDate = firstScheduledParts ? `${firstScheduledParts.year}-${String(firstScheduledParts.month).padStart(2, '0')}-${String(firstScheduledParts.day).padStart(2, '0')}` : null
+      const localTime = firstScheduledParts ? `${String(firstScheduledParts.hour).padStart(2, '0')}:${String(firstScheduledParts.minute).padStart(2, '0')}` : null
       const dayToCron: Record<string, number> = { 'Sun': 0, 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6 }
       const cronWeekdays = data.postDays.map(d => dayToCron[d] ?? 1).sort((a, b) => a - b).join(',')
-      const cronExpression = `${minutes} ${hours} * * ${cronWeekdays}`
+      const cronExpression = `${String(firstScheduledParts?.minute ?? 0).padStart(2, '0')} ${String(firstScheduledParts?.hour ?? 9).padStart(2, '0')} * * ${cronWeekdays}`
 
       const posts = Array.isArray(auto.scheduledDates) ? auto.scheduledDates.map((scheduledAt: string, index: number) => {
         const dayNumber = index + 1
@@ -316,9 +315,10 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
         trigger: { type: 'campaign' as const, cron: cronExpression, nextRun: auto.scheduledDates?.[0] || new Date().toISOString() },
         actions: data.platforms.map(p => ({ connector: p, action: 'publish_post', params: {}, label: `Post to ${p}` })),
         integrations: data.platforms,
-        timezone: 'Africa/Lagos',
-        schedule: { time: data.postTime, timezone: 'Africa/Lagos', frequency: 'weekly' as const },
+        timezone,
+        schedule: { time: data.postTime, timezone, frequency: 'weekly' as const },
         status: 'running' as const,
+        approvalState: getApprovalBadgeState({ status: 'running', approved: true, campaign: { status: 'running', approved: true } }).label,
         approved: true,
         approvalPolicy: 'implicit' as const,
         createdAt: new Date().toISOString(),
@@ -330,7 +330,7 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
         executionsTotal: auto.totalRuns,
         creditsNeeded: totalCreditsNeeded,
         creditsPerRun: totalCreditsNeeded,
-        nextRunAt: auto.scheduledDates?.[0] || new Date().toISOString(),
+        nextRunAt: data.publishMode === 'publish-now' ? new Date().toISOString() : (auto.scheduledDates?.[0] || new Date().toISOString()),
         campaign: {
           id: crypto.randomUUID(),
           name: auto.name,
@@ -339,10 +339,10 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
           meta: {
             totalPosts: auto.totalRuns,
             platforms: data.platforms,
-            postingOption: 'recurring',
-            publishingMode: 'recurring',
+            publishingMode: data.publishMode === 'publish-now' ? 'once_now' : 'recurring',
+            postingOption: data.publishMode === 'publish-now' ? 'now' : 'later',
             frequencyText: `${data.postDays.join(', ')} · ${data.postTime}`,
-            timezone: 'Africa/Lagos',
+            timezone,
             endDate: auto.scheduledDates?.[auto.scheduledDates.length - 1] || undefined,
           },
           posts,
@@ -361,6 +361,21 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
       }
 
       await saveAgent(agent as any)
+
+      const activationRes = await fetch(`/api/agents/campaign/${encodeURIComponent(agent.id)}/activate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          autoPublish: true,
+          postingOption: data.publishMode === 'publish-now' ? 'now' : 'later',
+          localDate,
+          localTime,
+          timezone,
+          startAt: data.publishMode === 'publish-now' ? new Date().toISOString() : (firstScheduled ? firstScheduled.toISOString() : new Date().toISOString()),
+        }),
+      })
+      const activationData = await activationRes.json().catch(() => ({}))
+      if (!activationRes.ok) throw new Error(activationData.error || 'Activation failed')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not activate the automation.')
       return
@@ -561,6 +576,20 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
             <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-amber-500 to-indigo-500 text-white shadow-lg"><Clock size={20} /></div>
             <div><h2 className="text-lg font-bold text-white">Schedule</h2><p className="text-sm text-zinc-400">Africa/Lagos (WAT, UTC+1)</p></div>
           </div>
+          <p className="text-xs font-semibold text-zinc-400 mb-2">Duration</p>
+          <div className="grid gap-2 sm:grid-cols-2 mb-4">
+            {DURATION_OPTIONS.map(option => (
+              <button key={option.id} onClick={() => update({ duration: option.id })} className={`rounded-xl border px-3 py-2 text-left ${data.duration === option.id ? 'border-indigo-500 bg-indigo-500/20 text-white' : 'border-zinc-800 bg-zinc-900/50 text-zinc-300 hover:border-zinc-700'}`}>
+                <div className="text-sm font-semibold">{option.label}</div>
+                <div className="text-[11px] text-zinc-400">{option.description}</div>
+              </button>
+            ))}
+          </div>
+          <p className="text-xs font-semibold text-zinc-400 mb-2">Launch mode</p>
+          <div className="grid gap-2 sm:grid-cols-2 mb-4">
+            <button onClick={() => update({ publishMode: 'schedule' })} className={`rounded-xl border px-3 py-2 text-sm font-semibold ${data.publishMode === 'schedule' ? 'border-indigo-500 bg-indigo-500/20 text-white' : 'border-zinc-800 bg-zinc-900/50 text-zinc-300'}`}>Schedule for later</button>
+            <button onClick={() => update({ publishMode: 'publish-now' })} className={`rounded-xl border px-3 py-2 text-sm font-semibold ${data.publishMode === 'publish-now' ? 'border-indigo-500 bg-indigo-500/20 text-white' : 'border-zinc-800 bg-zinc-900/50 text-zinc-300'}`}>Publish now</button>
+          </div>
           <p className="text-xs font-semibold text-zinc-400 mb-2">Time</p>
           <div className="flex flex-wrap gap-2 mb-3">
             {TIME_OPTIONS.map(t => (
@@ -584,8 +613,8 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
           </div>
           {data.postTime && data.postDays.length > 0 && (
             <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/10 p-3 space-y-1">
-              <p className="text-sm font-semibold text-indigo-300">Posts every {data.postDays.join(', ')} at {data.postTime} WAT</p>
-              <p className="text-xs text-indigo-400">{getCreditsPerWeek()} credits/week = {totalCreditsNeeded}/month</p>
+              <p className="text-sm font-semibold text-indigo-300">{selectedDuration.label} · {data.publishMode === 'publish-now' ? 'publish now' : `posts every ${data.postDays.join(', ')} at ${data.postTime} WAT`}</p>
+              <p className="text-xs text-indigo-400">{selectedDuration.postCount} planned posts · {getCreditsPerWeek()} credits/week</p>
             </div>
           )}
           <div className="mt-5 flex flex-col gap-2 sm:flex-row">
@@ -605,7 +634,8 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
               { label: 'Topic', value: data.topic }, { label: 'Goal', value: data.goal },
               { label: 'Platforms', value: data.platforms.map(p => PLATFORM_DEFS.find(d => d.id === p)?.label || p).join(', ') },
               { label: 'Audience', value: data.audience }, { label: 'Tone', value: data.tone },
-              { label: 'Schedule', value: `${data.postDays.join(', ')} at ${data.postTime} WAT` },
+              { label: 'Schedule', value: `${data.publishMode === 'publish-now' ? 'Publish now' : `${data.postDays.join(', ')} at ${data.postTime} WAT`}` },
+              { label: 'Duration', value: selectedDuration.label },
             ].map((item, i) => (
               <div key={i} className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900/50 px-3 py-2.5">
                 <span className="text-xs font-semibold text-zinc-400">{item.label}</span>
@@ -638,7 +668,7 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
             <button onClick={() => goTo(5)} className="flex min-h-12 flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-900/50 text-sm font-semibold text-zinc-300"><ArrowLeft size={15} /> Edit</button>
             <button onClick={handleApprove} disabled={saving || !hasEnoughCredits} className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-30 shadow-lg">
               {saving ? <LoaderCircle className="animate-spin" size={16} /> : <Zap size={16} />}
-              {saving ? 'Saving...' : 'Approve & Generate Posts →'}
+              {saving ? 'Saving...' : data.publishMode === 'publish-now' ? 'Approve & Publish Now →' : 'Approve & Generate Posts →'}
             </button>
           </div>
         </div>
