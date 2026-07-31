@@ -6,6 +6,10 @@ import { useAuth } from '../lib/auth'
 import { getConnectedApps, connectProvider, disconnectProvider } from '../lib/connectors/connectorApi'
 import { startLinkedInAuth, startGmailConnection } from '../lib/integrations'
 
+function normalizeProviderId(provider: string) {
+  return provider === 'twitter' ? 'x' : provider
+}
+
 function connectedCacheKey(userId?: string) {
   return `alphatekx:connected-platforms:${userId || 'anonymous'}`
 }
@@ -50,27 +54,40 @@ export default function Connectors() {
       return
     }
     setConnected(new Set())
+    let cancelled = false
     const check = async () => {
       try {
-        const apps = await getConnectedApps(session.access_token)
+        const [apps, integrationStatus] = await Promise.allSettled([
+          getConnectedApps(session.access_token),
+          import('../lib/integrations').then(({ getIntegrationStatus }) => getIntegrationStatus(session.access_token))
+        ])
         const ready = new Set<string>()
-        for (const provider of apps.providers) {
-          if (provider.connected) ready.add(provider.provider === 'twitter' ? 'x' : provider.provider)
+        if (apps.status === 'fulfilled') {
+          for (const provider of apps.value.providers || []) {
+            if (provider.connected) ready.add(normalizeProviderId(provider.provider))
+          }
         }
-        // Check for native LinkedIn from integrations
-        try {
-          const { getIntegrationStatus } = await import('../lib/integrations')
-          const status = await getIntegrationStatus(session.access_token) as Record<string, { connected?: boolean }>
-          if (status.linkedin?.connected) ready.add('linkedin')
-          if (status.gmail?.connected) ready.add('gmail')
-        } catch {}
-        // Merge with existing cache so native connections (like LinkedIn) persist even if API doesn't return them
-        const merged = new Set([...ready])
-        setConnected(merged)
-        try { localStorage.setItem(connectedCacheKey(userId), JSON.stringify([...merged])) } catch {}
-      } catch {}
+        if (integrationStatus.status === 'fulfilled') {
+          const status = integrationStatus.value as Record<string, { connected?: boolean }> | undefined
+          if (status?.linkedin?.connected) ready.add('linkedin')
+          if (status?.gmail?.connected) ready.add('gmail')
+        }
+        if (!cancelled) {
+          const merged = new Set([...ready])
+          setConnected(merged)
+          try { localStorage.setItem(connectedCacheKey(userId), JSON.stringify([...merged])) } catch {}
+        }
+      } catch {
+        if (!cancelled) {
+          const cached = localStorage.getItem(connectedCacheKey(userId))
+          if (cached) {
+            try { setConnected(new Set(JSON.parse(cached))) } catch {}
+          }
+        }
+      }
     }
     void check()
+    return () => { cancelled = true }
   }, [session?.access_token, session?.user?.id])
 
   const handleConnect = async (platformId: string) => {

@@ -3,6 +3,7 @@ import { AlertCircle, CalendarClock, CalendarDays, CheckCircle2, Copy, History, 
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { deleteAgent, saveAgent, setAgentLifecycle, useAgents } from '../lib/agents/agentStore'
 import type { Agent, AgentStatus } from '../lib/agents/types'
+import { formatCountdown } from '../lib/scheduling/countdown.mjs'
 
 const filters = ['All', 'Running', 'Waiting', 'Paused', 'Needs Attention', 'Completed'] as const
 type Filter = typeof filters[number]
@@ -23,17 +24,6 @@ function platformNames(agent: Agent) {
 
 function nextRunOf(agent: Agent) {
   return agent.trigger?.nextRun || agent.nextRunAt
-}
-
-function formatCountdown(target?: string, now = Date.now()) {
-  if (!target) return 'No upcoming run'
-  const diff = new Date(target).getTime() - now
-  if (diff <= 0) return 'Live now'
-  const minutes = Math.max(1, Math.floor(diff / 60000))
-  const hours = Math.floor(minutes / 60)
-  const remainingMinutes = minutes % 60
-  if (hours > 0) return `Starts in ${hours}h ${remainingMinutes}m`
-  return `Starts in ${minutes}m`
 }
 
 function lastResult(agent: Agent) {
@@ -132,7 +122,7 @@ export default function ActiveAutomations() {
   const visible = useMemo(() => agents.filter(agent => agent.status !== 'deleted' && matchesFilter(agent, filter)), [agents, filter])
 
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 30_000)
+    const timer = window.setInterval(() => setNow(Date.now()), 15_000)
     return () => window.clearInterval(timer)
   }, [])
 
@@ -257,7 +247,7 @@ function AutomationCard({ agent }: { agent: Agent }) {
   const [now, setNow] = useState(Date.now())
 
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 30_000)
+    const timer = window.setInterval(() => setNow(Date.now()), 15_000)
     return () => window.clearInterval(timer)
   }, [])
 
