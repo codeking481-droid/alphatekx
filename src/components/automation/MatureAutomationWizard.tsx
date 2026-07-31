@@ -178,8 +178,15 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
   const generateContent = async () => {
     const totalRuns = data.postDays.length * 4
     const posts: Record<string, { content: string; imageUrl: string }> = {}
-    const dayAbbr = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+    // Fix: getDay() returns 0=Sunday, 1=Monday, ..., 6=Saturday
+    const dayAbbr = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
     const now = new Date()
+
+    // Fix: Parse the post time (e.g., "8:00 AM") into hours and minutes
+    const [timeStr, modifier] = data.postTime.split(' ')
+    let [hours, minutes] = timeStr.split(':').map(Number)
+    if (modifier === 'PM' && hours < 12) hours += 12
+    if (modifier === 'AM' && hours === 12) hours = 0
 
     const scheduledDates: string[] = []
     let currentIdx = 0
@@ -187,7 +194,11 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
       const d = new Date(now)
       d.setDate(d.getDate() + currentIdx)
       const dayName = dayAbbr[d.getDay()]
-      if (data.postDays.includes(dayName as any)) scheduledDates.push(d.toISOString().split('T')[0])
+      if (data.postDays.includes(dayName as any)) {
+        // Fix: Include time in the ISO timestamp so the server can schedule properly
+        d.setHours(hours, minutes, 0, 0)
+        scheduledDates.push(d.toISOString())
+      }
       currentIdx++
     }
 
@@ -195,22 +206,28 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
     for (let i = 0; i < totalRuns; i++) {
       // Generate real content via Groq API
       let dayContent = `🔥 ${data.topic} - Day ${i + 1}`
+      let imageUrl = ''
       try {
         const res = await fetch('/api/ai/generate-post', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ topic: topics[i], goal: data.goal, audience: data.audience, tone: data.tone, length: 'medium' })
+          // Fix: Pass dayIndex and platform for unique content and images
+          body: JSON.stringify({ topic: topics[i], goal: data.goal, audience: data.audience, tone: data.tone, length: 'medium', dayIndex: i + 1, platform: data.platforms[0] || 'linkedin' })
         })
         if (res.ok) {
           const data_ = await res.json()
           if (data_.content) dayContent = data_.content
+          if (data_.imageUrl) imageUrl = data_.imageUrl
         }
       } catch {}
 
-      // Generate unique Pollination image with seed
-      const seed = Date.now() + i
-      const imgPrompt = encodeURIComponent(`${data.topic} ${topics[i]} social media high quality branded`)
-      posts[`day_${i + 1}`] = { content: dayContent, imageUrl: `https://image.pollinations.ai/prompt/${imgPrompt}?width=1080&height=1080&nologo=true&seed=${seed}` }
+      // Fallback: Generate unique Pollination image with seed if API didn't return one
+      if (!imageUrl) {
+        const seed = Date.now() + i
+        const imgPrompt = encodeURIComponent(`${data.topic} ${topics[i]} social media high quality branded`)
+        imageUrl = `https://image.pollinations.ai/prompt/${imgPrompt}?width=1080&height=1080&nologo=true&seed=${seed}`
+      }
+      posts[`day_${i + 1}`] = { content: dayContent, imageUrl }
       setGenProgress(Math.round(((i + 1) / totalRuns) * 100))
       setGenStatus(`Generating post ${i + 1}/${totalRuns}...`)
       await new Promise(r => setTimeout(r, 200))
@@ -252,11 +269,23 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
         const auto = JSON.parse(raw)
         auto.status = 'active'
         localStorage.setItem('alphatekx:running-automation', JSON.stringify(auto))
+
+        // Fix: Build a valid cron expression from the post time and days
+        // Cron format: minute hour day month weekday
+        // e.g., "0 8 * * 1,3,5" for 8:00 AM on Mon, Wed, Fri
+        const [timeStr, modifier] = data.postTime.split(' ')
+        let [hours, minutes] = timeStr.split(':').map(Number)
+        if (modifier === 'PM' && hours < 12) hours += 12
+        if (modifier === 'AM' && hours === 12) hours = 0
+        const dayToCron: Record<string, number> = { 'Sun': 0, 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6 }
+        const cronWeekdays = data.postDays.map(d => dayToCron[d] ?? 1).sort((a, b) => a - b).join(',')
+        const cronExpression = `${minutes} ${hours} * * ${cronWeekdays}`
+
         const agent = {
           id: auto.id,
           name: auto.name,
           description: auto.description,
-          trigger: { type: 'schedule' as const, cron: `${data.postTime} ${data.postDays.join(',')}`, nextRun: auto.scheduledDates?.[0] || '' },
+          trigger: { type: 'schedule' as const, cron: cronExpression, nextRun: auto.scheduledDates?.[0] || new Date().toISOString() },
           actions: data.platforms.map(p => ({ connector: p, action: 'publish_post', params: {}, label: `Post to ${p}` })),
           integrations: data.platforms,
           timezone: 'Africa/Lagos',
@@ -273,7 +302,7 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
           creditsNeeded: totalCreditsNeeded,
           approved: true,
           approvalPolicy: 'implicit' as const,
-          nextRunAt: auto.scheduledDates?.[0] || '',
+          nextRunAt: auto.scheduledDates?.[0] || new Date().toISOString(),
         }
         try { await saveAgent(agent as any) } catch {}
       }
