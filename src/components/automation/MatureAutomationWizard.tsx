@@ -303,6 +303,13 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
           approved: true,
           approvalPolicy: 'implicit' as const,
           nextRunAt: auto.scheduledDates?.[0] || new Date().toISOString(),
+          // Fix: Include pre-generated posts so the server can use them when running
+          wizardPosts: auto.posts,
+          wizardScheduledDates: auto.scheduledDates,
+          wizardTopic: data.topic,
+          wizardGoal: data.goal,
+          wizardAudience: data.audience,
+          wizardTone: data.tone,
         }
         try { await saveAgent(agent as any) } catch {}
       }

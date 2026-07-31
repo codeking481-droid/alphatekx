@@ -3342,12 +3342,26 @@ async function runAgent(agent, trigger = 'schedule') {
 
   const config = supabaseConfig()
   const generatedActions = []
+  // Check for pre-generated posts from the wizard
+  const wizardPosts = existing.wizardPosts
+  const executionIndex = existing.executionsDone || 0
+  const wizardPostKey = wizardPosts ? `day_${Math.min(executionIndex + 1, Object.keys(wizardPosts).length)}` : null
+  const wizardPost = wizardPostKey ? wizardPosts[wizardPostKey] : null
+
   for (const action of existing.actions || []) {
     const ready = await agentActionIsReady(user, action, config)
     if (!ready) {
       generatedActions.push({ ...action, _skipReason: 'connector not configured' })
       continue
     }
+
+    // If we have pre-generated posts from the wizard, use them directly
+    if (wizardPost && ['x', 'linkedin', 'facebook', 'telegram', 'slack', 'discord', 'whatsapp'].includes(action.connector)) {
+      const params = { ...action.params, text: wizardPost.content, imageUrl: wizardPost.imageUrl }
+      generatedActions.push({ ...action, params })
+      continue
+    }
+
     const enriched = await enrichActionContent(existing, action)
     const needsGenerate = enriched.params?.generate === true || enriched.params?.generate === 'true' || (!enriched.params?.text && !enriched.params?.message && !enriched.params?.body)
     if (needsGenerate && ['x', 'linkedin', 'facebook', 'telegram', 'slack', 'discord', 'whatsapp', 'gmail', 'email'].includes(enriched.connector)) {
