@@ -15,6 +15,11 @@ const CONNECTED_CACHE_KEY = 'alphatekx:connected-platforms'
 const TOPIC_OPTIONS = ['My Business / Product', 'Personal Brand', 'Educational', 'Motivational', 'Tech News', 'Memes / Funny']
 const GOAL_OPTIONS = ['Get more customers', 'Build followers', 'Go viral', 'Educate audience', 'Drive website traffic', 'Get leads']
 const TONE_OPTIONS = ['Professional', 'Friendly & Casual', 'Funny', 'Luxury / Premium', 'Bold & Direct', 'Educational']
+const LENGTH_OPTIONS = [
+  { id: 'short', label: 'Short (30-60 words)', desc: 'Punchy, quick posts' },
+  { id: 'medium', label: 'Medium (80-120 words)', desc: 'Balanced, standard posts' },
+  { id: 'long', label: 'Long (150-250 words)', desc: 'In-depth, mature write-ups' },
+]
 const CONTENT_OPTIONS = ['Images with text', 'Carousel posts', 'Long write-up / story', 'Short punchy post', 'Video ideas', 'With my product photos']
 const DAY_OPTIONS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const QUICK_DAY_SETS = ['Everyday', 'Weekdays', 'Weekends', 'Mon / Wed / Fri']
