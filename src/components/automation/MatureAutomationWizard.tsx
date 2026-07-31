@@ -193,12 +193,27 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
 
     const topics = generateTopicVariations(data.topic, totalRuns)
     for (let i = 0; i < totalRuns; i++) {
-      const dayContent = createDayContent(data.topic, data.goal, data.tone, data.audience, topics[i], i + 1)
-      const imgPrompt = encodeURIComponent(`${data.topic} ${topics[i]} social media`)
-      posts[`day_${i + 1}`] = { content: dayContent, imageUrl: `https://image.pollinations.ai/prompt/${imgPrompt}?width=1024&height=1024&seed=${i + 1}` }
+      // Generate real content via Groq API
+      let dayContent = `🔥 ${data.topic} - Day ${i + 1}`
+      try {
+        const res = await fetch('/api/ai/generate-post', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ topic: topics[i], goal: data.goal, audience: data.audience, tone: data.tone, length: 'medium' })
+        })
+        if (res.ok) {
+          const data_ = await res.json()
+          if (data_.content) dayContent = data_.content
+        }
+      } catch {}
+
+      // Generate unique Pollination image with seed
+      const seed = Date.now() + i
+      const imgPrompt = encodeURIComponent(`${data.topic} ${topics[i]} social media high quality branded`)
+      posts[`day_${i + 1}`] = { content: dayContent, imageUrl: `https://image.pollinations.ai/prompt/${imgPrompt}?width=1080&height=1080&nologo=true&seed=${seed}` }
       setGenProgress(Math.round(((i + 1) / totalRuns) * 100))
       setGenStatus(`Generating post ${i + 1}/${totalRuns}...`)
-      await new Promise(r => setTimeout(r, 100))
+      await new Promise(r => setTimeout(r, 200))
     }
     for (let p = 1; p <= totalRuns; p++) {
       setGenProgress(90 + Math.round((p / totalRuns) * 10))
