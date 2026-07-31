@@ -16,6 +16,7 @@ import { buildCapabilityPlan, detectCapability, isSupportedAction } from './serv
 import { createContentMemoryRecord } from './server/automation/contentMemory.mjs'
 import { validateFreeCampaign } from './server/automation/freePlanPolicy.mjs'
 import { createConversationEngine } from './server/alpha/conversationEngine.mjs'
+import { normalizeAutomationLifecycle } from './server/automation/lifecycle.mjs'
 import { ALPHATEKX_BRAIN } from './server/alpha/brainKnowledge.mjs'
 import * as providerHealth from './server/alpha/providerHealth.mjs'
 import * as billing from './server/billing.mjs'
@@ -7788,12 +7789,7 @@ const server = http.createServer(async (req, res) => {
       if (blockedConnector) return json(res, 403, { error: unavailableConnectorMessage(blockedConnector), code: 'FEATURE_COMING_SOON', connector: blockedConnector })
       const agentId = incoming.id || randomUUID()
       const existing = await getServerAgent(agentId, user.id) || {}
-      const merged = { ...existing, ...incoming, id: agentId, userId: user.id, userEmail: user.email }
-      const status = incoming.status
-      if (status === 'active' || status === 'pending') {
-        merged.status = 'running'
-        merged.approved = true
-      }
+      const merged = normalizeAutomationLifecycle({ ...existing, ...incoming, id: agentId, userId: user.id, userEmail: user.email })
       if (!merged.status || merged.status === 'awaiting_information') {
         merged.status = (merged.missing && merged.missing.length) ? 'awaiting_information' : 'running'
       }

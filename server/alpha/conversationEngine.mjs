@@ -7,6 +7,7 @@ import { scheduledCreditCost } from '../schedulePricing.mjs'
 import { connectorFeatureAccess, unavailableConnectorMessage, unavailablePromptConnector } from '../featureAccess.mjs'
 import { classifyIntent, clarificationResponse, conversationalResponse, helpResponse, INTENT_CATEGORIES } from './intentClassifier.mjs'
 import { ALPHATEKX_BRAIN, answerFromBrain } from './brainKnowledge.mjs'
+import { normalizeAutomationLifecycle } from '../automation/lifecycle.mjs'
 
 const STAGES = [
   'understanding',
@@ -1905,9 +1906,15 @@ Return JSON: { "text": "..." }`
       draft.campaign.approved = true
       draft.campaign.status = 'running'
       draft.campaign.charged = false
-      draft.campaign.posts.forEach(p => { if (p.status === 'pending_approval') p.status = 'scheduled' })
+      draft.campaign.posts.forEach(p => { if (p.status === 'pending_approval' || p.status === 'draft' || p.status === 'awaiting_approval') p.status = 'scheduled' })
     }
     draft.updatedAt = nowIso()
+    const normalizedDraft = normalizeAutomationLifecycle(draft)
+    draft.status = normalizedDraft.status
+    draft.approved = normalizedDraft.approved
+    if (draft.campaign && normalizedDraft.campaign) {
+      draft.campaign = normalizedDraft.campaign
+    }
 
     conversation.conversationStage = 'created'
     conversation.status = 'completed'
