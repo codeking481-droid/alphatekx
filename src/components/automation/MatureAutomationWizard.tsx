@@ -6,6 +6,7 @@ import { useAuth } from '../../lib/auth'
 import { supabase } from '../../lib/supabase'
 import { getConnectedApps } from '../../lib/connectors/connectorApi'
 import { hydrateCredits } from '../../lib/creditStore'
+import { saveAgent } from '../../lib/agents/agentStore'
 
 const WIZARD_KEY = 'alphatekx:mature-wizard'
 const WIZARD_DONE_KEY = 'alphatekx:mature-wizard-done'
@@ -222,13 +223,35 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
     setShowConfirm(true)
   }
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     try {
       const raw = localStorage.getItem('alphatekx:running-automation')
       if (raw) {
         const auto = JSON.parse(raw)
-        auto.status = 'active'
-        localStorage.setItem('alphatekx:running-automation', JSON.stringify(auto))
+        // Create an agent that matches the Agent type so it shows in ActiveAutomations
+        const agent = {
+          id: auto.id,
+          name: auto.name,
+          description: auto.description,
+          trigger: { type: 'schedule' as const, cron: `${data.postTime} ${data.postDays.join(',')}`, nextRun: auto.scheduledDates?.[0] || '' },
+          actions: data.platforms.map(p => ({ connector: p, action: 'publish_post', params: {}, label: `Post to ${p}` })),
+          integrations: data.platforms,
+          timezone: 'Africa/Lagos',
+          schedule: { time: data.postTime, timezone: 'Africa/Lagos', frequency: 'weekly' as const },
+          status: 'active' as const,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          executionHistory: [],
+          successRate: 0,
+          permissions: data.platforms,
+          type: 'automation' as const,
+          executionsDone: 0,
+          executionsTotal: auto.totalRuns,
+          creditsNeeded: totalCreditsNeeded,
+          approved: true,
+          approvalPolicy: 'implicit' as const,
+        }
+        try { await saveAgent(agent as any) } catch {}
       }
     } catch {}
     try { localStorage.setItem(WIZARD_DONE_KEY, '1') } catch {}
