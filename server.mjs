@@ -28,6 +28,7 @@ import * as moneyLoop from './server/moneyLoopService.mjs'
 import * as eliteBuilder from './server/eliteBuilderService.mjs'
 import { claimPendingAction, createPendingAction, finishPendingAction, listPendingActions } from './server/ceoPendingActions.mjs'
 import { scheduledCreditCost } from './server/schedulePricing.mjs'
+import generatePostHandler from './api/ai/generate-post.mjs'
 
 function loadEnv() {
   for (const filename of ['.env.local', '.env']) {
@@ -7904,6 +7905,12 @@ const server = http.createServer(async (req, res) => {
       const result = await handleAlpha(prompt, 'refine', String(body.code || ''), String(body.provider || ''))
       return json(res, 200, { code: result.code || '', files: result.files || [], dependencies: result.dependencies || [], provider: result.provider || 'ai' })
     } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Repair failed.' }) }
+  }
+  if (req.method === 'POST' && req.url === '/api/ai/generate-post') {
+    try {
+      const body = await readBody(req)
+      return await generatePostHandler(req, res, { body, callProvider })
+    } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Post generation failed.' }) }
   }
   if (req.method === 'POST' && req.url === '/api/alpha/plan') {
     try {
