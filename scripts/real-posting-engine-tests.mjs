@@ -13,6 +13,10 @@ assert.doesNotMatch(server, /generatedPosts: generated\.slice/, 'generation must
 assert.match(server, /backgroundGeneration\?\.status === 'generating'/, 'duplicate background generation must be locked')
 assert.match(server, /confirmedPreviousResult\?\.status === 'success' && confirmedPreviousResult\?\.id/, 'partial retries must not republish a platform with a confirmed provider ID')
 assert.match(server, /dueCutoff = trigger === 'manual'.*now\.getTime\(\)/, 'only explicit manual runs may use the early execution window')
+assert.match(server, /Alpha will retry automatically at \$\{nextRun\}/, 'retryable provider failures must keep their scheduled retry reachable')
+assert.match(server, /status = 'warning'[\s\S]{0,180}campaign\.status = 'running'/, 'a transient failure must not pause the campaign before its retry')
+assert.match(server, /failureDetails\.join\('\s*\|\s*'\)/, 'execution history must expose the exact provider or preparation failure')
+assert.match(server, /No credits were charged/, 'unconfirmed retryable posts must report no charge')
 assert.doesNotMatch(migration, /DROP TABLE IF EXISTS public\.(?:posts|automations)/i, 'production automation migrations must never erase schedules or evidence')
 
 console.log('REAL_POSTING_ENGINE_TESTS_OK')

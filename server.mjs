@@ -3464,8 +3464,12 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
   const providerFailures = steps.flatMap(step => Object.entries(step.result || {})
     .filter(([, result]) => result?.status === 'error' || result?.status === 'skipped')
     .map(([platform, result]) => `${platform}: ${result?.log || 'publication was not confirmed'}`))
-  let log = providerFailures.length
-    ? `Publication failed. ${providerFailures.join(' | ')} No credits were charged for unconfirmed platforms.`
+  const preparationFailures = steps
+    .filter(step => step?.status === 'error' && step?.error)
+    .map(step => `${step.error_code || 'PREPARATION_FAILED'}: ${step.error}`)
+  const failureDetails = [...providerFailures, ...preparationFailures]
+  let log = failureDetails.length
+    ? `Publication failed. ${failureDetails.join(' | ')} No credits were charged for unconfirmed platforms.`
     : `Campaign execution: ${postedCount} post(s) processed. ${failedCount} had issues.`
   let output = { postedCount, failedCount, creditsUsed, steps }
 
@@ -3513,10 +3517,18 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
   if (!outOfCredits && postedCount === 0 && failedCount === 0) {
     log = 'Campaign execution failed: the scheduler marked this campaign due, but no approved scheduled post was eligible for publication.'
   } else if (!outOfCredits && executionStatus === 'error' && postedCount === 0) {
-    status = 'paused'
-    campaign.status = 'paused'
-    campaign.statusReason = 'Publishing failed, so the campaign was paused until the issue is resolved.'
-    log = `Campaign execution failed without a published post, so it has been paused. ${failedCount} issue(s) were recorded.`
+    const retryable = remaining.filter(post => post.status === 'scheduled')
+    if (retryable.length > 0 && nextRun) {
+      status = 'warning'
+      campaign.status = 'running'
+      campaign.statusReason = `Publication was not confirmed. Alpha will retry automatically at ${nextRun}.`
+      log = `No post was confirmed. ${failureDetails.join(' | ') || `${failedCount} issue(s) were recorded.`} Alpha will retry automatically at ${nextRun}. No credits were charged.`
+    } else {
+      status = 'needs_attention'
+      campaign.status = 'needs_attention'
+      campaign.statusReason = 'Publishing could not be confirmed after the retry limit. Review the exact provider error before resuming.'
+      log = `No post was confirmed after the retry limit. ${failureDetails.join(' | ') || `${failedCount} issue(s) were recorded.`} No credits were charged.`
+    }
   }
   const completedExecution = { ...execution, status: executionStatus, duration: Date.now() - startTime, output, steps, error_code: executionError, credits_used: creditsUsed, log }
   const executionHistory = [completedExecution, ...(existing.executionHistory || [])].slice(0, 100)
