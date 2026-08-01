@@ -70,6 +70,8 @@ const tests = [
   ['social planner automatically activates image matching for every publishing platform', engine.includes("['linkedin', 'facebook', 'instagram', 'x', 'twitter']") && engine.includes('automaticImagePlatforms')],
   ['valid compact provider images pass verification and random unrelated images are never substituted', service.includes('downloadImage(remoteUrl, 10 * 1024') && !service.includes("source = 'picsum-fallback'")],
   ['generated images are persisted into the reusable private vault', service.includes("file_type: 'image'") && service.includes("status: 'ready'") && service.includes('image_cache')],
+  ['verified images tolerate older media schemas without optional tags', service.includes('OPTIONAL_MEDIA_COLUMNS') && service.includes('missingMediaColumn') && service.includes('insertMediaRecord(config')],
+  ['optional image cache cannot invalidate a verified stored image', service.includes('Verified image saved without optional image cache') && service.includes('await responseJson(cache).catch')],
   ['direct chat can display a verified public image when optional vault persistence fails', service.includes('options.allowEphemeral === true') && engine.includes('{ allowEphemeral: true }') && engine.includes("if (!image?.image_url)")],
   ['image fetch retries and rejects undersized provider output', service.includes('attempt < 3') && service.includes('50 * 1024')],
   ['scheduled posts refresh private image URLs before provider execution', service.includes('refreshMediaUrl') && server.includes('post.imageStoragePath') && server.includes('IMAGE_REFRESH_FAILED')],
