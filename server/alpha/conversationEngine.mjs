@@ -955,6 +955,12 @@ Return JSON:
         extracted.durationDays = 1
         extracted.durationSource = 'user_confirmed'
       }
+      if (explicitModeCorrection === 'once_now') {
+        for (const staleField of ['time', 'startDate', 'endDate', 'endCondition', 'daysOfWeek']) {
+          delete extracted[staleField]
+          delete conversation.knownFields[staleField]
+        }
+      }
       contradiction = false
       clarification = ''
     }
@@ -977,7 +983,7 @@ Return JSON:
     if (field === 'startDate') {
       const base = new Date()
       if (/\btomorrow\b/i.test(text)) base.setDate(base.getDate() + 1)
-      extracted.startDate = /\b(?:today|tomorrow)\b/i.test(text) ? base.toISOString().split('T')[0] : text.trim()
+      extracted.startDate = /\b(?:now|today|tomorrow)\b/i.test(text) ? base.toISOString().split('T')[0] : text.trim()
     }
     if (field === 'endCondition') {
       const count = text.match(/\b(\d+)\s*(?:posts?|runs?)\b/i)
@@ -1082,7 +1088,7 @@ Return JSON:
     } else if (field === 'startDate') {
       const date = new Date()
       if (/\btomorrow\b/i.test(text)) date.setDate(date.getDate() + 1)
-      extracted.startDate = /\b(?:today|tomorrow)\b/i.test(text) ? date.toISOString().split('T')[0] : text.trim()
+      extracted.startDate = /\b(?:now|today|tomorrow)\b/i.test(text) ? date.toISOString().split('T')[0] : text.trim()
     } else if (field === 'endCondition') {
       const count = text.match(/\b(\d+)\s*(?:posts?|runs?)\b/i)
       const date = text.match(/\b(\d{4}-\d{2}-\d{2})\b/)

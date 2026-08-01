@@ -11,6 +11,7 @@ This is a one-time post, not a recurring campaign.
 Show me the final text and image for review. After I approve it once, publish immediately.`
 const parsedFacebookPrompt = heuristicParseRequest(exactFacebookPrompt)
 assert.equal(publishingModeFromPrompt(exactFacebookPrompt), 'once_now', 'explicit one-time Publish Now language must override the word recurring in a negation')
+assert.equal(publishingModeFromPrompt('yes now'), 'once_now', 'a stale scheduling conversation must recover when the user confirms now')
 assert.equal(parsedFacebookPrompt.knownFields.publishingMode, 'once_now')
 assert.equal(parsedFacebookPrompt.knownFields.frequency, 'once')
 assert.equal(parsedFacebookPrompt.knownFields.totalPosts, 1)
