@@ -10,6 +10,7 @@ import type { Agent } from '../lib/agents/types'
 import { useAuth } from '../lib/auth'
 import { getCredits } from '../lib/creditStore'
 import { getIntegrationStatus, getLocalUser, type IntegrationStatus } from '../lib/integrations'
+import { getConnectedApps } from '../lib/connectors/connectorApi'
 import MatureAutomationWizard, { useMatureWizard } from '../components/automation/MatureAutomationWizard'
 
 type ConversationMessage = { role: 'user' | 'alpha' | 'system'; text: string; ts: string; generatedCount?: number; totalCredits?: number }
@@ -74,7 +75,26 @@ export default function Agents() {
   }
 
   const refreshConnections = async () => {
-    try { setIntegrationStatus(await getIntegrationStatus(session?.access_token)) } catch {}
+    const [legacyResult, connectedAppsResult] = await Promise.allSettled([
+      getIntegrationStatus(session?.access_token),
+      getConnectedApps(session?.access_token),
+    ])
+    const merged = legacyResult.status === 'fulfilled'
+      ? { ...legacyResult.value }
+      : ({} as IntegrationStatus)
+
+    if (connectedAppsResult.status === 'fulfilled') {
+      for (const provider of connectedAppsResult.value.providers || []) {
+        const id = provider.provider === 'twitter' ? 'x' : provider.provider
+        const previous = merged[id]
+        merged[id] = {
+          ...(previous && 'connected' in previous ? previous : { connected: false }),
+          connected: provider.connected === true,
+          ready: provider.ready === true || provider.status === 'connected' || provider.status === 'active',
+        }
+      }
+    }
+    setIntegrationStatus(merged)
   }
 
   useEffect(() => {

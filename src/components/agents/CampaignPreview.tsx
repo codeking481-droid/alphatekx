@@ -149,6 +149,21 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
   const startAtDate = scheduleDate && scheduleTime ? new Date(`${scheduleDate}T${scheduleTime}`) : null
   const startValid = postingOption === 'now' || Boolean(startAtDate && !isNaN(startAtDate.getTime()) && startAtDate.getTime() > Date.now())
   const canActivate = requiredConnectors.length === 0 && !missingBrand && canAfford && startValid && previewReady && !campaign.posts.some(post => post.status === 'publishing') && !campaign.posts.every(post => post.status === 'posted')
+  const activationBlocker = missingBrand
+    ? 'Fill in the audience and tone in Brand Profile'
+    : requiredConnectors.length
+      ? `Connect ${requiredConnectors.map(id => platformNames[id] || id).join(', ')}`
+      : !previewReady
+        ? 'Prepare and review the final captions and matched images'
+        : !canAfford
+          ? `You need ${total} credits but currently have ${balance}`
+          : !startValid
+            ? 'Choose a future start date and time, or select Publish Now'
+            : campaign.posts.some(post => post.status === 'publishing')
+              ? 'A publication is already in progress'
+              : campaign.posts.every(post => post.status === 'posted')
+                ? 'Every post in this plan is already published'
+                : ''
   const confirmation = postingOption === 'now' ? 'This post will publish immediately after approval.' : (scheduleDate && scheduleTime ? `This post will be published on ${new Date(`${scheduleDate}T${scheduleTime}`).toLocaleDateString(undefined, { dateStyle: 'long' })} at ${new Date(`${scheduleDate}T${scheduleTime}`).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}, ${timezone} time.` : '')
 
   const groupedPosts = useMemo(() => {
@@ -248,22 +263,16 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
   const activate = async () => {
     if (!canActivate) {
       if (!startValid) setStartError('That time has passed. Choose another exact time or use Publish Now.')
+      setNotice(`Cannot go live yet: ${activationBlocker || 'review the plan details and try again'}.`)
       return
     }
     setStartError('')
     setActivating(true)
     setNotice(`Saving approval and activating ${platformIds.map(id => platformNames[id] || id).join(', ')}…`)
     try {
-      const approvedAgent = {
-        ...draft,
-        status: 'running' as const,
-        approved: true,
-        updatedAt: new Date().toISOString(),
-        campaign: draft.campaign ? { ...draft.campaign, status: 'running', approved: true, posts: draft.campaign.posts.map(post => ({ ...post, approved: true, status: post.status === 'pending_approval' || post.status === 'awaiting_approval' || post.status === 'draft' ? 'scheduled' : post.status })) } : undefined,
-      }
-      await saveAgent(approvedAgent)
       const controller = new AbortController()
-      const timer = window.setTimeout(() => controller.abort(), 30_000)
+      const timeoutMs = postingOption === 'now' ? 180_000 : 45_000
+      const timer = window.setTimeout(() => controller.abort(), timeoutMs)
       const res = await fetch(`/api/agents/campaign/${encodeURIComponent(draft.id)}/activate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
@@ -287,7 +296,7 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
       setCache([data.agent, ...getAgents().filter(item => item.id !== data.agent.id)])
       if (postingOption !== 'now') onActivated(data.agent)
     } catch (err) {
-      setNotice(err instanceof DOMException && err.name === 'AbortError' ? 'Activation took too long. Nothing was published; please retry.' : (err instanceof Error ? err.message : 'Activation failed'))
+      setNotice(err instanceof DOMException && err.name === 'AbortError' ? 'Provider confirmation is taking longer than expected. Check Active Automations before retrying so you do not create a duplicate request.' : (err instanceof Error ? err.message : 'Activation failed'))
     } finally { setActivating(false) }
   }
 
@@ -486,7 +495,7 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
           <div className="text-xs text-white/50">
             {!canActivate && (
               <span className="flex items-center gap-1.5 text-amber-300"><AlertCircle size={12}/>
-                {missingBrand ? 'Fill brand profile first' : requiredConnectors.length ? `Connect ${requiredConnectors.map(id => platformNames[id] || id).join(', ')}` : !previewReady ? 'Prepare and review final content first' : !canAfford ? 'Not enough credits' : !startValid ? 'Pick a future start date & time' : 'Cannot activate'}
+                {activationBlocker || 'Review the plan before activation'}
               </span>
             )}
           </div>
@@ -494,7 +503,7 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
           {publishConfirmations.length === 0 && <button
             type="button"
             onClick={() => activate()}
-            disabled={!canActivate || activating}
+            disabled={activating}
             className="solar-action flex min-h-12 w-full items-center justify-center gap-2 rounded-xl px-5 text-sm sm:w-auto disabled:cursor-not-allowed disabled:opacity-40"
           >
             {activating ? <LoaderCircle className="animate-spin" size={16}/> : <Sparkles size={16}/>}
