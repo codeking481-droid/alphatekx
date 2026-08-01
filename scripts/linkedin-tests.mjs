@@ -381,7 +381,7 @@ await test('Publish Now confirms a real post ID, history, counters and one credi
   } finally { app.child.kill('SIGTERM') }
 })
 
-await test('Publish-now activation failures leave the campaign paused instead of running', async () => {
+await test('Publish-now activation failures remain retryable instead of becoming unreachable', async () => {
   const port = 5150 + Math.floor(Math.random() * 100)
   const app = await startApp(port)
   const userId = `linkedin-fail-now-${randomUUID()}`
@@ -395,8 +395,11 @@ await test('Publish-now activation failures leave the campaign paused instead of
     assert.equal(response.status, 502)
     const data = await response.json()
     assert.equal(data.execution.status, 'error')
-    assert.equal(data.agent.status, 'paused')
-    assert.equal(data.agent.campaign.status, 'paused')
+    assert.equal(data.agent.status, 'warning')
+    assert.equal(data.agent.campaign.status, 'running')
+    assert.ok(data.agent.trigger.nextRun)
+    assert.match(data.execution.log, /retry automatically/i)
+    assert.match(data.execution.log, /No credits were charged/i)
   } finally { app.child.kill('SIGTERM') }
 })
 
