@@ -49,7 +49,10 @@ export default function Connectors() {
   const [connecting, setConnecting] = useState<string | null>(null)
   const [disconnecting, setDisconnecting] = useState<string | null>(null)
   const [notice, setNotice] = useState('')
+  const [noticeKind, setNoticeKind] = useState<'success' | 'error'>('error')
   const platformParam = searchParams.get('platform') || searchParams.get('service')
+  const requestedReturnTo = searchParams.get('returnTo') || '/automations'
+  const returnTo = requestedReturnTo.startsWith('/') && !requestedReturnTo.startsWith('//') ? requestedReturnTo : '/automations'
   const service = (id: string) => ({ connected: connected.has(id), ready: connected.has(id) })
   void serverManagedProviders
 
@@ -88,6 +91,41 @@ export default function Connectors() {
     return () => { cancelled = true }
   }, [session?.access_token, session?.user?.id])
 
+  useEffect(() => {
+    if (!session?.access_token || !searchParams.has('connected')) return
+    const returnedProvider = normalizeProviderId(searchParams.get('provider') || platformParam || '')
+    if (!returnedProvider) return
+    let cancelled = false
+    let attempts = 0
+    const confirm = async () => {
+      attempts += 1
+      try {
+        const apps = await getConnectedApps(session.access_token)
+        const provider = (apps.providers || []).find(item => normalizeProviderId(item.provider) === returnedProvider)
+        if (provider?.connected === true && (provider.ready === true || provider.status === 'connected' || provider.status === 'active')) {
+          if (cancelled) return
+          setConnected(prev => new Set([...prev, returnedProvider]))
+          setNoticeKind('success')
+          setNotice(`${returnedProvider} connected successfully. Returning to your automation…`)
+          window.setTimeout(() => { if (!cancelled) navigate(returnTo) }, 900)
+          return
+        }
+      } catch (error) {
+        if (!cancelled && attempts >= 12) {
+          setNoticeKind('error')
+          setNotice(error instanceof Error ? error.message : 'Connection confirmation failed. Please retry.')
+        }
+      }
+      if (!cancelled && attempts < 12) window.setTimeout(() => void confirm(), 1000)
+      else if (!cancelled) {
+        setNoticeKind('error')
+        setNotice(`${returnedProvider} authorization returned, but the connection is not active yet. Please reconnect.`)
+      }
+    }
+    void confirm()
+    return () => { cancelled = true }
+  }, [navigate, platformParam, returnTo, searchParams, session?.access_token])
+
   const handleConnect = async (platformId: string) => {
     if (!session?.access_token) return
     setConnecting(platformId)
@@ -95,11 +133,11 @@ export default function Connectors() {
     try {
       // Native connections open OAuth directly
       if (platformId === 'linkedin') {
-        await startLinkedInAuth(session.access_token, '/connected-apps')
+        await startLinkedInAuth(session.access_token, returnTo)
         return
       }
       // Composio connections
-      const result = await connectProvider(platformId, session.access_token)
+      const result = await connectProvider(platformId, session.access_token, returnTo)
       if (result.authUrl) {
         window.location.href = result.authUrl
       } else {
@@ -109,9 +147,11 @@ export default function Connectors() {
           try { localStorage.setItem(connectedCacheKey(session?.user?.id), JSON.stringify([...next])) } catch {}
           return next
         })
+        setNoticeKind('success')
         setNotice(`${platformId} connected successfully.`)
       }
     } catch (error) {
+      setNoticeKind('error')
       setNotice(error instanceof Error ? error.message : 'Connection failed. Please try again.')
     } finally {
       setConnecting(null)
@@ -145,7 +185,7 @@ export default function Connectors() {
   return (
     <main className="min-h-screen bg-[#0A0A0B] px-4 py-8 sm:px-6">
       <div className="mx-auto max-w-3xl">
-        <button onClick={() => navigate(-1)} className="mb-6 flex items-center gap-2 text-sm font-semibold text-zinc-400 hover:text-zinc-200 transition-colors">
+        <button onClick={() => navigate(returnTo)} className="mb-6 flex items-center gap-2 text-sm font-semibold text-zinc-400 hover:text-zinc-200 transition-colors">
           <ArrowLeft size={16} /> Back
         </button>
 
@@ -169,8 +209,8 @@ export default function Connectors() {
           </div>
 
           {notice && (
-            <div className="mt-4 flex items-start gap-2 rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-sm text-rose-300">
-              <AlertCircle size={15} className="mt-0.5 shrink-0" />
+            <div className={`mt-4 flex items-start gap-2 rounded-xl border p-3 text-sm ${noticeKind === 'success' ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-200' : 'border-rose-500/20 bg-rose-500/10 text-rose-300'}`}>
+              {noticeKind === 'success' ? <CheckCircle2 size={15} className="mt-0.5 shrink-0" /> : <AlertCircle size={15} className="mt-0.5 shrink-0" />}
               <span className="flex-1">{notice}</span>
               <button onClick={() => setNotice('')} className="text-rose-400 hover:text-rose-300"><X size={14} /></button>
             </div>

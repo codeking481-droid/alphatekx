@@ -484,6 +484,27 @@ async function finishExecution(userId, idempotencyKey, changes) {
   if (!response.ok) throw new Error('Execution result could not be saved')
 }
 
+async function reclaimFailedExecution(userId, idempotencyKey, approvalId) {
+  const config = persistenceConfig()
+  if (!config) return true
+  const response = await fetch(`${config.url}/rest/v1/connector_executions?user_id=eq.${encodeURIComponent(userId)}&idempotency_key=eq.${encodeURIComponent(idempotencyKey)}&status=eq.failed`, {
+    method: 'PATCH',
+    headers: supabaseServiceHeaders(config.service, { Prefer: 'return=representation' }),
+    body: JSON.stringify({
+      status: 'claimed',
+      approval_id: approvalId,
+      error_code: null,
+      completed_at: null,
+      provider_execution_id: null,
+      result_metadata: { retriedAt: new Date().toISOString() },
+      credits_charged: 0,
+    }),
+  })
+  if (!response.ok) throw new Error('Failed publication could not be reclaimed safely')
+  const rows = await response.json().catch(() => [])
+  return Array.isArray(rows) && rows.length === 1
+}
+
 async function findExecution(userId, idempotencyKey) {
   const config = persistenceConfig()
   if (!config) return null
@@ -560,6 +581,39 @@ export function confirmedProviderId(value, depth = 0) {
   }
   for (const nested of ['data', 'response', 'result', 'post', 'tweet', 'video', 'media', 'message']) {
     const found = confirmedProviderId(value[nested], depth + 1)
+    if (found) return found
+  }
+  return ''
+}
+
+export function confirmedPublishedContentId(providerId, value, depth = 0) {
+  if (!value || depth > 6) return ''
+  const provider = resolveProviderAlias(providerId) || String(providerId || '').toLowerCase()
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = confirmedPublishedContentId(provider, item, depth + 1)
+      if (found) return found
+    }
+    return ''
+  }
+  if (typeof value !== 'object') return ''
+
+  const keys = provider === 'twitter'
+    ? ['tweet_id', 'post_id', 'id']
+    : provider === 'facebook'
+      ? ['post_id', 'id']
+      : provider === 'instagram'
+        ? ['media_id', 'post_id', 'id']
+        : ['post_id', 'message_id', 'video_id', 'id']
+  for (const key of keys) {
+    const candidate = value[key]
+    if (candidate != null && ['string', 'number'].includes(typeof candidate)) {
+      const normalized = String(candidate).trim()
+      if (normalized && !/^success$/i.test(normalized)) return normalized
+    }
+  }
+  for (const nested of ['data', 'response', 'result', 'post', 'tweet', 'video', 'media', 'message']) {
+    const found = confirmedPublishedContentId(provider, value[nested], depth + 1)
     if (found) return found
   }
   return ''
@@ -978,16 +1032,19 @@ export async function executeProviderAction(user, providerId, actionId, payload)
       replayed: true,
     }
   }
-  if (previous) throw new Error(previous.status === 'claimed' ? 'This approved action is already in progress' : 'This idempotency key already has a recorded failed execution')
+  if (previous?.status === 'claimed') throw new Error('This approved action is already in progress')
+  if (previous && previous.status !== 'failed') throw new Error(`This publication cannot be retried from state "${previous.status}"`)
   if (await getCreditBalance(user.id) < 1) throw new Error('Insufficient credits')
   const actionArguments = { ...(payload || {}) }
   delete actionArguments.approvalId
   delete actionArguments.idempotencyKey
   delete actionArguments.deferCreditSettlement
-  const claimed = await persistExecution({
-    user_id: user.id, toolkit_slug: pid, capability_id: actionId, status: 'claimed',
-    approval_id: approvalId, idempotency_key: idempotencyKey, credits_charged: 0,
-  })
+  const claimed = previous?.status === 'failed'
+    ? await reclaimFailedExecution(user.id, idempotencyKey, approvalId)
+    : await persistExecution({
+      user_id: user.id, toolkit_slug: pid, capability_id: actionId, status: 'claimed',
+      approval_id: approvalId, idempotency_key: idempotencyKey, credits_charged: 0,
+    })
   if (!claimed) {
     const concurrent = await findExecution(user.id, idempotencyKey)
     if (concurrent?.status === 'succeeded' && concurrent.provider_execution_id) {
@@ -1085,19 +1142,34 @@ export async function executeProviderAction(user, providerId, actionId, payload)
         break
       } catch (error) {
         lastProviderError = error
-        if (/connection.*not found|connected account|not connected|unauthorized|forbidden|permission/i.test(String(error?.message || error))) throw error
+        const providerMessage = String(error?.message || error)
+        if (/connection.*not found|connected account|not connected|unauthorized|forbidden|permission|invalid.*argument|validation|bad request|\b40[0134]\b/i.test(providerMessage)) throw error
         if (attempt === retryDelays.length - 1) throw error
       }
     }
     if (!result && lastProviderError) throw lastProviderError
   } catch (error) {
-    await finishExecution(user.id, idempotencyKey, { status: 'failed', error_code: 'provider_error' })
+    const providerMessage = String(error?.message || error)
+    const errorCode = /429|rate.?limit/i.test(providerMessage)
+      ? 'provider_rate_limit'
+      : /timed out|timeout/i.test(providerMessage)
+        ? 'provider_timeout'
+        : /network|fetch|ECONN|socket/i.test(providerMessage)
+          ? 'provider_network'
+          : 'provider_error'
+    await finishExecution(user.id, idempotencyKey, {
+      status: 'failed',
+      error_code: errorCode,
+      result_metadata: { error: providerMessage.slice(0, 1500), failedAt: new Date().toISOString() },
+    })
     if (/connection.*not found|connected account|not connected|unauthorized/i.test(String(error?.message || error))) {
       const reconnect = new Error(`Please reconnect ${def.name} in AlphaTekx Connected Apps`)
       reconnect.code = 'RECONNECT_NEEDED'
       throw reconnect
     }
-    throw error
+    const explicit = new Error(`${def.name} publish failed: ${providerMessage}`)
+    explicit.code = errorCode.toUpperCase()
+    throw explicit
   }
 
   const executionTimeMs = Date.now() - startTime
@@ -1117,7 +1189,9 @@ export async function executeProviderAction(user, providerId, actionId, payload)
     throw new Error('Provider did not confirm a successful execution')
   }
 
-  const confirmedId = confirmedProviderId(responseData)
+  // Confirm the identifier of the published object, not an upload/container,
+  // managed Page, request log, or other intermediate provider resource.
+  const confirmedId = confirmedPublishedContentId(pid, responseData)
   if (!confirmedId) {
     await finishExecution(user.id, idempotencyKey, { status: 'failed', error_code: 'missing_provider_id' })
     throw new Error('Provider completed without returning a confirmed post or message ID')

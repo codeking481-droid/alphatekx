@@ -67,6 +67,9 @@ const tests = [
     assert.doesNotMatch(popup, /await saveAgent\(approvedAgent\)/)
     assert.match(popup, /postingOption === 'now' \? 180_000 : 45_000/)
   }],
+  ['connect actions preserve the stopped campaign and return to it', () => {
+    assert.match(popup, /returnTo=\$\{encodeURIComponent\(`\/automations\?resume=\$\{draft\.id\}`\)\}/)
+  }],
 ]
 
 let failed = 0
