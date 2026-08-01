@@ -2721,7 +2721,7 @@ async function activateCampaignHandler(req, res) {
   if (postingOption === 'now') {
     const execution = await runAgent(agent, 'manual')
     const published = await getServerAgent(agent.id)
-    return json(res, execution.status === 'success' ? 200 : 502, { agent: published || agent, execution, charged: execution.credits_used || 0, estimatedCredits: total, autoPublish, nextRun: published?.trigger?.nextRun || null })
+    return json(res, execution.status === 'success' ? 200 : execution.status === 'partial' ? 207 : 502, { agent: published || agent, execution, charged: execution.credits_used || 0, estimatedCredits: total, autoPublish, nextRun: published?.trigger?.nextRun || null })
   }
   const needsBackgroundGeneration = agent.campaign.posts.some(post => {
     const platforms = Array.isArray(post.platforms) && post.platforms.length ? post.platforms : ['linkedin']
@@ -3289,6 +3289,7 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
   let creditsUsed = 0
   let postedCount = 0
   let failedCount = 0
+  let confirmedPlatformCount = 0
   let outOfCredits = false
   const steps = []
 
@@ -3409,6 +3410,7 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
     }
 
     post.result = postResults
+    confirmedPlatformCount += postSuccess
     post.providerPostIds = providerPostIds(postResults)
     if (postSuccess === post.platforms.length) {
       const publishedPlatform = post.platforms[0] || 'linkedin'
@@ -3471,7 +3473,7 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
   let log = failureDetails.length
     ? `Publication failed. ${failureDetails.join(' | ')} No credits were charged for unconfirmed platforms.`
     : `Campaign execution: ${postedCount} post(s) processed. ${failedCount} had issues.`
-  let output = { postedCount, failedCount, creditsUsed, steps }
+  let output = { postedCount, failedCount, confirmedPlatformCount, creditsUsed, steps }
 
   if (outOfCredits) {
     log = 'Out of credits - Buy $3 for 20 credits to keep your AI employee working.'
@@ -3512,10 +3514,18 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
     }
   }
 
-  const executionStatus = outOfCredits ? 'waiting_credits' : (failedCount > 0 || postedCount === 0 ? 'error' : 'success')
-  const executionError = outOfCredits ? 'INSUFFICIENT_CREDITS' : failedCount > 0 ? 'PUBLISH_FAILED' : postedCount === 0 ? 'NO_DUE_POSTS' : null
+  const executionStatus = outOfCredits ? 'waiting_credits' : (confirmedPlatformCount > 0 && failedCount > 0 ? 'partial' : failedCount > 0 || postedCount === 0 ? 'error' : 'success')
+  const executionError = outOfCredits ? 'INSUFFICIENT_CREDITS' : executionStatus === 'partial' ? 'PARTIAL_PUBLISH' : failedCount > 0 ? 'PUBLISH_FAILED' : postedCount === 0 ? 'NO_DUE_POSTS' : null
   if (!outOfCredits && postedCount === 0 && failedCount === 0) {
     log = 'Campaign execution failed: the scheduler marked this campaign due, but no approved scheduled post was eligible for publication.'
+  } else if (!outOfCredits && executionStatus === 'partial') {
+    const confirmed = steps.flatMap(step => Object.entries(step.result || {})
+      .filter(([, result]) => result?.status === 'success' && result?.id)
+      .map(([platform, result]) => `${platform}: ${result.id}`))
+    status = 'warning'
+    campaign.status = 'running'
+    campaign.statusReason = `Some platforms published successfully. Alpha will retry only the missing platforms${nextRun ? ` at ${nextRun}` : ''}.`
+    log = `Partial success. Confirmed ${confirmed.join(' | ') || `${confirmedPlatformCount} platform post(s)`}. ${failureDetails.join(' | ')} Alpha will retry only the missing platforms${nextRun ? ` at ${nextRun}` : ''}; confirmed posts will not be duplicated. No credits were charged yet.`
   } else if (!outOfCredits && executionStatus === 'error' && postedCount === 0) {
     const retryable = remaining.filter(post => post.status === 'scheduled')
     if (retryable.length > 0 && nextRun) {
@@ -8210,9 +8220,9 @@ const server = http.createServer(async (req, res) => {
           })
         }
         const execution = await runAgent(existingAgent, 'manual')
-        const ok = execution.status === 'success'
+        const ok = execution.status === 'success' || execution.status === 'partial'
         const idempotentNoop = execution.error_code === 'NO_DUE_POSTS' || execution.error_code === 'DUPLICATE'
-        const statusCode = ok || idempotentNoop ? 200 : execution.error_code === 'INSUFFICIENT_CREDITS' ? 402 : execution.error_code === 'APPROVAL_REQUIRED' ? 409 : 502
+        const statusCode = execution.status === 'partial' ? 207 : ok || idempotentNoop ? 200 : execution.error_code === 'INSUFFICIENT_CREDITS' ? 402 : execution.error_code === 'APPROVAL_REQUIRED' ? 409 : 502
         return json(res, statusCode, {
           executed: ok,
           execution,

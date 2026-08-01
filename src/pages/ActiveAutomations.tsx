@@ -171,6 +171,10 @@ export default function ActiveAutomations() {
       await refreshAgents()
       await refreshProfile()
       const execution = data.execution || {}
+      if (execution.status === 'partial') {
+        setNotice(execution.log || 'Some platforms confirmed publication. Alpha will retry only the missing platforms without duplicating confirmed posts.')
+        return
+      }
       if (execution.status !== 'success') throw new Error(execution.log || 'The provider did not confirm a real post. Nothing was charged.')
       const providerIds = (execution.steps || []).flatMap((step: { result?: Record<string, { id?: string }>; providerPostId?: string }) => [
         step.providerPostId,
