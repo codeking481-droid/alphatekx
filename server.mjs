@@ -3282,9 +3282,14 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
   }
   await saveServerAgent({ ...existing, campaign })
 
-  const dueCutoff = trigger === 'manual' ? now.getTime() + 5 * 60 * 1000 : now.getTime()
-  const duePosts = (campaign.posts || []).filter(p => (p.status === 'scheduled' || p.status === 'pending_approval') && new Date(p.scheduledAt).getTime() <= dueCutoff)
+  const publishablePosts = (campaign.posts || [])
+    .filter(post => (post.status === 'scheduled' || post.status === 'pending_approval') && post.approved === true)
     .sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime())
+  const duePosts = publishablePosts.filter(post => new Date(post.scheduledAt).getTime() <= now.getTime())
+  // An authenticated manual run is an explicit instruction to publish now. If a
+  // previous transient failure moved the retry into the future, run the earliest
+  // approved unpublished post instead of falsely reporting that nothing is due.
+  if (trigger === 'manual' && duePosts.length === 0 && publishablePosts.length > 0) duePosts.push(publishablePosts[0])
 
   let creditsUsed = 0
   let postedCount = 0
@@ -8155,7 +8160,7 @@ const server = http.createServer(async (req, res) => {
       const agent = await getServerAgent(String(body.agentId || ''))
       if (!agent) return json(res, 404, { error: 'Agent not found' })
       if (agent.userId && agent.userId !== user.id) return json(res, 403, { error: 'Not authorized' })
-      const execution = await runAgent(agent, 'manual')
+    const execution = await runAgent(agent, 'manual', user)
       return json(res, 200, { executed: true, execution })
     } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Test run failed' }) }
   }

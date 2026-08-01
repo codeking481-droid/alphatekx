@@ -121,4 +121,11 @@ test('every generated campaign image is unique, durable, and topic matched', () 
   assert.match(media, /persistGenerated/)
 })
 
+test('manual publish runs the earliest explicitly approved unpublished post', () => {
+  assert.match(server, /const publishablePosts = \(campaign\.posts \|\| \[\]\)[\s\S]*post\.approved === true/)
+  assert.match(server, /trigger === 'manual' && duePosts\.length === 0 && publishablePosts\.length > 0/)
+  assert.match(server, /duePosts\.push\(publishablePosts\[0\]\)/)
+  assert.match(server, /runAgent\(agent, 'manual', user\)/)
+})
+
 console.log(`\nV1 reliability tests: ${passed}/${passed} passed`)
