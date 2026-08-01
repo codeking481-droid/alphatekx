@@ -50,6 +50,14 @@ test('zero credits pauses honestly without charging', () => {
   assert.match(activePage, /Buy credits/)
 })
 
+test('failed automations remain visible and cannot be mislabeled completed', () => {
+  assert.match(activePage, /'failed', 'error', 'waiting_credits'/)
+  assert.match(activePage, /every approved lifecycle outcome/)
+  assert.match(server, /terminalProblems = campaign\.posts\.filter/)
+  assert.match(server, /status = 'needs_attention'/)
+  assert.match(server, /unconfirmed_or_failed_posts/)
+})
+
 test('scheduled check isolates failures and always returns 200', () => {
   assert.match(server, /\/api\/cron\/check-scheduled-posts/)
   assert.match(server, /return json\(res, 200, \{ ok: false, executed: 0/)

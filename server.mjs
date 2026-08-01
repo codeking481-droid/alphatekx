@@ -3436,8 +3436,22 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
   }
 
   if (remaining.length === 0) {
-    status = 'completed'
-    campaign.status = 'completed'
+    const terminalProblems = campaign.posts.filter(p => p.status === 'failed' || p.status === 'partial')
+    const confirmedPosts = campaign.posts.filter(p => p.status === 'posted')
+    if (terminalProblems.length > 0 || confirmedPosts.length !== campaign.posts.length) {
+      status = 'needs_attention'
+      campaign.status = 'needs_attention'
+      log = `Campaign needs attention: ${confirmedPosts.length}/${campaign.posts.length} posts were confirmed by providers. ${terminalProblems.length} post(s) could not be completed.`
+      output = {
+        ...output,
+        needsAttention: true,
+        reason: 'unconfirmed_or_failed_posts',
+        confirmedPosts: confirmedPosts.length,
+        terminalProblems: terminalProblems.length,
+      }
+    } else {
+      status = 'completed'
+      campaign.status = 'completed'
     const missionReport = {
       title: campaign.name,
       totalPosts: campaign.posts.length,
@@ -3452,6 +3466,7 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
     campaign.missionReport = missionReport
     log = `Mission complete: ${missionReport.completed}/${missionReport.totalPosts} posts published. ${missionReport.creditsUsed} credits used.`
     output = missionReport
+    }
   }
 
   const executionStatus = outOfCredits ? 'waiting_credits' : (failedCount > 0 || postedCount === 0 ? 'error' : 'success')

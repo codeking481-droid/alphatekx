@@ -128,7 +128,11 @@ export default function ActiveAutomations() {
   const selected = id ? agents.find(agent => agent.id === id) : null
   const visible = useMemo(() => agents.filter(agent => {
     const approved = Boolean(agent.approved || agent.campaign?.approved)
-    const active = ['active', 'running', 'paused', 'warning', 'needs_attention', 'completed', 'preparing'].includes(agent.status) || (approved && agent.status === 'awaiting_approval')
+    // An execution failure changes the lifecycle status, but it must never make
+    // the durable automation disappear. Keep every approved lifecycle outcome
+    // visible until the user explicitly cancels, archives, or deletes it.
+    const active = ['active', 'running', 'paused', 'warning', 'needs_attention', 'failed', 'error', 'waiting_credits', 'completed', 'preparing'].includes(agent.status)
+      || (approved && ['awaiting_approval', 'pending', 'scheduled', 'draft'].includes(agent.status))
     return active && agent.status !== 'deleted' && matchesFilter(agent, filter)
   }), [agents, filter])
 
