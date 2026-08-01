@@ -101,10 +101,11 @@ function normalizeDays(postDays: number | number[] | string | string[] | undefin
   return Array.from(new Set(normalized))
 }
 
-export function calculateNextPost(postDays: number | number[] | string | string[] | undefined, postTime: string, timezone = 'Africa/Lagos'): Date {
+export function calculateNextPost(postDays: number | number[] | string | string[] | undefined, postTime: string, timezone = 'Africa/Lagos', fromDate = new Date()): Date {
   const days = normalizeDays(postDays)
   const { hour, minute } = parseTime(postTime)
-  const now = new Date()
+  const now = new Date(fromDate)
+  if (Number.isNaN(now.getTime())) throw new Error('A valid starting date is required')
   const baseParts = getPartsInTimeZone(now, timezone)
   const targetDate = `${baseParts.year}-${String(baseParts.month).padStart(2, '0')}-${String(baseParts.day).padStart(2, '0')}`
   const targetTime = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
@@ -115,18 +116,18 @@ export function calculateNextPost(postDays: number | number[] | string | string[
     const weekday = new Date(Date.UTC(parts.year, parts.month - 1, parts.day)).getUTCDay()
     if (!days.includes(weekday)) continue
     const candidate = localDateTimeToUtc(`${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`, targetTime, timezone)
-    if (candidate.getTime() >= now.getTime()) return candidate
+    if (candidate.getTime() > now.getTime()) return candidate
   }
 
   const fallback = localDateTimeToUtc(targetDate, targetTime, timezone)
   return new Date(fallback.getTime() + 24 * 60 * 60 * 1000)
 }
 
-export function generateSchedule(postDays: number | number[] | string | string[] | undefined, postTime: string, count: number, timezone = 'Africa/Lagos') {
+export function generateSchedule(postDays: number | number[] | string | string[] | undefined, postTime: string, count: number, timezone = 'Africa/Lagos', fromDate = new Date()) {
   const results: Date[] = []
   const days = normalizeDays(postDays)
   const { hour, minute } = parseTime(postTime)
-  let cursor = calculateNextPost(postDays, postTime, timezone)
+  let cursor = calculateNextPost(postDays, postTime, timezone, fromDate)
   for (let index = 0; index < count; index += 1) {
     results.push(new Date(cursor))
     const nextDate = new Date(cursor.getTime() + 24 * 60 * 60 * 1000)
@@ -173,7 +174,7 @@ export function buildCampaignSchedulePlan({
     const weekday = new Date(Date.UTC(parts.year, parts.month - 1, parts.day)).getUTCDay()
     if (!days.includes(weekday)) continue
     cursor = localDateTimeToUtc(`${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`, timeValue, timezone)
-    if (cursor.getTime() >= now.getTime()) break
+    if (cursor.getTime() > now.getTime()) break
   }
 
   const scheduledDates: string[] = []
@@ -185,7 +186,7 @@ export function buildCampaignSchedulePlan({
     for (let offset = 0; offset <= 14; offset += 1) {
       const candidateDate = new Date(nextDate.getTime() + offset * 24 * 60 * 60 * 1000)
       const parts = getPartsInTimeZone(candidateDate, timezone)
-      const weekday = (new Date(Date.UTC(parts.year, parts.month - 1, parts.day)).getUTCDay() + 6) % 7
+      const weekday = new Date(Date.UTC(parts.year, parts.month - 1, parts.day)).getUTCDay()
       if (!days.includes(weekday)) continue
       current = localDateTimeToUtc(`${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`, timeValue, timezone)
       found = true
@@ -202,5 +203,30 @@ export function buildCampaignSchedulePlan({
     firstLocalDate: `${firstParts.year}-${String(firstParts.month).padStart(2, '0')}-${String(firstParts.day).padStart(2, '0')}`,
     firstLocalTime: `${String(firstParts.hour).padStart(2, '0')}:${String(firstParts.minute).padStart(2, '0')}`,
     scheduledDates,
+  }
+}
+
+export function generateFullSchedule(postDays: number | number[] | string | string[] | undefined, postTime: string, totalPosts: number, timezone = 'Africa/Lagos', fromDate = new Date()) {
+  return generateSchedule(postDays, postTime, Math.max(0, Math.floor(totalPosts)), timezone, fromDate)
+}
+
+export function getLiveCountdown(target: string | Date, _timezone = 'Africa/Lagos', fromDate = new Date()) {
+  const remainingMs = Math.max(0, new Date(target).getTime() - new Date(fromDate).getTime())
+  const totalSeconds = Math.floor(remainingMs / 1000)
+  const days = Math.floor(totalSeconds / 86_400)
+  const hours = Math.floor((totalSeconds % 86_400) / 3_600)
+  const minutes = Math.floor((totalSeconds % 3_600) / 60)
+  const seconds = totalSeconds % 60
+  const text = [days ? `${days}d` : '', hours ? `${hours}h` : '', minutes ? `${minutes}m` : '', `${seconds}s`].filter(Boolean).join(' ')
+  return {
+    remainingMs,
+    diff: new Date(target).getTime() - new Date(fromDate).getTime(),
+    text,
+    days,
+    hours,
+    minutes,
+    seconds,
+    isDue: new Date(target).getTime() <= new Date(fromDate).getTime(),
+    due: remainingMs === 0,
   }
 }

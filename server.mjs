@@ -14,6 +14,7 @@ import { createAlphaBrain } from './server/alphaBrain.mjs'
 import { supabaseServiceHeaders } from './server/supabaseHeaders.mjs'
 import { buildCapabilityPlan, detectCapability, isSupportedAction } from './server/automation/capabilityRegistry.mjs'
 import { createContentMemoryRecord } from './server/automation/contentMemory.mjs'
+import { buildSocialPublishingAction, providerPostIds } from './server/automation/socialPublishing.mjs'
 import { validateFreeCampaign } from './server/automation/freePlanPolicy.mjs'
 import { createConversationEngine } from './server/alpha/conversationEngine.mjs'
 import { normalizeAutomationLifecycle } from './server/automation/lifecycle.mjs'
@@ -31,7 +32,6 @@ import * as eliteBuilder from './server/eliteBuilderService.mjs'
 import { claimPendingAction, createPendingAction, finishPendingAction, listPendingActions } from './server/ceoPendingActions.mjs'
 import { scheduledCreditCost } from './server/schedulePricing.mjs'
 import generatePostHandler from './api/ai/generate-post.mjs'
-import { applyBackgroundGenerationOutcomeToPost, createBackgroundGenerationOutcome } from './src/lib/automation/backgroundGeneration.ts'
 
 function loadEnv() {
   for (const filename of ['.env.local', '.env']) {
@@ -2419,61 +2419,135 @@ async function executeAgentAction(agent, action) {
 }
 
 async function getAutomationProgressPayload(agent) {
-  const generatedPosts = Array.isArray(agent.generatedPosts) ? agent.generatedPosts : []
-  const total = Math.max(1, Array.isArray(agent.campaign?.posts) ? agent.campaign.posts.length : generatedPosts.length)
+  const campaignPosts = Array.isArray(agent.campaign?.posts) ? agent.campaign.posts : []
+  const generatedPosts = campaignPosts.map(post => ({
+    id: post.id,
+    content: post.captions?.[post.platforms?.[0]] || '',
+    image_url: post.imageUrl || post.image_url || null,
+    scheduled_for: post.scheduledAt || null,
+    status: post.status || 'preparing',
+  }))
+  const total = Math.max(1, campaignPosts.length)
+  const readyCount = campaignPosts.filter(post => {
+    const primary = post.platforms?.[0]
+    return Boolean(primary && String(post.captions?.[primary] || '').trim())
+  }).length
   const progress = typeof agent.backgroundProgress === 'number'
     ? agent.backgroundProgress
-    : (generatedPosts.length ? Math.round((generatedPosts.length / total) * 100) : 0)
+    : (readyCount ? Math.round((readyCount / total) * 100) : 0)
   return {
     ok: true,
     progress: Math.max(0, Math.min(100, progress)),
-    status: agent.status || 'active',
+    status: agent.backgroundGeneration?.status || agent.status || 'active',
     posts: generatedPosts,
+    error: agent.backgroundGeneration?.error || null,
+  }
+}
+
+async function prepareCampaignPostContent(agent, post, user, index) {
+  const platforms = Array.isArray(post?.platforms) && post.platforms.length ? post.platforms : ['linkedin']
+  const topic = String(post?.topic || agent.campaign?.brand?.business || agent.name || 'your business growth')
+  const goal = String(agent.campaign?.description || agent.description || 'Grow reach and trust')
+  const audience = String(agent.campaign?.brand?.audience || 'ideal audience')
+  const tone = String(agent.campaign?.brand?.tone || 'confident and professional')
+  const captions = { ...(post?.captions || {}) }
+
+  for (const platform of platforms) {
+    if (String(captions[platform] || '').trim()) continue
+    const generated = await callLLMForRole(
+      'content',
+      'Write one original, ready-to-publish social post. Return only the post text. Do not use placeholders or claim an action was completed.',
+      `Post ${index + 1}. Platform: ${platform}. Topic: ${topic}. Goal: ${goal}. Audience: ${audience}. Tone: ${tone}.`,
+      { jsonMode: false, maxTokens: 500, fallbackOrder: ['groq', 'qwen', 'kimi', 'minimax', 'flatkey', 'openai'] },
+    )
+    const content = String(generated.result || '').trim()
+    if (content.length < 20) throw new Error(`The content provider returned an incomplete ${platform} post.`)
+    captions[platform] = content
+  }
+
+  let imageUrl = post.imageUrl || post.image_url || ''
+  let imageStoragePath = post.imageStoragePath || post.image_storage_path || ''
+  const needsImage = agent.campaign?.meta?.includeImages === true || platforms.includes('instagram')
+  if (needsImage && !imageUrl) {
+    const image = await mediaLibrary.findSmartImage(supabaseConfig(), user, `${topic}. ${captions[platforms[0]] || ''}`, goal, platforms[0], { forceUnique: true, uniqueNonce: `${post.id || index}-${Date.now()}-${Math.random()}` })
+    imageUrl = image.image_url
+    imageStoragePath = image.image_storage_path || ''
+    if (!imageUrl) throw new Error(`A verified image is required before publishing to ${platforms.join(', ')}.`)
+  }
+
+  return {
+    ...post,
+    captions,
+    imageUrl,
+    image_url: imageUrl,
+    imageStoragePath,
+    image_storage_path: imageStoragePath,
+    status: post.status === 'draft' || post.status === 'pending_approval' ? 'scheduled' : (post.status || 'scheduled'),
   }
 }
 
 async function runAutomationBackgroundGeneration(agentId, userId) {
+  const startedAt = new Date().toISOString()
   try {
-    const agent = await getServerAgent(agentId, userId)
+    let agent = await getServerAgent(agentId, userId)
     if (!agent) return
-    const posts = Array.isArray(agent.campaign?.posts) ? agent.campaign.posts : []
+    if (agent.backgroundGeneration?.status === 'generating') return
+    const posts = Array.isArray(agent.campaign?.posts) ? agent.campaign.posts.map(post => ({ ...post })) : []
+    if (!posts.length) throw new Error('This automation has no posts to generate.')
     const total = Math.max(1, posts.length)
-    const existingPosts = Array.isArray(agent.generatedPosts) ? agent.generatedPosts : []
-    const generated = [...existingPosts]
-    const topic = String(agent.campaign?.brand?.business || agent.name || 'your business growth')
-    const goal = String(agent.campaign?.description || agent.description || 'Grow reach and trust')
-    const audience = String(agent.campaign?.brand?.audience || 'ideal audience')
-    const tone = String(agent.campaign?.brand?.tone || 'confident and professional')
-    const length = 'medium'
-    const platform = 'linkedin'
+    const previousStatus = agent.status === 'paused' ? 'paused' : 'running'
+    agent = {
+      ...agent,
+      status: 'preparing',
+      backgroundProgress: 0,
+      backgroundGeneration: { status: 'generating', startedAt, error: null },
+      trigger: { ...agent.trigger, nextRun: null },
+      campaign: { ...agent.campaign, posts },
+      updated_at: startedAt,
+    }
+    await saveServerAgent(agent)
 
+    let generationFailures = 0
     for (let index = 0; index < total; index += 1) {
-      const post = posts[index]
-      const scheduledFor = post?.scheduledAt ? new Date(post.scheduledAt) : new Date()
-      const outcome = await createBackgroundGenerationOutcome({
-        topic,
-        goal,
-        audience,
-        tone,
-        length,
-        platform,
-        index: index + 1,
-        scheduledFor,
-      })
-      generated.push({
-        id: `${agent.id}-${index + 1}`,
-        content: outcome.content,
-        image_url: outcome.imageUrl || null,
-        scheduled_for: outcome.scheduledFor,
-        status: outcome.status,
-      })
+      const post = agent.campaign.posts[index]
+      let prepared = null
+      let lastError = null
+      for (let attempt = 0; attempt < 3 && !prepared; attempt += 1) {
+        if (attempt) await new Promise(resolve => setTimeout(resolve, attempt * 2_000))
+        try { prepared = await prepareCampaignPostContent(agent, post, { id: userId, email: agent.userEmail || '' }, index) }
+        catch (error) { lastError = error }
+      }
+      if (prepared) agent.campaign.posts[index] = prepared
+      else {
+        generationFailures += 1
+        agent.campaign.posts[index] = { ...post, status: 'scheduled', lastError: lastError instanceof Error ? lastError.message : 'Content generation needs attention.' }
+      }
       const progress = Math.max(0, Math.min(100, Math.round(((index + 1) / total) * 100)))
-      await saveServerAgent({ ...agent, generatedPosts: generated.slice(-total), backgroundProgress: progress, status: 'running', updated_at: new Date().toISOString() })
+      agent = { ...agent, backgroundProgress: progress, updated_at: new Date().toISOString() }
+      await saveServerAgent(agent)
     }
 
-    await saveServerAgent({ ...agent, generatedPosts: generated.slice(-total), backgroundProgress: 100, status: 'running', updated_at: new Date().toISOString() })
-  } catch {
-    // Keep the automation visible even if generation is unavailable.
+    const nextRun = campaignNextRun(agent.campaign)
+    await saveServerAgent({
+      ...agent,
+      status: generationFailures ? 'warning' : previousStatus,
+      backgroundProgress: 100,
+      backgroundGeneration: { status: generationFailures ? 'completed_with_errors' : 'completed', startedAt, completedAt: new Date().toISOString(), error: generationFailures ? `${generationFailures} post(s) need regeneration.` : null },
+      trigger: { ...agent.trigger, type: 'campaign', nextRun },
+      nextRunAt: nextRun || null,
+      updated_at: new Date().toISOString(),
+    })
+  } catch (error) {
+    const latest = await getServerAgent(agentId, userId).catch(() => null)
+    if (latest) {
+      const message = error instanceof Error ? error.message : 'Background generation failed.'
+      await saveServerAgent({
+        ...latest,
+        status: 'warning',
+        backgroundGeneration: { ...(latest.backgroundGeneration || {}), status: 'failed', error: message, failedAt: new Date().toISOString() },
+        updated_at: new Date().toISOString(),
+      }).catch(() => {})
+    }
   }
 }
 
@@ -2526,9 +2600,7 @@ async function activateCampaignHandler(req, res) {
     agent.campaign.meta.localTime = body.localTime || null
   }
   agent.campaign.posts = (agent.campaign.posts || []).map(post => {
-    const baseCredits = Number(post.baseCredits) > 0
-      ? Number(post.baseCredits)
-      : computeCampaignPostCredits(post.platforms || [], agent.campaign.meta?.includeImages === true)
+    const baseCredits = computeCampaignPostCredits(post.platforms || [], agent.campaign.meta?.includeImages === true)
     return {
       ...post,
       baseCredits,
@@ -2539,15 +2611,27 @@ async function activateCampaignHandler(req, res) {
 
   const admin = isAdminAuthUser(user)
   const billingSummary = await billing.getUserBilling(user, config)
+  if (!admin) {
+    const activeStatuses = new Set(['active', 'running', 'preparing', 'warning', 'needs_attention'])
+    const activeAutomations = (await listServerAgents()).filter(item => item.userId === user.id && item.id !== agent.id && activeStatuses.has(item.status)).length
+    if (activeAutomations >= billingSummary.maxActiveAutomations) {
+      const message = billingSummary.plan === 'free'
+        ? 'Upgrade to Starter $15 for 2 active automations.'
+        : `${billingSummary.planName} supports ${billingSummary.maxActiveAutomations} active automations. Pause one or upgrade to continue.`
+      return json(res, 409, { error: message, code: 'ACTIVE_AUTOMATION_LIMIT', limit: billingSummary.maxActiveAutomations })
+    }
+  }
   if (!admin && billingSummary.plan === 'free') {
+    agent.campaign.posts = (agent.campaign.posts || []).slice(0, 7)
+    if (agent.campaign.meta) {
+      agent.campaign.meta.totalPosts = agent.campaign.posts.length
+      agent.campaign.meta.durationDays = Math.min(7, Number(agent.campaign.meta.durationDays) || 7)
+    }
+    agent.campaign.totalCredits = computeCampaignTotalCredits(agent.campaign.posts)
     const policy = validateFreeCampaign(agent.campaign.posts || [], agent.campaign.contentMemory || [], new Date())
     if (!policy.ok) return json(res, 400, { error: policy.error, code: policy.code })
   }
   const total = agent.campaign.totalCredits || 0
-  if (total > 0 && !admin) {
-    const balance = await getUserCredits(user, config)
-    if (balance < total) return json(res, 402, { error: 'Insufficient credits', total, balance })
-  }
 
   const platforms = Array.from(new Set((agent.campaign.posts || []).flatMap(post => post.platforms || [])))
   const supportedPublishing = new Set(['linkedin', 'facebook', 'instagram', 'x', 'twitter', 'youtube', 'whatsapp'])
@@ -2573,29 +2657,21 @@ async function activateCampaignHandler(req, res) {
   for (let index = 0; index < (agent.campaign.posts || []).length; index += 1) {
     const post = agent.campaign.posts[index]
     const platforms = Array.isArray(post?.platforms) && post.platforms.length ? post.platforms : ['linkedin']
-    const primaryPlatform = platforms[0] || 'linkedin'
-    const hasCaption = String(post?.captions?.[primaryPlatform] || '').trim().length > 0
+    const hasAllCaptions = platforms.every(platform => String(post?.captions?.[platform] || '').trim().length > 0)
+    const needsImage = agent.campaign?.meta?.includeImages === true || platforms.includes('instagram')
+    const hasRequiredImage = !needsImage || Boolean(post?.imageUrl || post?.image_url)
     const base = { ...post, approved: true, charged: post.charged === true, timezone, postingOption, scheduledLocalDate: body.localDate || null, scheduledLocalTime: body.localTime || null, status: post.status === 'pending_approval' || post.status === 'draft' ? 'scheduled' : post.status }
-    if (hasCaption) {
+    if (hasAllCaptions && hasRequiredImage) {
       preparedPosts.push(base)
       continue
     }
-    const topic = String(agent.campaign?.brand?.business || agent.name || 'your business growth')
-    const goal = String(agent.campaign?.description || agent.description || 'Grow reach and trust')
-    const audience = String(agent.campaign?.brand?.audience || 'ideal audience')
-    const tone = String(agent.campaign?.brand?.tone || 'confident and professional')
-    const scheduledFor = post?.scheduledAt ? new Date(post.scheduledAt) : new Date()
-    const outcome = await createBackgroundGenerationOutcome({
-      topic,
-      goal,
-      audience,
-      tone,
-      length: 'medium',
-      platform: primaryPlatform,
-      index: index + 1,
-      scheduledFor,
-    })
-    preparedPosts.push(applyBackgroundGenerationOutcomeToPost(base, { ...outcome, scheduledFor: outcome.scheduledFor || scheduledFor.toISOString(), createdAt: new Date().toISOString() }, primaryPlatform))
+    if (postingOption === 'now') {
+      try {
+        preparedPosts.push(await prepareCampaignPostContent(agent, base, user, index))
+      } catch (error) {
+        return json(res, 503, { error: error instanceof Error ? error.message : 'Content preparation failed.', code: 'CONTENT_PREPARATION_FAILED' })
+      }
+    } else preparedPosts.push(base)
   }
   agent.campaign.posts = preparedPosts
   agent.trigger = { type: 'campaign', nextRun: campaignNextRun(agent.campaign), cron: agent.campaign.meta?.frequencyText || 'campaign' }
@@ -2605,6 +2681,13 @@ async function activateCampaignHandler(req, res) {
     const published = await getServerAgent(agent.id)
     return json(res, execution.status === 'success' ? 200 : 502, { agent: published || agent, execution, charged: execution.credits_used || 0, estimatedCredits: total, autoPublish, nextRun: published?.trigger?.nextRun || null })
   }
+  const needsBackgroundGeneration = agent.campaign.posts.some(post => {
+    const platforms = Array.isArray(post.platforms) && post.platforms.length ? post.platforms : ['linkedin']
+    const missingCaption = platforms.some(platform => !String(post.captions?.[platform] || '').trim())
+    const missingImage = (agent.campaign?.meta?.includeImages === true || platforms.includes('instagram')) && !String(post.imageUrl || post.image_url || '').trim()
+    return missingCaption || missingImage
+  })
+  if (needsBackgroundGeneration) setImmediate(() => { void runAutomationBackgroundGeneration(agent.id, user.id) })
   return json(res, 200, { agent, charged: 0, estimatedCredits: total, autoPublish, nextRun: agent.trigger.nextRun })
 }
 
@@ -2705,14 +2788,24 @@ async function campaignReportHandler(req, res) {
 export async function runDueAgents(req, res) {
   try {
     const now = new Date()
-    const agents = (await listServerAgents()).filter(a => (a.status === 'running' || a.status === 'active' || a.status === 'warning') && (a.trigger?.type === 'schedule' || a.trigger?.type === 'monitor' || a.trigger?.type === 'campaign') && a.trigger?.nextRun && new Date(a.trigger.nextRun) <= now)
+    const agents = (await listServerAgents()).filter(a => ['running', 'active', 'warning', 'needs_attention'].includes(a.status) && (a.trigger?.type === 'schedule' || a.trigger?.type === 'monitor' || a.trigger?.type === 'campaign') && a.trigger?.nextRun && new Date(a.trigger.nextRun) <= now)
     const results = []
     for (const agent of agents) {
-      const execution = await runAgent(agent, 'schedule')
-      results.push({ agentId: agent.id, status: execution.status })
+      try {
+        const execution = await runAgent(agent, 'schedule')
+        results.push({ agentId: agent.id, status: execution.status })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Scheduled execution failed'
+        process.stdout.write(`[cron] agent ${agent.id} run error: ${message}\n`)
+        results.push({ agentId: agent.id, status: 'error', error: message })
+      }
     }
-    return json(res, 200, { executed: results.length, results })
-  } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Run failed' }) }
+    return json(res, 200, { ok: true, executed: results.length, results })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Scheduler check failed'
+    process.stdout.write(`[cron] scheduler check error: ${message}\n`)
+    return json(res, 200, { ok: false, executed: 0, results: [], error: message })
+  }
 }
 
 function backoffMs(retryCount) {
@@ -3029,9 +3122,11 @@ function buildCampaignPosts(brand, meta) {
 }
 
 function computeCampaignPostCredits(platforms, includeImages) {
+  void platforms
   void includeImages
-  if (platforms.length === 1 && platforms[0] === 'linkedin') return 3
-  return Math.max(1, platforms.length)
+  // One approved content item is one unit of value, even when Alpha publishes
+  // its adapted variants to several connected social platforms.
+  return 1
 }
 
 function computeCampaignTotalCredits(posts) {
@@ -3090,28 +3185,6 @@ function campaignNextRun(campaign) {
 }
 
 const composioPublishingPlatforms = new Set(['youtube', 'instagram', 'facebook', 'whatsapp', 'x', 'twitter'])
-function composioCampaignAction(platform, post, caption, campaign) {
-  const imageUrl = post.imageUrl || post.image_url || ''
-  if (platform === 'instagram') {
-    if (!imageUrl) throw new Error('Instagram requires a confirmed image. Regenerate this post before publishing.')
-    return { action: 'create_post', params: { image_url: imageUrl, caption } }
-  }
-  if (platform === 'facebook') return { action: 'create_page_post', params: { message: caption, ...(imageUrl ? { image_url: imageUrl } : {}) } }
-  if (platform === 'x' || platform === 'twitter') {
-    return { action: caption.length > 280 ? 'create_thread' : 'create_tweet', params: { text: caption, ...(imageUrl ? { image_url: imageUrl } : {}) } }
-  }
-  if (platform === 'whatsapp') {
-    const to = post.to || campaign.meta?.to || campaign.meta?.recipient || ''
-    if (!to) throw new Error('WhatsApp needs the recipient phone number with country code before publishing.')
-    return { action: 'send_message', params: { to, message: caption } }
-  }
-  if (platform === 'youtube') {
-    const videoUrl = post.videoUrl || post.video_url || ''
-    if (!videoUrl) throw new Error('YouTube needs a video selected from Media Library before publishing.')
-    return { action: 'upload_video', params: { title: String(post.title || post.topic || 'AlphaTekx video').slice(0, 100), description: caption, tags: post.tags || [], privacyStatus: post.privacyStatus || 'public', video_url: videoUrl } }
-  }
-  throw new Error(`No Composio publishing action exists for ${platform}.`)
-}
 
 async function runCampaignAgent(existing, trigger, executionId, user, admin) {
   const blockedPlatform = [...new Set([...(existing.campaign?.meta?.platforms || []), ...(existing.campaign?.posts || []).flatMap(post => post.platforms || [])])]
@@ -3144,7 +3217,7 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
     const publishedPlatform = (post.platforms || []).find(platform => post.result?.[platform]?.id) || post.platforms?.[0] || 'linkedin'
     const providerPostId = post.providerPostId || post.result?.[publishedPlatform]?.id
     if (!providerPostId) continue
-    const cost = post.credits || computeCampaignPostCredits(post.platforms || [], false)
+    const cost = computeCampaignPostCredits(post.platforms || [], false)
     const charged = admin || await spendUserCredits(user, cost, { automationId: existing.id, reason: `Confirmed ${publishedPlatform} publication`, postId: post.id, providerPostId, idempotencyKey: `${existing.id}:${post.id}:${publishedPlatform}` })
     if (charged) {
       post.charged = true
@@ -3153,16 +3226,18 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
   }
   await saveServerAgent({ ...existing, campaign })
 
-  const duePosts = (campaign.posts || []).filter(p => (p.status === 'scheduled' || p.status === 'pending_approval') && new Date(p.scheduledAt).getTime() <= now.getTime() + 5 * 60 * 1000)
+  const dueCutoff = trigger === 'manual' ? now.getTime() + 5 * 60 * 1000 : now.getTime()
+  const duePosts = (campaign.posts || []).filter(p => (p.status === 'scheduled' || p.status === 'pending_approval') && new Date(p.scheduledAt).getTime() <= dueCutoff)
     .sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime())
 
   let creditsUsed = 0
   let postedCount = 0
   let failedCount = 0
+  let outOfCredits = false
   const steps = []
 
   for (const post of duePosts) {
-    const postResults = {}
+    const postResults = { ...(post.result || {}) }
     let postSuccess = 0
     let postFailed = 0
     let postSkipped = 0
@@ -3176,19 +3251,17 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
       continue
     }
 
-    const postCost = post.credits || computeCampaignPostCredits(post.platforms || [], false)
+    const postCost = computeCampaignPostCredits(post.platforms || [], false)
     if (!admin) {
       const balance = await getUserCredits(user, config)
       if (balance < postCost) {
-        postResults[post.platforms?.[0] || 'facebook'] = { status: 'error', log: `Insufficient credits. Need ${postCost}, have ${balance}.` }
-        postFailed++
+        postResults[post.platforms?.[0] || 'facebook'] = { status: 'waiting_credits', log: 'Out of credits - Buy $3 for 20 credits to keep your AI employee working.' }
+        outOfCredits = true
         post.result = postResults
         post.status = 'scheduled'
-        post.lastError = 'Insufficient credits'
-        post.scheduledAt = new Date(now.getTime() + backoffMs(3)).toISOString()
-        failedCount++
-        steps.push({ postId: post.id, status: 'error', error_code: 'INSUFFICIENT_CREDITS', credits_used: 0, result: postResults })
-        continue
+        post.lastError = 'Out of credits - Buy $3 for 20 credits to keep your AI employee working.'
+        steps.push({ postId: post.id, status: 'waiting_credits', error_code: 'INSUFFICIENT_CREDITS', credits_used: 0, result: postResults })
+        break
       }
     }
 
@@ -3212,6 +3285,11 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
     }
 
     for (const platform of (post.platforms || [])) {
+      const confirmedPreviousResult = postResults[platform]
+      if (confirmedPreviousResult?.status === 'success' && confirmedPreviousResult?.id) {
+        postSuccess++
+        continue
+      }
       const usesComposio = composioPublishingPlatforms.has(platform)
       const action = { connector: platform, action: 'post', params: { text: post.captions?.[platform] || '', _skipFreeLimit: true } }
       const ready = usesComposio
@@ -3231,11 +3309,12 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
       try {
         let result
         if (usesComposio) {
-          const execution = composioCampaignAction(platform, post, caption, campaign)
+          const execution = buildSocialPublishingAction(platform, post, caption, campaign)
           result = await alphaConnector.executeProviderAction(user, platform, execution.action, {
             ...execution.params,
             approvalId: `campaign:${existing.id}`,
             idempotencyKey: `${existing.id}:${post.id}:${platform}`,
+            deferCreditSettlement: true,
           })
           providerCreditsUsed += Number(result.creditsCharged || 0)
           result = { id: result.providerId, providerId: result.providerId, replayed: result.replayed === true, retryCount: result.retryCount || 0 }
@@ -3256,6 +3335,7 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
     }
 
     post.result = postResults
+    post.providerPostIds = providerPostIds(postResults)
     if (postSuccess === post.platforms.length) {
       const publishedPlatform = post.platforms[0] || 'linkedin'
       post.status = 'posted'
@@ -3264,12 +3344,15 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
       post.providerUrl = postResults[publishedPlatform]?.link || ''
       post.lastError = ''
       await saveServerAgent({ ...existing, campaign })
-      const nativeCost = admin ? 0 : (post.platforms.length === 1 && post.platforms[0] === 'linkedin' ? postCost : nativeSuccessCount)
-      const charged = nativeCost === 0 || admin || await spendUserCredits(user, nativeCost, { automationId: existing.id, reason: `Confirmed ${publishedPlatform} publication`, postId: post.id, providerPostId: post.providerPostId, idempotencyKey: `${existing.id}:${post.id}:native` })
+      const unifiedCost = admin ? 0 : postCost
+      const charged = unifiedCost === 0 || await spendUserCredits(user, unifiedCost, { automationId: existing.id, reason: `Confirmed publication to ${post.platforms.join(', ')}`, postId: post.id, providerPostId: post.providerPostId, idempotencyKey: `${existing.id}:${post.id}:unified` })
       if (charged) {
         post.charged = true
         post.chargedAt = new Date().toISOString()
-        creditsUsed += admin ? 0 : nativeCost
+        creditsUsed += unifiedCost
+        for (const platform of post.platforms.filter(item => composioPublishingPlatforms.has(item))) {
+          await alphaConnector.finalizeDeferredExecution(user, `${existing.id}:${post.id}:${platform}`, `${existing.id}:${post.id}:unified`).catch(() => false)
+        }
       } else {
         post.chargeStatus = 'pending'
       }
@@ -3287,7 +3370,8 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
       } else post.status = 'failed'
       failedCount++
     }
-    creditsUsed += admin ? 0 : providerCreditsUsed
+    void providerCreditsUsed
+    void nativeSuccessCount
     const primaryPlatform = post.platforms?.[0] || 'linkedin'
     steps.push({ postId: post.id, day: post.day, slot: post.slot, platforms: post.platforms, content: post.captions?.[primaryPlatform] || '', pageId: primaryPlatform === 'facebook' ? postResults.facebook?.pageId || null : null, pageName: primaryPlatform === 'facebook' ? postResults.facebook?.pageName || null : null, scheduledAt: post.scheduledAt, scheduledTimezone: post.timezone || campaign.meta?.timezone || 'UTC', publishedAt: post.postedAt || null, providerPostId: postResults[primaryPlatform]?.id || null, linkedinAccount: postResults.linkedin?.account || user?.email || '', linkedinPostId: postResults.linkedin?.id || null, linkedinUrl: postResults.linkedin?.link || null, result: postResults, credits_used: post.charged ? postCost : 0, status: post.status, retry_count: post.retryCount || 0 })
     await saveServerAgent({ ...existing, campaign })
@@ -3302,9 +3386,14 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
 
   const remaining = (campaign.posts || []).filter(p => p.status === 'scheduled' || p.status === 'pending_approval')
   const nextRun = campaignNextRun(campaign)
-  let status = 'running'
+  let status = outOfCredits ? 'needs_attention' : 'running'
   let log = `Campaign execution: ${postedCount} post(s) processed. ${failedCount} had issues.`
   let output = { postedCount, failedCount, creditsUsed, steps }
+
+  if (outOfCredits) {
+    log = 'Out of credits - Buy $3 for 20 credits to keep your AI employee working.'
+    output = { ...output, needsAttention: true, reason: 'insufficient_credits' }
+  }
 
   if (remaining.length === 0) {
     status = 'completed'
@@ -3325,9 +3414,9 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
     output = missionReport
   }
 
-  const executionStatus = failedCount > 0 || postedCount === 0 ? 'error' : 'success'
-  const executionError = failedCount > 0 ? 'PUBLISH_FAILED' : postedCount === 0 ? 'NO_DUE_POSTS' : null
-  if (postedCount === 0 && failedCount === 0) log = 'Campaign execution failed: the scheduler marked this campaign due, but no approved scheduled post was eligible for publication.'
+  const executionStatus = outOfCredits ? 'waiting_credits' : (failedCount > 0 || postedCount === 0 ? 'error' : 'success')
+  const executionError = outOfCredits ? 'INSUFFICIENT_CREDITS' : failedCount > 0 ? 'PUBLISH_FAILED' : postedCount === 0 ? 'NO_DUE_POSTS' : null
+  if (!outOfCredits && postedCount === 0 && failedCount === 0) log = 'Campaign execution failed: the scheduler marked this campaign due, but no approved scheduled post was eligible for publication.'
   const completedExecution = { ...execution, status: executionStatus, duration: Date.now() - startTime, output, steps, error_code: executionError, credits_used: creditsUsed, log }
   const executionHistory = [completedExecution, ...(existing.executionHistory || [])].slice(0, 100)
   const successfulRuns = executionHistory.filter(item => item.status === 'success').length
@@ -3338,6 +3427,8 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
     campaign,
     executionHistory,
     executionsDone: executionHistory.length,
+    confirmedPosts: (campaign.posts || []).filter(post => post.status === 'posted').length,
+    executionsTotal: (campaign.posts || []).length,
     successfulRuns,
     failedRuns,
     successRate: executionHistory.length ? Math.round((successfulRuns / executionHistory.length) * 100) : 0,
@@ -7766,8 +7857,9 @@ const server = http.createServer(async (req, res) => {
     if (!user) return json(res, 401, { error: 'Authentication required' })
     const agent = await getServerAgent(automationId, user.id).catch(() => null)
     if (!agent) return json(res, 404, { error: 'Automation not found' })
+    if (agent.backgroundGeneration?.status === 'generating') return json(res, 202, { ok: true, started: false, status: 'generating' })
     void runAutomationBackgroundGeneration(automationId, user.id)
-    return json(res, 200, { ok: true, started: true })
+    return json(res, 202, { ok: true, started: true, status: 'generating' })
   }
   if (req.method === 'GET' && req.url === '/api/agents') {
     try {
@@ -7838,7 +7930,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { agent })
     } catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : 'Could not save agent' }) }
   }
-  if (req.method === 'GET' && req.url === '/api/agents/run-due') return runDueAgents(req, res)
+  if (req.method === 'GET' && (req.url === '/api/agents/run-due' || req.url === '/api/cron/check-scheduled-posts')) return runDueAgents(req, res)
   if (req.method === 'GET' && req.url === '/api/agents/health') {
     try {
       const agents = await listServerAgents()
@@ -8235,8 +8327,8 @@ if (!process.env.VERCEL) {
     try {
       const now = new Date()
       const agents = await listServerAgents()
-      schedulerState.activeAgents = agents.filter(a => a.status === 'running' || a.status === 'active' || a.status === 'warning').length
-      const due = agents.filter(a => (a.status === 'running' || a.status === 'active' || a.status === 'warning') && (a.trigger?.type === 'schedule' || a.trigger?.type === 'monitor' || a.trigger?.type === 'campaign') && a.trigger?.nextRun && new Date(a.trigger.nextRun) <= now)
+      schedulerState.activeAgents = agents.filter(a => ['running', 'active', 'warning', 'needs_attention'].includes(a.status)).length
+      const due = agents.filter(a => ['running', 'active', 'warning', 'needs_attention'].includes(a.status) && (a.trigger?.type === 'schedule' || a.trigger?.type === 'monitor' || a.trigger?.type === 'campaign') && a.trigger?.nextRun && new Date(a.trigger.nextRun) <= now)
       process.stdout.write(`[AGENT SCHEDULER] Running ${due.length} active agent(s) at ${started.toISOString()}\n`)
       for (const agent of due) {
         try { await runAgent(agent, 'schedule') } catch (err) { process.stdout.write(`[cron] agent ${agent.id} run error: ${err instanceof Error ? err.message : err}\n`) }

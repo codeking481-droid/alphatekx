@@ -193,8 +193,12 @@ export function useAgents() {
     window.addEventListener('focus', load)
     document.addEventListener('visibilitychange', onVisible)
     const interval = window.setInterval(load, 10_000)
+    const realtime = supabase?.channel('alphatekx-active-automations')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'agents' }, load)
+      .subscribe()
     return () => {
       window.clearInterval(interval)
+      if (realtime) void supabase?.removeChannel(realtime)
       window.removeEventListener('focus', load)
       document.removeEventListener('visibilitychange', onVisible)
     }

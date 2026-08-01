@@ -1,8 +1,8 @@
--- V1 Core Engine: Automations & Posts tables
-DROP TABLE IF EXISTS public.posts CASCADE;
-DROP TABLE IF EXISTS public.automations CASCADE;
+-- V1 Core Engine: Automations & Posts tables.
+-- This migration is intentionally non-destructive: production automation and
+-- execution evidence must survive every deployment and schema refresh.
 
-CREATE TABLE public.automations (
+CREATE TABLE IF NOT EXISTS public.automations (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   topic text NOT NULL,
@@ -25,7 +25,7 @@ CREATE POLICY "users own automations" ON public.automations FOR ALL USING (auth.
 
 CREATE INDEX IF NOT EXISTS automations_active_idx ON public.automations(status) WHERE status = 'active';
 
-CREATE TABLE public.posts (
+CREATE TABLE IF NOT EXISTS public.posts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   automation_id uuid NOT NULL REFERENCES public.automations(id) ON DELETE CASCADE,
   user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,

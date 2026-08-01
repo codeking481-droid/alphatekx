@@ -14,20 +14,25 @@ function connectedCacheKey(userId?: string) {
   return `alphatekx:connected-platforms:${userId || 'anonymous'}`
 }
 
+const composioOAuthProviders = new Set(['gmail', 'github', 'googledocs', 'googlesheets', 'discord', 'whatsapp', 'facebook', 'instagram', 'x', 'youtube'])
+const serverManagedProviders = new Set<string>()
+const releasedPlatforms = ['linkedin', 'gmail', ...composioOAuthProviders]
+const publicConnectorIds = new Set(releasedPlatforms)
+
 const PLATFORM_LIST = [
-  { id: 'linkedin', label: 'LinkedIn', icon: FaLinkedin, color: '#0A66C2', description: 'Professional publishing', native: true },
-  { id: 'gmail', label: 'Gmail', icon: FaGoogle, color: '#EA4335', description: 'Email and attachments', native: true },
-  { id: 'github', label: 'GitHub', icon: FaGithub, color: '#181717', description: 'Repo and issue automation', native: false },
-  { id: 'googledocs', label: 'Google Docs', icon: FaGoogle, color: '#4285F4', description: 'Document generation', native: false },
-  { id: 'googlesheets', label: 'Google Sheets', icon: FaGoogle, color: '#34A853', description: 'Spreadsheet workflows', native: false },
-  { id: 'discord', label: 'Discord', icon: FaDiscord, color: '#5865F2', description: 'Server alerts and channels', native: false },
-  { id: 'whatsapp', label: 'WhatsApp', icon: FaGoogle, color: '#25D366', description: 'Business messaging', native: false },
-  { id: 'facebook', label: 'Facebook', icon: FaFacebook, color: '#1877F2', description: 'Pages and publishing', native: false },
-  { id: 'instagram', label: 'Instagram', icon: FaInstagram, color: '#E4405F', description: 'Posts, reels and stories', native: false },
-  { id: 'x', label: 'X / Twitter', icon: FaXTwitter, color: '#000000', description: 'Posts and threads', native: false },
-  { id: 'youtube', label: 'YouTube', icon: FaYoutube, color: '#FF0000', description: 'Videos and channel actions', native: false },
-  { id: 'tiktok', label: 'TikTok', icon: FaTiktok, color: '#000000', description: 'Short-form video', native: false, comingSoon: true },
-  { id: 'snapchat', label: 'Snapchat', icon: FaTiktok, color: '#FFFC00', description: 'Stories and creative campaigns', native: false, comingSoon: true },
+  { id: 'linkedin', name: 'LinkedIn', icon: FaLinkedin, color: '#0A66C2', description: 'Professional publishing', native: true },
+  { id: 'gmail', name: 'Gmail', icon: FaGoogle, color: '#EA4335', description: 'Email and attachments', native: true },
+  { id: 'github', name: 'GitHub', icon: FaGithub, color: '#181717', description: 'Repo and issue automation', native: false },
+  { id: 'googledocs', name: 'Google Docs', icon: FaGoogle, color: '#4285F4', description: 'Document generation', native: false },
+  { id: 'googlesheets', name: 'Google Sheets', icon: FaGoogle, color: '#34A853', description: 'Spreadsheet workflows', native: false },
+  { id: 'discord', name: 'Discord', icon: FaDiscord, color: '#5865F2', description: 'Server alerts and channels', native: false },
+  { id: 'whatsapp', name: 'WhatsApp', icon: FaGoogle, color: '#25D366', description: 'Business messaging', native: false },
+  { id: 'facebook', name: 'Facebook', icon: FaFacebook, color: '#1877F2', description: 'Pages and publishing', native: false },
+  { id: 'instagram', name: 'Instagram', icon: FaInstagram, color: '#E4405F', description: 'Posts, reels and stories', native: false },
+  { id: 'x', name: 'X', icon: FaXTwitter, color: '#000000', description: 'Posts and threads', native: false },
+  { id: 'youtube', name: 'YouTube', icon: FaYoutube, color: '#FF0000', description: 'Videos and channel actions', native: false },
+  { id: 'tiktok', name: 'TikTok', icon: FaTiktok, color: '#000000', description: 'Short-form video', native: false, comingSoon: true },
+  { id: 'snapchat', name: 'Snapchat', icon: FaTiktok, color: '#FFFC00', description: 'Stories and creative campaigns', native: false, comingSoon: true },
 ]
 
 export default function Connectors() {
@@ -44,7 +49,9 @@ export default function Connectors() {
   const [connecting, setConnecting] = useState<string | null>(null)
   const [disconnecting, setDisconnecting] = useState<string | null>(null)
   const [notice, setNotice] = useState('')
-  const platformParam = searchParams.get('platform')
+  const platformParam = searchParams.get('platform') || searchParams.get('service')
+  const service = (id: string) => ({ connected: connected.has(id), ready: connected.has(id) })
+  void serverManagedProviders
 
   useEffect(() => {
     const userId = session?.user?.id || 'anonymous'
@@ -64,13 +71,16 @@ export default function Connectors() {
         const ready = new Set<string>()
         if (apps.status === 'fulfilled') {
           for (const provider of apps.value.providers || []) {
-            if (provider.connected) ready.add(normalizeProviderId(provider.provider))
+            const state = { connected: provider.connected === true, ready: provider.ready === true || provider.status === 'connected' || provider.status === 'active' }
+            if (state.connected && state.ready) ready.add(normalizeProviderId(provider.provider))
           }
         }
         if (integrationStatus.status === 'fulfilled') {
           const status = integrationStatus.value as Record<string, { connected?: boolean }> | undefined
-          if (status?.linkedin?.connected) ready.add('linkedin')
-          if (status?.gmail?.connected) ready.add('gmail')
+          const linkedInState = { connected: status?.linkedin?.connected === true, ready: status?.linkedin?.connected === true }
+          const gmailState = { connected: status?.gmail?.connected === true, ready: status?.gmail?.connected === true }
+          if (linkedInState.connected && linkedInState.ready) ready.add('linkedin')
+          if (gmailState.connected && gmailState.ready) ready.add('gmail')
         }
         if (!cancelled) {
           const merged = new Set([...ready])
@@ -182,9 +192,11 @@ export default function Connectors() {
             </div>
           )}
 
-          <div className="mt-6 space-y-2">
-            {PLATFORM_LIST.map(pl => {
-              const isConnected = connected.has(pl.id)
+          <p className="mt-5 text-xs font-bold uppercase tracking-[.18em] text-emerald-300">Public tools active</p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {PLATFORM_LIST.filter(platform => publicConnectorIds.has(platform.id) || Boolean((platform as { comingSoon?: boolean }).comingSoon)).map(pl => {
+              const id = pl.id
+              const isConnected = service(id).connected && service(id).ready
               const isConnecting = connecting === pl.id
               const isDisconnecting = disconnecting === pl.id
               const isHighlighted = platformParam === pl.id
@@ -201,7 +213,7 @@ export default function Connectors() {
                     <Icon style={{ color: pl.color }} size={22} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-white">{pl.label}</p>
+                    <p className="text-sm font-semibold text-white">{pl.name}</p>
                     <p className="text-xs text-zinc-500">{pl.description}</p>
                     {isComingSoon && <p className="mt-1 text-[11px] font-medium text-amber-400">Coming soon</p>}
                   </div>

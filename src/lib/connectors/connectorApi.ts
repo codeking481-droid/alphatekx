@@ -8,6 +8,7 @@ import type { ConnectorProvider } from './providerRegistry'
 export type ConnectedAppStatus = {
   provider: string
   connected: boolean
+  ready?: boolean
   connectionId?: string
   status: string
   enabled?: boolean

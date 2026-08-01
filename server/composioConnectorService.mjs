@@ -192,6 +192,8 @@ const ACTION_TOOL_MAP = {
   'facebook.create_post': process.env.COMPOSIO_FACEBOOK_CREATE_POST_TOOL || 'FACEBOOK_CREATE_POST',
   'facebook.create_page_post': process.env.COMPOSIO_FACEBOOK_CREATE_PAGE_POST_TOOL || 'FACEBOOK_CREATE_POST',
   'facebook.publish': process.env.COMPOSIO_FACEBOOK_PUBLISH_TOOL || 'FACEBOOK_CREATE_POST',
+  'facebook.create_photo_post': process.env.COMPOSIO_FACEBOOK_CREATE_PHOTO_POST_TOOL || 'FACEBOOK_CREATE_PHOTO_POST',
+  'facebook.list_managed_pages': process.env.COMPOSIO_FACEBOOK_LIST_MANAGED_PAGES_TOOL || 'FACEBOOK_LIST_MANAGED_PAGES',
   'instagram.create_media': process.env.COMPOSIO_INSTAGRAM_CREATE_MEDIA_TOOL || 'INSTAGRAM_POST_IG_USER_MEDIA',
   'instagram.create_post': process.env.COMPOSIO_INSTAGRAM_CREATE_POST_TOOL || 'INSTAGRAM_CREATE_POST',
   'instagram.create_media_post': process.env.COMPOSIO_INSTAGRAM_CREATE_MEDIA_POST_TOOL || 'INSTAGRAM_CREATE_POST',
@@ -534,9 +536,16 @@ async function chargeConfirmedExecution(user, amount, metadata) {
   return Number.isFinite(Number(result.new_balance)) ? Number(result.new_balance) : getCreditBalance(user.id)
 }
 
-function confirmedProviderId(value, depth = 0) {
+export function confirmedProviderId(value, depth = 0) {
   if (!value || depth > 5) return ''
-  if (typeof value === 'string' || typeof value === 'number') return String(value)
+  // A bare "success" string, log id, or status value is not proof that the
+  // social network created content. Only accept identifiers under known
+  // provider response fields.
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : ''
+  if (typeof value === 'string') {
+    const candidate = value.trim()
+    return /^(?:\d{5,}|\d+_\d+|urn:[a-z0-9:_-]+)$/i.test(candidate) ? candidate : ''
+  }
   if (Array.isArray(value)) {
     for (const item of value) {
       const found = confirmedProviderId(item, depth + 1)
@@ -544,7 +553,7 @@ function confirmedProviderId(value, depth = 0) {
     }
     return ''
   }
-  const preferred = ['provider_id', 'post_id', 'tweet_id', 'video_id', 'media_id', 'message_id', 'id']
+  const preferred = ['provider_id', 'post_id', 'tweet_id', 'video_id', 'media_id', 'message_id', 'creation_id', 'id']
   for (const key of preferred) {
     if (value[key] != null && ['string', 'number'].includes(typeof value[key])) return String(value[key])
   }
@@ -553,6 +562,23 @@ function confirmedProviderId(value, depth = 0) {
     if (found) return found
   }
   return ''
+}
+
+function findFacebookPage(value, preferredId = '', depth = 0) {
+  if (!value || depth > 6) return null
+  if (Array.isArray(value)) {
+    const pages = value.map(item => findFacebookPage(item, preferredId, depth + 1)).filter(Boolean)
+    return pages.find(page => preferredId && page.id === preferredId) || pages[0] || null
+  }
+  if (typeof value !== 'object') return null
+  const id = String(value.page_id || value.pageId || value.id || '').trim()
+  const looksLikePage = id && (value.name || value.page_name || value.access_token || value.tasks || value.category)
+  if (looksLikePage && (!preferredId || id === preferredId)) return { id, name: String(value.name || value.page_name || '') }
+  for (const nested of ['data', 'pages', 'items', 'response', 'result']) {
+    const found = findFacebookPage(value[nested], preferredId, depth + 1)
+    if (found) return found
+  }
+  return null
 }
 
 // ---------------------------------------------------------------------------
@@ -898,6 +924,7 @@ export async function executeProviderAction(user, providerId, actionId, payload)
 
   const approvalId = String(payload?.approvalId || '').trim()
   const idempotencyKey = String(payload?.idempotencyKey || '').trim()
+  const deferCreditSettlement = payload?.deferCreditSettlement === true
   if (!approvalId) throw new Error('Explicit approval is required')
   if (!idempotencyKey) throw new Error('Idempotency key is required')
   const previous = await findExecution(user.id, idempotencyKey)
@@ -914,6 +941,18 @@ export async function executeProviderAction(user, providerId, actionId, payload)
     }
   }
   if (previous?.status === 'provider_confirmed' && previous.provider_execution_id) {
+    if (deferCreditSettlement) {
+      return {
+        success: true,
+        executionId: previous.id,
+        providerId: previous.provider_execution_id,
+        creditsCharged: 0,
+        balance: await getCreditBalance(user.id),
+        result: previous.result_metadata || { replayed: true, billingDeferred: true },
+        executionTimeMs: 0,
+        replayed: true,
+      }
+    }
     const pendingBalance = await chargeConfirmedExecution(user, 1, {
       idempotencyKey,
       description: `${pid}.${actionId}`,
@@ -943,6 +982,7 @@ export async function executeProviderAction(user, providerId, actionId, payload)
   const actionArguments = { ...(payload || {}) }
   delete actionArguments.approvalId
   delete actionArguments.idempotencyKey
+  delete actionArguments.deferCreditSettlement
   const claimed = await persistExecution({
     user_id: user.id, toolkit_slug: pid, capability_id: actionId, status: 'claimed',
     approval_id: approvalId, idempotency_key: idempotencyKey, credits_charged: 0,
@@ -975,15 +1015,47 @@ export async function executeProviderAction(user, providerId, actionId, payload)
     for (let attempt = 0; attempt < retryDelays.length; attempt += 1) {
       if (retryDelays[attempt]) await new Promise(resolve => setTimeout(resolve, retryDelays[attempt]))
       try {
-        result = await Promise.race([
-          composioClient.tools.execute(toolSlug, {
+        const executeTool = (slug, args) => Promise.race([
+          composioClient.tools.execute(slug, {
             connectedAccountId: account.id,
             userId: uid,
             version,
-            arguments: actionArguments,
+            arguments: args,
           }),
           new Promise((_, reject) => setTimeout(() => reject(new Error('Provider request timed out')), 30_000)),
         ])
+        if (pid === 'instagram' && actionId === 'publish_post') {
+          const createSlug = ACTION_TOOL_MAP['instagram.create_media']
+          const createResult = await executeTool(createSlug, actionArguments)
+          if (createResult?.successful !== true || createResult?.data == null) throw new Error(createResult?.error || 'Instagram did not create a media container')
+          const creationId = confirmedProviderId(createResult.data)
+          if (!creationId) throw new Error('Instagram did not return a media container ID')
+          result = await executeTool(toolSlug, {
+            creation_id: creationId,
+            ...(actionArguments.ig_user_id ? { ig_user_id: actionArguments.ig_user_id } : {}),
+          })
+        } else if (pid === 'facebook' && actionId === 'create_page_post') {
+          let pageId = String(actionArguments.page_id || actionArguments.pageId || '').trim()
+          let pageName = ''
+          if (!pageId) {
+            const pagesResult = await executeTool(ACTION_TOOL_MAP['facebook.list_managed_pages'], {})
+            if (pagesResult?.successful !== true || pagesResult?.data == null) throw new Error(pagesResult?.error || 'Facebook did not return any managed Pages')
+            const page = findFacebookPage(pagesResult.data)
+            if (!page?.id) throw new Error('No managed Facebook Page was found for this connection')
+            pageId = page.id
+            pageName = page.name
+          }
+          if (actionArguments.image_url) {
+            result = await executeTool(ACTION_TOOL_MAP['facebook.create_photo_post'], {
+              page_id: pageId, url: actionArguments.image_url, message: actionArguments.message, published: true,
+            })
+          } else {
+            result = await executeTool(toolSlug, { page_id: pageId, message: actionArguments.message, published: true })
+          }
+          if (result?.data && typeof result.data === 'object') result.data = { ...result.data, page_id: pageId, page_name: pageName }
+        } else {
+          result = await executeTool(toolSlug, actionArguments)
+        }
         retryCount = attempt
         break
       } catch (error) {
@@ -1006,6 +1078,7 @@ export async function executeProviderAction(user, providerId, actionId, payload)
   const executionTimeMs = Date.now() - startTime
 
   if (!result || result.error) {
+    await finishExecution(user.id, idempotencyKey, { status: 'failed', error_code: 'provider_error' })
     throw new Error(result?.error || 'Execution failed')
   }
 
@@ -1030,6 +1103,19 @@ export async function executeProviderAction(user, providerId, actionId, payload)
     result_metadata: { confirmed: true, providerId: confirmedId, billingPending: true, retryCount },
     credits_charged: 0,
   })
+  if (deferCreditSettlement) {
+    return {
+      success: true,
+      executionId: result.logId || `exec_${Date.now()}`,
+      providerId: confirmedId,
+      creditsCharged: 0,
+      balance: await getCreditBalance(user.id),
+      result: responseData,
+      executionTimeMs,
+      retryCount,
+      billingDeferred: true,
+    }
+  }
   const balance = await chargeConfirmedExecution(user, 1, {
     idempotencyKey,
     description: `${pid}.${actionId}`,
@@ -1052,6 +1138,21 @@ export async function executeProviderAction(user, providerId, actionId, payload)
     executionTimeMs,
     retryCount,
   }
+}
+
+export async function finalizeDeferredExecution(user, idempotencyKey, settlementId) {
+  if (!user?.id || !String(idempotencyKey || '').trim()) return false
+  const previous = await findExecution(user.id, String(idempotencyKey).trim())
+  if (!previous?.provider_execution_id) return false
+  if (previous.status === 'succeeded') return true
+  if (previous.status !== 'provider_confirmed') return false
+  await finishExecution(user.id, String(idempotencyKey).trim(), {
+    status: 'succeeded',
+    provider_execution_id: previous.provider_execution_id,
+    result_metadata: { ...(previous.result_metadata || {}), billingPending: false, unifiedSettlementId: String(settlementId || '') },
+    credits_charged: 0,
+  })
+  return true
 }
 
 /**
