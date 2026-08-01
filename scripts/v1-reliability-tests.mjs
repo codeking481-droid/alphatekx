@@ -86,6 +86,14 @@ test('scheduler merges primary agents with durable per-user fallback records', (
   assert.match(server, /candidateUpdated >= existingUpdated/)
 })
 
+test('authenticated workspace and overdue cards can force an immediate durable run', () => {
+  assert.match(server, /const userAgents = user \? await listServerAgentsForUser\(user\.id\)/)
+  assert.match(executor, /supabase\?\.auth\.getSession\(\)/)
+  assert.match(executor, /Authorization: `Bearer \$\{accessToken\}`/)
+  assert.match(activePage, /'Run now'/)
+  assert.match(activePage, /onRun\(agent\)/)
+})
+
 test('background generation retries each post and persists progress', () => {
   assert.match(server, /attempt < 3 && !prepared/)
   assert.match(server, /backgroundProgress: progress/)

@@ -2825,7 +2825,18 @@ async function campaignReportHandler(req, res) {
 export async function runDueAgents(req, res) {
   try {
     const now = new Date()
-    const agents = (await listServerAgents()).filter(a => ['running', 'active', 'warning', 'needs_attention'].includes(a.status) && (a.trigger?.type === 'schedule' || a.trigger?.type === 'monitor' || a.trigger?.type === 'campaign') && a.trigger?.nextRun && new Date(a.trigger.nextRun) <= now)
+    const config = supabaseConfig()
+    const user = await currentOrLocalUser(req, config.url, config.anon).catch(() => null)
+    const globalAgents = await listServerAgents()
+    const userAgents = user ? await listServerAgentsForUser(user.id).catch(() => []) : []
+    const mergedAgents = new Map(globalAgents.map(agent => [agent.id, agent]))
+    for (const agent of userAgents) {
+      const existing = mergedAgents.get(agent.id)
+      const existingUpdated = new Date(existing?.updated_at || existing?.updatedAt || 0).getTime()
+      const userUpdated = new Date(agent.updated_at || agent.updatedAt || 0).getTime()
+      if (!existing || userUpdated >= existingUpdated) mergedAgents.set(agent.id, agent)
+    }
+    const agents = [...mergedAgents.values()].filter(a => ['running', 'active', 'warning', 'needs_attention'].includes(a.status) && (a.trigger?.type === 'schedule' || a.trigger?.type === 'monitor' || a.trigger?.type === 'campaign') && a.trigger?.nextRun && new Date(a.trigger.nextRun) <= now)
     const results = []
     for (const agent of agents) {
       try {
