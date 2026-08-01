@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { isAdminUser } from '../lib/adminAccess'
-import { ArrowRight, CalendarDays, CheckCircle2, Clock3, Download, Edit3, LoaderCircle, Send, Sparkles, X } from 'lucide-react'
+import { ArrowRight, CalendarDays, CheckCircle2, Clock3, Download, Edit3, ExternalLink, Linkedin, LoaderCircle, Send, Sparkles, X } from 'lucide-react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import CampaignPreview from '../components/agents/CampaignPreview'
@@ -62,6 +62,8 @@ export default function Agents() {
   const messageEnd = useRef<HTMLDivElement>(null)
   const wizard = useMatureWizard()
   const isAdmin = isAdminUser(user)
+  const linkedIn = integrationStatus.linkedin
+  const linkedInReady = linkedIn?.connected === true && linkedIn?.ready === true
 
   const authHeaders = (): Record<string, string> => {
     const headers: Record<string, string> = {}
@@ -270,6 +272,11 @@ export default function Agents() {
               <span className="grid size-12 place-items-center rounded-2xl bg-violet-500/15 text-violet-300"><Sparkles size={22}/></span>
               <h1 className="mt-5 text-2xl font-black tracking-tight sm:text-3xl">What can Alpha do for you?</h1>
               <p className="mt-3 max-w-xl text-sm leading-6 text-slate-400">{agents.length === 0 ? 'Describe a result. Alpha will ask only what is missing, prepare the work, and wait for your approval.' : 'Ask a question, create an image, or describe the next result you want automated.'}</p>
+              <div className={`mt-5 flex w-full max-w-xl items-center gap-3 rounded-2xl border p-3 text-left ${linkedInReady ? 'border-[#0A66C2]/35 bg-[#0A66C2]/10' : 'border-amber-300/20 bg-amber-300/[.06]'}`}>
+                <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-[#0A66C2] text-white"><Linkedin size={21}/></span>
+                <div className="min-w-0 flex-1"><p className="text-sm font-black text-white">LinkedIn <span className="ml-1 text-[10px] font-black uppercase tracking-wider text-[#78B9F2]">Native</span></p><p className={`mt-0.5 text-xs font-bold ${linkedInReady ? 'text-emerald-300' : 'text-amber-200'}`}>{linkedInReady ? 'Connected · Personal profile publishing ready' : linkedIn?.connected ? 'Reconnect required for publishing permission' : 'Not connected yet'}</p></div>
+                {linkedInReady ? <CheckCircle2 className="shrink-0 text-emerald-300" size={19}/> : <Link to="/connected-apps?service=linkedin" className="flex min-h-10 shrink-0 items-center gap-1 rounded-xl border border-amber-300/25 px-3 text-xs font-black text-amber-200">Connect <ExternalLink size={13}/></Link>}
+              </div>
               <div className="mt-7 grid w-full gap-2 sm:grid-cols-3">{examples.map(example => <button key={example} onClick={() => { setInput(example); composer.current?.focus() }} className="min-h-16 rounded-2xl border border-violet-400/15 bg-white/[.035] px-4 py-3 text-left text-sm font-semibold text-slate-300 transition hover:border-violet-400/35 hover:bg-violet-500/10">{example}</button>)}</div>
             </div>
           ) : (

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, CalendarClock, CheckCircle2, LoaderCircle, Sparkles, X, Zap } from 'lucide-react'
+import { AlertCircle, CalendarClock, CheckCircle2, ExternalLink, LoaderCircle, Sparkles, X, Zap } from 'lucide-react'
 import { ConnectorIcon } from './ConnectorIcon'
 import { getConnector } from '../../lib/agents/connectorRegistry'
 import { getAgents, saveAgent, setCache } from '../../lib/agents/agentStore'
@@ -23,6 +23,8 @@ type BrandForm = {
   website: string
   dontPost: string
 }
+
+type PublishConfirmation = { platform: string; id: string; url?: string }
 
 const platformNames: Record<string, string> = {
   facebook: 'Facebook', linkedin: 'LinkedIn', instagram: 'Instagram', x: 'X', twitter: 'X', whatsapp: 'WhatsApp', telegram: 'Telegram', slack: 'Slack', discord: 'Discord'
@@ -81,6 +83,7 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
   const [savingPost, setSavingPost] = useState(false)
   const [reviewingPost, setReviewingPost] = useState<string | null>(null)
   const [preparingPreview, setPreparingPreview] = useState(false)
+  const [publishConfirmations, setPublishConfirmations] = useState<PublishConfirmation[]>([])
   const [startAt] = useState(() => {
     const first = toDatetimeLocal(agent.campaign?.posts?.[0]?.scheduledAt)
     const fallback = toDatetimeLocal(defaultStartAt())
@@ -271,10 +274,18 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Activation failed')
       const providerIds = (data.execution?.steps || []).map((step: { providerPostId?: string; linkedinPostId?: string }) => step.providerPostId || step.linkedinPostId).filter(Boolean)
+      const confirmations: PublishConfirmation[] = []
+      for (const step of (data.execution?.steps || [])) {
+        for (const [platform, result] of Object.entries(step.result || {}) as Array<[string, { id?: string; link?: string }]>) {
+          if (result?.id) confirmations.push({ platform, id: String(result.id), url: result.link || undefined })
+        }
+        if (step.linkedinPostId && !confirmations.some(item => item.id === String(step.linkedinPostId))) confirmations.push({ platform: 'linkedin', id: String(step.linkedinPostId), url: step.linkedinUrl || undefined })
+      }
+      setPublishConfirmations(confirmations)
       setNotice(postingOption === 'now' ? `Published successfully to ${platformIds.map(id => platformNames[id] || id).join(', ')}. Provider ID${providerIds.length === 1 ? '' : 's'}: ${providerIds.join(', ') || data.agent?.campaign?.posts?.[0]?.providerPostId || 'confirmed'}` : `Approved and scheduled. No credits charged yet. ${confirmation}`)
       setDraft(data.agent)
       setCache([data.agent, ...getAgents().filter(item => item.id !== data.agent.id)])
-      onActivated(data.agent)
+      if (postingOption !== 'now') onActivated(data.agent)
     } catch (err) {
       setNotice(err instanceof DOMException && err.name === 'AbortError' ? 'Activation took too long. Nothing was published; please retry.' : (err instanceof Error ? err.message : 'Activation failed'))
     } finally { setActivating(false) }
@@ -316,6 +327,11 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 sm:px-6 sm:pb-6">
 
       {notice && <div role="status" aria-live="polite" className="mt-4 rounded-xl border border-emerald-400/25 bg-emerald-400/[.07] p-3 text-sm font-bold leading-6 text-emerald-200">{notice}</div>}
+
+      {publishConfirmations.length > 0 && <section className="mt-4 rounded-2xl border border-emerald-400/25 bg-emerald-400/[.07] p-4" aria-label="Confirmed published posts">
+        <div className="flex items-center gap-2 text-sm font-black text-emerald-200"><CheckCircle2 size={17}/> Real post confirmed</div>
+        <div className="mt-3 space-y-2">{publishConfirmations.map(item => <div key={`${item.platform}:${item.id}`} className="flex min-w-0 flex-col gap-2 rounded-xl border border-white/10 bg-[#0A0A0F]/70 p-3 min-[420px]:flex-row min-[420px]:items-center min-[420px]:justify-between"><div className="min-w-0"><p className="text-xs font-black capitalize text-white">{platformNames[item.platform] || item.platform}</p><p className="mt-1 break-all font-mono text-[10px] text-emerald-300">Provider ID: {item.id}</p></div>{item.url && <a href={item.url} target="_blank" rel="noreferrer" className="flex min-h-10 shrink-0 items-center justify-center gap-1 rounded-lg border border-emerald-300/20 px-3 text-xs font-black text-emerald-200">View real post <ExternalLink size={13}/></a>}</div>)}</div>
+      </section>}
 
       <section className="mt-4 rounded-2xl border border-white/10 bg-[#0A0A0F] p-3" aria-label="Publish readiness">
         <div className="flex items-center justify-between gap-3"><h3 className="text-sm font-black text-white">Ready to publish</h3><span className={`rounded-full px-2.5 py-1 text-[10px] font-black ${previewReady && !requiredConnectors.length ? 'bg-emerald-400/10 text-emerald-300' : 'bg-amber-300/10 text-amber-200'}`}>{previewReady && !requiredConnectors.length ? 'READY' : 'ACTION NEEDED'}</span></div>
@@ -475,7 +491,7 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
             )}
           </div>
           {campaign.status === 'running' && <button type="button" onClick={cancelSchedule} disabled={activating} className="min-h-10 rounded-lg border border-red-400/30 px-4 text-sm text-red-300 hover:bg-red-500/10 disabled:opacity-40">Cancel</button>}
-          <button
+          {publishConfirmations.length === 0 && <button
             type="button"
             onClick={() => activate()}
             disabled={!canActivate || activating}
@@ -483,7 +499,8 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
           >
             {activating ? <LoaderCircle className="animate-spin" size={16}/> : <Sparkles size={16}/>}
             {postingOption === 'now' ? `Approve & Publish Now · ${total} credits` : campaign.status === 'running' ? 'Approve & Update Schedule' : `Approve & Schedule · estimated ${total} credits`}
-          </button>
+          </button>}
+          {publishConfirmations.length > 0 && <button type="button" onClick={onClose} className="min-h-12 w-full rounded-xl border border-white/15 px-5 text-sm font-black text-white sm:w-auto">Done</button>}
         </div>
       </div>
     </div>

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 
 const popup = fs.readFileSync(new URL('../src/components/agents/CampaignPreview.tsx', import.meta.url), 'utf8')
+const agents = fs.readFileSync(new URL('../src/pages/Agents.tsx', import.meta.url), 'utf8')
 
 const tests = [
   ['LinkedIn is explicitly presented as native personal-profile publishing', () => {
@@ -45,6 +46,18 @@ const tests = [
     assert.match(popup, /aria-labelledby="campaign-preview-title"/)
     assert.match(popup, /event\.key === 'Escape'/)
     assert.match(popup, /aria-live="polite"/)
+  }],
+  ['native LinkedIn status is visible before planning begins', () => {
+    assert.match(agents, /LinkedIn <span[\s\S]{0,180}>Native<\/span>/)
+    assert.match(agents, /Connected · Personal profile publishing ready/)
+    assert.match(agents, /connected-apps\?service=linkedin/)
+  }],
+  ['publish now stays open and exposes confirmed real post identifiers', () => {
+    assert.match(popup, /Real post confirmed/)
+    assert.match(popup, /Provider ID:/)
+    assert.match(popup, /View real post/)
+    assert.match(popup, /if \(postingOption !== 'now'\) onActivated/)
+    assert.match(popup, /if \(result\?\.id\) confirmations\.push/)
   }],
 ]
 
