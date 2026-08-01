@@ -7,11 +7,31 @@ import './index.css'
 const BUILD_ID = import.meta.env.VITE_BUILD_ID || 'dev'
 console.log('AlphaTekX build:', BUILD_ID)
 
+const staleChunkReloadKey = `alphatekx:chunk-reload:${BUILD_ID}`
+function recoverFromStaleDeploymentChunk() {
+  try {
+    if (sessionStorage.getItem(staleChunkReloadKey)) return false
+    sessionStorage.setItem(staleChunkReloadKey, new Date().toISOString())
+  } catch {
+    // A blocked sessionStorage must not prevent recovery.
+  }
+  window.location.reload()
+  return true
+}
+
+window.addEventListener('vite:preloadError', event => {
+  event.preventDefault()
+  recoverFromStaleDeploymentChunk()
+})
+
 class ErrorBoundary extends React.Component<React.PropsWithChildren, { error: Error | null }> {
   state = { error: null }
   static getDerivedStateFromError(error: Error) { return { error } }
   componentDidCatch(error: Error, info: React.ErrorInfo) {
     console.error('Alpha UI error:', error, info.componentStack)
+    if (/failed to fetch dynamically imported module|loading chunk|chunkloaderror/i.test(String(error?.message || error))) {
+      recoverFromStaleDeploymentChunk()
+    }
   }
   render() {
     if (this.state.error) {

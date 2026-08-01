@@ -14,6 +14,12 @@ const checks = [
     assert.match(main, /Something went wrong\. Please refresh\./)
     assert.match(main, /bg-white/)
   }],
+  ['stale deployment chunks recover once instead of stranding the dashboard', () => {
+    assert.match(main, /addEventListener\('vite:preloadError'/)
+    assert.match(main, /event\.preventDefault\(\)/)
+    assert.match(main, /alphatekx:chunk-reload:/)
+    assert.match(main, /failed to fetch dynamically imported module\|loading chunk\|chunkloaderror/)
+  }],
   ['six production connection cards are visible', () => {
     for (const platform of ['linkedin', 'youtube', 'instagram', 'x', 'facebook', 'whatsapp']) assert.match(connectors, new RegExp(`id: '${platform}'`))
     assert.match(connectors, /Connect your platforms/)
