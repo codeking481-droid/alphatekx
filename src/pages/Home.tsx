@@ -4,7 +4,6 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { getConnectedApps } from '../lib/connectors/connectorApi'
 import { getIntegrationStatus } from '../lib/integrations'
-import MatureAutomationWizard, { useMatureWizard } from '../components/automation/MatureAutomationWizard'
 
 const platforms = [
   { id: 'x', label: 'Twitter / X', description: 'Posts and threads', icon: Twitter, soon: false },
@@ -21,13 +20,6 @@ export default function Home() {
   const [selected, setSelected] = useState(searchParams.get('platform') || '')
   const [connected, setConnected] = useState<Set<string>>(new Set())
   const [notice, setNotice] = useState('')
-  const wizard = useMatureWizard()
-
-  // Auto-popup setup wizard 1 second after landing
-  useEffect(() => {
-    const cleanup = wizard.checkAndOpen()
-    return () => { if (typeof cleanup === 'function') cleanup() }
-  }, [wizard.checkAndOpen])
 
   const refresh = async () => {
     try {
@@ -120,7 +112,6 @@ export default function Home() {
           <p className="mt-4 text-center text-xs font-bold text-slate-400">Connections are powered securely behind AlphaTekx. Your provider credentials never appear here.</p>
         </div>
       </div>
-      <MatureAutomationWizard open={wizard.open} onComplete={wizard.close} />
     </section>
   )
 }
