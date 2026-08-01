@@ -6323,11 +6323,10 @@ async function deleteServerAgent(id, userId = '', userEmail = '') {
     const config = supabaseConfig()
     let primaryDeleted = false
     let fallbackDeleted = false
-    try {
-      await supabaseDeleteAgentExecutions(id)
-      await supabaseDeleteAgent(id)
-      primaryDeleted = true
-    } catch { /* try the durable owner-scoped fallback */ }
+    // Execution history is optional/legacy in some production databases. Its
+    // absence must not prevent deletion of the actual automation record.
+    try { await supabaseDeleteAgentExecutions(id) } catch { /* retain history if unavailable */ }
+    try { await supabaseDeleteAgent(id); primaryDeleted = true } catch { /* try durable fallback */ }
     try {
       if (userId) {
         await remoteAgentExecutionsDeleteForUser(id, userId, userEmail, config)

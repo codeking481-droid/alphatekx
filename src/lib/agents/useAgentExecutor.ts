@@ -67,7 +67,18 @@ export function useAgentExecutor() {
       }).catch(() => {})
     }
     trigger()
-    const interval = window.setInterval(trigger, 30_000)
-    return () => window.clearInterval(interval)
+    const interval = window.setInterval(trigger, 20_000)
+    const onFocus = () => trigger()
+    const onVisible = () => { if (document.visibilityState === 'visible') trigger() }
+    const onOnline = () => trigger()
+    window.addEventListener('focus', onFocus)
+    window.addEventListener('online', onOnline)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener('focus', onFocus)
+      window.removeEventListener('online', onOnline)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [])
 }

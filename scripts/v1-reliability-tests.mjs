@@ -12,6 +12,8 @@ const server = fs.readFileSync(new URL('../server.mjs', import.meta.url), 'utf8'
 const connector = fs.readFileSync(new URL('../server/composioConnectorService.mjs', import.meta.url), 'utf8')
 const media = fs.readFileSync(new URL('../server/mediaLibraryService.mjs', import.meta.url), 'utf8')
 const activePage = fs.readFileSync(new URL('../src/pages/ActiveAutomations.tsx', import.meta.url), 'utf8')
+const executor = fs.readFileSync(new URL('../src/lib/agents/useAgentExecutor.ts', import.meta.url), 'utf8')
+const workspace = fs.readFileSync(new URL('../src/components/workspace/WorkspaceLayout.tsx', import.meta.url), 'utf8')
 
 test('12 PM is parsed correctly in Africa/Lagos', () => {
   const next = calculateNextPost(['Monday'], '12:00 PM', 'Africa/Lagos', new Date('2026-08-03T09:30:00.000Z'))
@@ -56,6 +58,19 @@ test('failed automations remain visible and cannot be mislabeled completed', () 
   assert.match(server, /terminalProblems = campaign\.posts\.filter/)
   assert.match(server, /status = 'needs_attention'/)
   assert.match(server, /unconfirmed_or_failed_posts/)
+})
+
+test('overdue work catches up in the authenticated workspace and can run manually', () => {
+  assert.match(workspace, /useAgentExecutor\(\)/)
+  assert.match(executor, /\/api\/agents\/run-due/)
+  assert.match(executor, /visibilitychange/)
+  assert.match(activePage, /Publish due post now/)
+  assert.match(activePage, /Provider ID:/)
+})
+
+test('missing execution history storage cannot block automation deletion', () => {
+  assert.match(server, /try \{ await supabaseDeleteAgentExecutions\(id\) \} catch/)
+  assert.match(server, /try \{ await supabaseDeleteAgent\(id\); primaryDeleted = true \} catch/)
 })
 
 test('scheduled check isolates failures and always returns 200', () => {
