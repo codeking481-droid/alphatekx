@@ -56,10 +56,16 @@ async function requestJson<T>(url: string, init: RequestInit, options: { token?:
       if (token) response = await makeRequest()
     }
     const raw = await response.text()
+    const contentType = response.headers.get('content-type') || ''
+    const looksLikeHtml = /text\/html/i.test(contentType) || /^\s*<!doctype html|^\s*<html/i.test(raw)
     let payload: Record<string, unknown> = {}
     try { payload = raw ? JSON.parse(raw) as Record<string, unknown> : {} } catch {}
     if (response.status === 431) throw new Error('Alpha could not refresh your sign-in session automatically. Please sign out and sign in again.')
-    if (!response.ok) throw new Error(String(payload.error || raw || `Alpha returned HTTP ${response.status}.`))
+    if (!response.ok) {
+      if (looksLikeHtml) throw new Error(`Alpha's API returned an unexpected page (${response.status}). Please retry after the latest deployment finishes.`)
+      throw new Error(String(payload.error || raw.slice(0, 400) || `Alpha returned HTTP ${response.status}.`))
+    }
+    if (looksLikeHtml) throw new Error('Alpha received a website page instead of an API response. Please retry after the latest deployment finishes.')
     return payload as T
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') throw new Error('Alpha took too long to respond. Try again.')

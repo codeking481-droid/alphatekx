@@ -931,9 +931,14 @@ Return JSON:
     }
     if (field === 'publishingMode') {
       const lower = text.toLowerCase()
+      const scheduledTime = parseTime(text) || extractTimeFromText(text)
       if (/\b(?:now|immediately|publish once now)\b/.test(lower)) extracted.publishingMode = 'once_now'
       else if (/\b(?:later|schedule once|schedule it)\b/.test(lower)) extracted.publishingMode = 'once_later'
       else if (/\b(?:recurring|repeat|campaign)\b/.test(lower)) extracted.publishingMode = 'recurring'
+      else if (scheduledTime) {
+        extracted.publishingMode = 'once_later'
+        extracted.time = typeof scheduledTime === 'string' ? scheduledTime : scheduledTime.display
+      }
       else delete extracted.publishingMode
       if (extracted.publishingMode) {
         extracted.scheduleSource = 'user_confirmed'
