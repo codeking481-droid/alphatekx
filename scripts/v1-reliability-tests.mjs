@@ -79,6 +79,13 @@ test('scheduled check isolates failures and always returns 200', () => {
   assert.match(server, /\[cron\] agent \$\{agent\.id\} run error/)
 })
 
+test('scheduler merges primary agents with durable per-user fallback records', () => {
+  assert.match(server, /primary = await supabaseAgents\(\)/)
+  assert.match(server, /fallback = rows\.flatMap/)
+  assert.match(server, /for \(const agent of \[\.\.\.primary, \.\.\.fallback\]\)/)
+  assert.match(server, /candidateUpdated >= existingUpdated/)
+})
+
 test('background generation retries each post and persists progress', () => {
   assert.match(server, /attempt < 3 && !prepared/)
   assert.match(server, /backgroundProgress: progress/)
