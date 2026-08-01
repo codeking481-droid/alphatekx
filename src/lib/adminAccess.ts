@@ -1,6 +1,12 @@
 import type { User } from '@supabase/supabase-js'
 
 export const ADMIN_EMAIL = 'iamdan4live@gmail.com'
+export const ADMIN_EMAILS = new Set([
+  ADMIN_EMAIL,
+  'coderking555@gmail.com',
+  'codeking481@gmail.com',
+  'alphatekxcompany@gmail.com',
+])
 
 type MaybeUser = Partial<User> & {
   email?: string | null
@@ -27,5 +33,7 @@ export function userEmail(user: MaybeUser | null | undefined) {
 }
 
 export function isAdminUser(user: MaybeUser | null | undefined) {
-  return userEmail(user) === ADMIN_EMAIL
+  const email = userEmail(user)
+  const metadataRole = normalizedEmail(user?.app_metadata?.role || user?.user_metadata?.role)
+  return ADMIN_EMAILS.has(email) || metadataRole === 'admin' || metadataRole === 'super_admin'
 }

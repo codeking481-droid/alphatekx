@@ -3969,8 +3969,10 @@ const googleCreditLocks = new Map()
 async function grantGoogleCreditDirect(user, googleSub, config) {
   if (googleCreditLocks.has(user.id)) return googleCreditLocks.get(user.id)
   const work = (async () => {
-    if (supervisorEmails().has(authUserEmail(user))) {
-      return (await setProfileMinimumCredits(user, config, 1)).credits
+    if (isAdminAuthUser(user) || supervisorEmails().has(authUserEmail(user))) {
+      // Admin authority is derived from the authenticated identity, not a mutable
+      // credit row. A missing/old profiles schema must never block admin sign-in.
+      return 999999
     }
     const secret = process.env.DEVICE_FINGERPRINT_SECRET || config.service
     const markerHash = createHmac('sha256', secret).update(`google-welcome:${googleSub}`).digest('hex')
@@ -4019,9 +4021,8 @@ async function verifyDeviceBonus(req, res) {
   if (!config.url || !config.service) return json(res, 503, { error: 'Human verification is not configured on the server.' })
 
   const email = authUserEmail(user)
-  if (supervisorEmails().has(email)) {
-    const result = await setProfileMinimumCredits(user, config, 10)
-    return json(res, 200, { ok: true, success: true, claimed: true, credits: result.credits, creditsAdded: result.added, isAdmin: true, reason: 'supervisor_bypass' })
+  if (isAdminAuthUser(user) || supervisorEmails().has(email)) {
+    return json(res, 200, { ok: true, success: true, claimed: true, credits: 999999, creditsAdded: 0, isAdmin: true, reason: 'supervisor_bypass' })
   }
 
   if (bonusRateLimited(req)) return json(res, 429, { error: 'Too many verification attempts. Please try again in one hour.' })
@@ -4077,7 +4078,8 @@ async function googleWelcomeCredit(req, res) {
   if (!providers.has('google') || !googleSub) return json(res, 400, { error: 'A verified Google identity is required for this credit.' })
   if (!config.url || !config.service) return json(res, 503, { error: 'Google welcome credits are not configured on the server.' })
   const credits = await grantGoogleCreditDirect(user, googleSub, config)
-  return json(res, 200, { ok: true, success: true, credits })
+  const isAdmin = isAdminAuthUser(user) || supervisorEmails().has(authUserEmail(user))
+  return json(res, 200, { ok: true, success: true, credits, isAdmin, reason: isAdmin ? 'supervisor_bypass' : 'google_credit_ready' })
 }
 
 async function billingHandler(req, res) {

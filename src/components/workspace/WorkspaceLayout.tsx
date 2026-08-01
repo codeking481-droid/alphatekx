@@ -74,19 +74,19 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
   const isHome = location.pathname === '/dashboard'
 
   return <div className="workspace-living-bg relative flex min-h-[100dvh] flex-col overflow-hidden text-white">
-    <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center justify-between border-b border-violet-400/20 bg-[#0A0F1E]/85 px-4 shadow-[0_8px_25px_rgba(3,7,18,.28)] backdrop-blur-xl">
+    <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center justify-between border-b border-[#FFD700]/10 bg-[#0A0A0F]/85 px-4 shadow-[0_8px_30px_rgba(255,215,0,.04)] backdrop-blur-2xl">
       <button onClick={() => setOpen(true)} className="grid size-11 place-items-center rounded-xl border border-violet-400/20 bg-violet-500/10 text-white shadow-sm" aria-label="Open menu"><Menu size={20}/></button>
       <NavLink to="/dashboard" className="text-sm font-black tracking-[.14em] text-white">ALPHATEKX</NavLink>
-      <button onClick={() => navigate('/settings?tab=billing')} className="flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-500/10 px-3.5 py-2 text-sm font-black text-violet-300 shadow-sm transition hover:bg-violet-500/10">
-        <span className="inline-block h-2.5 w-2.5 rounded-full bg-[#6D28D9]" />
-        <span className={!isAdmin && needsCreditTopUp(credits) ? 'text-amber-300' : 'text-violet-300'}>{isAdmin ? 'Admin' : `${credits} Credits`}</span>
+      <button onClick={() => navigate('/settings?tab=billing')} className="flex items-center gap-2 rounded-xl border border-[#FFD700]/20 bg-[#FFD700]/[.055] px-3.5 py-2 text-sm font-black shadow-[0_0_22px_rgba(255,215,0,.06)] transition hover:border-[#FFD700]/35 hover:bg-[#FFD700]/10">
+        <span className="inline-block h-2.5 w-2.5 rounded-full bg-[#FFD700] shadow-[0_0_10px_rgba(255,215,0,.7)]" />
+        <span className={!isAdmin && needsCreditTopUp(credits) ? 'text-amber-300' : 'text-[#FFD700]'}>{isAdmin ? 'Admin' : `${credits} Credits`}</span>
       </button>
     </header>
     {open && <button className="fixed inset-0 z-40 bg-slate-950/30" onClick={() => setOpen(false)} aria-label="Close menu"/>}
-    <aside className={`fixed inset-y-0 left-0 z-50 flex w-[284px] max-w-[88vw] flex-col border-r border-white/10 bg-[#0A0F1E]/95 text-white shadow-[24px_0_64px_rgba(3,7,18,.45)] backdrop-blur-2xl transition-transform duration-200 ${open ? 'translate-x-0' : '-translate-x-full'}`}>
+    <aside className={`fixed inset-y-0 left-0 z-50 flex w-[284px] max-w-[88vw] flex-col border-r border-[#FFD700]/10 bg-[#0A0A0F]/95 text-white shadow-[24px_0_64px_rgba(0,0,0,.55)] backdrop-blur-2xl transition-transform duration-200 ${open ? 'translate-x-0' : '-translate-x-full'}`}>
       <div className="flex h-[72px] items-center justify-between px-5">
         <NavLink to="/dashboard" onClick={() => setOpen(false)} className="flex items-center gap-3">
-          <span className="grid size-9 place-items-center rounded-xl bg-gradient-to-br from-violet-500 to-blue-500 text-sm font-black shadow-[0_8px_24px_rgba(124,58,237,.3)]">A</span>
+          <span className="grid size-9 place-items-center rounded-xl bg-gradient-to-br from-[#FFD700] to-[#6C5CE7] text-sm font-black text-[#0A0A0F] shadow-[0_8px_24px_rgba(255,215,0,.16)]">A</span>
           <span><strong className="block text-sm font-black tracking-[.12em]">ALPHATEKX</strong><small className="block text-[10px] font-semibold text-slate-400">Your AI employee</small></span>
         </NavLink>
         <button onClick={() => setOpen(false)} className="grid size-9 place-items-center rounded-xl text-slate-400 transition hover:bg-white/5 hover:text-white" aria-label="Close menu"><X size={18}/></button>
@@ -137,9 +137,9 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
       {children}
     </main>
 
-    <nav className="fixed bottom-0 left-0 right-0 z-30 grid min-h-16 grid-cols-5 items-center border-t border-violet-400/20 bg-[#0A0F1E]/90 px-1 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_25px_rgba(3,7,18,.3)] backdrop-blur-xl lg:hidden">
+    <nav className="fixed bottom-0 left-0 right-0 z-30 grid min-h-20 grid-cols-5 items-center border-t border-[#FFD700]/10 bg-[#0A0A0F]/90 px-1 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_30px_rgba(255,215,0,.04)] backdrop-blur-2xl lg:hidden">
       {mobileNav.map(([label, to, Icon]) => (
-        <NavLink key={label} to={to} title={label} className={({ isActive }) => `flex min-w-0 flex-col items-center justify-center gap-1 rounded-full px-0.5 py-2 text-[9px] font-black min-[380px]:text-[10px] ${isActive ? 'bg-[#7C3AED] text-white' : 'text-slate-400'}`}>
+        <NavLink key={label} to={to} title={label} className={({ isActive }) => `flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-0.5 py-2 text-[9px] font-black min-[380px]:text-[10px] ${isActive ? 'bg-[#FFD700]/10 text-[#FFD700]' : 'text-slate-400'}`}>
           <Icon size={20} />
           {label}
         </NavLink>
