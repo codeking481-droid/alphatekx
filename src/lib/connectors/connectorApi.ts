@@ -90,8 +90,8 @@ export async function executeComposioAction(
 }
 
 // Start OAuth connection for a provider
-export async function connectProvider(providerId: string, token?: string): Promise<ConnectResponse> {
-  return postJson<ConnectResponse>(`/api/connectors/${providerId}/connect`, {}, { token, timeoutMs: 20_000 })
+export async function connectProvider(providerId: string, token?: string, returnTo?: string): Promise<ConnectResponse> {
+  return postJson<ConnectResponse>(`/api/connectors/${providerId}/connect`, { returnTo }, { token, timeoutMs: 20_000 })
 }
 
 // Disconnect a provider

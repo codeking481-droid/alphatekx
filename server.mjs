@@ -3427,7 +3427,12 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
   const remaining = (campaign.posts || []).filter(p => p.status === 'scheduled' || p.status === 'pending_approval')
   const nextRun = campaignNextRun(campaign)
   let status = outOfCredits ? 'needs_attention' : 'running'
-  let log = `Campaign execution: ${postedCount} post(s) processed. ${failedCount} had issues.`
+  const providerFailures = steps.flatMap(step => Object.entries(step.result || {})
+    .filter(([, result]) => result?.status === 'error' || result?.status === 'skipped')
+    .map(([platform, result]) => `${platform}: ${result?.log || 'publication was not confirmed'}`))
+  let log = providerFailures.length
+    ? `Publication failed. ${providerFailures.join(' | ')} No credits were charged for unconfirmed platforms.`
+    : `Campaign execution: ${postedCount} post(s) processed. ${failedCount} had issues.`
   let output = { postedCount, failedCount, creditsUsed, steps }
 
   if (outOfCredits) {
@@ -7685,9 +7690,15 @@ const server = http.createServer(async (req, res) => {
         }
         if (!requireConnectorFeature(req, res, user, toolkit)) return
         if (operation === 'connect' && req.method === 'POST') {
+          const body = await readBody(req)
+          const requestedReturnTo = String(body.returnTo || '').trim()
+          const safeReturnTo = requestedReturnTo.startsWith('/') && !requestedReturnTo.startsWith('//')
+            ? requestedReturnTo
+            : '/automations'
           const callbackUrl = new URL('/connected-apps', publicAppUrl())
           callbackUrl.searchParams.set('provider', toolkit)
           callbackUrl.searchParams.set('connected', 'checking')
+          callbackUrl.searchParams.set('returnTo', safeReturnTo)
           return json(res, 200, await alphaConnector.startConnection(user, toolkit, callbackUrl.toString()))
         }
         if (operation === 'status' && req.method === 'GET') {
@@ -8092,8 +8103,29 @@ const server = http.createServer(async (req, res) => {
       return json(res, req.method === 'DELETE' ? 409 : 404, { error: req.method === 'DELETE' ? 'Automation is already deleted' : 'Automation not found' })
     }
     if (isRun && req.method === 'POST') {
-      try { const execution = await runAgent(existingAgent, 'manual'); return json(res, 200, { executed: true, execution }) }
-      catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Run failed' }) }
+      try {
+        const campaignPosts = existingAgent.campaign?.posts || []
+        if (campaignPosts.length > 0 && campaignPosts.every(post => post.status === 'posted' && post.providerPostId)) {
+          return json(res, 200, {
+            executed: false,
+            duplicatePrevented: true,
+            execution: { status: 'skipped', error_code: 'DUPLICATE', log: 'Every post is already confirmed by its provider; duplicate publication was prevented.', credits_used: 0 },
+            charged: false,
+          })
+        }
+        const execution = await runAgent(existingAgent, 'manual')
+        const ok = execution.status === 'success'
+        const idempotentNoop = execution.error_code === 'NO_DUE_POSTS' || execution.error_code === 'DUPLICATE'
+        const statusCode = ok || idempotentNoop ? 200 : execution.error_code === 'INSUFFICIENT_CREDITS' ? 402 : execution.error_code === 'APPROVAL_REQUIRED' ? 409 : 502
+        return json(res, statusCode, {
+          executed: ok,
+          execution,
+          error: ok ? undefined : execution.log,
+          code: execution.error_code,
+          charged: Number(execution.credits_used || 0) > 0,
+        })
+      }
+      catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Run failed', charged: false }) }
     }
     if (req.method === 'GET') {
       const executions = (await listServerExecutions()).filter(e => e.agentId === agentId)

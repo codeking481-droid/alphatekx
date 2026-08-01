@@ -82,4 +82,22 @@ test('scheduler persists per-platform IDs and skips confirmed retries', () => {
   assert.match(source, /idempotencyKey: `\$\{existing\.id\}:\$\{post\.id\}:\$\{platform\}`/)
 })
 
+test('failed durable claims can be reclaimed without bypassing idempotency', () => {
+  const connector = fs.readFileSync(new URL('../server/composioConnectorService.mjs', import.meta.url), 'utf8')
+  assert.match(connector, /async function reclaimFailedExecution/)
+  assert.match(connector, /status=eq\.failed/)
+  assert.match(connector, /previous\?\.status === 'failed'/)
+  assert.match(connector, /provider_execution_id: null/)
+})
+
+test('provider failures remain explicit and unconfirmed posts are never charged', () => {
+  const connector = fs.readFileSync(new URL('../server/composioConnectorService.mjs', import.meta.url), 'utf8')
+  const server = fs.readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
+  assert.match(connector, /publish failed:/)
+  assert.match(connector, /provider_rate_limit/)
+  assert.match(server, /Publication failed\./)
+  assert.match(server, /No credits were charged for unconfirmed platforms/)
+  assert.match(server, /charged: Number\(execution\.credits_used \|\| 0\) > 0/)
+})
+
 console.log(`\nSocial publishing tests: ${passed}/${passed} passed`)

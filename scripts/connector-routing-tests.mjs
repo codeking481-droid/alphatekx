@@ -44,6 +44,13 @@ const tests = [
     assert.match(agents, /provider\.provider === 'twitter' \? 'x'/)
     assert.match(agents, /provider\.ready === true \|\| provider\.status === 'connected'/)
   }],
+  ['OAuth connection returns to the interrupted automation after confirmed status', () => {
+    assert.match(connectors, /const returnTo = requestedReturnTo\.startsWith/)
+    assert.match(connectors, /connectProvider\(platformId, session\.access_token, returnTo\)/)
+    assert.match(connectors, /connected successfully\. Returning to your automation/)
+    assert.match(connectors, /navigate\(returnTo\)/)
+    assert.match(server, /callbackUrl\.searchParams\.set\('returnTo', safeReturnTo\)/)
+  }],
 ]
 
 let failed = 0
