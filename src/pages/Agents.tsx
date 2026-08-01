@@ -247,9 +247,9 @@ export default function Agents() {
               {pendingAgent && conversation && ['awaiting_content_review', 'awaiting_approval', 'ready_to_create'].includes(conversation.conversationStage) && <div className="rounded-2xl border border-violet-400/20 bg-violet-500/[.08] p-4 sm:p-5" aria-label="Automation approval in chat">
                 <p className="text-xs font-black uppercase tracking-[.16em] text-violet-300">Plan ready in chat</p>
                 <p className="mt-2 text-sm font-bold text-white">{pendingAgent.name || 'Your automation'}</p>
-                <p className="mt-1 text-xs leading-5 text-slate-400">Review Alpha's messages above. Nothing becomes active until you approve here or type “approve”.</p>
+                <p className="mt-1 text-xs leading-5 text-slate-400">Review Alpha's messages above. One approval publishes an immediate post or activates the confirmed schedule.</p>
                 <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                  <button type="button" onClick={() => void send(conversation.conversationStage === 'awaiting_content_review' ? 'approve all' : 'approve')} disabled={creating} className="min-h-11 rounded-xl bg-violet-600 px-5 text-sm font-black text-white disabled:opacity-50">{conversation.conversationStage === 'awaiting_content_review' ? 'Approve content in chat' : 'Approve and activate in chat'}</button>
+                  <button type="button" onClick={() => void send('approve')} disabled={creating} className="min-h-11 rounded-xl bg-violet-600 px-5 text-sm font-black text-white disabled:opacity-50">{pendingAgent.campaign?.meta?.publishingMode === 'once_now' ? 'Approve & publish now' : 'Approve & activate'}</button>
                   {conversation.conversationStage === 'awaiting_content_review' && <button type="button" onClick={() => void send('regenerate')} disabled={creating} className="min-h-11 rounded-xl border border-violet-300/20 px-5 text-sm font-black text-violet-200 disabled:opacity-50">Regenerate in chat</button>}
                 </div>
               </div>}

@@ -28,10 +28,10 @@ function fixture(mode) {
     userId: user.id,
     userEmail: user.email,
     name: 'Approval test conversation',
-    conversationStage: 'awaiting_approval',
+    conversationStage: 'awaiting_content_review',
     status: 'draft',
     messages: [],
-    generatedContent: [{ id: 'content-1', approved: true }],
+    generatedContent: [{ id: 'content-1', approved: false }],
     automationDraft: automation,
   }
 }
@@ -56,19 +56,20 @@ async function runScenario(mode) {
       return { status: 'success', log: 'Published', steps: [{ result: { linkedin: { status: 'success', id: 'provider-post-1' } } }] }
     },
   })
-  const result = await engine.approveAndCreate(conversation.id, user)
+  const continued = await engine.continue(conversation.id, user, 'approve')
+  const result = continued.automationDraft
   return { result, conversation: records.get(conversation.id), executions }
 }
 
 const immediate = await runScenario('once_now')
-assert.equal(immediate.executions, 1, 'Publish Now must execute during the approval request')
+assert.equal(immediate.executions, 1, 'one preview approval must publish once-now work during the same request')
 assert.equal(immediate.result.campaign.posts[0].status, 'posted')
 assert.equal(immediate.result.campaign.posts[0].providerPostId, 'provider-post-1')
 assert.equal(immediate.conversation.conversationStage, 'created')
 assert.match(immediate.conversation.messages.at(-1).text, /Approved and published/)
 
 const scheduled = await runScenario('once_later')
-assert.equal(scheduled.executions, 0, 'Scheduled work must not execute during approval')
+assert.equal(scheduled.executions, 0, 'one preview approval must activate scheduled work without executing it early')
 assert.equal(scheduled.result.campaign.posts[0].status, 'scheduled')
 assert.equal(scheduled.result.campaign.posts[0].approved, true)
 

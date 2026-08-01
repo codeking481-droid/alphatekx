@@ -2063,12 +2063,14 @@ Return JSON: { "text": "..." }`
       const lower = text.toLowerCase()
       if (/\b(approve all|approve everything|yes|all good|looks good)\b/.test(lower)) {
         await approveContent(conversation)
+        await createAutomation(conversation, user)
       } else if (/\b(regenerate|rewrite|redo)\b/.test(lower)) {
         await regenerateContent(conversation)
       } else if (/\b(approve|yes)\b/.test(lower)) {
         await approveContent(conversation)
+        await createAutomation(conversation, user)
       } else {
-        addMessage(conversation, 'alpha', 'You can say "approve all", "regenerate", or "edit post 3 to ...".')
+        addMessage(conversation, 'alpha', 'You can say "approve", "regenerate", or "edit post 3 to ...". One approval activates the reviewed plan.')
       }
     } else if (conversation.conversationStage === 'awaiting_approval' || conversation.conversationStage === 'ready_to_create') {
       const lower = text.toLowerCase()
