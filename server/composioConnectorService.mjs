@@ -1171,11 +1171,6 @@ export async function executeProviderAction(user, providerId, actionId, payload,
       replayed: true,
     }
   }
-<<<<<<< HEAD
-  if (previous?.status === 'claimed') throw new Error('This approved action is already in progress')
-  if (previous && previous.status !== 'failed') throw new Error(`This publication cannot be retried from state "${previous.status}"`)
-  if (!deferCreditSettlement && await getCreditBalance(user.id) < 1) throw new Error('Insufficient credits')
-=======
   if (previous?.status === 'claimed') {
     if (shouldReclaimClaimedExecution(previous, Date.now())) {
       const reclaimed = await reclaimStaleClaimedExecution(user.id, idempotencyKey, approvalId)
@@ -1185,8 +1180,7 @@ export async function executeProviderAction(user, providerId, actionId, payload,
     }
   }
   if (previous && previous.status !== 'failed' && previous.status !== 'claimed') throw new Error(`This publication cannot be retried from state "${previous.status}"`)
-  if (await getCreditBalance(user.id) < 1) throw new Error('Insufficient credits')
->>>>>>> 6ac1a3e (Recover stale social publishing claims)
+  if (!deferCreditSettlement && await getCreditBalance(user.id) < 1) throw new Error('Insufficient credits')
   const actionArguments = { ...(payload || {}) }
   delete actionArguments.approvalId
   delete actionArguments.idempotencyKey
