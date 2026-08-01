@@ -3476,7 +3476,14 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
 
   const executionStatus = outOfCredits ? 'waiting_credits' : (failedCount > 0 || postedCount === 0 ? 'error' : 'success')
   const executionError = outOfCredits ? 'INSUFFICIENT_CREDITS' : failedCount > 0 ? 'PUBLISH_FAILED' : postedCount === 0 ? 'NO_DUE_POSTS' : null
-  if (!outOfCredits && postedCount === 0 && failedCount === 0) log = 'Campaign execution failed: the scheduler marked this campaign due, but no approved scheduled post was eligible for publication.'
+  if (!outOfCredits && postedCount === 0 && failedCount === 0) {
+    log = 'Campaign execution failed: the scheduler marked this campaign due, but no approved scheduled post was eligible for publication.'
+  } else if (!outOfCredits && executionStatus === 'error' && postedCount === 0) {
+    status = 'paused'
+    campaign.status = 'paused'
+    campaign.statusReason = 'Publishing failed, so the campaign was paused until the issue is resolved.'
+    log = `Campaign execution failed without a published post, so it has been paused. ${failedCount} issue(s) were recorded.`
+  }
   const completedExecution = { ...execution, status: executionStatus, duration: Date.now() - startTime, output, steps, error_code: executionError, credits_used: creditsUsed, log }
   const executionHistory = [completedExecution, ...(existing.executionHistory || [])].slice(0, 100)
   const successfulRuns = executionHistory.filter(item => item.status === 'success').length

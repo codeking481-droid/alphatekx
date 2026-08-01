@@ -378,6 +378,25 @@ await test('Publish Now confirms a real post ID, history, counters and one credi
   } finally { app.child.kill('SIGTERM') }
 })
 
+await test('Publish-now activation failures leave the campaign paused instead of running', async () => {
+  const port = 5150 + Math.floor(Math.random() * 100)
+  const app = await startApp(port)
+  const userId = `linkedin-fail-now-${randomUUID()}`
+  const headers = { 'content-type': 'application/json', 'x-local-user-id': userId, 'x-local-user-email': `${userId}@test.local` }
+  const request = (path, options = {}) => fetch(`http://127.0.0.1:${port}${path}`, { ...options, headers: { ...headers, ...(options.headers || {}) } })
+  const agentId = `linkedin-fail-now-agent-${randomUUID()}`
+  try {
+    await request('/api/connectors/save', { method: 'POST', body: JSON.stringify({ platform: 'linkedin', tokens: { access_token: 'test-token', author_urn: 'urn:li:person:test-member', expiry: Date.now() + 3600_000 }, scopes: ['w_member_social'] }) })
+    await request('/api/agents', { method: 'POST', body: JSON.stringify({ agent: onePostCampaign(agentId, new Date(Date.now() + 60_000).toISOString(), 'NO_ID') }) })
+    const response = await request(`/api/agents/campaign/${agentId}/activate`, { method: 'POST', body: JSON.stringify({ autoPublish: true, postingOption: 'now', timezone: 'Africa/Lagos' }) })
+    assert.equal(response.status, 502)
+    const data = await response.json()
+    assert.equal(data.execution.status, 'error')
+    assert.equal(data.agent.status, 'paused')
+    assert.equal(data.agent.campaign.status, 'paused')
+  } finally { app.child.kill('SIGTERM') }
+})
+
 await test('Custom local date/time converts safely, can be edited, rejects past time and can cancel', async () => {
   const port = 5200 + Math.floor(Math.random() * 100)
   const app = await startApp(port)
