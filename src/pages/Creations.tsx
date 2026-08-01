@@ -5,13 +5,13 @@ import { exportCreationZip } from '../lib/exportCreation'
 import { getCreations, publishCreation, subscribeStore } from '../lib/missionStore'
 import type { Creation } from '../lib/types'
 import { useAuth } from '../lib/auth'
-import { disconnectGmail, getIntegrationStatus, sendGmail, startGmailConnection, type IntegrationStatus } from '../lib/integrations'
+import { connectProvider, disconnectProvider, executeComposioAction, getConnectedApps } from '../lib/connectors/connectorApi'
 
 export default function Creations() {
   const [creations, setCreations] = useState<Creation[]>(getCreations())
   const [publishing, setPublishing] = useState<Creation | null>(null)
   const [details, setDetails] = useState({ title:'', description:'', category:'Web Apps', priceType:'free' as 'free'|'paid', price:0 })
-  const [integration, setIntegration] = useState<IntegrationStatus['gmail']>({ connected:false, email:null })
+  const [integration, setIntegration] = useState<{ connected: boolean; email: string | null }>({ connected:false, email:null })
   const [integrationBusy, setIntegrationBusy] = useState(false)
   const [integrationNotice, setIntegrationNotice] = useState('')
   const [testEmail, setTestEmail] = useState('')
@@ -25,26 +25,34 @@ export default function Creations() {
     if (callback === 'connected' || callback === 'google') setIntegrationNotice('Gmail connected successfully.')
     if (callback === 'error') setIntegrationNotice(searchParams.get('reason') || 'Google connection failed.')
     if (callback) { const next = new URLSearchParams(searchParams); next.delete('gmail'); next.delete('connected'); next.delete('reason'); setSearchParams(next, { replace:true }) }
-    void getIntegrationStatus(session.access_token).then(status => { setIntegration(status.gmail); setTestEmail(status.gmail.email || user?.email || '') }).catch(error => setIntegrationNotice(error instanceof Error ? error.message : 'Could not load Gmail status.'))
+    void getConnectedApps(session.access_token).then(status => {
+      const gmail = status.providers.find(provider => provider.provider === 'gmail')
+      setIntegration({ connected: gmail?.connected === true && (gmail.ready === true || gmail.status === 'connected' || gmail.status === 'active'), email: user?.email || null })
+      setTestEmail(user?.email || '')
+    }).catch(error => setIntegrationNotice(error instanceof Error ? error.message : 'Could not load Gmail status.'))
   }, [session?.access_token])
 
   const connect = async () => {
     if (!session?.access_token) return
     setIntegrationBusy(true); setIntegrationNotice('Opening Google permission screen...')
-    try { await startGmailConnection(session.access_token, '/creations') }
+    try {
+      const result = await connectProvider('gmail', session.access_token)
+      if (!result.authUrl) throw new Error('Composio did not return a Gmail authorization link.')
+      window.location.href = result.authUrl
+    }
     catch (error) { setIntegrationNotice(error instanceof Error ? error.message : 'Could not connect Gmail.'); setIntegrationBusy(false) }
   }
   const disconnect = async () => {
     if (!session?.access_token) return
     setIntegrationBusy(true); setIntegrationNotice('')
-    try { await disconnectGmail(session.access_token); setIntegration({connected:false,email:null}); setIntegrationNotice('Gmail disconnected.') }
+    try { await disconnectProvider('gmail', session.access_token); setIntegration({connected:false,email:null}); setIntegrationNotice('Gmail disconnected.') }
     catch (error) { setIntegrationNotice(error instanceof Error ? error.message : 'Could not disconnect Gmail.') }
     finally { setIntegrationBusy(false) }
   }
   const sendTest = async () => {
     if (!session?.access_token || !testEmail.trim()) return
     setIntegrationBusy(true); setIntegrationNotice('Sending test email...')
-    try { await sendGmail(session.access_token,{to:testEmail.trim(),subject:'AlphaTekX Gmail connection test',text:'Your Gmail connector is working. AlphaTekX can now send email with your permission.',html:'<h2>Gmail connected</h2><p>Your AlphaTekX Gmail connector is working.</p>'}); setIntegrationNotice(`Test email sent to ${testEmail.trim()}.`) }
+    try { await executeComposioAction('gmail', 'send_email', { recipient_email: testEmail.trim(), to: testEmail.trim(), subject: 'AlphaTekX Gmail connection test', body: 'Your Gmail connector is working. AlphaTekX can now send email with your permission.' }, 'gmail-connection-test', session.access_token); setIntegrationNotice(`Test email sent to ${testEmail.trim()}.`) }
     catch (error) { setIntegrationNotice(error instanceof Error ? error.message : 'Test email failed.') }
     finally { setIntegrationBusy(false) }
   }

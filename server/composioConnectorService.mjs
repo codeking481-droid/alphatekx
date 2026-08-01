@@ -154,7 +154,7 @@ const ALIASES = {
   google_sheets: 'googlesheets',
   'x (twitter)': 'twitter',
   linkedin: 'linkedin', // native, not composio
-  gmail: 'gmail', // native
+  gmail: 'gmail', // Composio managed auth
   telegram: 'telegram', // native
 }
 

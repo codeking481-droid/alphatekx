@@ -22,6 +22,8 @@ const tests = [
   ['administrator signup bypass is independent of profile schema', () => {
     assert.match(server, /Admin authority is derived from the authenticated identity/)
     assert.match(server, /credits: 999999, creditsAdded: 0, isAdmin: true/)
+    for (const email of ['iamdan4live@gmail.com', 'coderking555@gmail.com', 'codeking481@gmail.com', 'alphatekxcompany@gmail.com']) assert.ok(server.includes(email))
+    assert.match(server, /\.\.\.productAdminEmails/)
   }],
   ['Google and human verification remain separate choices', () => {
     assert.match(signup, /google\(false\)/)

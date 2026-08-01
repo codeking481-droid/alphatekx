@@ -4,7 +4,7 @@ import { ArrowLeft, CheckCircle2, LoaderCircle, X, ExternalLink, AlertCircle } f
 import { FaFacebook, FaInstagram, FaLinkedin, FaXTwitter, FaTiktok, FaYoutube, FaGoogle, FaGithub, FaDiscord } from 'react-icons/fa6'
 import { useAuth } from '../lib/auth'
 import { getConnectedApps, connectProvider, disconnectProvider } from '../lib/connectors/connectorApi'
-import { startLinkedInAuth, startGmailConnection } from '../lib/integrations'
+import { startLinkedInAuth } from '../lib/integrations'
 
 function normalizeProviderId(provider: string) {
   return provider === 'twitter' ? 'x' : provider
@@ -21,7 +21,7 @@ const publicConnectorIds = new Set(releasedPlatforms)
 
 const PLATFORM_LIST = [
   { id: 'linkedin', name: 'LinkedIn', icon: FaLinkedin, color: '#0A66C2', description: 'Professional publishing', native: true },
-  { id: 'gmail', name: 'Gmail', icon: FaGoogle, color: '#EA4335', description: 'Email and attachments', native: true },
+  { id: 'gmail', name: 'Gmail', icon: FaGoogle, color: '#EA4335', description: 'Email and attachments', native: false },
   { id: 'github', name: 'GitHub', icon: FaGithub, color: '#181717', description: 'Repo and issue automation', native: false },
   { id: 'googledocs', name: 'Google Docs', icon: FaGoogle, color: '#4285F4', description: 'Document generation', native: false },
   { id: 'googlesheets', name: 'Google Sheets', icon: FaGoogle, color: '#34A853', description: 'Spreadsheet workflows', native: false },
@@ -78,9 +78,7 @@ export default function Connectors() {
         if (integrationStatus.status === 'fulfilled') {
           const status = integrationStatus.value as Record<string, { connected?: boolean }> | undefined
           const linkedInState = { connected: status?.linkedin?.connected === true, ready: status?.linkedin?.connected === true }
-          const gmailState = { connected: status?.gmail?.connected === true, ready: status?.gmail?.connected === true }
           if (linkedInState.connected && linkedInState.ready) ready.add('linkedin')
-          if (gmailState.connected && gmailState.ready) ready.add('gmail')
         }
         if (!cancelled) {
           const merged = new Set([...ready])
@@ -108,10 +106,6 @@ export default function Connectors() {
       // Native connections open OAuth directly
       if (platformId === 'linkedin') {
         await startLinkedInAuth(session.access_token, '/connected-apps')
-        return
-      }
-      if (platformId === 'gmail') {
-        await startGmailConnection(session.access_token, '/connected-apps')
         return
       }
       // Composio connections

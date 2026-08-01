@@ -80,6 +80,7 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
   const [editing, setEditing] = useState<{ postId: string; platform: string; text: string } | null>(null)
   const [savingPost, setSavingPost] = useState(false)
   const [reviewingPost, setReviewingPost] = useState<string | null>(null)
+  const [preparingPreview, setPreparingPreview] = useState(false)
   const [startAt] = useState(() => {
     const first = toDatetimeLocal(agent.campaign?.posts?.[0]?.scheduledAt)
     const fallback = toDatetimeLocal(defaultStartAt())
@@ -134,13 +135,17 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
   const platformIds = campaign.meta.platforms
   const missingBrand = !brand.audience.trim() || !brand.tone.trim()
   const requiredConnectors = platformIds.filter(id => !connectorConnected(id, integrationStatus))
+  const missingCaptions = campaign.posts.some(post => (post.platforms || []).some(platform => !String(post.captions?.[platform] || '').trim()))
+  const requiresImage = campaign.meta.includeImages === true || platformIds.includes('instagram')
+  const missingImages = requiresImage && campaign.posts.some(post => !String(post.imageUrl || post.image_url || '').trim())
+  const previewReady = !missingCaptions && !missingImages
   // One approved content item costs one credit across all selected platforms.
   const total = Math.max(1, campaign.posts.length)
   const balance = credits ?? 0
   const canAfford = isAdmin || balance >= total
   const startAtDate = scheduleDate && scheduleTime ? new Date(`${scheduleDate}T${scheduleTime}`) : null
   const startValid = postingOption === 'now' || Boolean(startAtDate && !isNaN(startAtDate.getTime()) && startAtDate.getTime() > Date.now())
-  const canActivate = requiredConnectors.length === 0 && !missingBrand && canAfford && startValid && !campaign.posts.some(post => post.status === 'publishing') && !campaign.posts.every(post => post.status === 'posted')
+  const canActivate = requiredConnectors.length === 0 && !missingBrand && canAfford && startValid && previewReady && !campaign.posts.some(post => post.status === 'publishing') && !campaign.posts.every(post => post.status === 'posted')
   const confirmation = postingOption === 'now' ? 'This post will publish immediately after approval.' : (scheduleDate && scheduleTime ? `This post will be published on ${new Date(`${scheduleDate}T${scheduleTime}`).toLocaleDateString(undefined, { dateStyle: 'long' })} at ${new Date(`${scheduleDate}T${scheduleTime}`).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}, ${timezone} time.` : '')
 
   const groupedPosts = useMemo(() => {
@@ -171,6 +176,31 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
     } finally { setSavingBrand(false) }
   }
 
+  const preparePreview = async () => {
+    setPreparingPreview(true)
+    setNotice('Alpha is preparing the final captions and matched images for your review...')
+    try {
+      const start = await fetch(`/api/automations/${encodeURIComponent(draft.id)}/generate-background`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ automationId: draft.id }) })
+      const startBody = await start.json().catch(() => ({}))
+      if (!start.ok) throw new Error(startBody.error || 'Could not start preview preparation.')
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        await new Promise(resolve => window.setTimeout(resolve, 1500))
+        const response = await fetch(`/api/automations/${encodeURIComponent(draft.id)}/progress`, { headers: authHeaders() })
+        const progress = await response.json().catch(() => ({}))
+        if (!response.ok) throw new Error(progress.error || 'Could not check preview preparation.')
+        if (Array.isArray(progress.campaignPosts) && progress.campaignPosts.length) setDraft(current => current.campaign ? { ...current, campaign: { ...current.campaign, posts: progress.campaignPosts } } : current)
+        if (progress.status === 'failed' || progress.status === 'completed_with_errors' || progress.error) throw new Error(progress.error || 'Preview preparation failed.')
+        if (progress.status === 'completed' && Number(progress.progress) >= 100) {
+          setNotice('Preview ready. Review the final captions and matched images, then publish.')
+          return
+        }
+      }
+      throw new Error('Preview preparation is taking longer than expected. Nothing was published or charged. Try again shortly.')
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Could not prepare the preview.')
+    } finally { setPreparingPreview(false) }
+  }
+
   const startEditPost = (postId: string, platform: string, text: string) => {
     setEditing({ postId, platform, text })
   }
@@ -194,7 +224,7 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
     } finally { setSavingPost(false) }
   }
 
-  const reviewPost = async (postId: string, action: string, tone = '') => {
+  const reviewPost = async (postId: string, platform: string, action: string, tone = '') => {
     setReviewingPost(`${postId}:${action}`)
     setNotice('')
     try {
@@ -229,11 +259,6 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
         campaign: draft.campaign ? { ...draft.campaign, status: 'running', approved: true, posts: draft.campaign.posts.map(post => ({ ...post, approved: true, status: post.status === 'pending_approval' || post.status === 'awaiting_approval' || post.status === 'draft' ? 'scheduled' : post.status })) } : undefined,
       }
       await saveAgent(approvedAgent)
-      void fetch(`/api/automations/${encodeURIComponent(approvedAgent.id)}/generate-background`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ automationId: approvedAgent.id }),
-      }).catch(() => {})
       const controller = new AbortController()
       const timer = window.setTimeout(() => controller.abort(), 30_000)
       const res = await fetch(`/api/agents/campaign/${encodeURIComponent(draft.id)}/activate`, {
@@ -275,8 +300,8 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
     finally { setActivating(false) }
   }
 
-  return <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 p-0 backdrop-blur-sm sm:items-center sm:p-4" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="campaign-preview-title">
-    <div className="relative flex max-h-[96dvh] w-full max-w-full flex-col overflow-hidden rounded-t-3xl border border-[#FFD700]/20 bg-[#15151F] shadow-[0_0_50px_rgba(255,215,0,.13)] sm:max-h-[92dvh] sm:max-w-3xl sm:rounded-3xl" onClick={e => e.stopPropagation()}>
+  return <div className="fixed inset-0 z-50 flex items-stretch justify-center overflow-hidden bg-black/80 p-0 backdrop-blur-sm sm:items-center sm:p-4" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="campaign-preview-title">
+    <div className="relative flex h-[100dvh] w-full max-w-full flex-col overflow-hidden border border-[#FFD700]/20 bg-[#15151F] shadow-[0_0_50px_rgba(255,215,0,.13)] sm:h-auto sm:max-h-[92dvh] sm:max-w-3xl sm:rounded-3xl" onClick={e => e.stopPropagation()}>
       <div className="shrink-0 border-b border-white/10 bg-[#15151F]/95 px-4 py-4 backdrop-blur-2xl sm:px-6 sm:py-5">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -291,6 +316,16 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 sm:px-6 sm:pb-6">
 
       {notice && <div role="status" aria-live="polite" className="mt-4 rounded-xl border border-emerald-400/25 bg-emerald-400/[.07] p-3 text-sm font-bold leading-6 text-emerald-200">{notice}</div>}
+
+      <section className="mt-4 rounded-2xl border border-white/10 bg-[#0A0A0F] p-3" aria-label="Publish readiness">
+        <div className="flex items-center justify-between gap-3"><h3 className="text-sm font-black text-white">Ready to publish</h3><span className={`rounded-full px-2.5 py-1 text-[10px] font-black ${previewReady && !requiredConnectors.length ? 'bg-emerald-400/10 text-emerald-300' : 'bg-amber-300/10 text-amber-200'}`}>{previewReady && !requiredConnectors.length ? 'READY' : 'ACTION NEEDED'}</span></div>
+        <div className="mt-3 grid gap-2 text-xs min-[430px]:grid-cols-3">
+          <p className={missingCaptions ? 'text-amber-200' : 'text-emerald-300'}>{missingCaptions ? '○ Captions need preparation' : '✓ Final captions ready'}</p>
+          <p className={missingImages ? 'text-amber-200' : 'text-emerald-300'}>{requiresImage ? (missingImages ? '○ Matched image needed' : '✓ Matched image ready') : '✓ Text-only plan selected'}</p>
+          <p className={requiredConnectors.length ? 'text-amber-200' : 'text-emerald-300'}>{requiredConnectors.length ? `○ Connect ${requiredConnectors.map(id => platformNames[id] || id).join(', ')}` : '✓ Connections ready'}</p>
+        </div>
+        {!previewReady && <button type="button" onClick={() => void preparePreview()} disabled={preparingPreview} className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#FFD700]/25 bg-[#FFD700]/10 px-4 text-xs font-black text-[#FFD700] disabled:opacity-50">{preparingPreview ? <LoaderCircle className="animate-spin" size={15}/> : <Sparkles size={15}/>} {preparingPreview ? 'Preparing final preview...' : 'Prepare captions & matched images'}</button>}
+      </section>
 
       <div className="mt-6 grid gap-3 sm:grid-cols-3">
         <div className="luxury-card rounded-xl p-4">
@@ -379,8 +414,8 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
                               ['expand', 'Expand'],
                               ['add_hashtags', 'Add hashtags'],
                               ['remove_hashtags', 'Remove hashtags'],
-                            ].map(([action, label]) => <button key={action} disabled={Boolean(reviewingPost)} onClick={() => reviewPost(post.id, action)} className="rounded-md border border-violet-400/20 px-2 py-1 text-[10px] text-white/65 hover:bg-violet-500/10 disabled:opacity-40">{reviewingPost === `${post.id}:${action}` ? 'Working...' : label}</button>)}
-                            <button disabled={Boolean(reviewingPost)} onClick={() => { const tone = window.prompt('What tone should Alpha use?', brand.tone || 'professional'); if (tone) reviewPost(post.id, 'change_tone', tone) }} className="rounded-md border border-violet-400/20 px-2 py-1 text-[10px] text-white/65 hover:bg-violet-500/10 disabled:opacity-40">Change tone</button>
+                            ].map(([action, label]) => <button key={action} disabled={Boolean(reviewingPost)} onClick={() => reviewPost(post.id, platform, action)} className="rounded-md border border-violet-400/20 px-2 py-1 text-[10px] text-white/65 hover:bg-violet-500/10 disabled:opacity-40">{reviewingPost === `${post.id}:${action}` ? 'Working...' : label}</button>)}
+                            <button disabled={Boolean(reviewingPost)} onClick={() => { const tone = window.prompt('What tone should Alpha use?', brand.tone || 'professional'); if (tone) reviewPost(post.id, platform, 'change_tone', tone) }} className="rounded-md border border-violet-400/20 px-2 py-1 text-[10px] text-white/65 hover:bg-violet-500/10 disabled:opacity-40">Change tone</button>
                           </div>}
                         </>}
                       </div>
@@ -429,12 +464,13 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
         </div>
       </div>
 
-      <div className="sticky bottom-0 z-10 -mx-4 mt-6 border-t border-[#FFD700]/10 bg-[#15151F]/95 px-4 py-4 backdrop-blur-2xl sm:-mx-6 sm:px-6">
+      </div>
+      <div className="z-10 shrink-0 border-t border-[#FFD700]/10 bg-[#15151F]/95 px-4 py-3 pb-[max(.75rem,env(safe-area-inset-bottom))] backdrop-blur-2xl sm:px-6 sm:py-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-xs text-white/50">
             {!canActivate && (
               <span className="flex items-center gap-1.5 text-amber-300"><AlertCircle size={12}/>
-                {missingBrand ? 'Fill brand profile first' : requiredConnectors.length ? `Connect ${requiredConnectors.join(', ')}` : !canAfford ? 'Not enough credits' : !startValid ? 'Pick a future start date & time' : 'Cannot activate'}
+                {missingBrand ? 'Fill brand profile first' : requiredConnectors.length ? `Connect ${requiredConnectors.map(id => platformNames[id] || id).join(', ')}` : !previewReady ? 'Prepare and review final content first' : !canAfford ? 'Not enough credits' : !startValid ? 'Pick a future start date & time' : 'Cannot activate'}
               </span>
             )}
           </div>
@@ -450,7 +486,6 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
           </button>
         </div>
       </div>
-    </div>
     </div>
   </div>
 }
