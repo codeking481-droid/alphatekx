@@ -6,6 +6,7 @@ import { useAuth } from '../../lib/auth'
 import { runningAgentsCount, subscribeAgents } from '../../lib/agents/agentStore'
 import { getPlan } from '../../lib/billing'
 import { isAdminUser } from '../../lib/adminAccess'
+import { useAgentExecutor } from '../../lib/agents/useAgentExecutor'
 
 const ONBOARDING_KEY = 'alphatekx:workspace-onboarding'
 
@@ -46,6 +47,9 @@ function useShowOnboarding() {
 }
 
 export default function WorkspaceLayout({ children }: PropsWithChildren) {
+  // Wake the durable scheduler whenever an authenticated workspace is open.
+  // This catches overdue work after a sleeping web service starts again.
+  useAgentExecutor()
   const [open, setOpen] = useState(false)
   const [credits, setCredits] = useState(getCredits())
   const [plan, setPlan] = useState('free')
