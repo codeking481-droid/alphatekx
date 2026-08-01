@@ -55,11 +55,12 @@ const tests = [
     assert.match(agents, /Connected · Personal profile publishing ready/)
     assert.match(agents, /connected-apps\?service=linkedin/)
   }],
-  ['publish now stays open and exposes confirmed real post identifiers', () => {
+  ['one approval publishes now and exits review without a second publish action', () => {
     assert.match(popup, /Real post confirmed/)
     assert.match(popup, /Provider ID:/)
     assert.match(popup, /View real post/)
-    assert.match(popup, /if \(postingOption !== 'now'\) onActivated/)
+    assert.match(popup, /onActivated\(data\.agent\)/)
+    assert.doesNotMatch(popup, /if \(postingOption !== 'now'\) onActivated/)
     assert.match(popup, /if \(result\?\.id\) confirmations\.push/)
   }],
   ['go live never fails as a silent disabled click', () => {

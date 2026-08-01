@@ -35,9 +35,10 @@ test('live countdown includes seconds and due state', () => {
 
 test('campaign value is one credit across connected social platforms', () => {
   assert.match(server, /function computeCampaignPostCredits[\s\S]*?return 1/)
-  assert.match(server, /deferCreditSettlement: true/)
+  assert.match(server, /\}, \{ deferCreditSettlement: true \}\)/)
   assert.match(server, /idempotencyKey: `\$\{existing\.id\}:\$\{post\.id\}:unified`/)
-  assert.match(connector, /if \(deferCreditSettlement\)/)
+  assert.match(connector, /executionPolicy\?\.deferCreditSettlement === true/)
+  assert.match(connector, /if \(!deferCreditSettlement && await getCreditBalance\(user\.id\) < 1\)/)
 })
 
 test('plan limits and free seven-post cap are enforced server-side', () => {

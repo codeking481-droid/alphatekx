@@ -294,7 +294,9 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
       setNotice(postingOption === 'now' ? `Published successfully to ${platformIds.map(id => platformNames[id] || id).join(', ')}. Provider ID${providerIds.length === 1 ? '' : 's'}: ${providerIds.join(', ') || data.agent?.campaign?.posts?.[0]?.providerPostId || 'confirmed'}` : `Approved and scheduled. No credits charged yet. ${confirmation}`)
       setDraft(data.agent)
       setCache([data.agent, ...getAgents().filter(item => item.id !== data.agent.id)])
-      if (postingOption !== 'now') onActivated(data.agent)
+      // Approval is the only action required. Move completed or scheduled work
+      // out of review immediately; never leave a second publish action behind.
+      onActivated(data.agent)
     } catch (err) {
       setNotice(err instanceof DOMException && err.name === 'AbortError' ? 'Provider confirmation is taking longer than expected. Check Active Automations before retrying so you do not create a duplicate request.' : (err instanceof Error ? err.message : 'Activation failed'))
     } finally { setActivating(false) }

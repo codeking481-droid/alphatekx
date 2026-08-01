@@ -3394,8 +3394,7 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
             ...execution.params,
             approvalId: `campaign:${existing.id}`,
             idempotencyKey: `${existing.id}:${post.id}:${platform}`,
-            deferCreditSettlement: true,
-          })
+          }, { deferCreditSettlement: true })
           providerCreditsUsed += Number(result.creditsCharged || 0)
           result = { id: result.providerId, providerId: result.providerId, replayed: result.replayed === true, retryCount: result.retryCount || 0 }
         } else {
@@ -5891,8 +5890,7 @@ async function executeConnectorAction(user, action) {
         ...params,
         approvalId: String(params.approvalId || `automation:${action.action}`),
         idempotencyKey: String(params.idempotencyKey || `automation:${user.id}:${action.action}:${Date.now()}`),
-        deferCreditSettlement: true,
-      })
+      }, { deferCreditSettlement: true })
       result = { id: composioResult.providerId, providerId: composioResult.providerId, replayed: composioResult.replayed === true }
     }
     switch (action.connector) {

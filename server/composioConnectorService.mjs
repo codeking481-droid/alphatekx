@@ -1038,7 +1038,7 @@ export async function disconnectProvider(user, providerId) {
  * @param {object} payload - Action parameters
  * @returns {Promise<{success: boolean, executionId: string, result: unknown, executionTimeMs: number}>}
  */
-export async function executeProviderAction(user, providerId, actionId, payload) {
+export async function executeProviderAction(user, providerId, actionId, payload, executionPolicy = {}) {
   const init = ensureInitialized()
   if (!init.ok) throw new Error(init.error)
 
@@ -1085,7 +1085,9 @@ export async function executeProviderAction(user, providerId, actionId, payload)
 
   const approvalId = String(payload?.approvalId || '').trim()
   const idempotencyKey = String(payload?.idempotencyKey || '').trim()
-  const deferCreditSettlement = payload?.deferCreditSettlement === true
+  // Only trusted server-side callers can defer settlement. Keeping this outside
+  // the request payload prevents clients from bypassing connector credit checks.
+  const deferCreditSettlement = executionPolicy?.deferCreditSettlement === true
   if (!approvalId) throw new Error('Explicit approval is required')
   if (!idempotencyKey) throw new Error('Idempotency key is required')
   const campaignExecution = approvalId.startsWith('campaign:')
@@ -1141,11 +1143,10 @@ export async function executeProviderAction(user, providerId, actionId, payload)
   }
   if (previous?.status === 'claimed') throw new Error('This approved action is already in progress')
   if (previous && previous.status !== 'failed') throw new Error(`This publication cannot be retried from state "${previous.status}"`)
-  if (await getCreditBalance(user.id) < 1) throw new Error('Insufficient credits')
+  if (!deferCreditSettlement && await getCreditBalance(user.id) < 1) throw new Error('Insufficient credits')
   const actionArguments = { ...(payload || {}) }
   delete actionArguments.approvalId
   delete actionArguments.idempotencyKey
-  delete actionArguments.deferCreditSettlement
   const claimed = previous?.status === 'failed'
     ? await reclaimFailedExecution(user.id, idempotencyKey, approvalId)
     : await persistExecution({
