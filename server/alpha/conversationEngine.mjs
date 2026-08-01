@@ -350,12 +350,12 @@ function requiredMissingFields(intent, knownFields) {
   const missing = []
   if (SOCIAL_CONTENT_INTENTS.has(intent)) {
     if (!knownFields.platforms || !knownFields.platforms.length) missing.push({ field: 'platforms', question: 'Which platforms should Alpha post to? I will show which ones are connected before creating anything.', reason: 'Alpha must never assume a publishing platform.', required: true })
+    if (!knownFields.business) missing.push({ field: 'business', question: 'What should the post be about? Tell me the product, business, offer, or message you want people to see.', reason: 'Alpha needs one clear subject before writing the post.', required: true })
     const untilPaused = knownFields.endCondition === 'until_paused'
     if (untilPaused && !knownFields.untilPausedConfirmed) missing.push({ field: 'untilPausedConfirmation', question: 'This schedule runs until paused. Should Alpha auto-pause when your credits finish, set a fixed limit, or wait while you buy more credits?', reason: 'Infinite schedules require an explicit credit-safety choice.', required: true })
-    const linkedinOnly = Array.isArray(knownFields.platforms) && knownFields.platforms.length === 1 && knownFields.platforms[0] === 'linkedin'
     const mode = knownFields.publishingMode || ''
     const recurring = mode === 'recurring'
-    if (!mode) missing.push({ field: 'publishingMode', question: 'Would you like to publish once now, schedule once for later, or run a recurring campaign?', reason: 'I need the publishing mode before I create a safe schedule.', required: true })
+    if (!mode) missing.push({ field: 'publishingMode', question: 'Should I publish this once now, once on a date and time you choose, or repeatedly?', reason: 'I need the publishing mode before I create a safe schedule.', required: true })
     if (recurring && !knownFields.endDate && !knownFields.totalPosts && !knownFields.total_posts && !knownFields.durationDays && !knownFields.endCondition) missing.push({ field: 'endCondition', question: 'How long should this continue? Choose an end date, number of weeks, number of posts, or continue until paused.', reason: 'Recurring publishing needs a user-confirmed end condition.', required: true })
     if (recurring && !knownFields.frequency) missing.push({ field: 'frequency', question: 'How often should Alpha publish?', reason: 'Recurring publishing needs a user-confirmed frequency.', required: true })
     if ((recurring || mode === 'once_later') && !knownFields.time) missing.push({ field: 'time', question: 'What exact time should the post go out?', reason: 'Scheduled publishing needs a user-confirmed time.', required: true })
@@ -363,10 +363,9 @@ function requiredMissingFields(intent, knownFields) {
     if (recurring && !knownFields.startDate) missing.push({ field: 'startDate', question: 'When should this campaign start?', reason: 'I need the first eligible publishing date.', required: true })
     if (mode === 'once_later' && !knownFields.timezone) missing.push({ field: 'timezone', question: 'Which timezone should I use for that scheduled time?', reason: 'The server needs an exact timezone for reliable scheduling.', required: true })
     if (mode === 'once_later' && !knownFields.startDate) missing.push({ field: 'startDate', question: 'What date should it be published?', reason: 'A one-time scheduled post needs an exact date.', required: true })
-    if (!knownFields.business) missing.push({ field: 'business', question: 'What does your business offer, or what is it about?', reason: 'I need this to generate relevant, original posts.', required: true })
-    if (!knownFields.audience) missing.push({ field: 'audience', question: 'Who is your target customer or audience?', reason: 'I need this to make the posts persuasive.', required: true })
-    if (!knownFields.tone) missing.push({ field: 'tone', question: 'What tone should the posts use? (e.g. professional, friendly, playful, bold, persuasive)', reason: 'This determines how the content sounds.', required: true })
-    if (!untilPaused && !linkedinOnly && !knownFields.durationDays && !knownFields.duration_days && !knownFields.totalPosts && !knownFields.total_posts) missing.push({ field: 'durationDays', question: 'For how many days should I create posts?', reason: 'This determines how many posts to generate.', required: true })
+    if (!knownFields.audience) missing.push({ field: 'audience', question: 'Who should this post speak to?', reason: 'I need this to make the posts persuasive.', required: true })
+    if (!knownFields.tone) missing.push({ field: 'tone', question: 'What tone should I use: professional, friendly, playful, bold, or persuasive?', reason: 'This determines how the content sounds.', required: true })
+    if (recurring && !untilPaused && !knownFields.durationDays && !knownFields.duration_days && !knownFields.totalPosts && !knownFields.total_posts && !knownFields.endDate) missing.push({ field: 'durationDays', question: 'How long should it run: a number of days, weeks, months, or posts?', reason: 'This determines how many posts to generate.', required: true })
     return missing
   }
 
@@ -871,22 +870,10 @@ Do not return placeholder text. Use the words the user actually provided.`
       return
     }
 
-    const system = `${ALPHA_SYSTEM_IDENTITY}
-
-Ask the user one concise, friendly question to get the missing detail. You may already know some fields; do not ask for those.
-Return JSON: { "question": "..." }`
-    const context = `Intent: ${conversation.intent}\nGoal: ${conversation.currentGoal}\nAlready known: ${JSON.stringify(conversation.knownFields)}\nMissing detail: ${next.field}\nWhy needed: ${next.reason}`
-
-    try {
-      const res = await callLLMForRole('fast', system, context, { jsonMode: true, maxTokens: 300 })
-      logModelCall(conversation, res, 'ask_question')
-      const question = res.result?.question || next.question
-      conversation.lastQuestion = next.field
-      addMessage(conversation, 'alpha', question, { field: next.field })
-    } catch (err) {
-      conversation.lastQuestion = next.field
-      addMessage(conversation, 'alpha', next.question, { field: next.field })
-    }
+    // The workflow owns its questions. Models write the content but may not
+    // rename scheduler fields or reinterpret a duration as another photo prompt.
+    conversation.lastQuestion = next.field
+    addMessage(conversation, 'alpha', next.question, { field: next.field })
   }
 
   async function handleAnswer(conversation, text) {
@@ -944,6 +931,7 @@ Return JSON:
       if (/\b(?:now|immediately|publish once now)\b/.test(lower)) extracted.publishingMode = 'once_now'
       else if (/\b(?:later|schedule once|schedule it)\b/.test(lower)) extracted.publishingMode = 'once_later'
       else if (/\b(?:recurring|repeat|campaign)\b/.test(lower)) extracted.publishingMode = 'recurring'
+      else delete extracted.publishingMode
       if (extracted.publishingMode) {
         extracted.scheduleSource = 'user_confirmed'
         if (extracted.publishingMode !== 'recurring') {
@@ -954,6 +942,7 @@ Return JSON:
         }
       }
     }
+    if (/\b(?:photo|image|picture|visual)\b/i.test(text)) extracted.includeImages = true
     if (field === 'durationDays' || field === 'duration_days') {
       const d = extractDurationFromText(text)
       if (d) extracted[field] = d
@@ -983,6 +972,10 @@ Return JSON:
       if (duration) extracted.durationDays = duration
       if (duration || count || date || /\buntil\s+paused\b/i.test(text)) extracted.durationSource = 'user_confirmed'
       extracted.endCondition = text.trim()
+    }
+    if (field === 'publishingMode') {
+      contradiction = false
+      clarification = ''
     }
     if (field === 'untilPausedConfirmation') {
       const choice = text.trim().toLowerCase()
@@ -1024,6 +1017,13 @@ Return JSON:
 
     if (contradiction) {
       addMessage(conversation, 'alpha', "Got it. I'll update that.")
+    }
+
+    if (field === 'publishingMode' && !['once_now', 'once_later', 'recurring'].includes(extracted.publishingMode)) {
+      conversation.askedFields = (conversation.askedFields || []).filter(item => item !== field)
+      conversation.lastQuestion = field
+      addMessage(conversation, 'alpha', 'One-time is understood. Should I publish it now, or on a date and time you choose?', { field })
+      return
     }
 
     Object.entries(extracted).forEach(([key, value]) => {
@@ -1446,12 +1446,15 @@ Do not generate any other campaign day. Every entry's "day" must be ${day}.`
       contentPillars,
       calendar: contentPillars.slice(0, 6).map((theme, index) => ({ week: index + 1, theme })),
     }
+    const campaignName = isSinglePost
+      ? `${platforms.map(p => PLATFORM_NAMES[p] || p).join(' + ')} post`
+      : `${platforms.map(p => PLATFORM_NAMES[p] || p).join(' + ')} recurring content - ${totalPosts} posts`
     conversation.automationDraft = {
       id: automationIdFor(conversation),
       type: 'campaign',
       userId: conversation.userId,
       userEmail: conversation.userEmail,
-      name: isSinglePost ? 'LinkedIn post' : `LinkedIn recurring content - ${totalPosts} posts`,
+      name: campaignName,
       description: `Generate and schedule ${totalPosts} posts for ${platforms.map(p => PLATFORM_NAMES[p] || p).join(', ')} for ${business}.`,
       originalRequest: conversation.originalRequest,
       interpretedGoal: conversation.currentGoal,
@@ -1483,7 +1486,7 @@ Do not generate any other campaign day. Every entry's "day" must be ${day}.`
       executionsTotal: totalPosts,
       generationMode,
       campaign: {
-        name: isSinglePost ? 'LinkedIn post' : `LinkedIn recurring content - ${totalPosts} posts`,
+        name: campaignName,
         description: conversation.originalRequest,
         brand,
         meta,
@@ -1507,10 +1510,12 @@ Do not generate any other campaign day. Every entry's "day" must be ${day}.`
     }
 
     const platformList = platforms.map(p => PLATFORM_NAMES[p] || p).join(', ')
+    const currentCredits = Math.max(0, Number(await getUserCredits({ id: conversation.userId, email: conversation.userEmail })) || 0)
+    const creditSummary = `Cost: ${totalCredits} credit${totalCredits === 1 ? '' : 's'}. Current balance: ${currentCredits}. Balance after every selected platform confirms: ${Math.max(0, currentCredits - totalCredits)}. Failed or unconfirmed posts are not charged.`
     if (generationMode === 'model') {
       addMessage(conversation, 'alpha', status.allReady
-        ? `I generated ${posts.length} original post${posts.length === 1 ? '' : 's'} for ${platformList}. Review or improve the content, then explicitly approve it before scheduling or publishing.`
-        : `I generated ${posts.length} original post${posts.length === 1 ? '' : 's'} for ${platformList}. Review it now, then connect ${status.missing.join(', ')} before approval.`, { generatedCount: posts.length, totalCredits })
+        ? `I generated ${posts.length} original post${posts.length === 1 ? '' : 's'} for ${platformList}. ${creditSummary} Review the final text and matched image, then explicitly approve it.`
+        : `I generated ${posts.length} original post${posts.length === 1 ? '' : 's'} for ${platformList}. ${creditSummary} Review it now, then connect ${status.missing.join(', ')} before approval.`, { generatedCount: posts.length, totalCredits, currentCredits })
     } else {
       addMessage(conversation, 'alpha', `Alpha’s content-generation models are temporarily unavailable. Your automation details have been saved, so you can continue without starting again. I've prepared ${posts.length} starter posts you can edit, regenerate, or approve once the models are back.`, { generatedCount: posts.length, totalCredits })
     }

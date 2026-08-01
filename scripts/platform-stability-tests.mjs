@@ -63,6 +63,29 @@ await test('a genuine request after a greeting enters deterministic planning', a
   assert.equal(fixture.modelCalls, 0)
 })
 
+await test('Facebook one-time planning asks each scheduler field once without photo loops', async () => {
+  const fixture = testEngine()
+  const user = { id: 'facebook-question-flow', email: 'owner@example.com' }
+  let conversation = await fixture.engine.start(user, 'post to my facebook')
+  assert.equal(conversation.lastQuestion, 'business')
+  assert.match(conversation.messages.at(-1).text, /post be about/i)
+
+  conversation = await fixture.engine.continue(conversation.id, user, 'AlphaTekx, an AI employee that posts while you sleep')
+  assert.equal(conversation.lastQuestion, 'publishingMode')
+
+  conversation = await fixture.engine.continue(conversation.id, user, 'yes one time')
+  assert.equal(conversation.lastQuestion, 'publishingMode')
+  assert.match(conversation.messages.at(-1).text, /publish it now.*date and time/i)
+
+  conversation = await fixture.engine.continue(conversation.id, user, 'publish now')
+  assert.equal(conversation.lastQuestion, 'audience')
+  conversation = await fixture.engine.continue(conversation.id, user, 'potential customers')
+  assert.equal(conversation.lastQuestion, 'tone')
+
+  const questions = conversation.messages.filter(message => message.role === 'alpha').map(message => message.text)
+  assert.equal(questions.some(question => /what (?:kind|type) of (?:photo|post)/i.test(question)), false)
+})
+
 await test('misspelled direct image request bypasses automation clarification', async () => {
   const fixture = testEngine()
   const conversation = await fixture.engine.start({ id: 'image-user', email: 'owner@example.com' }, 'creaet an image of a beautiful car')
