@@ -6,6 +6,8 @@ const agents = fs.readFileSync(new URL('../src/pages/Agents.tsx', import.meta.ur
 const wizard = fs.readFileSync(new URL('../src/components/automation/MatureAutomationWizard.tsx', import.meta.url), 'utf8')
 const home = fs.readFileSync(new URL('../src/pages/Home.tsx', import.meta.url), 'utf8')
 const connectors = fs.readFileSync(new URL('../src/pages/Connectors.tsx', import.meta.url), 'utf8')
+const engine = fs.readFileSync(new URL('../server/alpha/conversationEngine.mjs', import.meta.url), 'utf8')
+const server = fs.readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
 
 const tests = [
   ['LinkedIn is explicitly presented as native personal-profile publishing', () => {
@@ -62,6 +64,13 @@ const tests = [
     assert.match(popup, /onActivated\(data\.agent\)/)
     assert.doesNotMatch(popup, /if \(postingOption !== 'now'\) onActivated/)
     assert.match(popup, /if \(result\?\.id\) confirmations\.push/)
+  }],
+  ['chat approval persists post approval and immediately executes once-now work', () => {
+    assert.match(engine, /post\.status = 'scheduled'[\s\S]*post\.approved = true/)
+    assert.match(engine, /publishingMode === 'once_now'/)
+    assert.match(engine, /await executeAgent\(draft, user\)/)
+    assert.match(engine, /Approved and published/)
+    assert.match(server, /executeAgent: \(agent, user\) => runAgent\(agent, 'manual', user\)/)
   }],
   ['go live never fails as a silent disabled click', () => {
     assert.match(popup, /const activationBlocker =/)
