@@ -1,17 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { isAdminUser } from '../lib/adminAccess'
 import { ArrowRight, CalendarDays, CheckCircle2, Clock3, Download, Edit3, ExternalLink, Linkedin, LoaderCircle, Send, Sparkles, X } from 'lucide-react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
-import CampaignPreview from '../components/agents/CampaignPreview'
-import WorkflowPlan from '../components/agents/WorkflowPlan'
-import { getAgents, saveAgent, setCache, useAgents } from '../lib/agents/agentStore'
+import { getAgents, setCache, useAgents } from '../lib/agents/agentStore'
 import type { Agent } from '../lib/agents/types'
 import { useAuth } from '../lib/auth'
-import { getCredits } from '../lib/creditStore'
 import { getIntegrationStatus, getLocalUser, type IntegrationStatus } from '../lib/integrations'
 import { getConnectedApps } from '../lib/connectors/connectorApi'
-import MatureAutomationWizard, { useMatureWizard } from '../components/automation/MatureAutomationWizard'
 
 type ConversationMessage = { role: 'user' | 'alpha' | 'system'; text: string; ts: string; generatedCount?: number; totalCredits?: number }
 type AlphaConversation = {
@@ -61,8 +56,6 @@ export default function Agents() {
   const [notice, setNotice] = useState('')
   const composer = useRef<HTMLTextAreaElement>(null)
   const messageEnd = useRef<HTMLDivElement>(null)
-  const wizard = useMatureWizard()
-  const isAdmin = isAdminUser(user)
   const linkedIn = integrationStatus.linkedin
   const linkedInReady = linkedIn?.connected === true && linkedIn?.ready === true
 
@@ -123,11 +116,6 @@ export default function Agents() {
     for (const key of ['alphatekx:planning-conversation', 'alphatekx:planning-prompt', 'alphatekx:creation-success', 'alphatekx:pending-agent']) sessionStorage.removeItem(key)
   }, [])
 
-  // Auto-popup wizard for new accounts
-  useEffect(() => {
-    const cleanup = wizard.checkAndOpen()
-    return () => { if (typeof cleanup === 'function') cleanup() }
-  }, [wizard.checkAndOpen])
   useEffect(() => {
     if (conversation) sessionStorage.setItem(CONVERSATION_KEY, JSON.stringify(conversation))
     else sessionStorage.removeItem(CONVERSATION_KEY)
@@ -178,14 +166,6 @@ export default function Agents() {
   const send = async (overrideMessage?: string) => {
     const message = String(overrideMessage ?? input).trim()
     if (!message || creating) return
-    // Check if message is about creating an automation -> open wizard
-    const autoKeywords = ['run automation','create automation','new automation','post on','i want to automate','another automation','start posting','post on linkedin','post on instagram','post on facebook','post on x','post on twitter','every monday','every day','schedule post',' post ','post on',' i want to post','create a post','make a post','schedule']
-    const lower = message.toLowerCase()
-    if (autoKeywords.some(k => lower.includes(k))) {
-      setCreating(false)
-      wizard.openWizard()
-      return
-    }
     setCreating(true)
     setNotice('')
     setInput('')
@@ -214,55 +194,6 @@ export default function Agents() {
     clearPlanning()
     setSuccess(result)
     setNotice('')
-  }
-
-  const approveGeneral = async (agent: Agent) => {
-    if (!conversation?.id || creating) return
-    setCreating(true)
-    setNotice('')
-    try {
-      const approvedAgent = {
-        ...agent,
-        status: 'active' as const,
-        approved: true,
-        updatedAt: new Date().toISOString(),
-        campaign: agent.campaign ? { ...agent.campaign, status: 'active', approved: true } : undefined,
-      }
-      const whatsappAction = approvedAgent.actions.find(action => action.connector === 'whatsapp' && action.action === 'send_message')
-      if (whatsappAction) {
-        const response = await fetchWithTimeout('/api/connectors/whatsapp/test-message', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...authHeaders() },
-          body: JSON.stringify({ recipient: whatsappAction.params.to || whatsappAction.params.phone, approved: true, idempotencyKey: `${conversation.id}:whatsapp-first-message` }),
-        })
-        const data = await response.json().catch(() => ({}))
-        if (!response.ok || !data.ok) throw new Error(data.message || data.error || 'WhatsApp could not send this test message. Your credits were not charged.')
-        clearPlanning()
-        setSuccess({ id: '', name: 'WhatsApp first message', message: 'Message accepted by WhatsApp.' })
-        return
-      }
-      const response = await fetchWithTimeout(`/api/alpha/conversation/${encodeURIComponent(conversation.id)}/create`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ agent: approvedAgent }),
-      })
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok || !data.agent) {
-        await saveAgent(approvedAgent)
-        setCache([approvedAgent, ...getAgents().filter(item => item.id !== approvedAgent.id)])
-        created(approvedAgent)
-        return
-      }
-      const saved = data.agent as Agent
-      const persisted = { ...saved, status: 'active' as const, approved: true, updatedAt: new Date().toISOString() }
-      await saveAgent(persisted)
-      setCache([persisted, ...getAgents().filter(item => item.id !== persisted.id)])
-      created(persisted)
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'We could not create this automation. Please try again. Your credits were not charged.')
-    } finally {
-      setCreating(false)
-    }
   }
 
   const needsConnection = conversation?.pendingConnections?.[0] || pendingAgent?.missing?.find(item => item.field === 'connection')?.connector
@@ -308,6 +239,15 @@ export default function Agents() {
                 </div>
               </div>)}
               {creating && <div className="flex items-center gap-2 text-sm text-slate-400"><LoaderCircle className="animate-spin" size={16}/>Alpha is thinking…</div>}
+              {pendingAgent && conversation && ['awaiting_content_review', 'awaiting_approval', 'ready_to_create'].includes(conversation.conversationStage) && <div className="rounded-2xl border border-violet-400/20 bg-violet-500/[.08] p-4 sm:p-5" aria-label="Automation approval in chat">
+                <p className="text-xs font-black uppercase tracking-[.16em] text-violet-300">Plan ready in chat</p>
+                <p className="mt-2 text-sm font-bold text-white">{pendingAgent.name || 'Your automation'}</p>
+                <p className="mt-1 text-xs leading-5 text-slate-400">Review Alpha's messages above. Nothing becomes active until you approve here or type “approve”.</p>
+                <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                  <button type="button" onClick={() => void send(conversation.conversationStage === 'awaiting_content_review' ? 'approve all' : 'approve')} disabled={creating} className="min-h-11 rounded-xl bg-violet-600 px-5 text-sm font-black text-white disabled:opacity-50">{conversation.conversationStage === 'awaiting_content_review' ? 'Approve content in chat' : 'Approve and activate in chat'}</button>
+                  {conversation.conversationStage === 'awaiting_content_review' && <button type="button" onClick={() => void send('regenerate')} disabled={creating} className="min-h-11 rounded-xl border border-violet-300/20 px-5 text-sm font-black text-violet-200 disabled:opacity-50">Regenerate in chat</button>}
+                </div>
+              </div>}
               <div ref={messageEnd}/>
             </div>
           )}
@@ -325,9 +265,6 @@ export default function Agents() {
       </section>}
     </div>
 
-    {pendingAgent?.type === 'campaign' && <CampaignPreview agent={pendingAgent} integrationStatus={integrationStatus} credits={getCredits()} isAdmin={isAdmin} authHeaders={authHeaders} onClose={() => setPendingAgent(null)} onActivated={created}/>}
-    {pendingAgent && pendingAgent.type !== 'campaign' && <WorkflowPlan agent={pendingAgent} integrationStatus={integrationStatus} credits={getCredits()} isAdmin={isAdmin} onClose={() => setPendingAgent(null)} onApprove={approveGeneral}/>}
-    <MatureAutomationWizard open={wizard.open} onComplete={wizard.close} />
   </main>
 }
 

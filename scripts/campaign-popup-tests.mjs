@@ -4,6 +4,7 @@ import fs from 'node:fs'
 const popup = fs.readFileSync(new URL('../src/components/agents/CampaignPreview.tsx', import.meta.url), 'utf8')
 const agents = fs.readFileSync(new URL('../src/pages/Agents.tsx', import.meta.url), 'utf8')
 const wizard = fs.readFileSync(new URL('../src/components/automation/MatureAutomationWizard.tsx', import.meta.url), 'utf8')
+const home = fs.readFileSync(new URL('../src/pages/Home.tsx', import.meta.url), 'utf8')
 
 const tests = [
   ['LinkedIn is explicitly presented as native personal-profile publishing', () => {
@@ -80,6 +81,13 @@ const tests = [
     assert.match(wizard, /const hasEnoughCredits = isAdmin \|\| creditBalance >= totalCreditsNeeded/)
     assert.match(wizard, /immediateConfirmed/)
     assert.match(wizard, /role="alert" aria-live="assertive"/)
+  }],
+  ['automation planning and approval stay inside Alpha chat without popup entry points', () => {
+    assert.doesNotMatch(agents, /MatureAutomationWizard|CampaignPreview|WorkflowPlan|wizard\.openWizard/)
+    assert.doesNotMatch(home, /MatureAutomationWizard|useMatureWizard/)
+    assert.match(agents, /Approve and activate in chat/)
+    assert.match(agents, /awaiting_content_review' \? 'approve all' : 'approve'/)
+    assert.match(agents, /Plan ready in chat/)
   }],
 ]
 
