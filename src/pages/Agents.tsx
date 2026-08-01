@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowRight, CalendarDays, CheckCircle2, Clock3, Download, Edit3, ExternalLink, Linkedin, LoaderCircle, Send, Sparkles, X } from 'lucide-react'
+import { ArrowRight, CalendarDays, CheckCircle2, Clock3, Download, Edit3, ExternalLink, Image, Linkedin, LoaderCircle, Plug, Send, Sparkles, X } from 'lucide-react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import { getAgents, setCache, useAgents } from '../lib/agents/agentStore'
 import type { Agent } from '../lib/agents/types'
 import { useAuth } from '../lib/auth'
-import { getIntegrationStatus, getLocalUser, type IntegrationStatus } from '../lib/integrations'
+import { getIntegrationStatus, type IntegrationStatus } from '../lib/integrations'
 import { getConnectedApps } from '../lib/connectors/connectorApi'
+import { postJson } from '../lib/apiClient'
 
 type ConversationMessage = { role: 'user' | 'alpha' | 'system'; text: string; ts: string; generatedCount?: number; totalCredits?: number }
 type AlphaConversation = {
@@ -26,17 +27,20 @@ const SUCCESS_KEY = 'alphatekx:creation-success:v2'
 const PENDING_KEY = 'alphatekx:pending-agent:v2'
 const PLANNING_OWNER_KEY = 'alphatekx:planning-owner:v2'
 const examples = [
-  'Post useful Python content on LinkedIn every Monday.',
-  'Send me my calendar every morning.',
-  'Publish educational content three times every week.',
+  { title: 'Publish one professional post', prompt: 'Create one professional LinkedIn post with a matched image. Show me the post and image for review before publishing.' },
+  { title: 'Launch a social campaign', prompt: 'Promote my business on Facebook, Instagram, X, and LinkedIn with unique posts and matched images. Ask me for the schedule and show everything for review.' },
+  { title: 'Create a premium image', prompt: 'Create a premium professional image for my business and save it to my Media Library.' },
+  { title: 'Build a weekly schedule', prompt: 'Create a weekly social media schedule for my business. Ask me which platforms, days, time, audience, and tone.' },
+  { title: 'Send a useful email', prompt: 'Help me create and send a professional email. Ask for the recipient, subject, and message before sending.' },
+  { title: 'Summarize my calendar', prompt: 'Send me a useful summary of my connected calendar every morning. Ask me what time to use.' },
 ]
 
-async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs = 90_000) {
-  const controller = new AbortController()
-  const timer = window.setTimeout(() => controller.abort(), timeoutMs)
-  try { return await fetch(input, { ...init, signal: controller.signal }) }
-  finally { window.clearTimeout(timer) }
-}
+const socialConnections = [
+  { id: 'linkedin', name: 'LinkedIn' },
+  { id: 'facebook', name: 'Facebook' },
+  { id: 'instagram', name: 'Instagram' },
+  { id: 'x', name: 'X' },
+] as const
 
 function readStored<T>(key: string): T | null {
   try { const value = sessionStorage.getItem(key); return value ? JSON.parse(value) as T : null } catch { return null }
@@ -58,14 +62,6 @@ export default function Agents() {
   const messageEnd = useRef<HTMLDivElement>(null)
   const linkedIn = integrationStatus.linkedin
   const linkedInReady = linkedIn?.connected === true && linkedIn?.ready === true
-
-  const authHeaders = (): Record<string, string> => {
-    const headers: Record<string, string> = {}
-    if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
-    const local = getLocalUser()
-    if (!session?.access_token && local) { headers['x-local-user-id'] = local.id; headers['x-local-user-email'] = local.email }
-    return headers
-  }
 
   const refreshConnections = async () => {
     const [legacyResult, connectedAppsResult] = await Promise.allSettled([
@@ -172,9 +168,7 @@ export default function Agents() {
     try {
       const endpoint = conversation?.id ? `/api/alpha/conversation/${encodeURIComponent(conversation.id)}` : '/api/alpha/conversation'
       const body = conversation?.id ? { message } : { prompt: message }
-      const response = await fetchWithTimeout(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify(body) })
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(data.error || 'Alpha could not continue the plan.')
+      const data = await postJson<Record<string, unknown>>(endpoint, body, { timeoutMs: 90_000 })
       const next = (data.conversation || data) as AlphaConversation
       if (next.conversationStage === 'created' && next.automationDraft) {
         const agent = next.automationDraft
@@ -214,7 +208,11 @@ export default function Agents() {
       {success && !conversation ? <section className="my-auto rounded-3xl border border-emerald-400/20 bg-emerald-500/[.08] p-7 text-center sm:p-10" aria-live="polite">
         <CheckCircle2 className="mx-auto text-emerald-300" size={34}/>
         <h2 className="mt-4 text-xl font-semibold">{success.message || 'Automation created successfully.'}</h2>
-        {success.id && <button onClick={() => navigate(`/active-automations/${success.id}`)} className="mx-auto mt-6 flex min-h-12 items-center justify-center gap-2 rounded-xl btn-alpha px-5 text-sm">Visit Automation<ArrowRight size={16}/></button>}
+        <div className="mx-auto mt-6 flex max-w-xl flex-col justify-center gap-2 sm:flex-row">
+          {success.id && <button onClick={() => navigate(`/active-automations/${success.id}`)} className="flex min-h-12 items-center justify-center gap-2 rounded-xl btn-alpha px-5 text-sm">Visit Automation<ArrowRight size={16}/></button>}
+          <button onClick={startNew} className="min-h-12 rounded-xl border border-emerald-300/20 px-5 text-sm font-black text-emerald-100">Create another</button>
+          <Link to="/connected-apps" className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-white/10 px-5 text-sm font-black text-slate-200"><Plug size={16}/>Connected Apps</Link>
+        </div>
       </section> : <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="absolute right-3 top-3 z-20 sm:right-6">{conversation && <button onClick={startNew} className="rounded-xl border border-violet-300/15 bg-[#0A0F1E]/80 px-3 py-2 text-xs font-bold text-slate-300 backdrop-blur-xl hover:text-white">New chat</button>}</div>
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-5 sm:px-6 sm:py-8" aria-live="polite">
@@ -223,12 +221,19 @@ export default function Agents() {
               <span className="grid size-12 place-items-center rounded-2xl bg-violet-500/15 text-violet-300"><Sparkles size={22}/></span>
               <h1 className="mt-5 text-2xl font-black tracking-tight sm:text-3xl">What can Alpha do for you?</h1>
               <p className="mt-3 max-w-xl text-sm leading-6 text-slate-400">{agents.length === 0 ? 'Describe a result. Alpha will ask only what is missing, prepare the work, and wait for your approval.' : 'Ask a question, create an image, or describe the next result you want automated.'}</p>
+              <div className="mt-5 flex w-full max-w-3xl flex-wrap justify-center gap-2" aria-label="Social connection status">
+                {socialConnections.map(platform => {
+                  const state = integrationStatus[platform.id]
+                  const ready = state?.connected === true && state?.ready === true
+                  return <Link key={platform.id} to={`/connected-apps?service=${platform.id}&returnTo=${encodeURIComponent('/automations')}`} className={`inline-flex min-h-10 items-center gap-2 rounded-full border px-3 text-xs font-black transition ${ready ? 'border-emerald-400/20 bg-emerald-500/[.08] text-emerald-200' : 'border-white/10 bg-white/[.035] text-slate-300 hover:border-violet-400/30'}`}><span className={`size-2 rounded-full ${ready ? 'bg-emerald-400' : 'bg-slate-500'}`}/>{platform.name}{ready ? ' connected' : ' connect'}</Link>
+                })}
+              </div>
               <div className={`mt-5 flex w-full max-w-xl items-center gap-3 rounded-2xl border p-3 text-left ${linkedInReady ? 'border-[#0A66C2]/35 bg-[#0A66C2]/10' : 'border-amber-300/20 bg-amber-300/[.06]'}`}>
                 <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-[#0A66C2] text-white"><Linkedin size={21}/></span>
                 <div className="min-w-0 flex-1"><p className="text-sm font-black text-white">LinkedIn <span className="ml-1 text-[10px] font-black uppercase tracking-wider text-[#78B9F2]">Native</span></p><p className={`mt-0.5 text-xs font-bold ${linkedInReady ? 'text-emerald-300' : 'text-amber-200'}`}>{linkedInReady ? 'Connected · Personal profile publishing ready' : linkedIn?.connected ? 'Reconnect required for publishing permission' : 'Not connected yet'}</p></div>
                 {linkedInReady ? <CheckCircle2 className="shrink-0 text-emerald-300" size={19}/> : <Link to="/connected-apps?service=linkedin" className="flex min-h-10 shrink-0 items-center gap-1 rounded-xl border border-amber-300/25 px-3 text-xs font-black text-amber-200">Connect <ExternalLink size={13}/></Link>}
               </div>
-              <div className="mt-7 grid w-full gap-2 sm:grid-cols-3">{examples.map(example => <button key={example} onClick={() => { setInput(example); composer.current?.focus() }} className="min-h-16 rounded-2xl border border-violet-400/15 bg-white/[.035] px-4 py-3 text-left text-sm font-semibold text-slate-300 transition hover:border-violet-400/35 hover:bg-violet-500/10">{example}</button>)}</div>
+              <div className="mt-7 grid w-full max-w-3xl gap-2 sm:grid-cols-2 lg:grid-cols-3" aria-label="Try a suggestion">{examples.map(example => <button key={example.title} onClick={() => { setInput(example.prompt); window.setTimeout(() => composer.current?.focus(), 0) }} className="group min-h-20 rounded-2xl border border-violet-400/15 bg-white/[.035] px-4 py-3 text-left transition hover:-translate-y-0.5 hover:border-violet-400/35 hover:bg-violet-500/10"><span className="flex items-center gap-2 text-sm font-black text-slate-100">{example.title.includes('image') ? <Image size={15} className="text-violet-300"/> : <Sparkles size={15} className="text-violet-300"/>}{example.title}</span><span className="mt-1.5 block text-xs leading-5 text-slate-400">Click to edit this prompt before sending.</span></button>)}</div>
             </div>
           ) : (
             <div className="mx-auto w-full max-w-3xl space-y-6">
