@@ -8,6 +8,7 @@ const home = fs.readFileSync(new URL('../src/pages/Home.tsx', import.meta.url), 
 const connectors = fs.readFileSync(new URL('../src/pages/Connectors.tsx', import.meta.url), 'utf8')
 const engine = fs.readFileSync(new URL('../server/alpha/conversationEngine.mjs', import.meta.url), 'utf8')
 const server = fs.readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
+const apiClient = fs.readFileSync(new URL('../src/lib/apiClient.ts', import.meta.url), 'utf8')
 
 const tests = [
   ['LinkedIn is explicitly presented as native personal-profile publishing', () => {
@@ -105,6 +106,11 @@ const tests = [
     assert.match(agents, /postJson<Record<string, unknown>>\(endpoint, body/)
     assert.doesNotMatch(agents, /fetchWithTimeout\(endpoint/)
     assert.doesNotMatch(agents, /const authHeaders =/)
+  }],
+  ['API failures never dump an HTML document into Alpha chat', () => {
+    assert.match(apiClient, /looksLikeHtml/)
+    assert.match(apiClient, /unexpected page/)
+    assert.match(apiClient, /raw\.slice\(0, 400\)/)
   }],
   ['starter suggestions are editable and never activate work on click', () => {
     assert.match(agents, /setInput\(example\.prompt\)/)
