@@ -64,21 +64,11 @@ export default function Connectors() {
     let cancelled = false
     const check = async () => {
       try {
-        const [apps, integrationStatus] = await Promise.allSettled([
-          getConnectedApps(session.access_token),
-          import('../lib/integrations').then(({ getIntegrationStatus }) => getIntegrationStatus(session.access_token))
-        ])
+        const apps = await getConnectedApps(session.access_token)
         const ready = new Set<string>()
-        if (apps.status === 'fulfilled') {
-          for (const provider of apps.value.providers || []) {
-            const state = { connected: provider.connected === true, ready: provider.ready === true || provider.status === 'connected' || provider.status === 'active' }
-            if (state.connected && state.ready) ready.add(normalizeProviderId(provider.provider))
-          }
-        }
-        if (integrationStatus.status === 'fulfilled') {
-          const status = integrationStatus.value as Record<string, { connected?: boolean }> | undefined
-          const linkedInState = { connected: status?.linkedin?.connected === true, ready: status?.linkedin?.connected === true }
-          if (linkedInState.connected && linkedInState.ready) ready.add('linkedin')
+        for (const provider of apps.providers || []) {
+          const state = { connected: provider.connected === true, ready: provider.ready === true || provider.status === 'connected' || provider.status === 'active' }
+          if (state.connected && state.ready) ready.add(normalizeProviderId(provider.provider))
         }
         if (!cancelled) {
           const merged = new Set([...ready])

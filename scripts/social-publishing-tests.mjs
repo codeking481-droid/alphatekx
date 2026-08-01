@@ -27,11 +27,11 @@ test('Instagram uses the current container-and-publish execution', () => {
   assert.throws(() => buildSocialPublishingAction('instagram', {}, 'Launch'), /confirmed image/)
 })
 
-test('X is provider-safe at the 280 character boundary', () => {
+test('X is provider-safe and preserves a matched image for media upload', () => {
   const action = buildSocialPublishingAction('twitter', { imageUrl: 'https://cdn.example/x.jpg' }, 'a'.repeat(500))
-  assert.equal(action.action, 'create_tweet')
+  assert.equal(action.action, 'create_media_tweet')
   assert.equal(action.params.text.length, 280)
-  assert.equal(action.params.image_url, undefined)
+  assert.equal(action.params.image_url, 'https://cdn.example/x.jpg')
   assert.equal(xPostText('short'), 'short')
 })
 
@@ -65,6 +65,14 @@ test('Facebook resolves a managed Page and chooses the correct media tool', () =
   assert.match(source, /FACEBOOK_LIST_MANAGED_PAGES/)
   assert.match(source, /FACEBOOK_CREATE_PHOTO_POST/)
   assert.match(source, /No managed Facebook Page was found/)
+})
+
+test('X uploads media then attaches the confirmed media ID to the real post', () => {
+  const source = fs.readFileSync(new URL('../server/composioConnectorService.mjs', import.meta.url), 'utf8')
+  assert.match(source, /TWITTER_UPLOAD_MEDIA/)
+  assert.match(source, /composioClient\.files\.upload/)
+  assert.match(source, /media__media__ids: \[String\(mediaId\)\]/)
+  assert.match(source, /X did not return a confirmed media ID/)
 })
 
 test('scheduler persists per-platform IDs and skips confirmed retries', () => {
