@@ -2453,6 +2453,34 @@ async function getAutomationProgressPayload(agent) {
   }
 }
 
+async function linkedInConnectedAppStatus(user, config) {
+  const integration = await getUserIntegration(user.id, 'linkedin', config).catch(() => null)
+  const tokens = integration?.tokens || {}
+  const scopes = normalizeLinkedInScopes(integration?.scopes)
+  const expiresAt = Number(tokens.expiry || tokens.expires_at || tokens.expiry_date || 0)
+  const expired = expiresAt > 0 && expiresAt <= Date.now()
+  const stored = hasUsableLinkedInStorage(tokens)
+  const ready = stored && !expired && scopes.includes('w_member_social')
+  return {
+    provider: 'linkedin',
+    name: 'LinkedIn',
+    connected: ready,
+    ready,
+    connectionId: integration?.id || null,
+    status: ready ? 'connected' : stored && expired ? 'expired' : stored ? 'reconnect_required' : 'disconnected',
+    stage: 'live',
+    enabled: true,
+    category: 'Social Media',
+    connectedAt: integration?.created_at || null,
+    lastSyncedAt: integration?.updated_at || null,
+    error: ready ? null : stored && expired ? 'LinkedIn access expired. Reconnect LinkedIn.' : stored ? 'LinkedIn is missing Share on LinkedIn permission. Reconnect LinkedIn.' : null,
+    isNative: true,
+    authMode: 'native',
+    connectionCount: ready ? 1 : 0,
+    actions: ['post'],
+  }
+}
+
 async function prepareCampaignPostContent(agent, post, user, index) {
   const platforms = Array.isArray(post?.platforms) && post.platforms.length ? post.platforms : ['linkedin']
   const topic = String(post?.topic || agent.campaign?.brand?.business || agent.name || 'your business growth')
@@ -4875,6 +4903,7 @@ async function deleteUserIntegration(userId, provider, config) {
   if (provider === 'google') return disconnectGoogleByUser(userId, config)
   if (config.url && config.service) {
     await fetch(`${config.url}/rest/v1/connected_accounts?user_id=eq.${encodeURIComponent(userId)}&provider=eq.${encodeURIComponent(provider)}`, { method: 'DELETE', headers: serviceHeaders(config.service) }).catch(() => {})
+    await fetch(`${config.url}/rest/v1/user_integrations?user_id=eq.${encodeURIComponent(userId)}&provider=eq.${encodeURIComponent(provider)}`, { method: 'DELETE', headers: serviceHeaders(config.service) }).catch(() => {})
     try {
       const meta = await getAuthAppMetadata(userId, config)
       if (meta?.integrations?.[provider]) {
@@ -7592,7 +7621,10 @@ const server = http.createServer(async (req, res) => {
       const config = supabaseConfig()
       const user = await currentOrLocalUser(req, config.url, config.anon)
       if (!user) return json(res, 401, { error: 'Authentication required' })
-      return json(res, 200, await alphaConnector.getConnectedApps(user))
+      const result = await alphaConnector.getConnectedApps(user)
+      const linkedin = await linkedInConnectedAppStatus(user, config)
+      result.providers = [...(result.providers || []).filter(provider => provider.provider !== 'linkedin'), linkedin]
+      return json(res, 200, result)
     } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Failed to list connected apps' }) }
   }
   if (req.url === '/api/composio/toolkits' && req.method === 'GET') {
@@ -7629,6 +7661,12 @@ const server = http.createServer(async (req, res) => {
         const user = await currentOrLocalUser(req, config.url, config.anon)
         if (!user) return json(res, 401, { error: 'Authentication required' })
         if (deleteMatch && req.method === 'DELETE') {
+          if (toolkit === 'linkedin') {
+            await deleteUserIntegration(user.id, 'linkedin', config)
+            const verified = await getUserIntegration(user.id, 'linkedin', config).catch(() => null)
+            if (verified) return json(res, 503, { error: 'LinkedIn disconnect could not be verified. The saved connection was preserved for investigation.' })
+            return json(res, 200, { success: true, disconnected: true, provider: 'linkedin', deletedAccounts: 1 })
+          }
           return json(res, 200, await alphaConnector.disconnectProvider(user, toolkit))
         }
         if (!requireConnectorFeature(req, res, user, toolkit)) return

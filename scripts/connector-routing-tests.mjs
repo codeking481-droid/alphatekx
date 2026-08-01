@@ -11,6 +11,9 @@ const tests = [
     assert.match(connectors, /id: 'linkedin'[\s\S]{0,180}native: true/)
     assert.doesNotMatch(connectors, /id: 'gmail'[\s\S]{0,180}native: true/)
     assert.match(connectors, /platformId === 'linkedin'/)
+    assert.match(server, /linkedInConnectedAppStatus/)
+    assert.match(server, /result\.providers = \[\.\.\.\(result\.providers \|\| \[\]\)\.filter\(provider => provider\.provider !== 'linkedin'\), linkedin\]/)
+    assert.doesNotMatch(connectors, /Promise\.allSettled/)
   }],
   ['Gmail connection and test execution use Composio', () => {
     assert.doesNotMatch(connectors, /startGmailConnection/)
@@ -28,6 +31,11 @@ const tests = [
     assert.match(server, /composioPublishingPlatforms = new Set\(\['youtube', 'instagram', 'facebook', 'whatsapp', 'x', 'twitter'\]\)/)
     assert.doesNotMatch(server, /composioPublishingPlatforms = new Set\([^\n]*'linkedin'/)
     assert.match(server, /case 'linkedin': result = await postToLinkedIn/)
+  }],
+  ['native LinkedIn disconnect clears both encrypted vaults and verifies removal', () => {
+    assert.match(server, /user_integrations\?user_id=eq\./)
+    assert.match(server, /if \(toolkit === 'linkedin'\)/)
+    assert.match(server, /LinkedIn disconnect could not be verified/)
   }],
 ]
 
