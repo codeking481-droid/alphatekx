@@ -6320,11 +6320,30 @@ async function getServerAgent(id, userId = '') {
 async function listServerAgents() {
   if (useSupabaseAgentDb()) {
     const config = supabaseConfig()
-    try { return await supabaseAgents() } catch { /* fall through */ }
+    let primary = []
+    let fallback = []
+    let primaryReadable = false
+    let fallbackReadable = false
+    try {
+      primary = await supabaseAgents()
+      primaryReadable = true
+    } catch { /* merge the owner-scoped durable fallback below */ }
     try {
       const rows = await remoteAgentsList(config)
-      return rows.flatMap(r => r.agents.map(a => ({ ...a, userId: r.userId })))
-    } catch { /* handled below */ }
+      fallback = rows.flatMap(row => row.agents.map(agent => ({ ...agent, userId: agent.userId || row.userId })))
+      fallbackReadable = true
+    } catch { /* use primary when it is available */ }
+    if (primaryReadable || fallbackReadable) {
+      const merged = new Map()
+      for (const agent of [...primary, ...fallback]) {
+        if (!agent?.id) continue
+        const existing = merged.get(agent.id)
+        const existingUpdated = new Date(existing?.updated_at || existing?.updatedAt || existing?.createdAt || 0).getTime()
+        const candidateUpdated = new Date(agent.updated_at || agent.updatedAt || agent.createdAt || 0).getTime()
+        if (!existing || candidateUpdated >= existingUpdated) merged.set(agent.id, agent)
+      }
+      return [...merged.values()]
+    }
     throw new Error('Durable agent persistence is unavailable; refusing to read ephemeral storage')
   }
   return readAgents()
