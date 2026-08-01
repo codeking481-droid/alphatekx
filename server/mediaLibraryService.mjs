@@ -30,6 +30,37 @@ async function responseJson(response) {
   return payload
 }
 
+const OPTIONAL_MEDIA_COLUMNS = new Set([
+  'mime_type', 'file_size', 'title', 'description', 'tags', 'platform_target',
+  'status', 'scheduled_for', 'published_at', 'provider_id', 'execution_key',
+  'claimed_at', 'last_error', 'thumbnail_path', 'updated_at',
+])
+
+function missingMediaColumn(error) {
+  const message = String(error?.message || '')
+  return message.match(/Could not find the ['"]([^'"]+)['"] column of ['"]media_library['"]/i)?.[1] || ''
+}
+
+async function insertMediaRecord(config, record, prefer = 'return=representation') {
+  const compatible = { ...record }
+  for (let attempt = 0; attempt <= OPTIONAL_MEDIA_COLUMNS.size; attempt += 1) {
+    try {
+      const response = await fetch(`${config.url}/rest/v1/media_library`, {
+        method: 'POST',
+        headers: headers(config.service, { 'Content-Type': 'application/json', Prefer: prefer }),
+        body: JSON.stringify(compatible),
+      })
+      return await responseJson(response)
+    } catch (error) {
+      const column = missingMediaColumn(error)
+      if (!column || !OPTIONAL_MEDIA_COLUMNS.has(column) || !(column in compatible)) throw error
+      delete compatible[column]
+      console.warn(`[AlphaTekX] media_library.${column} is unavailable; saving verified media with the compatible schema.`)
+    }
+  }
+  throw Object.assign(new Error('Media Library could not save a compatible record.'), { code: 'DB_ERROR' })
+}
+
 function safeName(value) {
   let name = String(value || 'upload')
   try { name = decodeURIComponent(name) } catch {}
@@ -188,12 +219,7 @@ export async function uploadMedia(config, user, req) {
     title: originalName.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' '),
   }
   try {
-    const created = await fetch(`${config.url}/rest/v1/media_library`, {
-      method: 'POST',
-      headers: headers(config.service, { 'Content-Type': 'application/json', Prefer: 'return=representation' }),
-      body: JSON.stringify(record),
-    })
-    const rows = await responseJson(created)
+    const rows = await insertMediaRecord(config, record)
     return (await decorateRows(config, rows))[0]
   } catch (error) {
     await fetch(`${config.url}/storage/v1/object/${BUCKET}/${storagePath}`, {
@@ -313,10 +339,7 @@ async function persistGenerated(config, user, bytes, mime, metadata) {
     body: bytes,
   })
   await responseJson(upload)
-  const vault = await fetch(`${config.url}/rest/v1/media_library`, {
-    method: 'POST',
-    headers: headers(config.service, { 'Content-Type': 'application/json', Prefer: 'return=minimal' }),
-    body: JSON.stringify({
+  await insertMediaRecord(config, {
       user_id: user.id,
       storage_path: storagePath,
       file_name: `alpha-${metadata.query_hash.slice(0, 12)}.${extension}`,
@@ -327,9 +350,7 @@ async function persistGenerated(config, user, bytes, mime, metadata) {
       description: metadata.prompt,
       tags: metadata.keywords || [],
       status: 'ready',
-    }),
-  })
-  await responseJson(vault)
+    }, 'return=minimal')
   const cache = await fetch(`${config.url}/rest/v1/image_cache`, {
     method: 'POST',
     headers: headers(config.service, { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=representation' }),
@@ -342,7 +363,9 @@ async function persistGenerated(config, user, bytes, mime, metadata) {
       source: metadata.source,
     }),
   })
-  await responseJson(cache)
+  await responseJson(cache).catch(error => {
+    console.warn(`[AlphaTekX] Verified image saved without optional image cache: ${error instanceof Error ? error.message : error}`)
+  })
   return {
     image_url: await signedUrl(config, storagePath, 86400),
     image_storage_path: storagePath,
@@ -402,10 +425,7 @@ export async function generateVideo(config, user, prompt, options = {}) {
     headers: headers(config.service, { 'Content-Type': downloaded.mime, 'x-upsert': 'false' }),
     body: downloaded.bytes,
   }))
-  const rows = await responseJson(await fetch(`${config.url}/rest/v1/media_library`, {
-    method: 'POST',
-    headers: headers(config.service, { 'Content-Type': 'application/json', Prefer: 'return=representation' }),
-    body: JSON.stringify({
+  const rows = await insertMediaRecord(config, {
       user_id: user.id,
       storage_path: storagePath,
       file_name: `alpha-video-${Date.now()}.${extension}`,
@@ -416,8 +436,7 @@ export async function generateVideo(config, user, prompt, options = {}) {
       description: cleanPrompt,
       tags: ['alpha-generated', model],
       status: 'ready',
-    }),
-  }))
+    })
   const item = rows?.[0]
   if (!item?.id) throw Object.assign(new Error('The generated video was stored but its media record could not be confirmed.'), { code: 'DB_ERROR' })
   const fileUrl = await signedUrl(config, storagePath, 86400)

@@ -26,6 +26,12 @@ create policy "integration owner access" on public.user_integrations
   with check (auth.uid() = user_id);
 
 alter table if exists public.media_library
+  add column if not exists mime_type text,
+  add column if not exists file_size bigint,
+  add column if not exists title text,
+  add column if not exists description text,
+  add column if not exists tags text[] not null default '{}',
+  add column if not exists platform_target text[] not null default '{}',
   add column if not exists scheduled_for timestamptz,
   add column if not exists published_at timestamptz,
   add column if not exists provider_id text,
