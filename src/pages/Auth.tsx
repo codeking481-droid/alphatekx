@@ -6,7 +6,7 @@ import { getDeviceFingerprint } from '../lib/fingerprint'
 import { supabase } from '../lib/supabase'
 
 const SITE_URL_HELP = 'Auth is blocked by the Supabase Site URL setting. Set Supabase Site URL to https://alphatekx.name.ng and add https://alphatekx.name.ng/auth as an allowed redirect URL.'
-const OAUTH_STATE_HELP = 'Google sign-in expired or was started from an old tab. Close old AlphaTekx login tabs, then try Continue with Google again.'
+const OAUTH_STATE_HELP = 'That Google sign-in attempt expired. Continue with Google again to start a fresh secure sign-in.'
 const SIGNUP_CHOICE_KEY = 'alphatekx:signup-choice'
 const HUMAN_VERIFICATION_CHOICE = 'human-verification'
 
@@ -33,16 +33,6 @@ function authRedirectUrl() {
     return url.toString()
   } catch {
     return 'https://alphatekx.name.ng/auth'
-  }
-}
-
-function clearStaleOAuthState() {
-  const shouldRemove = (key: string) => /supabase|sb-|pkce|oauth|auth-token/i.test(key)
-  for (const storage of [localStorage, sessionStorage]) {
-    try {
-      const keys = Array.from({ length: storage.length }, (_, index) => storage.key(index)).filter(Boolean) as string[]
-      for (const key of keys) if (shouldRemove(key)) storage.removeItem(key)
-    } catch {}
   }
 }
 
@@ -74,6 +64,7 @@ export default function Auth() {
   const [result, setResult] = useState<VerificationResult | null>(null)
   const [welcomeSettled, setWelcomeSettled] = useState(false)
   const welcomeCreditStarted = useRef(false)
+  const oauthStartInFlight = useRef(false)
   const location = useLocation()
   const navigate = useNavigate()
 
@@ -148,13 +139,13 @@ export default function Auth() {
   }, [session?.access_token, user, verifyHuman, verifying, welcomeSettled])
 
   const google = async (verifyAfterSignIn = false) => {
-    if (!supabase) return
+    if (!supabase || oauthStartInFlight.current) return
+    oauthStartInFlight.current = true
     rememberSignupChoice(verifyAfterSignIn ? HUMAN_VERIFICATION_CHOICE : null)
     setPending(true)
     setNotice('')
+    let redirectStarted = false
     try {
-      await supabase.auth.signOut({ scope: 'local' }).catch(() => null)
-      clearStaleOAuthState()
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -171,12 +162,18 @@ export default function Auth() {
         rememberSignupChoice(null)
         setNotice('Google did not return a fresh sign-in URL. Please try again.')
       }
-      else window.location.replace(data.url)
+      else {
+        redirectStarted = true
+        window.location.assign(data.url)
+      }
     } catch (error) {
       rememberSignupChoice(null)
       setNotice(authMessage(error instanceof Error ? error.message : 'Google sign-in failed.'))
     } finally {
-      setPending(false)
+      if (!redirectStarted) {
+        oauthStartInFlight.current = false
+        setPending(false)
+      }
     }
   }
 
