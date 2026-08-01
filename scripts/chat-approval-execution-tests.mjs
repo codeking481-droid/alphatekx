@@ -1,7 +1,21 @@
 import assert from 'node:assert/strict'
-import { createConversationEngine } from '../server/alpha/conversationEngine.mjs'
+import { contentGenerationMissingFields, createConversationEngine, heuristicParseRequest, publishingModeFromPrompt } from '../server/alpha/conversationEngine.mjs'
 
 const user = { id: 'approval-test-user', email: 'approval@test.local' }
+
+const exactFacebookPrompt = `Create and publish one Facebook post now about AlphaTekx.
+Goal: attract startup founders, creators, freelancers, and small business owners.
+Tone: confident, professional, friendly, and human.
+Generate and attach one clear, professional technology image that matches the post.
+This is a one-time post, not a recurring campaign.
+Show me the final text and image for review. After I approve it once, publish immediately.`
+const parsedFacebookPrompt = heuristicParseRequest(exactFacebookPrompt)
+assert.equal(publishingModeFromPrompt(exactFacebookPrompt), 'once_now', 'explicit one-time Publish Now language must override the word recurring in a negation')
+assert.equal(parsedFacebookPrompt.knownFields.publishingMode, 'once_now')
+assert.equal(parsedFacebookPrompt.knownFields.frequency, 'once')
+assert.equal(parsedFacebookPrompt.knownFields.totalPosts, 1)
+assert.equal(parsedFacebookPrompt.knownFields.audience, 'startup founders, creators, freelancers, and small business owners')
+assert.deepEqual(contentGenerationMissingFields(parsedFacebookPrompt.intent, parsedFacebookPrompt.knownFields), [], 'the complete Facebook request must not ask for frequency, time, timezone, start date, or publishing mode')
 
 function fixture(mode) {
   const now = new Date().toISOString()

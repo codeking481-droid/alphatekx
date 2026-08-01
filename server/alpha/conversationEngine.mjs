@@ -169,16 +169,16 @@ function requestsSinglePost(prompt) {
     /\bdo not schedule (?:a )?recurring campaign\b/i.test(prompt)
 }
 
-function publishingModeFromPrompt(prompt) {
+export function publishingModeFromPrompt(prompt) {
   const text = String(prompt || '').toLowerCase()
-  const rejectsRecurring = /\b(?:do\s+not|don't|not)\s+(?:schedule\s+(?:a\s+)?)?recurring\b/.test(text)
+  const rejectsRecurring = /\b(?:do\s+not|don't|not)\s+(?:schedule\s+)?(?:a\s+)?recurring\b/.test(text)
   if (!rejectsRecurring && (/\b(?:every|each|daily|weekly|monthly|weekdays?|recurring|repeat)\b/.test(text) || /\bfor\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:days?|weeks?|months?)\b/.test(text))) return 'recurring'
   if (/\b(?:now|immediately|right\s+now|publish\s+now)\b/.test(text)) return 'once_now'
   if (/\b(?:today|tomorrow|tonight|schedule\s+(?:it\s+)?for|on\s+\d{4}-\d{2}-\d{2})\b/.test(text)) return 'once_later'
   return ''
 }
 
-function heuristicParseRequest(prompt) {
+export function heuristicParseRequest(prompt) {
   const lower = String(prompt || '').toLowerCase()
   const result = { intent: 'unknown', knownFields: {} }
   const hasPost = /\b(posts?|articles?|content)\b/.test(lower)
@@ -216,8 +216,10 @@ function heuristicParseRequest(prompt) {
   }
 
   const explicitAudienceMatch = prompt.match(/\b(?:target(?:ed)?\s+audience|audience)(?:\s+is)?\s*[:=]\s*([^\.\n]+(?:,[^\.\n]+)*)/i)
+  const goalAudienceMatch = prompt.match(/\bgoal\s*:\s*(?:attract|reach|target)\s+([^\.\n]+)/i)
   const genericAudienceMatch = prompt.match(/\bfor\s+(?!\d+\s*(?:days?|weeks?|months?)\b)([^\.\n]+(?:,[^\.\n]+)*)/i)
   if (explicitAudienceMatch) result.knownFields.audience = explicitAudienceMatch[1].trim().replace(/\s+/g, ' ')
+  else if (goalAudienceMatch) result.knownFields.audience = goalAudienceMatch[1].trim().replace(/\s+/g, ' ')
   else if (/\bbuild\s+for\s+real\s+businesses\b/i.test(prompt)) result.knownFields.audience = 'real businesses, founders, and teams that need production-ready websites and automation'
   else if (genericAudienceMatch) result.knownFields.audience = genericAudienceMatch[1].trim().replace(/\s+/g, ' ')
 
@@ -942,6 +944,19 @@ Return JSON:
           extracted.durationSource = 'user_confirmed'
         }
       }
+    }
+    const explicitModeCorrection = publishingModeFromPrompt(text)
+    if (explicitModeCorrection) {
+      extracted.publishingMode = explicitModeCorrection
+      extracted.scheduleSource = 'user_confirmed'
+      if (explicitModeCorrection !== 'recurring') {
+        extracted.frequency = 'once'
+        extracted.totalPosts = 1
+        extracted.durationDays = 1
+        extracted.durationSource = 'user_confirmed'
+      }
+      contradiction = false
+      clarification = ''
     }
     if (/\b(?:photo|image|picture|visual)\b/i.test(text)) extracted.includeImages = true
     if (field === 'durationDays' || field === 'duration_days') {
