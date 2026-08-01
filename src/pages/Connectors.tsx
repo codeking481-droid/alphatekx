@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, CheckCircle2, LoaderCircle, X, ExternalLink, AlertCircle } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, LoaderCircle, X, ExternalLink, AlertCircle, Bot, Activity, ChevronRight } from 'lucide-react'
 import { FaFacebook, FaInstagram, FaLinkedin, FaXTwitter, FaTiktok, FaYoutube, FaGoogle, FaGithub, FaDiscord } from 'react-icons/fa6'
 import { useAuth } from '../lib/auth'
 import { getConnectedApps, connectProvider, disconnectProvider } from '../lib/connectors/connectorApi'
@@ -184,7 +184,7 @@ export default function Connectors() {
 
   return (
     <main className="min-h-screen bg-[#0A0A0B] px-4 py-8 sm:px-6">
-      <div className="mx-auto max-w-3xl">
+      <div className="mx-auto max-w-5xl">
         <button onClick={() => navigate(returnTo)} className="mb-6 flex items-center gap-2 text-sm font-semibold text-zinc-400 hover:text-zinc-200 transition-colors">
           <ArrowLeft size={16} /> Back
         </button>
@@ -196,7 +196,7 @@ export default function Connectors() {
             </div>
             <div>
               <h1 className="text-xl font-bold text-white">Connected Apps</h1>
-              <p className="text-sm text-zinc-500">Connect your platforms to enable automations</p>
+              <p className="text-sm text-zinc-400">Connect once, return to Alpha, and manage every live job in one workspace.</p>
             </div>
           </div>
 
@@ -206,6 +206,12 @@ export default function Connectors() {
               <span className="font-semibold text-indigo-400">🔒 Secured by AlphaTekX × Composio</span>
               <br />Enterprise-grade SOC2 Certified · 256-bit Encrypted · 100k+ businesses trust us
             </p>
+          </div>
+
+          <div className="mt-4 grid gap-2 sm:grid-cols-3" aria-label="Automation workflow">
+            <button onClick={() => navigate('/connected-apps')} className="flex min-h-14 items-center gap-3 rounded-xl border border-indigo-400/30 bg-indigo-500/10 px-4 text-left"><span className="grid size-7 place-items-center rounded-full bg-indigo-500 text-xs font-black text-white">1</span><span><strong className="block text-sm text-white">Connect</strong><span className="text-xs text-zinc-400">Choose a secure app</span></span></button>
+            <button onClick={() => navigate('/automations')} className="flex min-h-14 items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900/40 px-4 text-left transition hover:border-violet-400/30"><Bot size={20} className="text-violet-300"/><span className="flex-1"><strong className="block text-sm text-white">Ask Alpha</strong><span className="text-xs text-zinc-400">Describe the result</span></span><ChevronRight size={15} className="text-zinc-500"/></button>
+            <button onClick={() => navigate('/active-automations')} className="flex min-h-14 items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900/40 px-4 text-left transition hover:border-emerald-400/30"><Activity size={20} className="text-emerald-300"/><span className="flex-1"><strong className="block text-sm text-white">Running</strong><span className="text-xs text-zinc-400">Track confirmed work</span></span><ChevronRight size={15} className="text-zinc-500"/></button>
           </div>
 
           {notice && (
@@ -267,6 +273,11 @@ export default function Connectors() {
                 </div>
               )
             })}
+          </div>
+
+          <div className="mt-6 flex flex-col gap-2 border-t border-white/5 pt-5 sm:flex-row sm:justify-center">
+            <button onClick={() => navigate(returnTo)} className="min-h-11 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-5 text-sm font-black text-white shadow-lg shadow-violet-950/30">Return to Alpha</button>
+            <button onClick={() => navigate('/active-automations')} className="min-h-11 rounded-xl border border-white/10 px-5 text-sm font-bold text-zinc-200">View running automations</button>
           </div>
 
           <p className="mt-5 text-xs text-zinc-500 text-center">

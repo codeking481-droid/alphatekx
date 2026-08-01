@@ -5,6 +5,7 @@ const popup = fs.readFileSync(new URL('../src/components/agents/CampaignPreview.
 const agents = fs.readFileSync(new URL('../src/pages/Agents.tsx', import.meta.url), 'utf8')
 const wizard = fs.readFileSync(new URL('../src/components/automation/MatureAutomationWizard.tsx', import.meta.url), 'utf8')
 const home = fs.readFileSync(new URL('../src/pages/Home.tsx', import.meta.url), 'utf8')
+const connectors = fs.readFileSync(new URL('../src/pages/Connectors.tsx', import.meta.url), 'utf8')
 
 const tests = [
   ['LinkedIn is explicitly presented as native personal-profile publishing', () => {
@@ -88,6 +89,23 @@ const tests = [
     assert.match(agents, /Approve and activate in chat/)
     assert.match(agents, /awaiting_content_review' \? 'approve all' : 'approve'/)
     assert.match(agents, /Plan ready in chat/)
+  }],
+  ['Alpha chat uses the resilient session client for admin and standard accounts', () => {
+    assert.match(agents, /postJson<Record<string, unknown>>\(endpoint, body/)
+    assert.doesNotMatch(agents, /fetchWithTimeout\(endpoint/)
+    assert.doesNotMatch(agents, /const authHeaders =/)
+  }],
+  ['starter suggestions are editable and never activate work on click', () => {
+    assert.match(agents, /setInput\(example\.prompt\)/)
+    assert.match(agents, /Click to edit this prompt before sending/)
+    assert.doesNotMatch(agents, /onClick=\{\(\) => void send\(example/)
+  }],
+  ['connections, Alpha, and running work form one guided workspace', () => {
+    assert.match(connectors, /aria-label="Automation workflow"/)
+    assert.match(connectors, /navigate\('\/automations'\)/)
+    assert.match(connectors, /navigate\('\/active-automations'\)/)
+    assert.match(connectors, /Return to Alpha/)
+    assert.match(agents, /\/connected-apps\?service=/)
   }],
 ]
 
