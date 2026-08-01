@@ -14,6 +14,7 @@ import { createAlphaBrain } from './server/alphaBrain.mjs'
 import { supabaseServiceHeaders } from './server/supabaseHeaders.mjs'
 import { buildCapabilityPlan, detectCapability, isSupportedAction } from './server/automation/capabilityRegistry.mjs'
 import { createContentMemoryRecord } from './server/automation/contentMemory.mjs'
+import { buildSocialPublishingAction, providerPostIds } from './server/automation/socialPublishing.mjs'
 import { validateFreeCampaign } from './server/automation/freePlanPolicy.mjs'
 import { createConversationEngine } from './server/alpha/conversationEngine.mjs'
 import { normalizeAutomationLifecycle } from './server/automation/lifecycle.mjs'
@@ -3141,28 +3142,6 @@ function campaignNextRun(campaign) {
 }
 
 const composioPublishingPlatforms = new Set(['youtube', 'instagram', 'facebook', 'whatsapp', 'x', 'twitter'])
-function composioCampaignAction(platform, post, caption, campaign) {
-  const imageUrl = post.imageUrl || post.image_url || ''
-  if (platform === 'instagram') {
-    if (!imageUrl) throw new Error('Instagram requires a confirmed image. Regenerate this post before publishing.')
-    return { action: 'create_post', params: { image_url: imageUrl, caption } }
-  }
-  if (platform === 'facebook') return { action: 'create_page_post', params: { message: caption, ...(imageUrl ? { image_url: imageUrl } : {}) } }
-  if (platform === 'x' || platform === 'twitter') {
-    return { action: caption.length > 280 ? 'create_thread' : 'create_tweet', params: { text: caption, ...(imageUrl ? { image_url: imageUrl } : {}) } }
-  }
-  if (platform === 'whatsapp') {
-    const to = post.to || campaign.meta?.to || campaign.meta?.recipient || ''
-    if (!to) throw new Error('WhatsApp needs the recipient phone number with country code before publishing.')
-    return { action: 'send_message', params: { to, message: caption } }
-  }
-  if (platform === 'youtube') {
-    const videoUrl = post.videoUrl || post.video_url || ''
-    if (!videoUrl) throw new Error('YouTube needs a video selected from Media Library before publishing.')
-    return { action: 'upload_video', params: { title: String(post.title || post.topic || 'AlphaTekx video').slice(0, 100), description: caption, tags: post.tags || [], privacyStatus: post.privacyStatus || 'public', video_url: videoUrl } }
-  }
-  throw new Error(`No Composio publishing action exists for ${platform}.`)
-}
 
 async function runCampaignAgent(existing, trigger, executionId, user, admin) {
   const blockedPlatform = [...new Set([...(existing.campaign?.meta?.platforms || []), ...(existing.campaign?.posts || []).flatMap(post => post.platforms || [])])]
@@ -3288,7 +3267,7 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
       try {
         let result
         if (usesComposio) {
-          const execution = composioCampaignAction(platform, post, caption, campaign)
+          const execution = buildSocialPublishingAction(platform, post, caption, campaign)
           result = await alphaConnector.executeProviderAction(user, platform, execution.action, {
             ...execution.params,
             approvalId: `campaign:${existing.id}`,
@@ -3313,6 +3292,7 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
     }
 
     post.result = postResults
+    post.providerPostIds = providerPostIds(postResults)
     if (postSuccess === post.platforms.length) {
       const publishedPlatform = post.platforms[0] || 'linkedin'
       post.status = 'posted'
