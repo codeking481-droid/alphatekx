@@ -73,10 +73,10 @@ test('missing execution history storage cannot block automation deletion', () =>
   assert.match(server, /try \{ await supabaseDeleteAgent\(id\); primaryDeleted = true \} catch/)
 })
 
-test('execution history falls back durably when connected_accounts rejects the record', () => {
+test('execution history falls back to the encrypted integration vault when connected_accounts rejects the record', () => {
   assert.match(server, /connected_accounts save failed: HTTP/)
-  assert.match(server, /saveAuthAppIntegration\(userId, AGENT_EXECUTIONS_PROVIDER/)
-  assert.match(server, /Auth metadata fallback failed/)
+  assert.match(server, /saveUserIntegration\(userId, AGENT_EXECUTIONS_PROVIDER/)
+  assert.match(server, /encrypted integration vault fallback failed/)
 })
 
 test('scheduled check isolates failures and always returns 200', () => {
@@ -106,10 +106,11 @@ test('background generation retries each post and persists progress', () => {
   assert.match(server, /setImmediate\(\(\) => \{ void runAutomationBackgroundGeneration/)
 })
 
-test('every generated campaign image is unique and has a durable fallback', () => {
+test('every generated campaign image is unique, durable, and topic matched', () => {
   assert.match(server, /forceUnique: true/)
   assert.match(media, /uniqueNonce/)
-  assert.match(media, /picsum-fallback/)
+  assert.doesNotMatch(media, /picsum-fallback/)
+  assert.match(media, /verified topic-matched image/)
   assert.match(media, /persistGenerated/)
 })
 

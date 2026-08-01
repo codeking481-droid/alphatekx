@@ -455,7 +455,7 @@ export async function findSmartImage(config, user, content, objective = '', plat
   for (let attempt = 0; attempt < (pollinationsKey ? 3 : 0) && !downloaded; attempt += 1) {
     if (delays[attempt]) await wait(delays[attempt])
     remoteUrl = pollinationsImageUrl(advancedPrompt, negativePrompt, `${Date.now()}-${attempt}-${Math.floor(Math.random() * 100000)}`)
-    downloaded = await downloadImage(remoteUrl, 50 * 1024, 60_000, pollinationsHeaders).catch(error => {
+    downloaded = await downloadImage(remoteUrl, 10 * 1024, 60_000, pollinationsHeaders).catch(error => {
       console.warn(`[AlphaTekX] Pollinations authenticated image attempt ${attempt + 1} failed: ${error instanceof Error ? error.message : error}`)
       return null
     })
@@ -465,7 +465,7 @@ export async function findSmartImage(config, user, content, objective = '', plat
     for (let attempt = 0; attempt < 3 && !downloaded; attempt += 1) {
       if (delays[attempt]) await wait(delays[attempt])
       remoteUrl = pollinationsImageUrl(advancedPrompt, negativePrompt, `${Date.now()}-legacy-${attempt}`, { legacy: true })
-      downloaded = await downloadImage(remoteUrl, 50 * 1024, 60_000).catch(error => {
+      downloaded = await downloadImage(remoteUrl, 10 * 1024, 60_000).catch(error => {
         console.warn(`[AlphaTekX] Pollinations public image attempt ${attempt + 1} failed: ${error instanceof Error ? error.message : error}`)
         return null
       })
@@ -475,7 +475,7 @@ export async function findSmartImage(config, user, content, objective = '', plat
     await wait(2_000)
     source = 'pollinations-legacy-backup'
     remoteUrl = pollinationsImageUrl(advancedPrompt, negativePrompt, `${Date.now()}-backup`, { backup: true })
-    downloaded = await downloadImage(remoteUrl, 50 * 1024, 60_000).catch(error => {
+    downloaded = await downloadImage(remoteUrl, 10 * 1024, 60_000).catch(error => {
       console.warn(`[AlphaTekX] Pollinations backup image attempt failed: ${error instanceof Error ? error.message : error}`)
       return null
     })
@@ -490,15 +490,7 @@ export async function findSmartImage(config, user, content, objective = '', plat
       downloaded = await downloadImage(remoteUrl).catch(() => null)
     }
   }
-  if (!downloaded) {
-    source = 'picsum-fallback'
-    remoteUrl = `https://picsum.photos/seed/${encodeURIComponent(queryHash)}/1024/1024`
-    downloaded = await downloadImage(remoteUrl, 20 * 1024, 60_000).catch(error => {
-      console.warn(`[AlphaTekX] Picsum fallback failed: ${error instanceof Error ? error.message : error}`)
-      return null
-    })
-  }
-  if (!downloaded) throw new Error('Alpha could not fetch a premium image after three verified attempts.')
+  if (!downloaded) throw new Error('Alpha could not fetch a verified topic-matched image after three attempts.')
   try {
     return await persistGenerated(config, user, downloaded.bytes, downloaded.mime, { query_hash: queryHash, query, prompt: advancedPrompt, keywords, source })
   } catch (error) {
@@ -506,7 +498,7 @@ export async function findSmartImage(config, user, content, objective = '', plat
       let publicUrl = /^https:\/\/(?:image\.)?pollinations\.ai\//i.test(remoteUrl) ? remoteUrl : ''
       if (!publicUrl) {
         publicUrl = pollinationsImageUrl(advancedPrompt, negativePrompt, `${Date.now()}-chat`, { backup: true })
-        const publicImage = await downloadImage(publicUrl, 50 * 1024, 60_000).catch(() => null)
+        const publicImage = await downloadImage(publicUrl, 10 * 1024, 60_000).catch(() => null)
         if (!publicImage) throw error
       }
       return {

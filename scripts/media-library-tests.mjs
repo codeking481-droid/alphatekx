@@ -67,7 +67,8 @@ const tests = [
     return backup.hostname === 'image.pollinations.ai' && backup.pathname.startsWith('/prompt/')
   })()],
   ['Pollinations generation runs before optional stock-photo fallback', service.indexOf('const delays = [0, 2_000, 5_000]') < service.indexOf('process.env.PEXELS_API_KEY')],
-  ['social planner automatically activates image matching for visual platforms', engine.includes("['facebook', 'instagram', 'x', 'twitter']") && engine.includes('automaticImagePlatforms')],
+  ['social planner automatically activates image matching for every publishing platform', engine.includes("['linkedin', 'facebook', 'instagram', 'x', 'twitter']") && engine.includes('automaticImagePlatforms')],
+  ['valid compact provider images pass verification and random unrelated images are never substituted', service.includes('downloadImage(remoteUrl, 10 * 1024') && !service.includes("source = 'picsum-fallback'")],
   ['generated images are persisted into the reusable private vault', service.includes("file_type: 'image'") && service.includes("status: 'ready'") && service.includes('image_cache')],
   ['direct chat can display a verified public image when optional vault persistence fails', service.includes('options.allowEphemeral === true') && engine.includes('{ allowEphemeral: true }') && engine.includes("if (!image?.image_url)")],
   ['image fetch retries and rejects undersized provider output', service.includes('attempt < 3') && service.includes('50 * 1024')],

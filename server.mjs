@@ -2481,6 +2481,11 @@ async function linkedInConnectedAppStatus(user, config) {
   }
 }
 
+const imageRequiredSocialPlatforms = new Set(['linkedin', 'facebook', 'instagram', 'x', 'twitter'])
+function campaignPostRequiresImage(agent, platforms = []) {
+  return agent.campaign?.meta?.includeImages === true || platforms.some(platform => imageRequiredSocialPlatforms.has(String(platform).toLowerCase()))
+}
+
 async function prepareCampaignPostContent(agent, post, user, index) {
   const platforms = Array.isArray(post?.platforms) && post.platforms.length ? post.platforms : ['linkedin']
   const topic = String(post?.topic || agent.campaign?.brand?.business || agent.name || 'your business growth')
@@ -2504,7 +2509,7 @@ async function prepareCampaignPostContent(agent, post, user, index) {
 
   let imageUrl = post.imageUrl || post.image_url || ''
   let imageStoragePath = post.imageStoragePath || post.image_storage_path || ''
-  const needsImage = agent.campaign?.meta?.includeImages === true || platforms.includes('instagram')
+  const needsImage = campaignPostRequiresImage(agent, platforms)
   if (needsImage && !imageUrl) {
     const image = await mediaLibrary.findSmartImage(supabaseConfig(), user, `${topic}. ${captions[platforms[0]] || ''}`, goal, platforms[0], { forceUnique: true, uniqueNonce: `${post.id || index}-${Date.now()}-${Math.random()}` })
     imageUrl = image.image_url
@@ -2695,7 +2700,7 @@ async function activateCampaignHandler(req, res) {
     const post = agent.campaign.posts[index]
     const platforms = Array.isArray(post?.platforms) && post.platforms.length ? post.platforms : ['linkedin']
     const hasAllCaptions = platforms.every(platform => String(post?.captions?.[platform] || '').trim().length > 0)
-    const needsImage = agent.campaign?.meta?.includeImages === true || platforms.includes('instagram')
+    const needsImage = campaignPostRequiresImage(agent, platforms)
     const hasRequiredImage = !needsImage || Boolean(post?.imageUrl || post?.image_url)
     const base = { ...post, approved: true, charged: post.charged === true, timezone, postingOption, scheduledLocalDate: body.localDate || null, scheduledLocalTime: body.localTime || null, status: post.status === 'pending_approval' || post.status === 'draft' ? 'scheduled' : post.status }
     if (hasAllCaptions && hasRequiredImage) {
@@ -2721,7 +2726,7 @@ async function activateCampaignHandler(req, res) {
   const needsBackgroundGeneration = agent.campaign.posts.some(post => {
     const platforms = Array.isArray(post.platforms) && post.platforms.length ? post.platforms : ['linkedin']
     const missingCaption = platforms.some(platform => !String(post.captions?.[platform] || '').trim())
-    const missingImage = (agent.campaign?.meta?.includeImages === true || platforms.includes('instagram')) && !String(post.imageUrl || post.image_url || '').trim()
+    const missingImage = campaignPostRequiresImage(agent, platforms) && !String(post.imageUrl || post.image_url || '').trim()
     return missingCaption || missingImage
   })
   if (needsBackgroundGeneration) setImmediate(() => { void runAutomationBackgroundGeneration(agent.id, user.id) })
@@ -3313,6 +3318,24 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
         post.lastError = 'Out of credits - Buy $3 for 20 credits to keep your AI employee working.'
         steps.push({ postId: post.id, status: 'waiting_credits', error_code: 'INSUFFICIENT_CREDITS', credits_used: 0, result: postResults })
         break
+      }
+    }
+
+    const publishingPlatforms = Array.isArray(post.platforms) ? post.platforms : []
+    if (campaignPostRequiresImage(existing, publishingPlatforms) && !String(post.imageUrl || post.image_url || '').trim()) {
+      try {
+        const prepared = await prepareCampaignPostContent(existing, post, user, campaign.posts.indexOf(post))
+        Object.assign(post, prepared)
+        await saveServerAgent({ ...existing, campaign })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        post.status = 'scheduled'
+        post.lastError = `Matched image preparation failed: ${message}`
+        post.scheduledAt = new Date(now.getTime() + backoffMs(3)).toISOString()
+        failedCount++
+        steps.push({ postId: post.id, status: 'error', error_code: 'MATCHED_IMAGE_REQUIRED', credits_used: 0, error: message })
+        await saveServerAgent({ ...existing, campaign })
+        continue
       }
     }
 
@@ -6210,6 +6233,16 @@ async function remoteExecutionsList(config) {
     const rows = await res.json()
     if (Array.isArray(rows) && rows.length) return rows.flatMap(row => (Array.isArray(row.tokens?.executions) ? row.tokens.executions : []).map(execution => ({ ...execution, userId: execution.userId || row.user_id })))
   }
+  const legacy = await fetch(`${config.url}/rest/v1/user_integrations?provider=eq.${AGENT_EXECUTIONS_PROVIDER}&select=*`, { headers: serviceHeaders(config.service) }).catch(() => null)
+  if (legacy?.ok) {
+    const key = encryptionKey(config)
+    const rows = await legacy.json()
+    if (Array.isArray(rows) && rows.length) return rows.flatMap(row => {
+      let tokens = {}
+      try { tokens = JSON.parse(decryptSecret(row.access_token, key) || '{}') } catch {}
+      return (Array.isArray(tokens.executions) ? tokens.executions : []).map(execution => ({ ...execution, userId: execution.userId || row.user_id }))
+    })
+  }
   const bundles = await authMetadataBundles(config, AGENT_EXECUTIONS_PROVIDER)
   return bundles.flatMap(bundle => (Array.isArray(bundle.tokens?.executions) ? bundle.tokens.executions : []).map(execution => ({ ...execution, userId: execution.userId || bundle.userId })))
 }
@@ -6220,6 +6253,8 @@ async function remoteExecutionsForUser(userId, config) {
     const row = (await res.json())?.[0]
     if (row) return Array.isArray(row.tokens?.executions) ? row.tokens.executions : []
   }
+  const durable = await getUserIntegration(userId, AGENT_EXECUTIONS_PROVIDER, config).catch(() => null)
+  if (durable) return Array.isArray(durable.tokens?.executions) ? durable.tokens.executions : []
   const record = await getAuthAppIntegration(userId, AGENT_EXECUTIONS_PROVIDER, config)
   return Array.isArray(record?.tokens?.executions) ? record.tokens.executions : []
 }
@@ -6227,19 +6262,19 @@ async function remoteExecutionsForUser(userId, config) {
 async function remoteExecutionsSaveForUser(userId, email, executions, config) {
   const durableExecutions = executions.slice(0, 200)
   const tokens = { executions: durableExecutions, updated_at: new Date().toISOString() }
-  const body = JSON.stringify({ user_id: userId, provider: AGENT_EXECUTIONS_PROVIDER, email: email || '', identifier: 'agent-executions', scopes: [], tokens, updated_at: new Date().toISOString() })
+  const body = JSON.stringify({ user_id: userId, provider: AGENT_EXECUTIONS_PROVIDER, email: email || '', scopes: [], tokens, updated_at: new Date().toISOString() })
   const res = await fetch(`${config.url}/rest/v1/connected_accounts?on_conflict=user_id,provider`, { method: 'POST', headers: { ...serviceHeaders(config.service), Prefer: 'resolution=merge-duplicates,return=minimal' }, body })
   if (res.ok) return
 
   const detail = await res.text().catch(() => '')
-  process.stdout.write(`[execution storage] connected_accounts save failed: HTTP ${res.status}${detail ? ` ${detail.slice(0, 240)}` : ''}; trying encrypted Auth metadata\n`)
-  const saved = await saveAuthAppIntegration(userId, AGENT_EXECUTIONS_PROVIDER, {
+  process.stdout.write(`[execution storage] connected_accounts save failed: HTTP ${res.status}${detail ? ` ${detail.slice(0, 240)}` : ''}; trying encrypted integration vault\n`)
+  const saved = await saveUserIntegration(userId, AGENT_EXECUTIONS_PROVIDER, {
     email,
     identifier: 'agent-executions',
     scopes: [],
     tokens,
   }, config)
-  if (!saved) throw new Error(`Could not save execution history durably (connected_accounts HTTP ${res.status}; Auth metadata fallback failed)`)
+  if (!saved.durable) throw new Error(`Could not save execution history durably (connected_accounts HTTP ${res.status}; encrypted integration vault fallback failed)`)
 }
 
 async function executionOwner(execution, config) {
