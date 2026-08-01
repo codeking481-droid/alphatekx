@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { AlertCircle, CalendarClock, CalendarDays, CheckCircle2, Copy, History, List, Pause, Pencil, Play, Plus, Trash2 } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { deleteAgent, saveAgent, setAgentLifecycle, useAgents } from '../lib/agents/agentStore'
+import { deleteAgent, refreshAgents, saveAgent, setAgentLifecycle, useAgents } from '../lib/agents/agentStore'
 import type { Agent, AgentStatus } from '../lib/agents/types'
 import { formatCountdown } from '../lib/scheduling/countdown.mjs'
 import { supabase } from '../lib/supabase'
@@ -124,6 +124,7 @@ export default function ActiveAutomations() {
   const [filter, setFilter] = useState<Filter>('All')
   const [view, setView] = useState<'list' | 'calendar'>('list')
   const [notice, setNotice] = useState('')
+  const [runningNow, setRunningNow] = useState(false)
   const [now, setNow] = useState(Date.now())
   const selected = id ? agents.find(agent => agent.id === id) : null
   const visible = useMemo(() => agents.filter(agent => {
@@ -152,6 +153,34 @@ export default function ActiveAutomations() {
       setNotice(status === 'paused' ? 'Automation paused. Future runs will wait until you resume it.' : 'Automation resumed successfully.')
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Could not update automation.')
+    }
+  }
+
+  const publishDueNow = async (agent: Agent) => {
+    if (runningNow) return
+    setRunningNow(true)
+    setNotice('Alpha is publishing the due post and waiting for real provider confirmation...')
+    try {
+      const accessToken = (await supabase?.auth.getSession())?.data?.session?.access_token
+      const response = await fetch(`/api/agents/${encodeURIComponent(agent.id)}/run`, {
+        method: 'POST',
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || `Publish failed (${response.status})`)
+      await refreshAgents()
+      await refreshProfile()
+      const execution = data.execution || {}
+      if (execution.status !== 'success') throw new Error(execution.log || 'The provider did not confirm a real post. Nothing was charged.')
+      const providerIds = (execution.steps || []).flatMap((step: { result?: Record<string, { id?: string }>; providerPostId?: string }) => [
+        step.providerPostId,
+        ...Object.values(step.result || {}).map(result => result?.id),
+      ]).filter(Boolean)
+      setNotice(`Real post confirmed${providerIds.length ? ` · Provider ID: ${providerIds.join(', ')}` : ''}.`)
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'The provider did not confirm the post. Nothing was charged.')
+    } finally {
+      setRunningNow(false)
     }
   }
 
@@ -202,6 +231,7 @@ export default function ActiveAutomations() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div><p className="eyebrow">{displayStatus(selected)}</p><h1 className="mt-2 text-2xl font-black text-white sm:text-3xl">{selected.name}</h1><p className="mt-2 text-sm font-semibold capitalize text-slate-400">{platformNames(selected)}</p></div>
           <div className="flex flex-wrap gap-2">
+            {nextRun && new Date(nextRun).getTime() <= now && ['running', 'active', 'warning', 'needs_attention'].includes(selected.status) && <button onClick={() => void publishDueNow(selected)} disabled={runningNow} className="solar-action flex min-h-10 items-center gap-2 rounded-xl px-4 text-sm disabled:opacity-50">{runningNow ? 'Publishing & verifying...' : 'Publish due post now'}</button>}
             {selected.status === 'paused' ? <button onClick={() => void changeStatus(selected, 'running')} className="action-light"><Play size={16}/>Resume</button> : <button onClick={() => void changeStatus(selected, 'paused')} className="action-light"><Pause size={16}/>Pause</button>}
             <Link to={`/automations?id=${encodeURIComponent(selected.id)}`} className="action-light"><Pencil size={16}/>Edit schedule — free</Link>
             <button onClick={() => void duplicate(selected)} className="action-light"><Copy size={16}/>Duplicate</button>
