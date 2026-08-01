@@ -73,6 +73,12 @@ test('missing execution history storage cannot block automation deletion', () =>
   assert.match(server, /try \{ await supabaseDeleteAgent\(id\); primaryDeleted = true \} catch/)
 })
 
+test('execution history falls back durably when connected_accounts rejects the record', () => {
+  assert.match(server, /connected_accounts save failed: HTTP/)
+  assert.match(server, /saveAuthAppIntegration\(userId, AGENT_EXECUTIONS_PROVIDER/)
+  assert.match(server, /Auth metadata fallback failed/)
+})
+
 test('scheduled check isolates failures and always returns 200', () => {
   assert.match(server, /\/api\/cron\/check-scheduled-posts/)
   assert.match(server, /return json\(res, 200, \{ ok: false, executed: 0/)
