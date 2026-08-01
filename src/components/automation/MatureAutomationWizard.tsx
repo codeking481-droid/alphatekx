@@ -187,8 +187,6 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
       setSaving(false)
       setGenerating(true); setGenProgress(0); setStep(7)
       await generateContent()
-      // Auto-activate after generation
-      await autoActivate()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Generation failed.')
       setSaving(false)
@@ -271,12 +269,13 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
   }
 
   const autoActivate = async () => {
+    if (saving) return
+    setSaving(true)
+    setError('')
     try {
       const raw = localStorage.getItem('alphatekx:running-automation')
       if (!raw) throw new Error('No automation draft found')
       const auto = JSON.parse(raw)
-      auto.status = 'active'
-      localStorage.setItem('alphatekx:running-automation', JSON.stringify(auto))
 
       const timezone = data.timezone || 'Africa/Lagos'
       const firstScheduled = Array.isArray(auto.scheduledDates) && auto.scheduledDates.length ? new Date(auto.scheduledDates[0]) : null
@@ -320,9 +319,9 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
         integrations: data.platforms,
         timezone,
         schedule: { time: data.postTime, timezone, frequency: 'weekly' as const },
-        status: 'running' as const,
-        approvalState: getApprovalBadgeState({ status: 'running', approved: true, campaign: { status: 'running', approved: true } }).label,
-        approved: true,
+        status: 'awaiting_approval' as const,
+        approvalState: getApprovalBadgeState({ status: 'awaiting_approval', approved: false, campaign: { status: 'ready_for_confirmation', approved: false } }).label,
+        approved: false,
         approvalPolicy: 'implicit' as const,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -350,8 +349,8 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
           },
           posts,
           totalCredits: totalCreditsNeeded,
-          status: 'running',
-          approved: true,
+          status: 'ready_for_confirmation',
+          approved: false,
           charged: false,
           autoPublish: true,
         },
@@ -366,6 +365,8 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
       await saveAgent(agent as any)
 
       const accessToken = (await supabase?.auth.getSession())?.data?.session?.access_token || session?.access_token
+      const controller = new AbortController()
+      const timer = window.setTimeout(() => controller.abort(), data.publishMode === 'publish-now' ? 180_000 : 45_000)
       const activationRes = await fetch(`/api/agents/campaign/${encodeURIComponent(agent.id)}/activate`, {
         method: 'POST',
         headers: {
@@ -380,12 +381,23 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
           timezone,
           startAt: data.publishMode === 'publish-now' ? new Date().toISOString() : (firstScheduled ? firstScheduled.toISOString() : new Date().toISOString()),
         }),
+        signal: controller.signal,
       })
+      window.clearTimeout(timer)
       const activationData = await activationRes.json().catch(() => ({}))
       if (!activationRes.ok) throw new Error(activationData.error || 'Activation failed')
+      if (!activationData.agent || activationData.agent.status !== 'running' || activationData.agent.campaign?.approved !== true) {
+        throw new Error('The server did not confirm activation. Nothing was marked live.')
+      }
+      auto.status = 'active'
+      localStorage.setItem('alphatekx:running-automation', JSON.stringify(auto))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not activate the automation.')
+      setError(err instanceof DOMException && err.name === 'AbortError'
+        ? 'Activation timed out before the server confirmed it. Nothing was marked live; please retry once.'
+        : (err instanceof Error ? err.message : 'Could not activate the automation.'))
       return
+    } finally {
+      setSaving(false)
     }
     try { localStorage.setItem(WIZARD_DONE_KEY, '1') } catch {}
     try { localStorage.removeItem(WIZARD_KEY) } catch {}
@@ -456,8 +468,8 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
                 )}
               </div>
               <p className="text-xs text-zinc-500 mb-4">+ {generatedPreview.totalRuns - 1} more posts ready to publish according to your schedule</p>
-              <button onClick={autoActivate} className="w-full min-h-12 rounded-xl bg-indigo-600 text-sm font-semibold text-white hover:bg-indigo-500">
-                <CheckCircle2 size={16} className="inline mr-2" /> Go Live
+              <button onClick={() => void autoActivate()} disabled={saving} className="w-full min-h-12 rounded-xl bg-indigo-600 text-sm font-semibold text-white hover:bg-indigo-500 disabled:cursor-wait disabled:opacity-60">
+                {saving ? <LoaderCircle size={16} className="mr-2 inline animate-spin" /> : <CheckCircle2 size={16} className="inline mr-2" />} {saving ? 'Activating securely...' : 'Go Live'}
               </button>
             </div>
           )}
