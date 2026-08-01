@@ -77,6 +77,9 @@ const tests = [
     assert.match(wizard, /Activating securely/)
     assert.match(wizard, /server did not confirm activation/i)
     assert.match(wizard, /status: 'awaiting_approval'/)
+    assert.match(wizard, /const hasEnoughCredits = isAdmin \|\| creditBalance >= totalCreditsNeeded/)
+    assert.match(wizard, /immediateConfirmed/)
+    assert.match(wizard, /role="alert" aria-live="assertive"/)
   }],
 ]
 
