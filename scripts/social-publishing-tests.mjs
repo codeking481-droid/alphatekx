@@ -103,11 +103,14 @@ test('failed durable claims can be reclaimed without bypassing idempotency', () 
 
 test('missing connector execution schema falls back to the existing durable agent execution store', () => {
   const connector = fs.readFileSync(new URL('../server/composioConnectorService.mjs', import.meta.url), 'utf8')
-  assert.match(connector, /return findExecutionFallback\(userId, idempotencyKey\)/)
-  assert.match(connector, /return persistExecutionFallback\(record\)/)
+  assert.match(connector, /findExecutionFallback\(userId, idempotencyKey\)/)
+  assert.match(connector, /persistExecutionFallback\(record\)/)
   assert.match(connector, /return finishExecutionFallback\(userId, idempotencyKey, changes\)/)
   assert.match(connector, /fallbackExecutionId/)
   assert.match(connector, /rest\/v1\/agent_executions/)
+  assert.match(connector, /approvalId\.startsWith\('campaign:'\)/)
+  assert.match(connector, /using the campaign durable execution lock/)
+  assert.match(connector, /campaignHistoryCompatibility/)
 })
 
 test('provider failures remain explicit and unconfirmed posts are never charged', () => {

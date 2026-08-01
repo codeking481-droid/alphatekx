@@ -7,6 +7,13 @@ import { createHash } from 'node:crypto'
 import { supabaseServiceHeaders } from './supabaseHeaders.mjs'
 import { AUTH_CONFIGS } from './composioAuthConfigs.mjs'
 
+// Campaigns already hold a durable, user-scoped execution lock in server.mjs.
+// Track the rare production compatibility path where both optional connector
+// history tables are absent so provider confirmation can still be returned to
+// that owning campaign and persisted in its post result.
+const campaignHistoryCompatibility = new Set()
+const compatibilityKey = (userId, idempotencyKey) => `${userId}:${idempotencyKey}`
+
 // ---------------------------------------------------------------------------
 // Provider Registry — maps AlphaTekX provider IDs to Composio toolkit slugs
 // and auth-config environment variable names
@@ -472,7 +479,17 @@ async function persistExecution(record) {
   if (response.status === 409) return false
   if (!response.ok) {
     const detail = await response.text().catch(() => '')
-    if (response.status === 400 || response.status === 404) return persistExecutionFallback(record)
+    if (response.status === 400 || response.status === 404) {
+      try { return await persistExecutionFallback(record) }
+      catch (error) {
+        if (String(record.approval_id || '').startsWith('campaign:') && /\(40[04]\)/.test(error instanceof Error ? error.message : String(error))) {
+          campaignHistoryCompatibility.add(compatibilityKey(record.user_id, record.idempotency_key))
+          console.warn('[AlphaTekX] connector history tables unavailable; using the campaign durable execution lock')
+          return true
+        }
+        throw error
+      }
+    }
     console.error('[AlphaTekX] connector_executions insert failed', response.status, detail)
     throw new Error(`Execution history could not be saved (${response.status})`)
   }
@@ -536,6 +553,7 @@ async function finishExecutionFallback(userId, idempotencyKey, changes) {
 }
 
 async function finishExecution(userId, idempotencyKey, changes) {
+  if (campaignHistoryCompatibility.has(compatibilityKey(userId, idempotencyKey))) return
   const config = persistenceConfig()
   if (!config) return
   const response = await fetch(`${config.url}/rest/v1/connector_executions?user_id=eq.${encodeURIComponent(userId)}&idempotency_key=eq.${encodeURIComponent(idempotencyKey)}`, {
@@ -581,7 +599,8 @@ async function reclaimFailedExecution(userId, idempotencyKey, approvalId) {
   return Array.isArray(rows) && rows.length === 1
 }
 
-async function findExecution(userId, idempotencyKey) {
+async function findExecution(userId, idempotencyKey, allowCampaignCompatibility = false) {
+  if (campaignHistoryCompatibility.has(compatibilityKey(userId, idempotencyKey))) return { status: 'claimed' }
   const config = persistenceConfig()
   if (!config) return null
   const response = await fetch(`${config.url}/rest/v1/connector_executions?user_id=eq.${encodeURIComponent(userId)}&idempotency_key=eq.${encodeURIComponent(idempotencyKey)}&select=*&limit=1`, {
@@ -589,7 +608,13 @@ async function findExecution(userId, idempotencyKey) {
   })
   if (!response.ok) {
     const detail = await response.text().catch(() => '')
-    if (response.status === 400 || response.status === 404) return findExecutionFallback(userId, idempotencyKey)
+    if (response.status === 400 || response.status === 404) {
+      try { return await findExecutionFallback(userId, idempotencyKey) }
+      catch (error) {
+        if (allowCampaignCompatibility && /\(404\)/.test(error instanceof Error ? error.message : String(error))) return null
+        throw error
+      }
+    }
     console.error('[AlphaTekX] connector_executions read failed', response.status, detail)
     throw new Error(`Execution history could not be read (${response.status})`)
   }
@@ -1063,7 +1088,8 @@ export async function executeProviderAction(user, providerId, actionId, payload)
   const deferCreditSettlement = payload?.deferCreditSettlement === true
   if (!approvalId) throw new Error('Explicit approval is required')
   if (!idempotencyKey) throw new Error('Idempotency key is required')
-  const previous = await findExecution(user.id, idempotencyKey)
+  const campaignExecution = approvalId.startsWith('campaign:')
+  const previous = await findExecution(user.id, idempotencyKey, campaignExecution)
   if (previous?.status === 'succeeded' && previous.provider_execution_id) {
     return {
       success: true,
