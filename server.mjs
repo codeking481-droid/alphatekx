@@ -1097,15 +1097,23 @@ function authUserEmail(user) {
   return ''
 }
 
+const productAdminEmails = new Set([
+  'iamdan4live@gmail.com',
+  'coderking555@gmail.com',
+  'codeking481@gmail.com',
+  'alphatekxcompany@gmail.com',
+])
+
 function isAdminAuthUser(user) {
-  if (authUserEmail(user) === adminEmail) return true
+  const email = authUserEmail(user)
+  if (productAdminEmails.has(email)) return true
   const configured = new Set(
     String(process.env.SUPER_ADMIN_EMAILS || '')
       .split(',')
       .map(normalizedAuthEmail)
       .filter(Boolean),
   )
-  return configured.has(authUserEmail(user))
+  return configured.has(email)
 }
 
 async function runUserWorker(worker, apiKey, prompt) {
@@ -2440,6 +2448,7 @@ async function getAutomationProgressPayload(agent) {
     progress: Math.max(0, Math.min(100, progress)),
     status: agent.backgroundGeneration?.status || agent.status || 'active',
     posts: generatedPosts,
+    campaignPosts,
     error: agent.backgroundGeneration?.error || null,
   }
 }
@@ -2495,7 +2504,7 @@ async function runAutomationBackgroundGeneration(agentId, userId) {
     const posts = Array.isArray(agent.campaign?.posts) ? agent.campaign.posts.map(post => ({ ...post })) : []
     if (!posts.length) throw new Error('This automation has no posts to generate.')
     const total = Math.max(1, posts.length)
-    const previousStatus = agent.status === 'paused' ? 'paused' : 'running'
+    const previousStatus = agent.status || 'pending_approval'
     agent = {
       ...agent,
       status: 'preparing',
@@ -2527,7 +2536,7 @@ async function runAutomationBackgroundGeneration(agentId, userId) {
       await saveServerAgent(agent)
     }
 
-    const nextRun = campaignNextRun(agent.campaign)
+    const nextRun = agent.campaign?.approved === true ? campaignNextRun(agent.campaign) : null
     await saveServerAgent({
       ...agent,
       status: generationFailures ? 'warning' : previousStatus,
@@ -3184,7 +3193,10 @@ function campaignNextRun(campaign) {
   return next?.scheduledAt
 }
 
+// LinkedIn is the only native publishing connector. Every other released
+// publishing platform is executed through the user's Composio connection.
 const composioPublishingPlatforms = new Set(['youtube', 'instagram', 'facebook', 'whatsapp', 'x', 'twitter'])
+const composioAutomationConnectors = new Set(['gmail', 'github', 'googledocs', 'googlesheets', 'discord', ...composioPublishingPlatforms])
 
 async function runCampaignAgent(existing, trigger, executionId, user, admin) {
   const blockedPlatform = [...new Set([...(existing.campaign?.meta?.platforms || []), ...(existing.campaign?.posts || []).flatMap(post => post.platforms || [])])]
@@ -3775,7 +3787,7 @@ function getConversationEngine() {
     spendUserCredits,
     getSmartImage: (user, content, objective, platform, options) => mediaLibrary.findSmartImage(supabaseConfig(), user, content, objective, platform, options),
     getIntegrationStatus: async (userId, provider, userEmail = '') => {
-      if (['youtube', 'instagram', 'x', 'twitter', 'facebook', 'whatsapp'].includes(provider)) {
+      if (composioAutomationConnectors.has(provider)) {
         const composioStatus = await alphaConnector.getConnectionStatus({ id: userId, email: userEmail }, provider).catch(() => null)
         return { connected: composioStatus?.connected === true, ready: composioStatus?.connected === true, identifier: composioStatus?.connectionId || '' }
       }
@@ -3871,12 +3883,13 @@ function googleIdentitySubject(user) {
 }
 
 function supervisorEmails() {
-  return new Set(
-    String(process.env.SUPER_ADMIN_EMAILS || '')
+  return new Set([
+    ...productAdminEmails,
+    ...String(process.env.SUPER_ADMIN_EMAILS || '')
       .split(',')
       .map(normalizedAuthEmail)
-      .filter(Boolean)
-  )
+      .filter(Boolean),
+  ])
 }
 
 const bonusVerificationAttempts = new Map()
@@ -5756,16 +5769,17 @@ async function executeConnectorAction(user, action) {
   const stepCost = action._stepCost || 1
   try {
     let result
+    if (action.connector === 'gmail' && ['send_email', 'list_messages'].includes(action.action)) {
+      const composioResult = await alphaConnector.executeProviderAction(user, 'gmail', action.action, {
+        ...params,
+        approvalId: String(params.approvalId || `automation:${action.action}`),
+        idempotencyKey: String(params.idempotencyKey || `automation:${user.id}:${action.action}:${Date.now()}`),
+        deferCreditSettlement: true,
+      })
+      result = { id: composioResult.providerId, providerId: composioResult.providerId, replayed: composioResult.replayed === true }
+    }
     switch (action.connector) {
       case 'gmail': {
-        if (action.action === 'send_email') {
-          const to = String(params.to || user.email || '')
-          if (!to) throw new Error('Missing recipient email.')
-          const subject = String(params.subject || 'Alpha Agent')
-          const body = String(params.body || params.text || params.message || '')
-          const sendResult = await sendEmailWithGmail(user, { to, subject, html: String(params.html || `<p>${body}</p>`), text: body })
-          result = { id: sendResult.messageId, to, subject }
-        }
         if (action.action === 'save_attachments_to_drive') {
           const transfer = await gmailSaveAttachmentsToDrive(user.id, params)
           result = {

@@ -28,11 +28,18 @@ const tests = [
     assert.doesNotMatch(popup, /Published successfully\. LinkedIn post ID/)
   }],
   ['mobile modal is bounded, scroll-safe, and has a full-width approval action', () => {
-    assert.match(popup, /max-h-\[96dvh\]/)
+    assert.match(popup, /h-\[100dvh\]/)
     assert.match(popup, /max-w-full/)
     assert.match(popup, /overflow-y-auto overscroll-contain/)
+    assert.match(popup, /shrink-0 border-t/)
     assert.match(popup, /w-full items-center justify-center/)
     assert.match(popup, /document\.body\.style\.overflow = 'hidden'/)
+  }],
+  ['publish now requires reviewed captions and required matched images', () => {
+    assert.match(popup, /const previewReady = !missingCaptions && !missingImages/)
+    assert.match(popup, /Prepare captions & matched images/)
+    assert.match(popup, /canAfford && startValid && previewReady/)
+    assert.doesNotMatch(popup, /void fetch\(`\/api\/automations\/\$\{encodeURIComponent\(approvedAgent\.id\)\}\/generate-background/)
   }],
   ['popup has accessible dialog labeling and keyboard dismissal', () => {
     assert.match(popup, /aria-labelledby="campaign-preview-title"/)
