@@ -1131,7 +1131,10 @@ export async function executeProviderAction(user, providerId, actionId, payload)
           }
           const mediaId = confirmedProviderId(uploadResult.data)
           if (!mediaId) throw new Error('X did not return a confirmed media ID')
-          const tweetArguments = { ...actionArguments, media__media__ids: [String(mediaId)] }
+          // Composio's current TWITTER_CREATE_TWEET schema uses the flattened
+          // `media_media_ids` field. The old double-underscore name was silently
+          // ignored, so X never received the uploaded image attachment.
+          const tweetArguments = { ...actionArguments, media_media_ids: [String(mediaId)] }
           delete tweetArguments.image_url
           result = await executeTool(toolSlug, tweetArguments)
           if (result?.data && typeof result.data === 'object') result.data = { ...result.data, media_id: mediaId }

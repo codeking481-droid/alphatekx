@@ -288,10 +288,11 @@ function keywordsFor(content, objective = '', platform = '') {
 export function generateAdvancedImagePrompt(content, objective = '', platform = '') {
   const keywords = keywordsFor(content, objective, platform)
   if (!keywords.length) throw new Error('Add a clear topic before Alpha selects an image.')
+  const subject = String(objective || content).replace(/\s+/g, ' ').trim().slice(0, 500)
   return {
     keywords,
-    advancedPrompt: `professional photograph of ${keywords.join(', ')}, 4k photorealistic, sharp focus, professional studio lighting, DSLR, ultra detailed, vibrant colors, premium commercial photography, 8k, high-end`,
-    negativePrompt: 'cartoon, illustration, painting, drawing, blurry, low quality, distorted, deformed, text, watermark, logo, amateur, bad anatomy, extra fingers',
+    advancedPrompt: `Create one crystal-clear premium commercial photograph that directly represents: ${subject}. Main visual subjects: ${keywords.join(', ')}. Photorealistic editorial composition, clearly defined subject, tack-sharp focus, natural textures, balanced contrast, professional studio lighting, DSLR quality, 8k-level detail, clean background, social-media campaign ready, no typography in the image`,
+    negativePrompt: 'blurry, soft focus, haze, pixelated, low resolution, compression artifacts, distorted, deformed, duplicate subjects, illegible text, letters, words, watermark, logo, cartoon, illustration, painting, amateur',
   }
 }
 
@@ -303,8 +304,8 @@ export function pollinationsImageUrl(advancedPrompt, negativePrompt, seed = `${D
     : parseInt(createHash('sha256').update(String(seed)).digest('hex').slice(0, 8), 16) % 2147483647
   const params = new URLSearchParams({
     model: 'flux',
-    width: '1024',
-    height: '1024',
+    width: '1080',
+    height: '1080',
     enhance: 'true',
     nologo: 'true',
     negative: negativePrompt,
