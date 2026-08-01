@@ -291,7 +291,7 @@ await test('Approved campaign publishes once, charges once, persists history, an
     assert.equal(response.status, 200)
     assert.equal(providerCalls, callsAfterFirst)
     const balanceAfter = (await (await request('/api/credits/balance')).json()).credits
-    assert.equal(balanceBefore - balanceAfter, 3)
+    assert.equal(balanceBefore - balanceAfter, 1)
     let saved = (await (await request('/api/agents')).json()).agents.find(item => item.id === agentId)
     assert.match(saved.campaign.posts[0].providerPostId, /^urn:li:share:/)
     assert.equal(saved.campaign.posts[0].charged, true)
@@ -336,7 +336,7 @@ await test('Publish Now confirms a real post ID, history, counters and one credi
     assert.equal(data.agent.executionHistory[0].output.steps[0].content, caption)
     assert.match(data.agent.executionHistory[0].output.steps[0].linkedinPostId, /^urn:li:share:/)
     const after = (await (await request('/api/credits/balance')).json()).credits
-    assert.equal(before - after, 3)
+    assert.equal(before - after, 1)
   } finally { app.child.kill('SIGTERM') }
 })
 

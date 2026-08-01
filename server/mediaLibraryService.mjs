@@ -429,20 +429,21 @@ export async function findSmartImage(config, user, content, objective = '', plat
   await ensureBucket(config)
   const { keywords, advancedPrompt, negativePrompt } = generateAdvancedImagePrompt(content, objective, platform)
   const query = keywords.join(' ')
-  const queryHash = createHash('sha256').update(`${platform}:${query}`).digest('hex')
+  const uniqueNonce = options.forceUnique === true ? String(options.uniqueNonce || `${Date.now()}-${Math.random()}`) : ''
+  const queryHash = createHash('sha256').update(`${platform}:${query}:${uniqueNonce}`).digest('hex')
 
-  const vault = await fetch(
+  const vault = options.forceUnique === true ? null : await fetch(
     `${config.url}/rest/v1/media_library?user_id=eq.${encodeURIComponent(user.id)}&file_type=eq.image&tags=ov.{${keywords.map(encodeURIComponent).join(',')}}&select=storage_path&limit=1`,
     { headers: headers(config.service) },
   )
-  const vaultRows = await responseJson(vault).catch(() => [])
+  const vaultRows = vault ? await responseJson(vault).catch(() => []) : []
   if (vaultRows?.[0]) return { image_url: await signedUrl(config, vaultRows[0].storage_path, 86400), image_storage_path: vaultRows[0].storage_path, image_prompt: advancedPrompt, image_keywords: keywords, image_source: 'vault' }
 
-  const cached = await fetch(
+  const cached = options.forceUnique === true ? null : await fetch(
     `${config.url}/rest/v1/image_cache?user_id=eq.${encodeURIComponent(user.id)}&query_hash=eq.${queryHash}&select=*&limit=1`,
     { headers: headers(config.service) },
   )
-  const cachedRows = await responseJson(cached).catch(() => [])
+  const cachedRows = cached ? await responseJson(cached).catch(() => []) : []
   if (cachedRows?.[0]) return { image_url: await signedUrl(config, cachedRows[0].storage_path, 86400), image_storage_path: cachedRows[0].storage_path, image_prompt: cachedRows[0].prompt, image_keywords: keywords, image_source: cachedRows[0].source }
 
   let source = 'pollinations'
@@ -488,6 +489,14 @@ export async function findSmartImage(config, user, content, objective = '', plat
       source = 'pexels'
       downloaded = await downloadImage(remoteUrl).catch(() => null)
     }
+  }
+  if (!downloaded) {
+    source = 'picsum-fallback'
+    remoteUrl = `https://picsum.photos/seed/${encodeURIComponent(queryHash)}/1024/1024`
+    downloaded = await downloadImage(remoteUrl, 20 * 1024, 60_000).catch(error => {
+      console.warn(`[AlphaTekX] Picsum fallback failed: ${error instanceof Error ? error.message : error}`)
+      return null
+    })
   }
   if (!downloaded) throw new Error('Alpha could not fetch a premium image after three verified attempts.')
   try {

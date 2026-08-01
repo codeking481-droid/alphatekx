@@ -8,7 +8,7 @@ const migration = await readFile(new URL('../supabase/automations-setup.sql', im
 
 assert.match(wizard, /Authorization: `Bearer \$\{accessToken\}`/, 'campaign activation must authenticate the signed-in user')
 assert.match(active, /\/progress`, \{\s*headers: accessToken \? \{ Authorization:/s, 'progress polling must authenticate the signed-in user')
-assert.match(server, /agent\.campaign\.posts\[index\] = await prepareCampaignPostContent/, 'background generation must update scheduler-owned campaign posts')
+assert.match(server, /if \(prepared\) agent\.campaign\.posts\[index\] = prepared/, 'background generation must update scheduler-owned campaign posts')
 assert.doesNotMatch(server, /generatedPosts: generated\.slice/, 'generation must not persist a disconnected shadow post list')
 assert.match(server, /backgroundGeneration\?\.status === 'generating'/, 'duplicate background generation must be locked')
 assert.match(server, /confirmedPreviousResult\?\.status === 'success' && confirmedPreviousResult\?\.id/, 'partial retries must not republish a platform with a confirmed provider ID')

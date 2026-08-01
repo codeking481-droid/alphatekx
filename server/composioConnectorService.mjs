@@ -924,6 +924,7 @@ export async function executeProviderAction(user, providerId, actionId, payload)
 
   const approvalId = String(payload?.approvalId || '').trim()
   const idempotencyKey = String(payload?.idempotencyKey || '').trim()
+  const deferCreditSettlement = payload?.deferCreditSettlement === true
   if (!approvalId) throw new Error('Explicit approval is required')
   if (!idempotencyKey) throw new Error('Idempotency key is required')
   const previous = await findExecution(user.id, idempotencyKey)
@@ -940,6 +941,18 @@ export async function executeProviderAction(user, providerId, actionId, payload)
     }
   }
   if (previous?.status === 'provider_confirmed' && previous.provider_execution_id) {
+    if (deferCreditSettlement) {
+      return {
+        success: true,
+        executionId: previous.id,
+        providerId: previous.provider_execution_id,
+        creditsCharged: 0,
+        balance: await getCreditBalance(user.id),
+        result: previous.result_metadata || { replayed: true, billingDeferred: true },
+        executionTimeMs: 0,
+        replayed: true,
+      }
+    }
     const pendingBalance = await chargeConfirmedExecution(user, 1, {
       idempotencyKey,
       description: `${pid}.${actionId}`,
@@ -969,6 +982,7 @@ export async function executeProviderAction(user, providerId, actionId, payload)
   const actionArguments = { ...(payload || {}) }
   delete actionArguments.approvalId
   delete actionArguments.idempotencyKey
+  delete actionArguments.deferCreditSettlement
   const claimed = await persistExecution({
     user_id: user.id, toolkit_slug: pid, capability_id: actionId, status: 'claimed',
     approval_id: approvalId, idempotency_key: idempotencyKey, credits_charged: 0,
@@ -1089,6 +1103,19 @@ export async function executeProviderAction(user, providerId, actionId, payload)
     result_metadata: { confirmed: true, providerId: confirmedId, billingPending: true, retryCount },
     credits_charged: 0,
   })
+  if (deferCreditSettlement) {
+    return {
+      success: true,
+      executionId: result.logId || `exec_${Date.now()}`,
+      providerId: confirmedId,
+      creditsCharged: 0,
+      balance: await getCreditBalance(user.id),
+      result: responseData,
+      executionTimeMs,
+      retryCount,
+      billingDeferred: true,
+    }
+  }
   const balance = await chargeConfirmedExecution(user, 1, {
     idempotencyKey,
     description: `${pid}.${actionId}`,
@@ -1111,6 +1138,21 @@ export async function executeProviderAction(user, providerId, actionId, payload)
     executionTimeMs,
     retryCount,
   }
+}
+
+export async function finalizeDeferredExecution(user, idempotencyKey, settlementId) {
+  if (!user?.id || !String(idempotencyKey || '').trim()) return false
+  const previous = await findExecution(user.id, String(idempotencyKey).trim())
+  if (!previous?.provider_execution_id) return false
+  if (previous.status === 'succeeded') return true
+  if (previous.status !== 'provider_confirmed') return false
+  await finishExecution(user.id, String(idempotencyKey).trim(), {
+    status: 'succeeded',
+    provider_execution_id: previous.provider_execution_id,
+    result_metadata: { ...(previous.result_metadata || {}), billingPending: false, unifiedSettlementId: String(settlementId || '') },
+    credits_charged: 0,
+  })
+  return true
 }
 
 /**

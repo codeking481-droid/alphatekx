@@ -2469,7 +2469,7 @@ async function prepareCampaignPostContent(agent, post, user, index) {
   let imageStoragePath = post.imageStoragePath || post.image_storage_path || ''
   const needsImage = agent.campaign?.meta?.includeImages === true || platforms.includes('instagram')
   if (needsImage && !imageUrl) {
-    const image = await mediaLibrary.findSmartImage(supabaseConfig(), user, `${topic}. ${captions[platforms[0]] || ''}`, goal, platforms[0])
+    const image = await mediaLibrary.findSmartImage(supabaseConfig(), user, `${topic}. ${captions[platforms[0]] || ''}`, goal, platforms[0], { forceUnique: true, uniqueNonce: `${post.id || index}-${Date.now()}-${Math.random()}` })
     imageUrl = image.image_url
     imageStoragePath = image.image_storage_path || ''
     if (!imageUrl) throw new Error(`A verified image is required before publishing to ${platforms.join(', ')}.`)
@@ -2507,9 +2507,21 @@ async function runAutomationBackgroundGeneration(agentId, userId) {
     }
     await saveServerAgent(agent)
 
+    let generationFailures = 0
     for (let index = 0; index < total; index += 1) {
       const post = agent.campaign.posts[index]
-      agent.campaign.posts[index] = await prepareCampaignPostContent(agent, post, { id: userId, email: agent.userEmail || '' }, index)
+      let prepared = null
+      let lastError = null
+      for (let attempt = 0; attempt < 3 && !prepared; attempt += 1) {
+        if (attempt) await new Promise(resolve => setTimeout(resolve, attempt * 2_000))
+        try { prepared = await prepareCampaignPostContent(agent, post, { id: userId, email: agent.userEmail || '' }, index) }
+        catch (error) { lastError = error }
+      }
+      if (prepared) agent.campaign.posts[index] = prepared
+      else {
+        generationFailures += 1
+        agent.campaign.posts[index] = { ...post, status: 'scheduled', lastError: lastError instanceof Error ? lastError.message : 'Content generation needs attention.' }
+      }
       const progress = Math.max(0, Math.min(100, Math.round(((index + 1) / total) * 100)))
       agent = { ...agent, backgroundProgress: progress, updated_at: new Date().toISOString() }
       await saveServerAgent(agent)
@@ -2518,9 +2530,9 @@ async function runAutomationBackgroundGeneration(agentId, userId) {
     const nextRun = campaignNextRun(agent.campaign)
     await saveServerAgent({
       ...agent,
-      status: previousStatus,
+      status: generationFailures ? 'warning' : previousStatus,
       backgroundProgress: 100,
-      backgroundGeneration: { status: 'completed', startedAt, completedAt: new Date().toISOString(), error: null },
+      backgroundGeneration: { status: generationFailures ? 'completed_with_errors' : 'completed', startedAt, completedAt: new Date().toISOString(), error: generationFailures ? `${generationFailures} post(s) need regeneration.` : null },
       trigger: { ...agent.trigger, type: 'campaign', nextRun },
       nextRunAt: nextRun || null,
       updated_at: new Date().toISOString(),
@@ -2588,9 +2600,7 @@ async function activateCampaignHandler(req, res) {
     agent.campaign.meta.localTime = body.localTime || null
   }
   agent.campaign.posts = (agent.campaign.posts || []).map(post => {
-    const baseCredits = Number(post.baseCredits) > 0
-      ? Number(post.baseCredits)
-      : computeCampaignPostCredits(post.platforms || [], agent.campaign.meta?.includeImages === true)
+    const baseCredits = computeCampaignPostCredits(post.platforms || [], agent.campaign.meta?.includeImages === true)
     return {
       ...post,
       baseCredits,
@@ -2601,15 +2611,27 @@ async function activateCampaignHandler(req, res) {
 
   const admin = isAdminAuthUser(user)
   const billingSummary = await billing.getUserBilling(user, config)
+  if (!admin) {
+    const activeStatuses = new Set(['active', 'running', 'preparing', 'warning', 'needs_attention'])
+    const activeAutomations = (await listServerAgents()).filter(item => item.userId === user.id && item.id !== agent.id && activeStatuses.has(item.status)).length
+    if (activeAutomations >= billingSummary.maxActiveAutomations) {
+      const message = billingSummary.plan === 'free'
+        ? 'Upgrade to Starter $15 for 2 active automations.'
+        : `${billingSummary.planName} supports ${billingSummary.maxActiveAutomations} active automations. Pause one or upgrade to continue.`
+      return json(res, 409, { error: message, code: 'ACTIVE_AUTOMATION_LIMIT', limit: billingSummary.maxActiveAutomations })
+    }
+  }
   if (!admin && billingSummary.plan === 'free') {
+    agent.campaign.posts = (agent.campaign.posts || []).slice(0, 7)
+    if (agent.campaign.meta) {
+      agent.campaign.meta.totalPosts = agent.campaign.posts.length
+      agent.campaign.meta.durationDays = Math.min(7, Number(agent.campaign.meta.durationDays) || 7)
+    }
+    agent.campaign.totalCredits = computeCampaignTotalCredits(agent.campaign.posts)
     const policy = validateFreeCampaign(agent.campaign.posts || [], agent.campaign.contentMemory || [], new Date())
     if (!policy.ok) return json(res, 400, { error: policy.error, code: policy.code })
   }
   const total = agent.campaign.totalCredits || 0
-  if (total > 0 && !admin) {
-    const balance = await getUserCredits(user, config)
-    if (balance < total) return json(res, 402, { error: 'Insufficient credits', total, balance })
-  }
 
   const platforms = Array.from(new Set((agent.campaign.posts || []).flatMap(post => post.platforms || [])))
   const supportedPublishing = new Set(['linkedin', 'facebook', 'instagram', 'x', 'twitter', 'youtube', 'whatsapp'])
@@ -2643,11 +2665,13 @@ async function activateCampaignHandler(req, res) {
       preparedPosts.push(base)
       continue
     }
-    try {
-      preparedPosts.push(await prepareCampaignPostContent(agent, base, user, index))
-    } catch (error) {
-      return json(res, 503, { error: error instanceof Error ? error.message : 'Content preparation failed.', code: 'CONTENT_PREPARATION_FAILED' })
-    }
+    if (postingOption === 'now') {
+      try {
+        preparedPosts.push(await prepareCampaignPostContent(agent, base, user, index))
+      } catch (error) {
+        return json(res, 503, { error: error instanceof Error ? error.message : 'Content preparation failed.', code: 'CONTENT_PREPARATION_FAILED' })
+      }
+    } else preparedPosts.push(base)
   }
   agent.campaign.posts = preparedPosts
   agent.trigger = { type: 'campaign', nextRun: campaignNextRun(agent.campaign), cron: agent.campaign.meta?.frequencyText || 'campaign' }
@@ -2657,6 +2681,13 @@ async function activateCampaignHandler(req, res) {
     const published = await getServerAgent(agent.id)
     return json(res, execution.status === 'success' ? 200 : 502, { agent: published || agent, execution, charged: execution.credits_used || 0, estimatedCredits: total, autoPublish, nextRun: published?.trigger?.nextRun || null })
   }
+  const needsBackgroundGeneration = agent.campaign.posts.some(post => {
+    const platforms = Array.isArray(post.platforms) && post.platforms.length ? post.platforms : ['linkedin']
+    const missingCaption = platforms.some(platform => !String(post.captions?.[platform] || '').trim())
+    const missingImage = (agent.campaign?.meta?.includeImages === true || platforms.includes('instagram')) && !String(post.imageUrl || post.image_url || '').trim()
+    return missingCaption || missingImage
+  })
+  if (needsBackgroundGeneration) setImmediate(() => { void runAutomationBackgroundGeneration(agent.id, user.id) })
   return json(res, 200, { agent, charged: 0, estimatedCredits: total, autoPublish, nextRun: agent.trigger.nextRun })
 }
 
@@ -2757,14 +2788,24 @@ async function campaignReportHandler(req, res) {
 export async function runDueAgents(req, res) {
   try {
     const now = new Date()
-    const agents = (await listServerAgents()).filter(a => (a.status === 'running' || a.status === 'active' || a.status === 'warning') && (a.trigger?.type === 'schedule' || a.trigger?.type === 'monitor' || a.trigger?.type === 'campaign') && a.trigger?.nextRun && new Date(a.trigger.nextRun) <= now)
+    const agents = (await listServerAgents()).filter(a => ['running', 'active', 'warning', 'needs_attention'].includes(a.status) && (a.trigger?.type === 'schedule' || a.trigger?.type === 'monitor' || a.trigger?.type === 'campaign') && a.trigger?.nextRun && new Date(a.trigger.nextRun) <= now)
     const results = []
     for (const agent of agents) {
-      const execution = await runAgent(agent, 'schedule')
-      results.push({ agentId: agent.id, status: execution.status })
+      try {
+        const execution = await runAgent(agent, 'schedule')
+        results.push({ agentId: agent.id, status: execution.status })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Scheduled execution failed'
+        process.stdout.write(`[cron] agent ${agent.id} run error: ${message}\n`)
+        results.push({ agentId: agent.id, status: 'error', error: message })
+      }
     }
-    return json(res, 200, { executed: results.length, results })
-  } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Run failed' }) }
+    return json(res, 200, { ok: true, executed: results.length, results })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Scheduler check failed'
+    process.stdout.write(`[cron] scheduler check error: ${message}\n`)
+    return json(res, 200, { ok: false, executed: 0, results: [], error: message })
+  }
 }
 
 function backoffMs(retryCount) {
@@ -3081,9 +3122,11 @@ function buildCampaignPosts(brand, meta) {
 }
 
 function computeCampaignPostCredits(platforms, includeImages) {
+  void platforms
   void includeImages
-  if (platforms.length === 1 && platforms[0] === 'linkedin') return 3
-  return Math.max(1, platforms.length)
+  // One approved content item is one unit of value, even when Alpha publishes
+  // its adapted variants to several connected social platforms.
+  return 1
 }
 
 function computeCampaignTotalCredits(posts) {
@@ -3174,7 +3217,7 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
     const publishedPlatform = (post.platforms || []).find(platform => post.result?.[platform]?.id) || post.platforms?.[0] || 'linkedin'
     const providerPostId = post.providerPostId || post.result?.[publishedPlatform]?.id
     if (!providerPostId) continue
-    const cost = post.credits || computeCampaignPostCredits(post.platforms || [], false)
+    const cost = computeCampaignPostCredits(post.platforms || [], false)
     const charged = admin || await spendUserCredits(user, cost, { automationId: existing.id, reason: `Confirmed ${publishedPlatform} publication`, postId: post.id, providerPostId, idempotencyKey: `${existing.id}:${post.id}:${publishedPlatform}` })
     if (charged) {
       post.charged = true
@@ -3190,6 +3233,7 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
   let creditsUsed = 0
   let postedCount = 0
   let failedCount = 0
+  let outOfCredits = false
   const steps = []
 
   for (const post of duePosts) {
@@ -3207,19 +3251,17 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
       continue
     }
 
-    const postCost = post.credits || computeCampaignPostCredits(post.platforms || [], false)
+    const postCost = computeCampaignPostCredits(post.platforms || [], false)
     if (!admin) {
       const balance = await getUserCredits(user, config)
       if (balance < postCost) {
-        postResults[post.platforms?.[0] || 'facebook'] = { status: 'error', log: `Insufficient credits. Need ${postCost}, have ${balance}.` }
-        postFailed++
+        postResults[post.platforms?.[0] || 'facebook'] = { status: 'waiting_credits', log: 'Out of credits - Buy $3 for 20 credits to keep your AI employee working.' }
+        outOfCredits = true
         post.result = postResults
         post.status = 'scheduled'
-        post.lastError = 'Insufficient credits'
-        post.scheduledAt = new Date(now.getTime() + backoffMs(3)).toISOString()
-        failedCount++
-        steps.push({ postId: post.id, status: 'error', error_code: 'INSUFFICIENT_CREDITS', credits_used: 0, result: postResults })
-        continue
+        post.lastError = 'Out of credits - Buy $3 for 20 credits to keep your AI employee working.'
+        steps.push({ postId: post.id, status: 'waiting_credits', error_code: 'INSUFFICIENT_CREDITS', credits_used: 0, result: postResults })
+        break
       }
     }
 
@@ -3272,6 +3314,7 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
             ...execution.params,
             approvalId: `campaign:${existing.id}`,
             idempotencyKey: `${existing.id}:${post.id}:${platform}`,
+            deferCreditSettlement: true,
           })
           providerCreditsUsed += Number(result.creditsCharged || 0)
           result = { id: result.providerId, providerId: result.providerId, replayed: result.replayed === true, retryCount: result.retryCount || 0 }
@@ -3301,12 +3344,15 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
       post.providerUrl = postResults[publishedPlatform]?.link || ''
       post.lastError = ''
       await saveServerAgent({ ...existing, campaign })
-      const nativeCost = admin ? 0 : (post.platforms.length === 1 && post.platforms[0] === 'linkedin' ? postCost : nativeSuccessCount)
-      const charged = nativeCost === 0 || admin || await spendUserCredits(user, nativeCost, { automationId: existing.id, reason: `Confirmed ${publishedPlatform} publication`, postId: post.id, providerPostId: post.providerPostId, idempotencyKey: `${existing.id}:${post.id}:native` })
+      const unifiedCost = admin ? 0 : postCost
+      const charged = unifiedCost === 0 || await spendUserCredits(user, unifiedCost, { automationId: existing.id, reason: `Confirmed publication to ${post.platforms.join(', ')}`, postId: post.id, providerPostId: post.providerPostId, idempotencyKey: `${existing.id}:${post.id}:unified` })
       if (charged) {
         post.charged = true
         post.chargedAt = new Date().toISOString()
-        creditsUsed += admin ? 0 : nativeCost
+        creditsUsed += unifiedCost
+        for (const platform of post.platforms.filter(item => composioPublishingPlatforms.has(item))) {
+          await alphaConnector.finalizeDeferredExecution(user, `${existing.id}:${post.id}:${platform}`, `${existing.id}:${post.id}:unified`).catch(() => false)
+        }
       } else {
         post.chargeStatus = 'pending'
       }
@@ -3324,7 +3370,8 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
       } else post.status = 'failed'
       failedCount++
     }
-    creditsUsed += admin ? 0 : providerCreditsUsed
+    void providerCreditsUsed
+    void nativeSuccessCount
     const primaryPlatform = post.platforms?.[0] || 'linkedin'
     steps.push({ postId: post.id, day: post.day, slot: post.slot, platforms: post.platforms, content: post.captions?.[primaryPlatform] || '', pageId: primaryPlatform === 'facebook' ? postResults.facebook?.pageId || null : null, pageName: primaryPlatform === 'facebook' ? postResults.facebook?.pageName || null : null, scheduledAt: post.scheduledAt, scheduledTimezone: post.timezone || campaign.meta?.timezone || 'UTC', publishedAt: post.postedAt || null, providerPostId: postResults[primaryPlatform]?.id || null, linkedinAccount: postResults.linkedin?.account || user?.email || '', linkedinPostId: postResults.linkedin?.id || null, linkedinUrl: postResults.linkedin?.link || null, result: postResults, credits_used: post.charged ? postCost : 0, status: post.status, retry_count: post.retryCount || 0 })
     await saveServerAgent({ ...existing, campaign })
@@ -3339,9 +3386,14 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
 
   const remaining = (campaign.posts || []).filter(p => p.status === 'scheduled' || p.status === 'pending_approval')
   const nextRun = campaignNextRun(campaign)
-  let status = 'running'
+  let status = outOfCredits ? 'needs_attention' : 'running'
   let log = `Campaign execution: ${postedCount} post(s) processed. ${failedCount} had issues.`
   let output = { postedCount, failedCount, creditsUsed, steps }
+
+  if (outOfCredits) {
+    log = 'Out of credits - Buy $3 for 20 credits to keep your AI employee working.'
+    output = { ...output, needsAttention: true, reason: 'insufficient_credits' }
+  }
 
   if (remaining.length === 0) {
     status = 'completed'
@@ -3362,9 +3414,9 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
     output = missionReport
   }
 
-  const executionStatus = failedCount > 0 || postedCount === 0 ? 'error' : 'success'
-  const executionError = failedCount > 0 ? 'PUBLISH_FAILED' : postedCount === 0 ? 'NO_DUE_POSTS' : null
-  if (postedCount === 0 && failedCount === 0) log = 'Campaign execution failed: the scheduler marked this campaign due, but no approved scheduled post was eligible for publication.'
+  const executionStatus = outOfCredits ? 'waiting_credits' : (failedCount > 0 || postedCount === 0 ? 'error' : 'success')
+  const executionError = outOfCredits ? 'INSUFFICIENT_CREDITS' : failedCount > 0 ? 'PUBLISH_FAILED' : postedCount === 0 ? 'NO_DUE_POSTS' : null
+  if (!outOfCredits && postedCount === 0 && failedCount === 0) log = 'Campaign execution failed: the scheduler marked this campaign due, but no approved scheduled post was eligible for publication.'
   const completedExecution = { ...execution, status: executionStatus, duration: Date.now() - startTime, output, steps, error_code: executionError, credits_used: creditsUsed, log }
   const executionHistory = [completedExecution, ...(existing.executionHistory || [])].slice(0, 100)
   const successfulRuns = executionHistory.filter(item => item.status === 'success').length
@@ -7878,7 +7930,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { agent })
     } catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : 'Could not save agent' }) }
   }
-  if (req.method === 'GET' && req.url === '/api/agents/run-due') return runDueAgents(req, res)
+  if (req.method === 'GET' && (req.url === '/api/agents/run-due' || req.url === '/api/cron/check-scheduled-posts')) return runDueAgents(req, res)
   if (req.method === 'GET' && req.url === '/api/agents/health') {
     try {
       const agents = await listServerAgents()
@@ -8275,8 +8327,8 @@ if (!process.env.VERCEL) {
     try {
       const now = new Date()
       const agents = await listServerAgents()
-      schedulerState.activeAgents = agents.filter(a => a.status === 'running' || a.status === 'active' || a.status === 'warning').length
-      const due = agents.filter(a => (a.status === 'running' || a.status === 'active' || a.status === 'warning') && (a.trigger?.type === 'schedule' || a.trigger?.type === 'monitor' || a.trigger?.type === 'campaign') && a.trigger?.nextRun && new Date(a.trigger.nextRun) <= now)
+      schedulerState.activeAgents = agents.filter(a => ['running', 'active', 'warning', 'needs_attention'].includes(a.status)).length
+      const due = agents.filter(a => ['running', 'active', 'warning', 'needs_attention'].includes(a.status) && (a.trigger?.type === 'schedule' || a.trigger?.type === 'monitor' || a.trigger?.type === 'campaign') && a.trigger?.nextRun && new Date(a.trigger.nextRun) <= now)
       process.stdout.write(`[AGENT SCHEDULER] Running ${due.length} active agent(s) at ${started.toISOString()}\n`)
       for (const agent of due) {
         try { await runAgent(agent, 'schedule') } catch (err) { process.stdout.write(`[cron] agent ${agent.id} run error: ${err instanceof Error ? err.message : err}\n`) }

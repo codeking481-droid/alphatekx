@@ -5,6 +5,8 @@ import { deleteAgent, saveAgent, setAgentLifecycle, useAgents } from '../lib/age
 import type { Agent, AgentStatus } from '../lib/agents/types'
 import { formatCountdown } from '../lib/scheduling/countdown.mjs'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../lib/auth'
+import { isAdminUser } from '../lib/adminAccess'
 
 const filters = ['All', 'Running', 'Waiting', 'Paused', 'Needs Attention', 'Completed'] as const
 type Filter = typeof filters[number]
@@ -12,7 +14,7 @@ type Filter = typeof filters[number]
 function displayStatus(agent: Agent) {
   const isApproved = Boolean(agent.approved || agent.campaign?.approved)
   if (agent.status === 'running' || agent.status === 'active' || (isApproved && (agent.status === 'awaiting_approval' || agent.status === 'pending' || agent.status === 'draft'))) return 'Running'
-  if (agent.status === 'warning' || agent.status === 'failed' || agent.status === 'error') return 'Needs Attention'
+  if (agent.status === 'needs_attention' || agent.status === 'warning' || agent.status === 'failed' || agent.status === 'error') return 'Needs Attention'
   if (agent.status === 'paused') return 'Paused'
   if (agent.status === 'completed') return 'Completed'
   return 'Scheduled'
@@ -116,6 +118,7 @@ function ProgressCard({ agent }: { agent: Agent }) {
 
 export default function ActiveAutomations() {
   const agents = useAgents()
+  const { user, profile, refreshProfile } = useAuth()
   const { id } = useParams()
   const navigate = useNavigate()
   const [filter, setFilter] = useState<Filter>('All')
@@ -123,12 +126,21 @@ export default function ActiveAutomations() {
   const [notice, setNotice] = useState('')
   const [now, setNow] = useState(Date.now())
   const selected = id ? agents.find(agent => agent.id === id) : null
-  const visible = useMemo(() => agents.filter(agent => agent.status !== 'deleted' && matchesFilter(agent, filter)), [agents, filter])
+  const visible = useMemo(() => agents.filter(agent => {
+    const approved = Boolean(agent.approved || agent.campaign?.approved)
+    const active = ['active', 'running', 'paused', 'warning', 'needs_attention', 'completed', 'preparing'].includes(agent.status) || (approved && agent.status === 'awaiting_approval')
+    return active && agent.status !== 'deleted' && matchesFilter(agent, filter)
+  }), [agents, filter])
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1_000)
     return () => window.clearInterval(timer)
   }, [])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => { void refreshProfile() }, 30_000)
+    return () => window.clearInterval(timer)
+  }, [refreshProfile])
 
   const changeStatus = async (agent: Agent, status: AgentStatus) => {
     try {
@@ -181,6 +193,7 @@ export default function ActiveAutomations() {
     return <Page size="max-w-4xl">
       <button onClick={() => navigate('/active-automations')} className="text-sm font-bold text-violet-300 hover:text-violet-200">← Running Automations</button>
       {notice && <Notice>{notice}</Notice>}
+      {displayStatus(selected) === 'Needs Attention' && /credit/i.test(selected.campaign?.posts?.find(post => post.lastError)?.lastError || '') && <div className="mt-5 rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4 text-sm font-bold text-amber-100">Out of credits - Buy $3 for 20 credits to keep your AI employee working. <Link to="/settings?section=billing" className="underline">Buy credits</Link></div>}
       <section className="mt-6 rounded-[2rem] border border-violet-400/20 bg-violet-500/10 p-5 shadow-[0_24px_70px_rgba(30,41,59,.14)] sm:p-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div><p className="eyebrow">{displayStatus(selected)}</p><h1 className="mt-2 text-2xl font-black text-white sm:text-3xl">{selected.name}</h1><p className="mt-2 text-sm font-semibold capitalize text-slate-400">{platformNames(selected)}</p></div>
@@ -199,6 +212,7 @@ export default function ActiveAutomations() {
           <Info label="Last confirmed run" value={lastRun ? new Date(lastRun).toLocaleString() : 'No runs yet'} />
           <Info label="Approval" value={selected.approvalPolicy === 'implicit' ? 'Automatic after your approved plan' : 'Review before publishing'} />
           <Info label="Last result" value={lastResult(selected)} />
+          {!isAdminUser(user) && profile && <Info label="Credits left" value={profile.credits.toLocaleString()} />}
         </div>
         <div className="mt-6 rounded-2xl border border-violet-400/20 bg-[#0A0F1E]/55 p-4">
           <div className="flex items-center justify-between gap-3 text-xs font-black"><span className="text-slate-300">Verified progress</span><span className="text-violet-300">{progress(selected)}</span></div>
@@ -235,6 +249,12 @@ export default function ActiveAutomations() {
       <Link to="/automations" className="primary-button"><Plus size={17}/>New automation</Link>
     </header>
     {notice && <Notice>{notice}</Notice>}
+    {visible.some(agent => displayStatus(agent) === 'Needs Attention' && /credit/i.test(agent.campaign?.posts?.find(post => post.lastError)?.lastError || '')) && (
+      <div className="mt-5 rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4 text-sm font-bold text-amber-100">
+        Out of credits - Buy $3 for 20 credits to keep your AI employee working. <Link to="/settings?section=billing" className="ml-1 underline">Buy credits</Link>
+      </div>
+    )}
+    {!isAdminUser(user) && profile && <p className="mt-4 text-sm font-bold text-slate-300">Credits left: {profile.credits.toLocaleString()}</p>}
     <div className="mt-7 flex flex-wrap items-center justify-between gap-3">
       <div className="flex gap-2 overflow-x-auto pb-2" aria-label="Automation filters">{filters.map(item => <button key={item} onClick={() => setFilter(item)} className={`whitespace-nowrap rounded-full px-3 py-2 text-xs font-bold ${filter === item ? 'bg-[#6D28D9] text-white shadow-lg shadow-violet-200' : 'border border-violet-400/20 bg-violet-500/10 text-slate-400'}`}>{item}</button>)}</div>
       <div className="flex rounded-xl border border-violet-400/20 bg-violet-500/10 p-1 shadow-sm">

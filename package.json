@@ -19,6 +19,7 @@
     "test:linkedin": "node scripts/linkedin-tests.mjs",
     "test:posting": "node scripts/real-posting-schedule-tests.mjs && node scripts/real-posting-engine-tests.mjs",
     "test:social": "node scripts/social-publishing-tests.mjs",
+    "test:v1-reliability": "node --experimental-strip-types scripts/v1-reliability-tests.mjs",
     "test:whatsapp": "node scripts/whatsapp-tests.mjs",
     "test:facebook": "node scripts/facebook-oauth-tests.mjs",
     "test:gmail-drive": "node scripts/gmail-drive-tests.mjs",
