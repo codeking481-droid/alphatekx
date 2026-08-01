@@ -18,7 +18,7 @@ const admin = { id: 'admin', email: 'iamdan4live@gmail.com' }
 const publicUser = { id: 'public', email: 'public@example.com' }
 
 await test('authenticated administrator is credit exempt', async () => {
-  assert.equal(await getUserCredits(admin, {}), Infinity)
+  assert.equal(await getUserCredits(admin, {}), 999999)
   assert.deepEqual(await canCreateAgent(admin, {}, 1000000), { ok: true })
 })
 
@@ -26,7 +26,7 @@ await test('configured supervisor email is credit exempt', async () => {
   const previous = process.env.SUPER_ADMIN_EMAILS
   process.env.SUPER_ADMIN_EMAILS = 'supervisor@example.com'
   try {
-    assert.equal(await getUserCredits({ id: 'supervisor', email: 'SUPERVISOR@example.com' }, {}), Infinity)
+    assert.equal(await getUserCredits({ id: 'supervisor', email: 'SUPERVISOR@example.com' }, {}), 999999)
   } finally {
     if (previous === undefined) delete process.env.SUPER_ADMIN_EMAILS
     else process.env.SUPER_ADMIN_EMAILS = previous
@@ -92,11 +92,15 @@ await test('verified admin receives admin credit authority only after authentica
   const creditStore = fs.readFileSync(new URL('../src/lib/creditStore.ts', import.meta.url), 'utf8')
   const auth = fs.readFileSync(new URL('../src/lib/auth.tsx', import.meta.url), 'utf8')
   const server = fs.readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
-  assert.match(adminAccess, /userEmail\(user\) === ADMIN_EMAIL/)
+  assert.match(adminAccess, /ADMIN_EMAILS\.has\(email\)/)
+  assert.match(adminAccess, /coderking555@gmail\.com/)
+  assert.match(adminAccess, /codeking481@gmail\.com/)
+  assert.match(adminAccess, /alphatekxcompany@gmail\.com/)
   assert.doesNotMatch(creditStore, /999999|result\.admin|iamdan4live@gmail.com/)
   assert.doesNotMatch(auth, /999999|plan: 'admin'/)
   assert.match(server, /function isAdminAuthUser[\s\S]*authUserEmail\(user\) === adminEmail/)
   assert.match(server, /if \(isAdminAuthUser\(user\)\) return json\(res, 200, \{ ok: true, admin: true/)
+  assert.match(server, /reason: isAdmin \? 'supervisor_bypass'/)
 })
 
 await test('stale local identity is not mixed with bearer authentication', () => {

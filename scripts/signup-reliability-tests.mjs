@@ -1,0 +1,46 @@
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+
+const auth = fs.readFileSync(new URL('../src/lib/auth.tsx', import.meta.url), 'utf8')
+const access = fs.readFileSync(new URL('../src/lib/adminAccess.ts', import.meta.url), 'utf8')
+const signup = fs.readFileSync(new URL('../src/pages/Auth.tsx', import.meta.url), 'utf8')
+const server = fs.readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
+
+const tests = [
+  ['auth listener is stable across session updates', () => {
+    assert.match(auth, /onAuthStateChange/)
+    assert.match(auth, /\}, \[refreshProfile\]\)/)
+    assert.doesNotMatch(auth, /\}, \[session\?\.user\?\.id\]\)/)
+  }],
+  ['profile migration failure does not sign an authenticated user out', () => {
+    assert.match(auth, /Keep the user signed in/)
+    assert.match(auth, /setProfile\(current => current \|\|/)
+  }],
+  ['all product administrators are recognized in the UI', () => {
+    for (const email of ['iamdan4live@gmail.com', 'coderking555@gmail.com', 'codeking481@gmail.com', 'alphatekxcompany@gmail.com']) assert.ok(access.includes(email))
+  }],
+  ['administrator signup bypass is independent of profile schema', () => {
+    assert.match(server, /Admin authority is derived from the authenticated identity/)
+    assert.match(server, /credits: 999999, creditsAdded: 0, isAdmin: true/)
+  }],
+  ['Google and human verification remain separate choices', () => {
+    assert.match(signup, /google\(false\)/)
+    assert.match(signup, /google\(true\)/)
+    assert.match(signup, /Human verification starts only when you click this button/)
+  }],
+  ['signup uses the responsive premium surface', () => {
+    assert.match(signup, /min-h-\[100dvh\]/)
+    assert.match(signup, /luxury-card/)
+    assert.match(signup, /solar-action/)
+  }],
+]
+
+let failed = 0
+console.log('SIGNUP_RELIABILITY_TESTS:')
+for (const [name, run] of tests) {
+  try { run(); console.log(`- PASS: ${name}`) }
+  catch (error) { failed += 1; console.log(`- FAIL: ${name} — ${error.message}`) }
+}
+console.log(`- Total: ${tests.length}, Passed: ${tests.length - failed}, Failed: ${failed}`)
+if (failed) process.exit(1)
+console.log('SIGNUP_RELIABILITY_TESTS_OK')

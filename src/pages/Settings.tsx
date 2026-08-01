@@ -149,14 +149,14 @@ export default function Settings() {
   const renewalText = billing?.renewalDate ? new Date(billing.renewalDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
 
   return (
-    <div className="min-h-screen px-5 py-8 text-white md:px-10">
+    <div className="min-h-screen w-full max-w-full overflow-x-hidden px-4 py-8 text-white sm:px-6 md:px-10">
       <div className="mx-auto max-w-3xl space-y-6">
         <div>
           <h1 className="text-2xl font-black text-white md:text-3xl">Settings</h1>
           <p className="mt-2 text-sm font-semibold text-slate-300">Manage your account, credits, and preferences.</p>
         </div>
 
-        <section className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-6 shadow-[0_12px_35px_rgba(15,23,42,.07)]">
+        <section className="luxury-card p-5 sm:p-6">
           <div className="flex items-center gap-2 text-lg font-semibold"><User size={20} className="text-violet-400"/> Profile</div>
           <div className="mt-4 flex items-center gap-3">
             <span className="grid size-12 place-items-center rounded-full bg-[#6D28D9] text-white font-semibold">{(user?.email?.[0] || 'A').toUpperCase()}</span>
@@ -167,7 +167,7 @@ export default function Settings() {
           </div>
         </section>
 
-        <section ref={billingRef} className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-6 shadow-[0_12px_35px_rgba(15,23,42,.07)]">
+        <section ref={billingRef} className="luxury-card p-5 sm:p-6">
           <div className="flex items-center gap-2 text-lg font-black text-white"><CreditCard size={20} className="text-cyan-300"/> Billing & Credits</div>
           <p className="mt-2 text-sm font-semibold text-slate-300">Credits are consumed only when an automation performs work. Costs are always shown before you approve an automation.</p>
 
@@ -189,7 +189,7 @@ export default function Settings() {
                   <button key={plan.id} onClick={() => selectPlan(plan.id)} disabled={billing?.plan === plan.id} className={`relative rounded-2xl border p-4 text-left text-white shadow-[0_12px_30px_rgba(3,7,18,.24)] transition-all ${active ? 'border-cyan-300/60 bg-blue-500/20' : 'border-violet-400/30 bg-violet-500/15 hover:border-blue-300/60 hover:bg-blue-500/15'} ${billing?.plan === plan.id ? 'opacity-80' : ''}`}>
                     {plan.badge && <span className="absolute right-3 top-3 rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 px-2 py-0.5 text-[10px] font-semibold text-white">{plan.badge}</span>}
                     <span className="font-black text-white">{plan.name}</span>
-                    <p className="mt-2 text-3xl font-black text-cyan-200">{plan.priceKobo === 0 ? 'Free' : `${formatCurrency(plan.priceKobo)}/mo`}</p>
+                    <p className="mt-2 text-3xl font-black text-[#FFD700]">{plan.priceKobo === 0 ? 'Free' : `${formatCurrency(plan.priceKobo)}/mo`}</p>
                     <ul className="mt-3 space-y-1.5 text-xs font-semibold text-slate-200">
                       {plan.features.map((f, i) => <li key={i} className="flex items-start gap-1.5"><Check size={12} className="mt-0.5 text-violet-400"/> {f}</li>)}
                     </ul>
@@ -209,7 +209,7 @@ export default function Settings() {
                   <button key={pack.id} onClick={() => selectPack(pack)} className={`relative rounded-2xl border p-4 text-left text-white shadow-[0_12px_30px_rgba(3,7,18,.24)] transition-all ${active ? 'border-cyan-300/60 bg-blue-500/20' : 'border-violet-400/30 bg-violet-500/15 hover:border-blue-300/60 hover:bg-blue-500/15'}`}>
                     {active && <span className="absolute right-3 top-3 grid size-5 place-items-center rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white"><Check size={12}/></span>}
                     <span className="flex items-center gap-2 font-black text-white"><WalletCards size={16}/>{pack.label}</span>
-                    <p className="mt-2 text-3xl font-black text-cyan-200">{formatCurrency(pack.amountKobo)}</p>
+                    <p className="mt-2 text-3xl font-black text-[#FFD700]">{formatCurrency(pack.amountKobo)}</p>
                     <p className="mt-1 text-xs font-semibold text-slate-200">{pack.description}</p>
                   </button>
                 )
@@ -245,7 +245,7 @@ export default function Settings() {
           </div>
         </section>
 
-        <section className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-6 shadow-[0_12px_35px_rgba(15,23,42,.07)]">
+        <section className="luxury-card p-5 sm:p-6">
           <div className="flex items-center gap-2 text-lg font-semibold"><Palette size={20} className="text-violet-400"/> Preferences</div>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <Pref label="Timezone" icon={<Globe size={16}/>} value="UTC / Local time" />
@@ -256,7 +256,7 @@ export default function Settings() {
           <p className="mt-4 text-xs text-slate-400">More preference options will be added soon.</p>
         </section>
 
-        <section className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-6 shadow-[0_12px_35px_rgba(15,23,42,.07)]">
+        <section className="luxury-card p-5 sm:p-6">
           <div className="flex items-center gap-2 text-lg font-semibold"><Shield size={20} className="text-violet-400"/> Security</div>
           <div className="mt-4 space-y-3">
             <div className="flex items-center justify-between rounded-xl border border-violet-400/20 bg-blue-500/10 px-4 py-3">

@@ -74,9 +74,9 @@ test('server derives Google subject and enforces five attempts per hour', () => 
 test('configured supervisors bypass device claims without weakening authentication', () => {
   assert.match(read('.env.example'), /SUPER_ADMIN_EMAILS=/)
   assert.match(server, /supervisorEmails\(\)\.has\(email\)/)
-  assert.match(server, /setProfileMinimumCredits\(user, config, 10\)/)
+  assert.match(server, /credits: 999999, creditsAdded: 0/)
   assert.match(server, /isAdmin: true/)
-  assert.match(auth, /Welcome Boss! 10 credits unlocked/)
+  assert.match(auth, /Administrator access is active/)
   assert.match(auth, /Continue with 1 credit/)
   assert.match(migration, /Supervisor welcome-credit bypass/)
 })

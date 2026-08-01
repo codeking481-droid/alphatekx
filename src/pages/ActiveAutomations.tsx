@@ -276,10 +276,12 @@ function AutomationCard({ agent }: { agent: Agent }) {
   }, [])
 
   const nextRunLabel = nextRun ? `${new Date(nextRun).toLocaleString()} · ${formatCountdown(nextRun, now)}` : 'No future run'
-  return <Link to={`/active-automations/${agent.id}`} className="rounded-3xl border border-violet-400/20 bg-violet-500/10 p-6 shadow-[0_18px_45px_rgba(30,41,59,.10)] transition hover:-translate-y-1 hover:border-violet-300 hover:shadow-[0_24px_60px_rgba(109,40,217,.16)]">
-    <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-xs font-black uppercase tracking-[.16em] text-violet-300">{platformNames(agent)}</p><h2 className="mt-2 truncate text-lg font-black text-white">{agent.name}</h2></div><span className="rounded-full bg-violet-500/10 px-3 py-1 text-[11px] font-black text-violet-200">{displayStatus(agent)}</span></div>
-    <dl className="mt-6 grid grid-cols-1 gap-4 text-sm min-[420px]:grid-cols-2"><CardStat label="Schedule" value={agent.campaign?.meta?.frequencyText || agent.trigger?.cron || 'One time'} /><CardStat label="Progress" value={progress(agent)} /><CardStat label="Next run" value={nextRunLabel} /><CardStat label="Last result" value={lastResult(agent)} /></dl>
-    <div className="mt-5 h-2 overflow-hidden rounded-full bg-white/[.06]"><div className="h-full rounded-full bg-gradient-to-r from-violet-500 to-blue-500" style={{ width: `${progressPercent(agent)}%` }}/></div>
+  const state = displayStatus(agent)
+  return <Link to={`/active-automations/${agent.id}`} className="luxury-card block w-full max-w-full p-5 transition-all duration-300 hover:-translate-y-1 md:p-6">
+    <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-xs font-black uppercase tracking-[.16em] text-[#FFD700]">{platformNames(agent)}</p><h2 className="mt-2 break-words text-lg font-black text-white">{agent.name}</h2></div><span className={`flex shrink-0 items-center gap-2 rounded-full px-3 py-1 text-[11px] font-black ${state === 'Running' ? 'bg-emerald-400/10 text-emerald-300' : state === 'Needs Attention' ? 'bg-[#FFD700]/10 text-[#FFD700]' : 'bg-white/[.055] text-slate-300'}`}><i className={`size-2 animate-pulse rounded-full ${state === 'Running' ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,.8)]' : 'bg-[#FFD700] shadow-[0_0_10px_rgba(255,215,0,.7)]'}`}/>{state}</span></div>
+    <dl className="mt-6 grid grid-cols-2 gap-4 text-sm"><CardStat label="Schedule" value={agent.campaign?.meta?.frequencyText || agent.trigger?.cron || 'One time'} /><CardStat label="Progress" value={progress(agent)} /><CardStat label="Next run" value={nextRunLabel} /><CardStat label="Last result" value={lastResult(agent)} /></dl>
+    <div className="mt-5 h-2 overflow-hidden rounded-full bg-white/[.08]"><div className="solar-progress h-full rounded-full transition-[width] duration-500" style={{ width: `${progressPercent(agent)}%` }}/></div>
+    <span className="mt-4 flex min-h-11 w-full items-center justify-center rounded-xl border border-white/10 bg-white/[.035] px-4 text-sm font-black text-white transition hover:bg-white/[.07]">View posts</span>
     {displayStatus(agent) === 'Needs Attention' && <p className="mt-4 flex items-center gap-2 text-xs font-bold text-amber-300"><AlertCircle size={14}/>Open to see what needs attention.</p>}
   </Link>
 }
@@ -321,5 +323,5 @@ function Info({ label, value, icon }: { label: string; value: string; icon?: Rea
 }
 
 function CardStat({ label, value }: { label: string; value: string }) {
-  return <div><dt className="text-xs font-bold text-slate-400">{label}</dt><dd className="mt-1 line-clamp-2 font-bold text-slate-400">{value}</dd></div>
+  return <div className="min-w-0"><dt className="text-[11px] font-bold uppercase tracking-wide text-[#A0A0B0]">{label}</dt><dd className={`mt-1 break-words font-bold ${label === 'Next run' ? 'font-mono text-[#FFD700]' : 'text-white'}`}>{value}</dd></div>
 }

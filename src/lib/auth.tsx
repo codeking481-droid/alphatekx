@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type PropsWithChildren } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type PropsWithChildren } from 'react'
 import type { Session, User } from '@supabase/supabase-js'
 import { isSupabaseConfigured, supabase } from './supabase'
 import { hydrateCredits } from './creditStore'
@@ -59,11 +59,14 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [localUser, setLocalUser] = useState<LocalUser | null>(readLocalUser())
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
+  const activeUserId = useRef<string | null>(null)
 
-  const refreshProfile = async () => {
+  const refreshProfile = useCallback(async () => {
     if (!supabase) return
+    let authUser: User | null = null
     try {
       const { data: auth } = await withTimeout(supabase.auth.getUser(), 'Authentication check')
+      authUser = auth.user
       if (!auth.user) { setProfile(null); return }
       const email = userEmail(auth.user)
       const fallback: Profile = {
@@ -91,18 +94,21 @@ export function AuthProvider({ children }: PropsWithChildren) {
       setProfile(nextProfile)
     } catch (error) {
       console.warn('[AlphaTekx] profile refresh failed:', error)
-      const current = session?.user
-      if (current) setProfile({ id: current.id, email: userEmail(current), credits: 0, plan: 'free', revenue: 0 })
+      // Authentication succeeded even if a profile migration or transient database
+      // request failed. Keep the user signed in and preserve any profile already read.
+      if (authUser) {
+        setProfile(current => current || { id: authUser!.id, email: userEmail(authUser), credits: 0, plan: 'free', revenue: 0 })
+      }
     }
-  }
+  }, [])
 
   useEffect(() => {
     if (!supabase) { setLoading(false); return }
     supabase.auth.getSession().then(({ data }) => {
-      const currentUserId = session?.user?.id ?? null
-      if (data.session?.user?.id && currentUserId && data.session.user.id !== currentUserId) {
+      if (data.session?.user?.id && activeUserId.current && data.session.user.id !== activeUserId.current) {
         clearUserArtifacts()
       }
+      activeUserId.current = data.session?.user?.id || null
       setSession(data.session)
       setLoading(false)
       if (data.session) {
@@ -117,8 +123,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
       setLoading(false)
     })
     const { data } = supabase.auth.onAuthStateChange((_event, next) => {
-      const changedUser = Boolean(session?.user?.id && next?.user?.id && session.user.id !== next.user.id)
+      const changedUser = Boolean(activeUserId.current && next?.user?.id && activeUserId.current !== next.user.id)
       if (!next || changedUser) clearUserArtifacts()
+      activeUserId.current = next?.user?.id || null
       setSession(next)
       setLoading(false)
       if (next) {
@@ -131,7 +138,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       }
     })
     return () => data.subscription.unsubscribe()
-  }, [session?.user?.id])
+  }, [refreshProfile])
 
   const user: AuthUser | null = useMemo(() => {
     return session?.user ?? localUser
@@ -154,7 +161,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     setProfile(null)
   }
 
-  const value = useMemo<AuthValue>(() => ({ session, user, profile, loading, configured: isSupabaseConfigured, refreshProfile, signOut, localSignIn }), [session, user, profile, loading])
+  const value = useMemo<AuthValue>(() => ({ session, user, profile, loading, configured: isSupabaseConfigured, refreshProfile, signOut, localSignIn }), [session, user, profile, loading, refreshProfile])
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 

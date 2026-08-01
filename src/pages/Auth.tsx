@@ -102,7 +102,7 @@ export default function Auth() {
         })
         const welcomeBody = await welcomeResponse.json().catch(() => ({})) as VerificationResult
         if (!welcomeResponse.ok) throw new Error(welcomeBody.error || 'Your Google signup credit could not be activated.')
-        setResult({ ...welcomeBody, success: false, reason: 'google_credit_ready' })
+        setResult({ ...welcomeBody, success: false, reason: welcomeBody.isAdmin ? 'supervisor_bypass' : 'google_credit_ready' })
         await refreshProfile()
       } catch (error) {
         setNotice(error instanceof Error ? error.message : 'Your Google signup credit could not be activated.')
@@ -181,28 +181,30 @@ export default function Auth() {
   }
 
   const blocked = !configured || pending || Boolean(user)
-  const bonusMessage = result?.reason === 'google_credit_ready'
+  const bonusMessage = result?.isAdmin
+    ? 'Administrator access is active.'
+    : result?.reason === 'google_credit_ready'
     ? 'Google sign-in complete. Your 1 credit is ready.'
-    : result?.isAdmin
-    ? 'Welcome Boss! 10 credits unlocked 🔓'
     : result?.claimed
-      ? 'Human verified! 10 credits unlocked 🎉'
+      ? 'Human verified! 10 credits unlocked.'
     : result?.reason === 'device_already_claimed' || result?.reason === 'already_claimed'
       ? 'This device already claimed the 10-credit bonus. One bonus per human.'
       : 'This Google account already claimed the bonus. You have 1 credit.'
 
   return (
-    <main className="grid min-h-screen place-items-center bg-[#0A0F1E] p-5 text-white">
-      <div className="w-full max-w-md rounded-[1.75rem] border border-violet-400/20 bg-violet-500/10 p-7 shadow-[0_30px_80px_rgba(15,23,42,.12)] sm:p-9">
+    <main className="relative grid min-h-[100dvh] place-items-center overflow-hidden bg-[#0A0A0F] p-4 text-white sm:p-6">
+      <div aria-hidden className="pointer-events-none absolute -right-32 -top-32 size-[30rem] rounded-full bg-[#FFD700]/[.055] blur-3xl"/>
+      <div aria-hidden className="pointer-events-none absolute -bottom-48 -left-40 size-[34rem] rounded-full bg-[#6C5CE7]/10 blur-3xl"/>
+      <div className="luxury-card relative w-full max-w-md p-6 sm:p-9">
         <Link to="/" className="flex items-center justify-center gap-2 text-sm font-black tracking-[.14em] text-white">
-          <span className="grid size-9 place-items-center rounded-xl bg-[#6D28D9] text-white shadow-lg shadow-violet-200"><Sparkles size={17}/></span>
+          <span className="grid size-9 place-items-center rounded-xl bg-gradient-to-br from-[#FFD700] to-[#6C5CE7] text-[#0A0A0F] shadow-[0_8px_24px_rgba(255,215,0,.18)]"><Sparkles size={17}/></span>
           ALPHATEKX
         </Link>
 
         <h1 className="mt-7 text-center text-3xl font-black tracking-[-.04em] text-white">Join AlphaTekx</h1>
         <p className="mt-2 text-center text-sm font-bold text-slate-400">Choose how you want to get started.</p>
 
-        <section className="mt-8 rounded-2xl border-2 border-violet-400/20 bg-violet-500/10 p-4 shadow-[0_10px_25px_rgba(15,23,42,.07)]">
+        <section className="mt-8 rounded-2xl border border-white/10 bg-white/[.035] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,.05)]">
           <h2 className="font-black text-white">Google signup · 1 credit</h2>
           <p className="mt-1 text-sm font-semibold text-slate-400">Sign in and get one credit to run your first automation.</p>
         <button onClick={() => void google(false)} disabled={blocked} className="mt-4 flex min-h-14 w-full items-center justify-center gap-3 rounded-xl border-2 border-violet-400/20 bg-violet-500/10 px-4 font-black text-white shadow-[0_10px_25px_rgba(15,23,42,.07)] transition hover:border-violet-300 hover:bg-violet-500/10 disabled:cursor-not-allowed disabled:opacity-50">
@@ -210,13 +212,13 @@ export default function Auth() {
         </button>
         </section>
 
-        <section className="relative mt-4 rounded-2xl border-2 border-violet-200 bg-violet-500/10 p-4 shadow-[0_15px_35px_rgba(109,40,217,.14)]">
+        <section className="relative mt-4 rounded-2xl border border-[#FFD700]/20 bg-gradient-to-br from-[#FFD700]/[.065] to-[#6C5CE7]/10 p-4 shadow-2xl">
           <h2 className="font-black text-white">Human verification · 10 credits</h2>
           <p className="mt-1 text-sm font-semibold text-slate-400">After Google sign-in, choose this option to verify and unlock ten credits.</p>
-        <button onClick={() => user ? void verifyHuman() : void google(true)} disabled={!configured || pending || verifying} className="relative mt-3 flex min-h-16 w-full items-center justify-center gap-3 rounded-xl bg-[#6D28D9] px-4 font-black text-white shadow-[0_15px_35px_rgba(109,40,217,.3)] transition hover:-translate-y-0.5 hover:bg-[#5B21B6] disabled:cursor-not-allowed disabled:opacity-60">
+        <button onClick={() => user ? void verifyHuman() : void google(true)} disabled={!configured || pending || verifying} className="solar-action relative mt-3 flex min-h-16 w-full items-center justify-center gap-3 rounded-xl px-4 disabled:cursor-not-allowed disabled:opacity-60">
           {verifying ? <LoaderCircle className="animate-spin" size={20}/> : <ShieldCheck size={20}/>}
           {verifying ? "Verifying you're human…" : user ? 'Verify human & unlock 10 credits' : 'Sign in & verify human — 10 credits'}
-          <span className="absolute -right-2 -top-2 rounded-full bg-violet-500/10 px-2.5 py-1 text-[9px] font-black tracking-wide text-[#5B21B6]">RECOMMENDED</span>
+          <span className="absolute -right-2 -top-2 rounded-full border border-[#FFD700]/20 bg-[#15151F] px-2.5 py-1 text-[9px] font-black tracking-wide text-[#FFD700]">RECOMMENDED</span>
         </button>
         {!user && <p className="mt-3 text-center text-xs font-bold text-slate-400">Sign in with Google first. Human verification starts only when you click this button.</p>}
         </section>
