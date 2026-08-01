@@ -204,6 +204,7 @@ const ACTION_TOOL_MAP = {
   'twitter.create_tweet': process.env.COMPOSIO_TWITTER_CREATE_TWEET_TOOL || 'TWITTER_CREATION_OF_A_POST',
   'twitter.create_thread': process.env.COMPOSIO_TWITTER_CREATE_THREAD_TOOL || 'TWITTER_CREATION_OF_A_POST',
   'twitter.create_media_tweet': process.env.COMPOSIO_TWITTER_CREATE_MEDIA_TWEET_TOOL || 'TWITTER_CREATION_OF_A_POST',
+  'twitter.upload_media': process.env.COMPOSIO_TWITTER_UPLOAD_MEDIA_TOOL || 'TWITTER_UPLOAD_MEDIA',
   'youtube.upload_video': process.env.COMPOSIO_YOUTUBE_UPLOAD_VIDEO_TOOL || 'YOUTUBE_UPLOAD_VIDEO',
   'youtube.create_short': process.env.COMPOSIO_YOUTUBE_CREATE_SHORT_TOOL || 'YOUTUBE_UPLOAD_VIDEO',
   'youtube.update_video': process.env.COMPOSIO_YOUTUBE_UPDATE_VIDEO_TOOL || 'YOUTUBE_UPDATE_VIDEO',
@@ -1053,6 +1054,30 @@ export async function executeProviderAction(user, providerId, actionId, payload)
             result = await executeTool(toolSlug, { page_id: pageId, message: actionArguments.message, published: true })
           }
           if (result?.data && typeof result.data === 'object') result.data = { ...result.data, page_id: pageId, page_name: pageName }
+        } else if (pid === 'twitter' && actionArguments.image_url) {
+          const imageUrl = String(actionArguments.image_url).trim()
+          const uploadedFile = await composioClient.files.upload({
+            file: imageUrl,
+            toolSlug: ACTION_TOOL_MAP['twitter.upload_media'],
+            toolkitSlug: 'twitter',
+          })
+          if (!uploadedFile?.s3key || !String(uploadedFile?.mimetype || '').startsWith('image/')) {
+            throw new Error('X media upload did not receive a verified image file')
+          }
+          const uploadResult = await executeTool(ACTION_TOOL_MAP['twitter.upload_media'], {
+            media: uploadedFile,
+            media_type: uploadedFile.mimetype,
+            media_category: 'tweet_image',
+          })
+          if (uploadResult?.successful !== true || uploadResult?.data == null) {
+            throw new Error(uploadResult?.error || 'X did not upload the post image')
+          }
+          const mediaId = confirmedProviderId(uploadResult.data)
+          if (!mediaId) throw new Error('X did not return a confirmed media ID')
+          const tweetArguments = { ...actionArguments, media__media__ids: [String(mediaId)] }
+          delete tweetArguments.image_url
+          result = await executeTool(toolSlug, tweetArguments)
+          if (result?.data && typeof result.data === 'object') result.data = { ...result.data, media_id: mediaId }
         } else {
           result = await executeTool(toolSlug, actionArguments)
         }
