@@ -2650,7 +2650,7 @@ async function activateCampaignHandler(req, res) {
   const billingSummary = await billing.getUserBilling(user, config)
   if (!admin) {
     const activeStatuses = new Set(['active', 'running', 'preparing', 'warning', 'needs_attention'])
-    const activeAutomations = (await listServerAgents()).filter(item => item.userId === user.id && item.id !== agent.id && activeStatuses.has(item.status)).length
+    const activeAutomations = (await listServerAgentsForUser(user.id)).filter(item => item.id !== agent.id && activeStatuses.has(item.status)).length
     if (activeAutomations >= billingSummary.maxActiveAutomations) {
       const message = billingSummary.plan === 'free'
         ? 'Upgrade to Starter $15 for 2 active automations.'
