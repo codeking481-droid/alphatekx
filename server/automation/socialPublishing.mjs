@@ -31,7 +31,10 @@ export function buildSocialPublishingAction(platformValue, post = {}, captionVal
   if (platform === 'x') {
     // X rejects text over 280 characters. Captions should already be adapted by
     // the planner, but this final boundary prevents a provider-side rejection.
-    return { action: 'create_tweet', params: { text: xPostText(caption) } }
+    return {
+      action: imageUrl ? 'create_media_tweet' : 'create_tweet',
+      params: { text: xPostText(caption), ...(imageUrl ? { image_url: imageUrl } : {}) },
+    }
   }
   if (platform === 'whatsapp') {
     const to = String(post.to || campaign.meta?.to || campaign.meta?.recipient || '').trim()
