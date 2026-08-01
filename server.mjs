@@ -6225,9 +6225,21 @@ async function remoteExecutionsForUser(userId, config) {
 }
 
 async function remoteExecutionsSaveForUser(userId, email, executions, config) {
-  const body = JSON.stringify({ user_id: userId, provider: AGENT_EXECUTIONS_PROVIDER, email: email || '', identifier: 'agent-executions', scopes: [], tokens: { executions: executions.slice(0, 200), updated_at: new Date().toISOString() }, updated_at: new Date().toISOString() })
+  const durableExecutions = executions.slice(0, 200)
+  const tokens = { executions: durableExecutions, updated_at: new Date().toISOString() }
+  const body = JSON.stringify({ user_id: userId, provider: AGENT_EXECUTIONS_PROVIDER, email: email || '', identifier: 'agent-executions', scopes: [], tokens, updated_at: new Date().toISOString() })
   const res = await fetch(`${config.url}/rest/v1/connected_accounts?on_conflict=user_id,provider`, { method: 'POST', headers: { ...serviceHeaders(config.service), Prefer: 'resolution=merge-duplicates,return=minimal' }, body })
-  if (!res.ok) throw new Error('Could not save executions to durable connected_accounts storage')
+  if (res.ok) return
+
+  const detail = await res.text().catch(() => '')
+  process.stdout.write(`[execution storage] connected_accounts save failed: HTTP ${res.status}${detail ? ` ${detail.slice(0, 240)}` : ''}; trying encrypted Auth metadata\n`)
+  const saved = await saveAuthAppIntegration(userId, AGENT_EXECUTIONS_PROVIDER, {
+    email,
+    identifier: 'agent-executions',
+    scopes: [],
+    tokens,
+  }, config)
+  if (!saved) throw new Error(`Could not save execution history durably (connected_accounts HTTP ${res.status}; Auth metadata fallback failed)`)
 }
 
 async function executionOwner(execution, config) {
