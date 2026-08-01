@@ -9,10 +9,11 @@ function test(name, fn) {
   catch (error) { console.error(`FAIL ${name}`); throw error }
 }
 
-test('Facebook creates a real Page post action', () => {
-  assert.deepEqual(buildSocialPublishingAction('facebook', {}, 'AlphaTekx is live'), {
-    action: 'create_page_post', params: { message: 'AlphaTekx is live' },
+test('Facebook creates a real Page image post action', () => {
+  assert.deepEqual(buildSocialPublishingAction('facebook', { imageUrl: 'https://cdn.example/post.jpg' }, 'AlphaTekx is live'), {
+    action: 'create_page_post', params: { message: 'AlphaTekx is live', image_url: 'https://cdn.example/post.jpg' },
   })
+  assert.throws(() => buildSocialPublishingAction('facebook', {}, 'AlphaTekx is live'), /confirmed matched image/)
 })
 
 test('Facebook preserves a verified media URL', () => {
@@ -33,6 +34,7 @@ test('X is provider-safe and preserves a matched image for media upload', () => 
   assert.equal(action.params.text.length, 280)
   assert.equal(action.params.image_url, 'https://cdn.example/x.jpg')
   assert.equal(xPostText('short'), 'short')
+  assert.throws(() => buildSocialPublishingAction('x', {}, 'Launch'), /confirmed matched image/)
 })
 
 test('provider identifiers require a provider response field', () => {

@@ -25,15 +25,17 @@ export function buildSocialPublishingAction(platformValue, post = {}, captionVal
     return { action: 'publish_post', params: { image_url: imageUrl, caption, ...(igUserId ? { ig_user_id: igUserId } : {}) } }
   }
   if (platform === 'facebook') {
+    if (!imageUrl) throw new Error('Facebook requires a confirmed matched image. Regenerate this post before publishing.')
     const pageId = String(post.pageId || post.page_id || campaign.meta?.pageId || campaign.meta?.page_id || '').trim()
-    return { action: 'create_page_post', params: { message: caption, ...(pageId ? { page_id: pageId } : {}), ...(imageUrl ? { image_url: imageUrl } : {}) } }
+    return { action: 'create_page_post', params: { message: caption, ...(pageId ? { page_id: pageId } : {}), image_url: imageUrl } }
   }
   if (platform === 'x') {
+    if (!imageUrl) throw new Error('X requires a confirmed matched image. Regenerate this post before publishing.')
     // X rejects text over 280 characters. Captions should already be adapted by
     // the planner, but this final boundary prevents a provider-side rejection.
     return {
-      action: imageUrl ? 'create_media_tweet' : 'create_tweet',
-      params: { text: xPostText(caption), ...(imageUrl ? { image_url: imageUrl } : {}) },
+      action: 'create_media_tweet',
+      params: { text: xPostText(caption), image_url: imageUrl },
     }
   }
   if (platform === 'whatsapp') {

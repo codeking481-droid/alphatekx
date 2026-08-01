@@ -1194,7 +1194,7 @@ Return JSON:
       totalPosts >= durationDays * platforms.length
     const postsPerDay = Math.max(1, Math.ceil(totalPosts / durationDays))
     const dontPost = Array.isArray(known.dontPost) ? known.dontPost : []
-    const automaticImagePlatforms = platforms.some(platform => ['facebook', 'instagram', 'x', 'twitter'].includes(platform))
+    const automaticImagePlatforms = platforms.some(platform => ['linkedin', 'facebook', 'instagram', 'x', 'twitter'].includes(platform))
     const imageRequested = Boolean(known.includeImages || known.include_images || automaticImagePlatforms)
     const includeImages = imageRequested && (typeof getSmartImage === 'function' || listImageProviders().length > 0)
 
