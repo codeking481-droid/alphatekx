@@ -552,6 +552,36 @@ async function finishExecutionFallback(userId, idempotencyKey, changes) {
   if (!response.ok) throw new Error(`Durable execution result could not be saved (${response.status})`)
 }
 
+export function shouldReclaimClaimedExecution(record, now = Date.now()) {
+  if (!record || record.status !== 'claimed') return false
+  const claimTimestamp = record.created_at || record.claimed_at || record.updated_at || record.completed_at
+  if (!claimTimestamp) return true
+  const parsed = new Date(claimTimestamp).getTime()
+  if (Number.isNaN(parsed)) return true
+  return now - parsed >= 3 * 60_000
+}
+
+async function reclaimStaleClaimedExecution(userId, idempotencyKey, approvalId) {
+  const config = persistenceConfig()
+  if (!config) return true
+  const response = await fetch(`${config.url}/rest/v1/connector_executions?user_id=eq.${encodeURIComponent(userId)}&idempotency_key=eq.${encodeURIComponent(idempotencyKey)}&status=eq.claimed`, {
+    method: 'PATCH',
+    headers: supabaseServiceHeaders(config.service, { Prefer: 'return=representation' }),
+    body: JSON.stringify({
+      status: 'claimed',
+      approval_id: approvalId,
+      error_code: null,
+      completed_at: null,
+      provider_execution_id: null,
+      result_metadata: { retriedAt: new Date().toISOString() },
+      credits_charged: 0,
+    }),
+  })
+  if (!response.ok) throw new Error('Stale publication claim could not be reclaimed safely')
+  const rows = await response.json().catch(() => [])
+  return Array.isArray(rows) && rows.length >= 1
+}
+
 async function finishExecution(userId, idempotencyKey, changes) {
   if (campaignHistoryCompatibility.has(compatibilityKey(userId, idempotencyKey))) return
   const config = persistenceConfig()
@@ -1141,9 +1171,22 @@ export async function executeProviderAction(user, providerId, actionId, payload,
       replayed: true,
     }
   }
+<<<<<<< HEAD
   if (previous?.status === 'claimed') throw new Error('This approved action is already in progress')
   if (previous && previous.status !== 'failed') throw new Error(`This publication cannot be retried from state "${previous.status}"`)
   if (!deferCreditSettlement && await getCreditBalance(user.id) < 1) throw new Error('Insufficient credits')
+=======
+  if (previous?.status === 'claimed') {
+    if (shouldReclaimClaimedExecution(previous, Date.now())) {
+      const reclaimed = await reclaimStaleClaimedExecution(user.id, idempotencyKey, approvalId)
+      if (!reclaimed) throw new Error('This approved action is already in progress')
+    } else {
+      throw new Error('This approved action is already in progress')
+    }
+  }
+  if (previous && previous.status !== 'failed' && previous.status !== 'claimed') throw new Error(`This publication cannot be retried from state "${previous.status}"`)
+  if (await getCreditBalance(user.id) < 1) throw new Error('Insufficient credits')
+>>>>>>> 6ac1a3e (Recover stale social publishing claims)
   const actionArguments = { ...(payload || {}) }
   delete actionArguments.approvalId
   delete actionArguments.idempotencyKey

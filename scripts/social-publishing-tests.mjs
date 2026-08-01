@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { buildSocialPublishingAction, providerPostIds, xPostText } from '../server/automation/socialPublishing.mjs'
-import { confirmedProviderId, confirmedPublishedContentId } from '../server/composioConnectorService.mjs'
+import { confirmedProviderId, confirmedPublishedContentId, shouldReclaimClaimedExecution } from '../server/composioConnectorService.mjs'
 
 let passed = 0
 function test(name, fn) {
@@ -121,6 +121,14 @@ test('provider failures remain explicit and unconfirmed posts are never charged'
   assert.match(server, /Publication failed\./)
   assert.match(server, /No credits were charged for unconfirmed platforms/)
   assert.match(server, /charged: Number\(execution\.credits_used \|\| 0\) > 0/)
+})
+
+test('stale claimed executions are eligible for reclaim and retry', () => {
+  const stale = { status: 'claimed', created_at: new Date(Date.now() - 4 * 60_000).toISOString() }
+  const fresh = { status: 'claimed', created_at: new Date(Date.now() - 20_000).toISOString() }
+  assert.equal(shouldReclaimClaimedExecution(stale, Date.now()), true)
+  assert.equal(shouldReclaimClaimedExecution(fresh, Date.now()), false)
+  assert.equal(shouldReclaimClaimedExecution({ status: 'succeeded' }, Date.now()), false)
 })
 
 console.log(`\nSocial publishing tests: ${passed}/${passed} passed`)
