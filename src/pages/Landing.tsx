@@ -1,338 +1,162 @@
-import { useEffect, useState, type ReactNode } from 'react'
-import { AnimatePresence, motion, useReducedMotion, useScroll, useSpring } from 'framer-motion'
+import { useEffect, useRef, useState } from 'react'
+import {
+  motion, useMotionValue, useReducedMotion, useScroll,
+  useSpring, useTransform, type MotionValue,
+} from 'framer-motion'
 import { Link } from 'react-router-dom'
 import {
-  ArrowRight, Bot, CalendarDays, Check, CheckCircle2, ChevronDown, CirclePlay,
-  Clock3, Instagram, Linkedin, Mail, Menu, Pause, ShieldCheck, Sparkles,
-  Star, TimerReset, Twitter, X, Zap,
+  ArrowRight, BarChart3, BrainCircuit, CalendarDays, Check, ChevronRight,
+  Menu, Rocket, Sparkles, TrendingUp, X, Zap,
 } from 'lucide-react'
 import SEO from '../components/SEO'
 import { useAuth } from '../lib/auth'
 
-const nav = [['How it works', '#how-it-works'], ['Automations', '#automations'], ['Connected apps', '#connected-apps'], ['Pricing', '#pricing']]
-const platforms = [
-  { name: 'X', icon: Twitter }, { name: 'LinkedIn', icon: Linkedin }, { name: 'Instagram', icon: Instagram },
-  { name: 'Gmail', icon: Mail }, { name: 'YouTube', icon: CirclePlay },
-]
-const gallery = [
-  ['LinkedIn Growth', 'Original posts with a fresh hook every time.', '2.4k runs', Linkedin],
-  ['Twitter Thread Engine', 'Turn one idea into a clear, useful thread.', '1.8k runs', Twitter],
-  ['Instagram Repurpose', 'Adapt approved ideas into native captions.', '3.1k runs', Instagram],
-  ['Gmail Auto-Reply', 'Keep important replies moving while you focus.', '4.7k runs', Mail],
-] as const
-const features = [
-  ['Unique captions', 'Checks recent content so the same caption never publishes twice.', Sparkles],
-  ['Edit date and time free', 'Move approved work without paying for the edit.', Clock3],
-  ['Pause anytime', 'Stop future runs instantly and resume when you are ready.', Pause],
-  ['Calendar view', 'See every upcoming execution in one calm view.', CalendarDays],
-  ['Approval first', 'Alpha waits for explicit approval before public actions.', ShieldCheck],
-  ['Credits after execution', 'A failed or unconfirmed action never consumes credits.', CheckCircle2],
-] as const
-const faqs = [
-  ['What does one credit cover?', 'Credits measure completed work. Alpha always shows the expected cost before you approve a plan.'],
-  ['When are credits deducted?', 'Only after an approved action is confirmed successful. Planning, editing a date, and failed executions are not charged.'],
-  ['Can Alpha publish without me?', 'Only after you approve the complete plan and publishing settings. You can pause or delete the automation at any time.'],
-  ['Can I edit the schedule for free?', 'Yes. Changing the date or time is free because no new work has been executed.'],
-  ['Will captions repeat?', 'Alpha compares new content with recent publication memory and blocks duplicate or near-duplicate captions.'],
-  ['Which apps can I connect?', 'The current command centre supports released connectors such as LinkedIn, X, Instagram, and Gmail. Availability is verified by the backend.'],
-  ['Does it keep running after I close the browser?', 'Yes. Approved schedules are persisted and executed by the server-side scheduler.'],
-  ['Can I cancel a subscription?', 'Yes. Billing remains under your control, and purchased credit history remains visible in your workspace.'],
-] as const
-
-const fadeUp = {
-  hidden: { opacity: 0, y: 24 },
-  visible: { opacity: 1, y: 0, transition: { type: 'spring' as const, stiffness: 90, damping: 20 } },
-}
-
-function Logo() {
-  return <Link to="/" className="flex items-center gap-3 text-lg font-black tracking-[-.03em] text-white"><span className="grid size-10 place-items-center rounded-xl bg-[#6941C6] text-base font-black text-white shadow-[0_10px_24px_rgba(105,65,198,.22)]">A</span>ALPHATEKX</Link>
-}
+const GOLD = '#FFD700'
+const PURPLE = '#6B21A8'
+const ease = [0.22, 1, 0.36, 1] as const
 
 function Header() {
   const { user } = useAuth()
   const [open, setOpen] = useState(false)
-  return <header className="fixed inset-x-0 top-0 z-50 border-b border-[#475569] bg-violet-500/10 backdrop-blur-xl">
-    <div className="mx-auto flex h-[72px] max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-      <Logo />
-      <nav className="hidden items-center gap-7 lg:flex">{nav.map(([label, href]) => <a key={href} href={href} className="text-sm font-semibold text-slate-200 transition hover:text-violet-300">{label}</a>)}</nav>
-      <div className="hidden items-center gap-2 md:flex"><Link to="/auth" className="min-h-11 rounded-xl px-5 py-3 text-sm font-semibold text-white hover:bg-[#0A0F1E]">Sign in</Link><Link to={user ? '/dashboard' : '/auth'} className="min-h-11 rounded-xl bg-[#6941C6] px-5 py-3 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(105,65,198,.22)] transition hover:-translate-y-0.5 hover:bg-[#5635A8]">Start automating</Link></div>
-      <button onClick={() => setOpen(value => !value)} className="grid size-11 place-items-center rounded-xl border border-[#475569] text-white md:hidden" aria-label="Toggle navigation">{open ? <X size={20}/> : <Menu size={20}/>}</button>
+  const links = [['How it works', '#how-it-works'], ['Demo', '#demo'], ['Pricing', '#pricing']]
+  return <header className="fixed inset-x-0 top-0 z-50 border-b border-white/10 bg-black/70 backdrop-blur-2xl">
+    <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
+      <a href="#top" className="flex items-center gap-2.5 text-white"><span className="grid size-9 place-items-center rounded-xl bg-gradient-to-br from-[#FFD700] to-[#6B21A8] text-black shadow-[0_0_28px_rgba(255,215,0,.22)]"><Sparkles size={18}/></span><span className="font-black tracking-[.14em]">ALPHATEKX</span></a>
+      <nav className="hidden items-center gap-8 md:flex">{links.map(([label, href]) => <a key={href} href={href} className="text-sm font-semibold text-white/60 transition hover:text-white">{label}</a>)}</nav>
+      <div className="hidden md:block"><Link to={user ? '/dashboard' : '/auth'} className="inline-flex h-10 items-center rounded-full bg-[#FFD700] px-5 text-sm font-black text-black transition hover:brightness-110">{user ? 'Open dashboard' : 'Start free'}</Link></div>
+      <button aria-label="Toggle navigation" onClick={() => setOpen(value => !value)} className="grid size-10 place-items-center rounded-xl border border-white/10 text-white md:hidden">{open ? <X/> : <Menu/>}</button>
     </div>
-    <AnimatePresence>{open && <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden border-t border-[#475569] bg-violet-500/10 md:hidden"><nav className="grid gap-1 px-4 py-4">{nav.map(([label, href]) => <a key={href} href={href} onClick={() => setOpen(false)} className="min-h-11 rounded-xl px-4 py-3 font-semibold text-slate-200 hover:bg-violet-500/10">{label}</a>)}<Link to="/auth" className="mt-2 min-h-11 rounded-xl bg-[#6941C6] px-4 py-3 text-center font-semibold text-white">Start automating</Link></nav></motion.div>}</AnimatePresence>
+    {open && <motion.nav initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="grid gap-1 border-t border-white/10 bg-black px-4 py-4 md:hidden">{links.map(([label, href]) => <a key={href} href={href} onClick={() => setOpen(false)} className="rounded-xl px-4 py-3 font-bold text-white/70">{label}</a>)}<Link to={user ? '/dashboard' : '/auth'} className="mt-2 rounded-xl bg-[#FFD700] px-4 py-3 text-center font-black text-black">Launch My Second You</Link></motion.nav>}
   </header>
 }
 
-function DotGrid() {
-  return <div aria-hidden className="perspective-grid-shell pointer-events-none absolute inset-x-0 bottom-0 h-[72%] overflow-hidden"><div className="premium-grid perspective-grid-plane absolute inset-[-30%] opacity-55" /></div>
+function WordReveal({ text }: { text: string }) {
+  const reduced = useReducedMotion()
+  return <>{text.split(' ').map((word, index) => <span key={`${word}-${index}`} className="mr-[.2em] inline-block overflow-hidden align-bottom last:mr-0"><motion.span initial={reduced ? false : { y: '110%', opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: .8, delay: .1 + index * .09, ease }} className="inline-block">{word}</motion.span></span>)}</>
 }
 
-function ScrollProgress() {
-  const { scrollYProgress } = useScroll()
-  const scaleX = useSpring(scrollYProgress, { stiffness: 120, damping: 28, restDelta: .001 })
-  return <motion.div aria-hidden style={{ scaleX }} className="fixed inset-x-0 top-0 z-[70] h-[3px] origin-left bg-gradient-to-r from-[#9E77ED] via-[#6941C6] to-[#2E90FA]"/>
-}
-
-function AvatarStack() {
-  return <div className="flex -space-x-2">{['DA','MK','SN','AO'].map((initials, index) => <span key={initials} className="grid size-8 place-items-center rounded-full border-2 border-violet-400 text-[10px] font-black text-white" style={{ background: ['#6941C6','#1570EF','#039855','#DC6803'][index] }}>{initials}</span>)}</div>
-}
-
-function LiveBuilderCount() {
-  const reduce = useReducedMotion()
-  const [count, setCount] = useState(2147)
-  useEffect(() => {
-    if (reduce) return
-    const timer = window.setInterval(() => setCount(value => value >= 2199 ? 2147 : value + 1), 2400)
-    return () => window.clearInterval(timer)
-  }, [reduce])
-  return <span className="inline-flex max-w-full flex-wrap items-center justify-center gap-2 text-center text-xs font-bold leading-5 text-slate-200 lg:justify-start lg:text-left"><i className="relative flex size-2.5 shrink-0"><i className="absolute inline-flex size-full animate-ping rounded-full bg-[#32D583] opacity-60"/><i className="relative inline-flex size-2.5 rounded-full bg-[#12B76A]"/></i>Alpha is working for <motion.strong key={count} initial={{ y: -4, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="font-black tabular-nums text-white">{count.toLocaleString()}</motion.strong> builders right now</span>
-}
-
-function RevealLine({ words, delay = 0, inline = false }: { words: string[]; delay?: number; inline?: boolean }) {
-  const reduce = useReducedMotion()
-  return <span className={`${inline ? 'inline' : 'block'} overflow-hidden pb-[.08em]`}>{words.map((word, index) => <span key={`${word}-${index}`} className="mr-[.24em] inline-block overflow-hidden align-bottom last:mr-0"><motion.span initial={reduce ? false : { y: '115%', opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: delay + index * .1, duration: .72, ease: [0.22, 1, 0.36, 1] }} className="inline-block">{word}</motion.span></span>)}</span>
-}
-
-function FloatingHeroSignals() {
-  const reduce = useReducedMotion()
-  const cards = [
-    { className: 'left-[2%] top-[31%] hidden xl:flex', icon: Twitter, text: 'Twitter: Posted @9am', meta: 'Confirmed ✓', delay: 0 },
-    { className: 'left-[34%] top-[12%] hidden 2xl:flex', icon: Linkedin, text: 'LinkedIn: 3.2k views', meta: '+28% this week', delay: .8 },
-  ]
-  return <>{cards.map(({ className, icon: Icon, text, meta, delay }) => <motion.div key={text} animate={reduce ? undefined : { y: [0, -4, 0] }} transition={{ duration: 4.2, repeat: Infinity, ease: 'easeInOut', delay }} className={`absolute z-[2] items-center gap-3 rounded-2xl border border-violet-400/20 bg-violet-500/10 px-4 py-3 shadow-[0_16px_45px_rgba(16,24,40,.10)] backdrop-blur-xl ${className}`}><span className="grid size-9 place-items-center rounded-xl bg-violet-500/10 text-violet-300"><Icon size={17}/></span><span><strong className="block text-xs font-black text-white">{text}</strong><small className="mt-0.5 block text-[10px] font-bold text-[#039855]">{meta}</small></span></motion.div>)}</>
-}
-
-function BrainWave() {
-  const reduce = useReducedMotion()
-  return <svg viewBox="0 0 300 54" className="h-12 w-full overflow-visible" aria-label="Alpha listening waveform">
-    <motion.path d="M0 27 C18 27 20 8 38 8 S58 46 76 46 96 18 114 18 132 34 150 34 168 9 186 9 204 43 222 43 240 20 258 20 276 27 300 27" fill="none" stroke="url(#wave)" strokeWidth="4" strokeLinecap="round" animate={reduce ? undefined : { d: ['M0 27 C18 27 20 8 38 8 S58 46 76 46 96 18 114 18 132 34 150 34 168 9 186 9 204 43 222 43 240 20 258 20 276 27 300 27','M0 27 C18 27 20 42 38 42 S58 12 76 12 96 38 114 38 132 15 150 15 168 40 186 40 204 11 222 11 240 35 258 35 276 27 300 27','M0 27 C18 27 20 8 38 8 S58 46 76 46 96 18 114 18 132 34 150 34 168 9 186 9 204 43 222 43 240 20 258 20 276 27 300 27'] }} transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }} />
-    <defs><linearGradient id="wave"><stop stopColor="#9E77ED"/><stop offset=".5" stopColor="#6941C6"/><stop offset="1" stopColor="#2E90FA"/></linearGradient></defs>
-  </svg>
-}
-
-function FutureOrbit() {
-  const reduce = useReducedMotion()
-  return <div aria-hidden className="future-orbit pointer-events-none absolute -right-28 -top-32 size-[430px] opacity-70 sm:-right-16">
-    <motion.div animate={reduce ? undefined : { rotate: 360 }} transition={{ duration: 34, repeat: Infinity, ease: 'linear' }} className="absolute inset-0 rounded-full border border-[#8B5CF6]/70">
-      <i className="absolute left-1/2 top-[-5px] size-3 -translate-x-1/2 rounded-full bg-[#6941C6] shadow-[0_8px_24px_rgba(105,65,198,.45)]"/>
-      <i className="absolute bottom-[16%] left-[5%] size-2 rounded-full bg-[#2E90FA] shadow-[0_8px_18px_rgba(46,144,250,.35)]"/>
-    </motion.div>
-    <motion.div animate={reduce ? undefined : { rotate: -360 }} transition={{ duration: 24, repeat: Infinity, ease: 'linear' }} className="absolute inset-[18%] rounded-full border border-[#3B82F6]/80"><i className="absolute right-[10%] top-[9%] size-2.5 rounded-full bg-[#9E77ED]"/></motion.div>
-    <div className="absolute inset-[37%] rounded-full bg-violet-500/10 shadow-[0_18px_70px_rgba(105,65,198,.18)]"/>
-  </div>
-}
-
-function CommandMockup() {
-  const reduce = useReducedMotion()
-  const questions = ['What platform should Alpha use?', 'What days should it run?', 'What time works best for you?']
-  const [question, setQuestion] = useState(0)
-  const [typed, setTyped] = useState(reduce ? questions[0] : '')
-  useEffect(() => {
-    if (reduce) return
-    let position = 0
-    setTyped('')
-    const timer = window.setInterval(() => {
-      position += 1
-      setTyped(questions[question].slice(0, position))
-      if (position >= questions[question].length) {
-        window.clearInterval(timer)
-        window.setTimeout(() => setQuestion(value => (value + 1) % questions.length), 1100)
-      }
-    }, 48)
-    return () => window.clearInterval(timer)
-  }, [question, reduce])
-  return <motion.div initial={{ opacity: 0, y: 26 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: .25, type: 'spring', stiffness: 80 }} className="relative mx-auto w-full max-w-[590px]">
-    <div className="rounded-[24px] border border-violet-400/20 bg-violet-500/10 p-3 shadow-[0_32px_80px_rgba(16,24,40,.16)] sm:p-4">
-      <div className="overflow-hidden rounded-[18px] border border-violet-400/20 bg-[#0A0F1E]">
-        <motion.i aria-hidden animate={reduce ? undefined : { x: ['-120%', '620%'] }} transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut', repeatDelay: 2 }} className="pointer-events-none absolute inset-y-4 z-20 w-16 skew-x-[-12deg] bg-gradient-to-r from-transparent via-[#B692F6]/15 to-transparent blur-sm"/>
-        <div className="flex items-center justify-between border-b border-violet-400/20 bg-violet-500/10 px-4 py-4 sm:px-5"><div className="flex items-center gap-3"><span className="grid size-9 place-items-center rounded-xl bg-[#6941C6] text-white"><Bot size={18}/></span><div><p className="text-xs font-bold text-violet-300">COMMAND CENTRE</p><p className="text-sm font-black text-white">Plan with Alpha</p></div></div><span className="flex items-center gap-2 rounded-lg border border-violet-400/20 bg-[#0A0F1E] px-2.5 py-1.5 text-[10px] font-black text-slate-400"><kbd>⌘</kbd><kbd>K</kbd></span></div>
-        <div className="p-4 sm:p-6">
-          <div className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-5 shadow-[0_1px_2px_rgba(16,24,40,.05)]">
-            <div className="mb-3 flex items-center gap-2 text-xs font-bold text-violet-300"><Sparkles size={14}/>ALPHA IS ASKING</div>
-            <p className="min-h-14 text-lg font-black leading-7 text-white">{typed}<motion.span animate={reduce ? undefined : { opacity: [0, 1, 0] }} transition={{ repeat: Infinity, duration: .8 }} className="ml-1 inline-block h-5 w-0.5 bg-[#6941C6] align-middle"/></p>
-            <div className="mt-4 flex flex-wrap gap-2">{question === 0 ? ['LinkedIn','X','Instagram'].map(item => <span key={item} className="rounded-xl border border-[#8B5CF6] bg-violet-500/10 px-3 py-2 text-xs font-bold text-violet-300">{item}</span>) : question === 1 ? ['Mon–Fri','Every day','Custom'].map(item => <span key={item} className="rounded-xl border border-violet-400/20 bg-violet-500/10 px-3 py-2 text-xs font-bold text-slate-200">{item}</span>) : ['Yes, 9am','Choose different'].map(item => <span key={item} className="rounded-xl border border-violet-400/20 bg-violet-500/10 px-3 py-2 text-xs font-bold text-slate-200">{item}</span>)}</div>
-          </div>
-          <div className="mt-4 rounded-2xl border border-violet-400/20 bg-violet-500/10 px-5 py-3"><BrainWave/></div>
-        </div>
+function DashboardMockup() {
+  const reduced = useReducedMotion()
+  const x = useMotionValue(0)
+  const y = useMotionValue(0)
+  const rotateX = useSpring(useTransform(y, [-.5, .5], [5, -5]), { stiffness: 130, damping: 24 })
+  const rotateY = useSpring(useTransform(x, [-.5, .5], [-7, 7]), { stiffness: 130, damping: 24 })
+  const onMove = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (reduced) return
+    const bounds = event.currentTarget.getBoundingClientRect()
+    x.set((event.clientX - bounds.left) / bounds.width - .5)
+    y.set((event.clientY - bounds.top) / bounds.height - .5)
+  }
+  return <div className="relative mx-auto w-full max-w-[620px] py-12" onMouseMove={onMove} onMouseLeave={() => { x.set(0); y.set(0) }}>
+    <div className="absolute inset-[12%] rounded-full bg-[#6B21A8]/40 blur-[90px]"/>
+    <motion.div style={reduced ? undefined : { rotateX, rotateY, transformPerspective: 1100 }} initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 1, delay: .35, ease }} className="relative overflow-hidden rounded-[26px] border border-white/15 bg-[#0B0B0F]/95 p-3 shadow-[0_40px_120px_rgba(107,33,168,.32)]">
+      <div className="flex items-center gap-2 border-b border-white/10 px-3 pb-3"><i className="size-2.5 rounded-full bg-[#FF5F57]"/><i className="size-2.5 rounded-full bg-[#FEBC2E]"/><i className="size-2.5 rounded-full bg-[#28C840]"/><span className="ml-auto rounded-full border border-white/10 px-3 py-1 text-[9px] font-bold text-white/40">ALPHA COMMAND</span></div>
+      <div className="grid min-h-[330px] grid-cols-[62px_1fr] gap-3 pt-3 sm:grid-cols-[92px_1fr]">
+        <aside className="rounded-2xl border border-white/10 bg-white/[.03] p-2"><div className="mx-auto grid size-9 place-items-center rounded-xl bg-[#FFD700] text-black"><Sparkles size={16}/></div><div className="mt-5 space-y-2">{[1,2,3,4].map(item => <i key={item} className={`mx-auto block h-8 rounded-lg ${item === 1 ? 'bg-[#6B21A8]/60' : 'bg-white/[.04]'}`}/>)}</div></aside>
+        <main className="space-y-3"><div className="grid grid-cols-3 gap-2">{[['28','Posts'],['4','Platforms'],['+38%','Growth']].map(([value,label], index) => <div key={label} className={`rounded-xl border p-3 ${index === 1 ? 'border-[#FFD700]/35 bg-[#FFD700]/[.07]' : 'border-white/10 bg-white/[.035]'}`}><p className="text-lg font-black text-white sm:text-2xl">{value}</p><p className="text-[9px] font-bold uppercase tracking-wider text-white/35">{label}</p></div>)}</div>
+          <div className="rounded-2xl border border-white/10 bg-white/[.035] p-4"><div className="flex items-center justify-between"><div><p className="text-xs font-black text-white">Growth engine</p><p className="text-[9px] text-white/35">Last 30 days</p></div><span className="rounded-full bg-emerald-400/10 px-2 py-1 text-[9px] font-bold text-emerald-300">LIVE</span></div><div className="mt-7 flex h-28 items-end gap-2">{[32,48,42,67,58,82,96].map((height, index) => <motion.i key={index} initial={{ height: 0 }} animate={{ height: `${height}%` }} transition={{ delay: .8 + index * .08, duration: .6, ease }} className="flex-1 rounded-t bg-gradient-to-t from-[#6B21A8] to-[#FFD700]"/>)}</div></div>
+          <div className="flex items-center gap-3 rounded-2xl border border-[#FFD700]/20 bg-[#FFD700]/[.05] p-3"><span className="grid size-9 place-items-center rounded-xl bg-[#FFD700] text-black"><Check size={17}/></span><div><p className="text-xs font-black text-white">LinkedIn posted at 9:00 AM</p><p className="text-[9px] text-white/35">Confirmed · 1 credit across all platforms</p></div></div>
+        </main>
       </div>
-    </div>
-    <motion.div animate={reduce ? undefined : { y: [0, -8, 0] }} transition={{ duration: 3, repeat: Infinity }} className="absolute -bottom-8 -left-2 rounded-2xl border border-violet-400/20 bg-violet-500/10 p-4 shadow-[0_16px_40px_rgba(16,24,40,.14)] sm:-left-12"><p className="text-[10px] font-bold uppercase tracking-[.12em] text-slate-400">Credits</p><div className="mt-1 flex items-center gap-2"><span className="text-xl font-black text-white">30</span><span className="rounded-full bg-[#064E3B] px-2 py-1 text-[10px] font-bold text-[#027A48]">Not charged yet</span></div></motion.div>
-    <motion.div animate={reduce ? undefined : { y: [0, 8, 0] }} transition={{ duration: 3.5, repeat: Infinity }} className="absolute -right-2 -top-8 hidden rounded-2xl border border-violet-400/20 bg-violet-500/10 p-4 shadow-[0_16px_40px_rgba(16,24,40,.14)] sm:block"><p className="flex items-center gap-2 text-xs font-black text-[#027A48]"><i className="size-2 rounded-full bg-[#12B76A]"/>Automation live</p><p className="mt-1 text-xs font-semibold text-slate-400">12/30 completed</p><div className="mt-2 h-1.5 w-32 overflow-hidden rounded-full bg-[#475569]"><motion.i initial={{ width: 0 }} animate={{ width: '40%' }} transition={{ delay: .8, duration: 1 }} className="block h-full rounded-full bg-[#6941C6]"/></div></motion.div>
-  </motion.div>
+    </motion.div>
+    <motion.div animate={reduced ? undefined : { y: [0,-8,0] }} transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }} className="absolute -left-2 top-3 rounded-2xl border border-[#FFD700]/25 bg-black/70 px-4 py-3 shadow-2xl backdrop-blur-xl sm:-left-10"><p className="text-[10px] font-bold text-white/40">TODAY</p><p className="mt-1 text-xs font-black text-white">4 posts confirmed <span className="text-[#FFD700]">✓</span></p></motion.div>
+  </div>
 }
 
 function Hero() {
   const { user } = useAuth()
-  return <section id="hero" className="relative overflow-hidden bg-[#0A0F1E] px-4 pb-28 pt-32 sm:px-6 lg:pb-36 lg:pt-40">
-    <DotGrid/><div className="future-mesh pointer-events-none absolute inset-0"/><FloatingHeroSignals/><div className="pointer-events-none absolute left-[8%] top-28 size-[360px] rounded-full bg-[#8B5CF6]/35 blur-[110px]"/><div className="pointer-events-none absolute right-[5%] top-44 size-[280px] rounded-full bg-[#3B82F6]/30 blur-[100px]"/>
-    <div className="relative mx-auto grid max-w-7xl items-center gap-16 lg:grid-cols-[1.02fr_.98fr]">
-      <motion.div initial="hidden" animate="visible" variants={{ visible: { transition: { staggerChildren: .09 } } }} className="text-center lg:text-left">
-        <motion.div variants={fadeUp} className="inline-flex flex-wrap items-center justify-center gap-3 rounded-full border border-violet-400/20 bg-violet-500/10 px-3 py-2 shadow-[0_1px_2px_rgba(16,24,40,.05)] lg:justify-start"><AvatarStack/><span className="text-xs font-bold text-slate-200">Trusted by 2,000+ builders</span><span className="hidden h-4 w-px bg-[#475569] sm:block"/><span className="flex items-center gap-1 text-xs font-black text-slate-200"><Star size={13} fill="#FDB022" stroke="#FDB022"/>4.9</span></motion.div>
-        <motion.h1 variants={fadeUp} className="mt-7 text-[36px] font-black leading-[1.02] tracking-[-.045em] text-white sm:text-6xl lg:text-[72px]"><RevealLine words={['Delegate','the','work.']}/><span className="block"><RevealLine words={['Turn','Your','Idea','Into']} delay={.2} inline/> <span className="reality-underline relative inline-block whitespace-nowrap overflow-visible"><RevealLine words={['Reality']} delay={.6} inline/></span></span></motion.h1>
-        <motion.p variants={fadeUp} className="mx-auto mt-6 max-w-xl text-base font-medium leading-7 text-slate-200 sm:text-lg lg:mx-0">Your AI Employee that asks, plans, waits for approval, and executes while you sleep.</motion.p>
-        <motion.div variants={fadeUp} className="mt-5 flex justify-center lg:justify-start"><LiveBuilderCount/></motion.div>
-        <motion.div variants={fadeUp} className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center lg:justify-start"><Link to={user ? '/dashboard' : '/auth'} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#0B0F19] px-5 font-semibold text-white shadow-[0_10px_24px_rgba(11,15,25,.18)] transition hover:-translate-y-0.5 hover:bg-[#1D2939]">Start Automating — It&apos;s Free <ArrowRight size={18}/></Link><a href="#live-demo" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-violet-400/20 bg-violet-500/10 px-5 font-semibold text-slate-200 shadow-sm transition hover:border-[#B692F6] hover:text-violet-300"><CirclePlay size={18}/>Watch 45s Demo</a></motion.div>
-        <motion.div variants={fadeUp} className="mt-6 flex flex-wrap justify-center gap-x-5 gap-y-2 text-xs font-semibold text-slate-200 lg:justify-start">{['No workflow builder','Approval before action','Runs while you sleep'].map(item => <span key={item} className="flex items-center gap-1.5"><CheckCircle2 size={15} className="text-violet-300"/>{item}</span>)}</motion.div>
-      </motion.div>
-      <CommandMockup/>
+  return <section id="top" className="relative min-h-screen overflow-hidden bg-black px-4 pb-20 pt-28 sm:px-6 lg:flex lg:items-center lg:pt-20">
+    <div className="pointer-events-none absolute -left-48 top-12 size-[520px] rounded-full bg-[#6B21A8]/25 blur-[130px]"/><div className="pointer-events-none absolute bottom-0 right-0 size-[420px] rounded-full bg-[#FFD700]/[.06] blur-[120px]"/>
+    <div className="relative mx-auto grid w-full max-w-7xl items-center gap-14 lg:grid-cols-[.92fr_1.08fr]">
+      <div className="text-center lg:text-left"><motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: .1 }} className="inline-flex items-center gap-2 rounded-full border border-[#FFD700]/25 bg-[#FFD700]/[.06] px-3 py-2 text-[11px] font-black uppercase tracking-[.16em] text-[#FFD700]"><i className="size-2 animate-pulse rounded-full bg-[#FFD700]"/>Your AI employee is ready</motion.div>
+        <h1 className="mt-7 font-['Space_Grotesk',Inter,sans-serif] text-[44px] font-black leading-[.96] tracking-[-.055em] text-white sm:text-6xl lg:text-[76px]"><WordReveal text="Your Second You"/><br/><span className="bg-gradient-to-r from-[#FFD700] via-[#FFC300] to-[#8B3FC7] bg-clip-text text-transparent"><WordReveal text="That Never Sleeps."/></span></h1>
+        <motion.p initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: .75 }} className="mx-auto mt-7 max-w-xl text-base font-medium leading-7 text-white/55 sm:text-lg lg:mx-0">AI creates, posts, and grows your socials — while you live your real life.</motion.p>
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: .9 }} className="mt-9 flex flex-col items-center gap-4 sm:flex-row lg:items-start"><Link to={user ? '/dashboard' : '/auth'} className="group inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-full bg-[#FFD700] px-7 font-black text-black shadow-[0_0_42px_rgba(107,33,168,.55)] transition hover:-translate-y-1 hover:shadow-[0_0_55px_rgba(255,215,0,.28)] sm:w-auto">Launch My Second You <ArrowRight className="transition group-hover:translate-x-1" size={19}/></Link><span className="text-xs font-semibold text-white/35 sm:pt-5">Start free · Approval stays yours</span></motion.div>
+      </div><DashboardMockup/>
     </div>
   </section>
 }
 
-function SectionHeading({ eyebrow, title, copy, align = 'center' }: { eyebrow: string; title: string; copy: string; align?: 'center' | 'left' }) {
-  return <div className={align === 'center' ? 'mx-auto max-w-3xl text-center' : 'max-w-3xl'}><p className="text-xs font-black uppercase tracking-[.18em] text-violet-300">{eyebrow}</p><h2 className="mt-4 text-3xl font-black tracking-[-.035em] text-white sm:text-5xl">{title}</h2><p className="mt-5 text-base font-medium leading-8 text-slate-200 sm:text-lg">{copy}</p></div>
+function Problem() {
+  const cards = [['Burnout','Your attention was not designed to be a publishing queue.'],['Inconsistency','Growth dies when life interrupts the content calendar.'],['Zero Growth','Manual posting keeps you busy, not compounding.']]
+  return <section className="border-y border-white/10 bg-[#050505] px-4 py-24 sm:px-6 lg:py-32"><div className="mx-auto max-w-7xl"><motion.h2 initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="mx-auto max-w-4xl text-center font-['Space_Grotesk',Inter,sans-serif] text-4xl font-black tracking-[-.045em] text-white sm:text-6xl">Posting manually every day is <span className="text-[#FFD700]">modern slavery.</span></motion.h2><div className="mt-16 grid gap-4 md:grid-cols-3">{cards.map(([title,copy], index) => <motion.article initial={{ opacity: 0, y: 32 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: index * .14, duration: .7, ease }} key={title} className="rounded-3xl border border-white/10 bg-white/[.025] p-7"><span className="font-mono text-xs text-[#FFD700]">0{index+1}</span><h3 className="mt-12 text-2xl font-black text-white">{title}</h3><p className="mt-3 leading-7 text-white/40">{copy}</p></motion.article>)}</div></div></section>
 }
 
-function LogoMarquee() {
-  const reduce = useReducedMotion()
-  const items = [...platforms, ...platforms]
-  return <section className="overflow-hidden border-y border-violet-400/20 bg-violet-500/10 py-7"><p className="mb-6 text-center text-xs font-bold uppercase tracking-[.14em] text-[#98A2B3]">Automating for builders at</p><div className="relative mx-auto max-w-6xl overflow-hidden [mask-image:linear-gradient(to_right,transparent,black_12%,black_88%,transparent)]"><motion.div className="flex w-max items-center gap-14" animate={reduce ? undefined : { x: ['0%', '-50%'] }} transition={{ duration: 24, repeat: Infinity, ease: 'linear' }}>{items.map(({ name, icon: Icon }, index) => <div key={`${name}-${index}`} className="flex min-w-36 items-center justify-center gap-2 grayscale opacity-55"><Icon size={23}/><span className="font-black text-slate-200">{name}</span></div>)}</motion.div></div></section>
-}
+const stackCards = [
+  { label: 'AI CREATES', copy: 'Original scripts, hooks, captions, and campaign ideas shaped around your voice.', icon: BrainCircuit, border: 'border-white/10', glow: 'shadow-black' },
+  { label: 'AI POSTS', copy: 'One approved plan becomes a dependable calendar across every connected platform.', icon: Rocket, border: 'border-[#FFD700]/45', glow: 'shadow-[0_30px_90px_rgba(255,215,0,.10)]' },
+  { label: 'AI GROWS', copy: 'Real execution data closes the loop, so every cycle gets sharper and more valuable.', icon: BarChart3, border: 'border-[#6B21A8]', glow: 'shadow-[0_30px_100px_rgba(107,33,168,.28)]' },
+]
 
-function ProblemSolution() {
-  const cards = [
-    ['10 hours disappear', 'You plan, write, post, check, and repeat the same work every week.', 'Alpha turns one approved outcome into a reliable operating rhythm.'],
-    ['Tools create more work', 'Traditional builders expose triggers, nodes, and confusing technical settings.', 'Alpha asks one clear question at a time and handles the system underneath.'],
-    ['Automation feels risky', 'Black-box tools act too early and leave you unsure what actually happened.', 'Alpha shows the plan, waits for approval, and reports only confirmed results.'],
-  ]
-  return <section className="bg-[#0A0F1E] px-4 py-24 sm:px-6 lg:py-32"><div className="mx-auto max-w-7xl"><SectionHeading eyebrow="From busywork to leverage" title="Your time is too valuable for repeat work." copy="The future is not another complicated dashboard. It is a trusted employee that understands the outcome."/><div className="mt-14 grid gap-5 lg:grid-cols-3">{cards.map(([title, problem, solution], index) => <motion.article whileHover={{ y: -6 }} key={title} className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-7 shadow-[0_1px_2px_rgba(16,24,40,.05)]"><span className="grid size-11 place-items-center rounded-xl bg-violet-500/10 text-lg font-black text-violet-300">0{index + 1}</span><h3 className="mt-6 text-xl font-black text-white">{title}</h3><p className="mt-3 leading-7 text-slate-400">{problem}</p><div className="my-5 h-px bg-[#475569]"/><p className="flex gap-2 font-semibold leading-7 text-slate-200"><CheckCircle2 className="mt-1 shrink-0 text-[#12B76A]" size={18}/>{solution}</p></motion.article>)}</div></div></section>
+function StackCard({ card, index, progress }: { card: typeof stackCards[number]; index: number; progress: MotionValue<number> }) {
+  const start = index * .2
+  const y = useTransform(progress, [start, Math.min(start + .35, 1)], [index ? 170 : 0, index * 26])
+  const scale = useTransform(progress, [start, Math.min(start + .35, 1)], [.95, 1 - index * .015])
+  const opacity = useTransform(progress, [start, Math.min(start + .16, 1)], [index ? .15 : 1, 1])
+  const Icon = card.icon
+  return <motion.article style={{ y, scale, opacity, zIndex: index + 1 }} className={`absolute inset-x-0 top-0 min-h-[390px] overflow-hidden rounded-[32px] border bg-[#0A0A0D] p-7 sm:p-10 ${card.border} ${card.glow}`}><div className="absolute -right-24 -top-24 size-72 rounded-full bg-[#6B21A8]/20 blur-[90px]"/><div className="relative flex h-full min-h-[320px] flex-col justify-between"><div className="flex items-start justify-between"><span className="text-xs font-black tracking-[.2em] text-[#FFD700]">0{index+1}</span><span className="grid size-14 place-items-center rounded-2xl border border-white/10 bg-white/[.04] text-[#FFD700]"><Icon size={25}/></span></div><div><h3 className="font-['Space_Grotesk',Inter,sans-serif] text-4xl font-black tracking-[-.04em] text-white sm:text-6xl">{card.label}</h3><p className="mt-5 max-w-xl text-base leading-7 text-white/45 sm:text-lg">{card.copy}</p></div></div></motion.article>
 }
 
 function HowItWorks() {
-  const steps = [
-    ['1','Tell the outcome','Describe the result in plain English. No technical setup.'],
-    ['2','Alpha asks and shows the plan','Answer one question at a time, then review schedule, content, and cost.'],
-    ['3','Approve and sleep','Alpha executes on schedule and records only confirmed work.'],
+  const ref = useRef<HTMLElement>(null)
+  const { scrollYProgress } = useScroll({ target: ref, offset: ['start start','end end'] })
+  return <section id="how-it-works" ref={ref} className="relative h-[260vh] bg-black px-4 sm:px-6 max-md:h-auto max-md:py-24"><div className="sticky top-0 mx-auto flex h-screen max-w-7xl items-center gap-12 max-md:static max-md:block max-md:h-auto"><div className="w-[36%] max-md:w-full"><p className="text-xs font-black uppercase tracking-[.2em] text-[#FFD700]">How it works</p><h2 className="mt-5 text-4xl font-black tracking-[-.045em] text-white sm:text-5xl">How AlphaTekX<br/>Becomes You</h2><p className="mt-5 max-w-sm leading-7 text-white/40">Your standards stay. The repetitive execution disappears.</p></div><div className="relative h-[430px] flex-1 max-md:mt-12 max-md:grid max-md:h-auto max-md:gap-5">{stackCards.map((card,index) => <div key={card.label} className="max-md:relative max-md:h-[390px]"><StackCard card={card} index={index} progress={scrollYProgress}/></div>)}</div></div></section>
+}
+
+function DemoDashboard({ progress }: { progress: MotionValue<number> }) {
+  const fill = useTransform(progress, [.25,.55], ['0%','100%'])
+  const glow = useTransform(progress, [.55,.82], [.15, 1])
+  const number = useTransform(progress, [.72,1], [2400,128400])
+  const rounded = useTransform(number, value => Math.round(value).toLocaleString())
+  return <div className="relative overflow-hidden rounded-[30px] border border-white/10 bg-[#09090C] p-4 shadow-[0_40px_120px_rgba(107,33,168,.2)] sm:p-6"><div className="flex items-center justify-between border-b border-white/10 pb-4"><span className="text-xs font-black text-white">ALPHA OVERVIEW</span><span className="flex items-center gap-2 text-[10px] font-bold text-emerald-300"><i className="size-2 rounded-full bg-emerald-400"/>EXECUTING</span></div><div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3"><div className="rounded-2xl border border-white/10 bg-white/[.035] p-4"><motion.p className="text-2xl font-black text-white">{rounded}</motion.p><p className="mt-1 text-[9px] font-bold uppercase tracking-wider text-white/30">Reach</p></div>{[['Posts','30'],['Platforms','4']].map(([label,value]) => <div key={label} className="rounded-2xl border border-white/10 bg-white/[.035] p-4"><p className="text-2xl font-black text-white">{value}</p><p className="mt-1 text-[9px] font-bold uppercase tracking-wider text-white/30">{label}</p></div>)}</div><div className="mt-4 rounded-2xl border border-white/10 bg-white/[.025] p-4"><div className="flex justify-between text-[10px] font-bold text-white/40"><span>30-day content engine</span><span>READY</span></div><div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10"><motion.i style={{ width: fill }} className="block h-full rounded-full bg-gradient-to-r from-[#6B21A8] to-[#FFD700]"/></div><div className="mt-5 grid grid-cols-7 gap-1.5">{Array.from({ length: 28 },(_,index) => <motion.i key={index} style={{ opacity: glow }} transition={{ delay: index * .01 }} className="aspect-square rounded-md border border-[#FFD700]/20 bg-[#FFD700]/20"/>)}</div></div><div className="mt-4 grid grid-cols-4 gap-2">{['in','f','𝕏','◎'].map((icon,index) => <PlatformTile key={icon} icon={icon} index={index} progress={progress}/>)}</div></div>
+}
+
+function PlatformTile({ icon, index, progress }: { icon: string; index: number; progress: MotionValue<number> }) {
+  const opacity = useTransform(progress,[.48 + index*.05,.62 + index*.05],[.15,1])
+  return <motion.div style={{ opacity }} className="grid h-12 place-items-center rounded-xl border border-white/10 bg-white/[.03] font-black text-[#FFD700]">{icon}</motion.div>
+}
+
+function ScrollDemo() {
+  const ref = useRef<HTMLElement>(null)
+  const { scrollYProgress } = useScroll({ target: ref, offset: ['start start','end end'] })
+  const stages = [
+    ['Your dashboard begins with an outcome.','Tell Alpha what growth looks like.'],
+    ['1 Credit = Post to ALL platforms.','One unit of work. No per-channel punishment.'],
+    ['Thirty days, created in moments.','Every post stays reviewable before execution.'],
+    ['Approved work goes live.','Connected platforms light up only after confirmation.'],
+    ['Work compounds while you live.','Reach, followers, and engagement keep moving.'],
   ]
-  return <section id="how-it-works" className="bg-violet-500/10 px-4 py-24 sm:px-6 lg:py-32"><div className="mx-auto max-w-7xl"><SectionHeading eyebrow="How it works" title="Three steps between idea and execution." copy="Simple on the surface. Durable, accountable automation underneath."/><div className="relative mt-16 grid gap-7 lg:grid-cols-3"><motion.div initial={{ scaleX: 0 }} whileInView={{ scaleX: 1 }} viewport={{ once: true }} transition={{ duration: 1.1 }} className="absolute left-[15%] right-[15%] top-7 hidden h-px origin-left bg-gradient-to-r from-[#8B5CF6] via-[#6941C6] to-[#8B5CF6] lg:block"/>{steps.map(([number,title,copy]) => <article key={number} className="relative"><span className="relative z-10 mx-auto grid size-14 place-items-center rounded-full border-4 border-violet-400 bg-[#6941C6] text-lg font-black text-white shadow-[0_8px_24px_rgba(105,65,198,.25)]">{number}</span><div className="mt-7 rounded-2xl border border-violet-400/20 bg-violet-500/10 p-5 shadow-[0_12px_32px_rgba(16,24,40,.08)]"><div className="aspect-video rounded-xl border border-violet-400/20 bg-[#0A0F1E] p-4"><div className="flex gap-1.5"><i className="size-2 rounded-full bg-[#F97066]"/><i className="size-2 rounded-full bg-[#FDB022]"/><i className="size-2 rounded-full bg-[#32D583]"/></div><div className="mt-5 space-y-2"><i className="block h-2 w-4/5 rounded bg-[#7C3AED]"/><i className="block h-2 w-3/5 rounded bg-[#475569]"/><i className="block h-8 w-24 rounded-lg bg-[#6941C6]/90"/></div></div><h3 className="mt-6 text-xl font-black text-white">{title}</h3><p className="mt-3 leading-7 text-slate-400">{copy}</p></div></article>)}</div></div></section>
-}
-
-function InteractiveDemo() {
-  const choices = [
-    { question: 'Which platform should Alpha use?', answers: ['LinkedIn','X','Instagram'], result: 'LinkedIn selected' },
-    { question: 'What days should it run?', answers: ['Mon–Fri','Every day','Custom'], result: 'Mon–Fri selected' },
-    { question: '9am performs well for professional audiences. Use it?', answers: ['Yes, 9am','Choose different'], result: '9am selected' },
-  ]
-  const [step, setStep] = useState(0)
-  const [answers, setAnswers] = useState<string[]>([])
-  const [thinking, setThinking] = useState(false)
-  const [thoughtComplete, setThoughtComplete] = useState(false)
-  const choose = (answer: string) => {
-    if (thinking) return
-    setThinking(true)
-    setThoughtComplete(false)
-    window.setTimeout(() => {
-      setThoughtComplete(true)
-      window.setTimeout(() => {
-        setAnswers(current => [...current, answer])
-        setStep(value => Math.min(value + 1, choices.length))
-        setThinking(false)
-        setThoughtComplete(false)
-      }, 420)
-    }, 760)
-  }
-  const reset = () => { setStep(0); setAnswers([]); setThinking(false); setThoughtComplete(false) }
-  return <section id="live-demo" className="relative overflow-hidden bg-[#0A0F1E] px-4 py-24 sm:px-6 lg:py-32"><div className="future-mesh pointer-events-none absolute inset-0 opacity-55"/><FutureOrbit/><div className="relative mx-auto grid max-w-7xl items-center gap-12 lg:grid-cols-[.85fr_1.15fr]"><SectionHeading align="left" eyebrow="Live demo" title="Feel how calm automation can be." copy="Click through the miniature Command Centre. Alpha asks for one decision, waits, then moves forward."/><div className="rounded-[24px] border border-[#8B5CF6] bg-violet-500/10 p-3 shadow-[0_30px_80px_rgba(105,65,198,.14)] backdrop-blur-xl"><div className="relative min-h-[420px] overflow-hidden rounded-[18px] border border-violet-400/20 bg-violet-500/10 p-5 text-white sm:p-8">
-    <div className="flex items-center justify-between"><span className="flex items-center gap-2 text-xs font-black text-violet-300"><Bot size={17}/>ALPHA COMMAND PALETTE</span><span className="rounded-lg border border-violet-400/20 bg-[#0A0F1E] px-2 py-1 text-[10px] font-black text-slate-400">⌘ K</span></div>
-    <div className="mt-4 rounded-xl border border-violet-400/20 bg-[#0A0F1E] px-4 py-3 text-xs font-bold text-[#98A2B3]">Ask Alpha to automate anything…</div>
-    <div className="mt-6 space-y-3">{answers.map((answer,index) => <div key={`${answer}-${index}`} className="flex justify-end"><span className="rounded-2xl rounded-br-sm bg-[#6941C6] px-4 py-3 text-sm font-semibold text-white">{answer}</span></div>)}</div>
-    <AnimatePresence mode="wait">{thinking ? <motion.div key="thinking" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: .9 }} className="mt-6 flex items-center gap-3 text-sm font-black text-violet-300">{thoughtComplete ? <motion.span initial={{ scale: 0, rotate: -90 }} animate={{ scale: 1, rotate: 0 }} className="grid size-8 place-items-center rounded-full bg-[#064E3B] text-[#039855]"><Check size={17}/></motion.span> : <span className="flex h-8 items-center gap-1 rounded-full bg-violet-500/10 px-3">{[0,1,2].map(dot => <motion.i key={dot} animate={{ scale: [1, 1.7, 1], opacity: [.35, 1, .35] }} transition={{ duration: .8, repeat: Infinity, delay: dot * .14 }} className="size-1.5 rounded-full bg-[#6941C6]"/>)}</span>}<span>{thoughtComplete ? 'Ready' : 'Thinking…'}</span></motion.div> : step < choices.length ? <motion.div key={step} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} className="mt-6"><p className="max-w-md text-xl font-black leading-8">{choices[step].question}</p><div className="mt-3 max-w-sm"><BrainWave/></div><div className="mt-4 flex flex-wrap gap-2">{choices[step].answers.map(answer => <button key={answer} onClick={() => choose(answer)} className="min-h-11 rounded-xl border border-[#8B5CF6] bg-violet-500/10 px-4 text-sm font-bold text-violet-300 transition hover:bg-[#7C3AED]">{answer}</button>)}</div></motion.div> : <motion.div initial={{ opacity: 0, scale: .97 }} animate={{ opacity: 1, scale: 1 }} className="mt-8 rounded-2xl border border-[#ABEFC6] bg-[#064E3B] p-5"><p className="flex items-center gap-2 font-black text-[#027A48]"><CheckCircle2 size={19}/>Plan ready for your approval</p><p className="mt-2 text-sm font-medium text-slate-200">LinkedIn · Mon–Fri · 9am · Credits charged only after confirmed posts.</p></motion.div>}</AnimatePresence>
-    <button onClick={reset} className="mt-5 flex min-h-11 items-center gap-2 rounded-xl px-3 text-xs font-bold text-slate-400 hover:bg-[#0A0F1E]"><TimerReset size={15}/>Restart demo</button>
-  </div></div></div></section>
-}
-
-function AutomationGallery() {
-  return <section id="automations" className="overflow-hidden bg-[#0A0F1E] px-4 py-24 sm:px-6 lg:py-32"><div className="mx-auto max-w-7xl"><SectionHeading eyebrow="Automation gallery" title="Start with a job worth delegating." copy="Focused systems for content, growth, and customer operations."/><div className="mt-14 grid gap-5 md:grid-cols-2">{gallery.map(([title,copy,runs,Icon], index) => <motion.article initial={{ opacity: 0, x: index % 2 ? 30 : -30 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ type: 'spring', stiffness: 75 }} whileHover={{ y: -5 }} key={title} className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-7 shadow-[0_1px_2px_rgba(16,24,40,.05)] hover:shadow-[0_12px_32px_rgba(16,24,40,.08)]"><div className="flex items-start justify-between"><span className="grid size-12 place-items-center rounded-xl bg-violet-500/10 text-violet-300"><Icon size={23}/></span><span className="rounded-full bg-[#0A0F1E] px-3 py-1 text-xs font-bold text-slate-400">{runs}</span></div><h3 className="mt-7 text-2xl font-black text-white">{title}</h3><p className="mt-3 leading-7 text-slate-400">{copy}</p><div className="mt-6 flex items-center gap-2 text-sm font-bold text-[#027A48]"><i className="size-2 animate-pulse rounded-full bg-[#12B76A]"/>Ready to run</div></motion.article>)}</div></div></section>
-}
-
-function ActivityRail() {
-  const reduce = useReducedMotion()
-  const events = ['X: Posted at 9:00am ✓','LinkedIn: Scheduled for tomorrow','Gmail: 4 attachments saved ✓','Instagram: Caption approved','LinkedIn: Post confirmed ✓']
-  return <div className="overflow-hidden border-y border-violet-400/20 bg-violet-500/10 py-4"><motion.div className="flex w-max gap-3" animate={reduce ? undefined : { x: ['0%', '-50%'] }} transition={{ duration: 22, repeat: Infinity, ease: 'linear' }}>{[...events,...events].map((event,index) => <span key={`${event}-${index}`} className="rounded-full border border-violet-400/20 bg-[#0A0F1E] px-5 py-2.5 text-sm font-semibold text-slate-200 shadow-sm">{event}</span>)}</motion.div></div>
-}
-
-function ConnectedApps() {
-  return <section id="connected-apps" className="bg-violet-500/10 px-4 py-24 sm:px-6 lg:py-32"><div className="mx-auto max-w-7xl rounded-[28px] border border-violet-400/20 bg-[#0A0F1E] p-6 shadow-[0_12px_32px_rgba(16,24,40,.08)] sm:p-12"><div className="grid items-center gap-12 lg:grid-cols-[1fr_.9fr]"><div><SectionHeading align="left" eyebrow="Connected apps" title="Your tools. AlphaTekx intelligence." copy="Connect through AlphaTekx, approve the job, and keep every credential server-side and revocable."/><div className="mt-7 flex flex-wrap gap-3">{['Verified backend state','Encrypted credentials','Disconnect anytime'].map(item => <span key={item} className="flex items-center gap-2 text-sm font-bold text-slate-200"><CheckCircle2 size={17} className="text-[#12B76A]"/>{item}</span>)}</div></div><div className="grid grid-cols-2 gap-3 sm:grid-cols-3">{platforms.map(({ name, icon: Icon }) => <motion.div whileHover={{ y: -4, scale: 1.02 }} key={name} className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-5 text-center shadow-sm"><Icon className="mx-auto text-violet-300" size={24}/><p className="mt-3 font-black text-white">{name}</p><p className="mt-1 text-[10px] font-bold uppercase text-[#039855]">Ready</p></motion.div>)}</div></div></div></section>
-}
-
-function FeatureDeepDive() {
-  return <section className="bg-[#0A0F1E] px-4 py-24 sm:px-6 lg:py-32"><div className="mx-auto max-w-7xl"><SectionHeading eyebrow="Built for trust" title="Control at every important moment." copy="The safeguards are part of the product, not an afterthought."/><div className="mt-14 grid gap-4 md:grid-cols-2 lg:grid-cols-3">{features.map(([title,copy,Icon]) => <article key={title} className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-6 shadow-[0_1px_2px_rgba(16,24,40,.05)]"><span className="grid size-11 place-items-center rounded-xl bg-violet-500/10 text-violet-300"><Icon size={21}/></span><h3 className="mt-5 text-lg font-black text-white">{title}</h3><p className="mt-2 leading-7 text-slate-400">{copy}</p></article>)}</div></div></section>
-}
-
-function Stats() {
-  const timeline = [
-    ['2024','Manual posting','Every channel depended on your time.'],
-    ['2025','AI captions','Tools helped write, but you still operated everything.'],
-    ['2026','AlphaTekx AI Employee','You are here — outcomes become approved execution.'],
-    ['2030','Autonomous business','AI employees coordinate reliable business operations.'],
-  ]
-  return <section className="bg-violet-500/10 px-4 py-24 sm:px-6 lg:py-32"><div className="mx-auto max-w-7xl">
-    <motion.div initial={{ opacity: 0, scale: .98 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: true }} className="future-stat-panel relative overflow-hidden rounded-[28px] border border-[#8B5CF6] bg-[#0A0F1E] px-6 py-14 text-white shadow-[0_24px_70px_rgba(105,65,198,.14)] sm:px-12">
-      <div className="future-mesh pointer-events-none absolute inset-0 opacity-70"/><FutureOrbit/><div className="relative"><p className="text-center text-sm font-bold uppercase tracking-[.18em] text-violet-300">Backed by the future</p><h2 className="mx-auto mt-5 max-w-3xl text-center text-3xl font-black tracking-[-.04em] text-white sm:text-5xl">The next operating system for work is already arriving.</h2><div className="mt-12 grid gap-4 md:grid-cols-3">{[['$1.77T','AI market by 2032'],['$1.2T','Automation opportunity'],['Now','You are early']].map(([value,label]) => <motion.div whileHover={{ y: -5, scale: 1.015 }} key={value} className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-6 text-center shadow-[0_12px_32px_rgba(105,65,198,.08)] backdrop-blur-xl"><p className="text-4xl font-black text-white">{value}</p><p className="mt-2 text-sm font-semibold text-slate-400">{label}</p></motion.div>)}</div></div>
-    </motion.div>
-    <div className="relative mt-16 grid gap-5 lg:grid-cols-4"><motion.div initial={{ scaleX: 0 }} whileInView={{ scaleX: 1 }} viewport={{ once: true }} className="absolute left-[8%] right-[8%] top-4 hidden h-px origin-left bg-gradient-to-r from-[#8B5CF6] via-[#6941C6] to-[#3B82F6] lg:block"/>{timeline.map(([year,title,copy], index) => <motion.article initial={{ opacity: 0, y: 18 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: index * .1 }} key={year} className={`relative rounded-2xl border p-6 ${year === '2026' ? 'border-[#6941C6] bg-violet-500/10 shadow-[0_16px_40px_rgba(105,65,198,.14)]' : 'border-violet-400/20 bg-violet-500/10'}`}><span className={`absolute -top-3 left-6 rounded-full px-3 py-1 text-xs font-black ${year === '2026' ? 'bg-[#6941C6] text-white' : 'border border-violet-400/20 bg-violet-500/10 text-slate-400'}`}>{year}</span><h3 className="mt-5 text-lg font-black text-white">{title}</h3><p className="mt-2 text-sm leading-6 text-slate-400">{copy}</p>{year === '2026' && <span className="mt-4 inline-flex items-center gap-2 text-xs font-black text-violet-300"><i className="size-2 animate-pulse rounded-full bg-[#6941C6]"/>YOU ARE HERE</span>}</motion.article>)}</div>
-  </div></section>
-}
-
-function Testimonials() {
-  const quotes = [
-    ['AlphaTekx kept our publishing rhythm moving while I focused on closing clients.','Dara','Startup founder'],
-    ['I described the outcome once. Alpha asked the missing questions and gave me a plan I could actually trust.','Maya','Independent creator'],
-    ['The approval step changes everything. I stay in control without becoming the bottleneck.','Sam','Small business owner'],
-  ]
-  return <section className="bg-[#0A0F1E] px-4 py-24 sm:px-6 lg:py-32"><div className="mx-auto max-w-7xl"><SectionHeading eyebrow="Built for operators" title="More momentum. Less operational drag." copy="Early builders use AlphaTekx to create repeatable execution without adding complexity."/><div className="mt-14 grid gap-5 lg:grid-cols-3">{quotes.map(([quote,name,role],index) => <article key={name} className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-7 shadow-[0_12px_32px_rgba(16,24,40,.08)]"><div className="flex gap-1">{[1,2,3,4,5].map(star => <Star key={star} size={16} fill="#FDB022" stroke="#FDB022"/>)}</div><blockquote className="mt-5 text-lg font-semibold leading-8 text-slate-200">“{quote}”</blockquote><div className="mt-7 flex items-center gap-3"><span className="grid size-11 place-items-center rounded-full bg-violet-500/10 font-black text-violet-300">{name[0]}{index + 1}</span><div><p className="font-black text-white">{name}</p><p className="text-sm text-slate-400">{role}</p></div></div></article>)}</div></div></section>
-}
-
-function TiltCard({ children, featured = false }: { children: ReactNode; featured?: boolean }) {
-  const reduce = useReducedMotion()
-  return <motion.article whileHover={reduce ? undefined : { y: -8, rotateX: 2, rotateY: -2, scale: 1.015 }} transition={{ type: 'spring', stiffness: 220, damping: 18 }} style={{ transformPerspective: 900 }} className={`relative min-w-[82vw] snap-center rounded-2xl border bg-violet-500/10 p-6 shadow-[0_1px_2px_rgba(16,24,40,.05)] transition-shadow hover:shadow-[0_20px_45px_rgba(16,24,40,.13)] md:min-w-0 ${featured ? 'border-2 border-[#6941C6]' : 'border-violet-400/20'}`}>{children}</motion.article>
+  const [stage,setStage] = useState(0)
+  useEffect(() => scrollYProgress.on('change', value => setStage(Math.min(4, Math.floor(value * 5)))), [scrollYProgress])
+  return <section id="demo" ref={ref} className="relative h-[250vh] bg-[#050505] px-4 sm:px-6 max-md:h-auto max-md:py-24"><div className="sticky top-0 mx-auto grid h-screen max-w-7xl items-center gap-12 lg:grid-cols-[.75fr_1.25fr] max-md:static max-md:h-auto"><div><p className="text-xs font-black uppercase tracking-[.2em] text-[#FFD700]">See the shift</p><div className="hidden md:block"><motion.div key={stage} initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .45, ease }}><h2 className="mt-5 text-4xl font-black tracking-[-.045em] text-white sm:text-5xl">{stages[stage][0]}</h2><p className="mt-5 max-w-md leading-7 text-white/40">{stages[stage][1]}</p></motion.div><div className="mt-9 flex gap-2">{stages.map((_,index) => <i key={index} className={`h-1.5 rounded-full transition-all ${index === stage ? 'w-10 bg-[#FFD700]' : 'w-4 bg-white/15'}`}/>)}</div></div><div className="mt-7 space-y-4 md:hidden">{stages.map(([title,copy],index) => <motion.article initial={{ opacity: 0, y: 18 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} key={title} className="rounded-2xl border border-white/10 bg-white/[.03] p-5"><span className="text-[10px] font-black text-[#FFD700]">0{index+1}</span><h2 className="mt-3 text-2xl font-black tracking-[-.035em] text-white">{title}</h2><p className="mt-2 text-sm leading-6 text-white/40">{copy}</p></motion.article>)}</div></div><div className="max-md:mt-8"><DemoDashboard progress={scrollYProgress}/></div></div></section>
 }
 
 function Pricing() {
-  const [yearly, setYearly] = useState(false)
-  const packs = [['Spark','$1','5 credits'],['Creator','$3','20 credits'],['Builder','$5','40 credits']]
-  const plans = [
-    ['Starter',15,150,'2 automations · Basic support'],
-    ['Growth',29,400,'10 automations · Priority support'],
-    ['Scale',79,1200,'Unlimited automations · Dedicated success · API'],
-  ] as const
-  return <section id="pricing" className="bg-violet-500/10 px-4 py-24 sm:px-6 lg:py-32"><div className="mx-auto max-w-7xl"><SectionHeading eyebrow="Simple pricing" title="Start small. Scale to millions." copy="Planning is free. Pay only when Alpha works."/>
-    <div className="mx-auto mt-8 flex w-fit rounded-xl border border-violet-400/20 bg-[#0A0F1E] p-1"><button onClick={() => setYearly(false)} className={`min-h-11 rounded-lg px-5 text-sm font-bold ${!yearly ? 'bg-violet-500/10 text-white shadow-sm' : 'text-slate-400'}`}>Monthly</button><button onClick={() => setYearly(true)} className={`min-h-11 rounded-lg px-5 text-sm font-bold ${yearly ? 'bg-violet-500/10 text-white shadow-sm' : 'text-slate-400'}`}>Yearly <span className="text-[#039855]">−20%</span></button></div>
-    <div className="mt-12"><p className="mb-5 text-center text-sm font-black uppercase tracking-[.14em] text-slate-400">Small packs for testers</p><div className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-5 md:grid md:grid-cols-3 md:overflow-visible md:pb-0">{packs.map(([name,price,credits],index) => <TiltCard key={name} featured={index === 1}>{index === 1 && <span className="absolute right-4 top-4 rounded-full bg-violet-500/10 px-3 py-1 text-[10px] font-black uppercase text-violet-300">Most popular</span>}<p className="text-sm font-black uppercase tracking-[.14em] text-violet-300">{name}</p><p className="mt-5 text-4xl font-black text-white">{price}</p><p className="mt-2 font-semibold text-slate-400">{credits}</p><Link to="/auth" className="mt-6 block min-h-11 rounded-xl bg-[#6941C6] px-5 py-3 text-center text-sm font-semibold text-white shadow-[0_10px_24px_rgba(105,65,198,.18)]">Buy credits</Link></TiltCard>)}</div></div>
-    <div className="mt-16"><p className="mb-5 text-center text-sm font-black uppercase tracking-[.14em] text-slate-400">Monthly credits for business</p><div className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-5 lg:grid lg:grid-cols-3 lg:overflow-visible lg:pb-0">{plans.map(([name,monthly,credits,benefits],index) => { const price = yearly ? Math.round(monthly * .8) : monthly; return <TiltCard key={name} featured={index === 1}>{index === 1 && <span className="absolute right-4 top-4 rounded-full bg-[#6941C6] px-3 py-1 text-[10px] font-black uppercase text-white">Recommended</span>}<p className="text-sm font-black uppercase tracking-[.14em] text-violet-300">{name}</p><p className="mt-5 text-4xl font-black text-white">${price}<span className="text-base font-semibold text-slate-400">/mo</span></p>{yearly && <p className="mt-1 text-xs font-bold text-[#039855]">Billed yearly · save 20%</p>}<p className="mt-5 text-lg font-black text-slate-200">{credits} credits/month</p><p className="mt-3 min-h-12 text-sm leading-6 text-slate-400">{benefits}</p><Link to="/auth" className="mt-6 block min-h-11 rounded-xl bg-[#6941C6] px-5 py-3 text-center text-sm font-semibold text-white shadow-[0_10px_24px_rgba(105,65,198,.18)]">Choose {name}</Link></TiltCard>})}</div></div>
-    <div className="mx-auto mt-8 flex max-w-3xl flex-wrap justify-center gap-2 rounded-full border border-violet-400/20 bg-[#0A0F1E] px-5 py-3 text-center text-xs font-bold text-slate-200"><span>Google signup = 1 tester credit</span><span className="text-[#475569]">•</span><span>Human verification = up to 10 credits, one time</span></div>
-  </div></section>
-}
-
-function FAQ() {
-  const [open, setOpen] = useState(0)
-  return <section className="bg-[#0A0F1E] px-4 py-24 sm:px-6 lg:py-32"><div className="mx-auto max-w-3xl"><SectionHeading eyebrow="Questions" title="Everything important, answered." copy="Clear rules before Alpha acts."/><div className="mt-12 space-y-3">{faqs.map(([question,answer],index) => <article key={question} className="overflow-hidden rounded-2xl border border-violet-400/20 bg-violet-500/10 shadow-sm"><button onClick={() => setOpen(open === index ? -1 : index)} className="flex min-h-14 w-full items-center justify-between gap-4 p-5 text-left font-black text-white">{question}<ChevronDown className={`shrink-0 text-violet-300 transition-transform ${open === index ? 'rotate-180' : ''}`}/></button><AnimatePresence initial={false}>{open === index && <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}><p className="px-5 pb-5 leading-7 text-slate-400">{answer}</p></motion.div>}</AnimatePresence></article>)}</div></div></section>
+  const [yearly,setYearly] = useState(true)
+  const plans = [['Starter','$15','150 credits'],['Founder','$29','400 credits'],['Scale','$79','1,200 credits']]
+  return <section id="pricing" className="bg-black px-4 py-24 sm:px-6 lg:py-32"><div className="mx-auto max-w-7xl"><div className="text-center"><p className="text-xs font-black uppercase tracking-[.2em] text-[#FFD700]">Simple by design</p><h2 className="mt-5 text-4xl font-black tracking-[-.045em] text-white sm:text-6xl">One Credit. All Platforms.</h2><p className="mx-auto mt-5 max-w-2xl leading-7 text-white/40">Unlike tools that charge for every channel, AlphaTekX prices the job—not the number of places it needs to happen.</p><div className="mx-auto mt-8 flex w-fit rounded-full border border-white/10 bg-white/[.04] p-1"><button onClick={() => setYearly(false)} className={`rounded-full px-5 py-2.5 text-sm font-bold ${!yearly ? 'bg-white text-black' : 'text-white/40'}`}>Monthly</button><button onClick={() => setYearly(true)} className={`rounded-full px-5 py-2.5 text-sm font-bold ${yearly ? 'bg-[#FFD700] text-black' : 'text-white/40'}`}>Yearly <span className="ml-1 text-[10px]">Founder deal</span></button></div></div><div className="mt-14 grid gap-5 lg:grid-cols-3">{plans.map(([name,price,credits],index) => <motion.article whileHover={{ y: -6 }} key={name} className={`relative rounded-[28px] border bg-[#09090C] p-7 ${index === 1 ? 'border-[#FFD700] shadow-[0_0_60px_rgba(255,215,0,.10)]' : 'border-[#FFD700]/20'}`}>{index === 1 && <span className="absolute right-5 top-5 rounded-full bg-[#FFD700] px-3 py-1 text-[9px] font-black uppercase text-black">Founder choice</span>}<p className="text-xs font-black uppercase tracking-[.16em] text-[#FFD700]">{name}</p><p className="mt-7 text-5xl font-black text-white">{yearly ? price : `$${Math.ceil(Number(price.slice(1))*1.25)}`}<span className="text-sm font-semibold text-white/30">/mo</span></p><p className="mt-3 font-semibold text-white/45">{credits} · every channel included</p><div className="my-7 h-px bg-white/10"/>{['One approval flow','Confirmed publishing','No per-channel fee'].map(item => <p key={item} className="mt-3 flex items-center gap-2 text-sm font-semibold text-white/65"><Check size={16} className="text-[#FFD700]"/>{item}</p>)}<Link to="/auth" className={`mt-8 flex min-h-12 items-center justify-center rounded-full font-black ${index === 1 ? 'bg-[#FFD700] text-black' : 'border border-white/15 text-white'}`}>Choose {name}</Link></motion.article>)}</div></div></section>
 }
 
 function FinalCTA() {
-  return <section className="bg-violet-500/10 px-4 py-20 sm:px-6"><div className="relative mx-auto max-w-7xl overflow-hidden rounded-[28px] border border-[#8B5CF6] bg-[#0A0F1E] px-6 py-16 text-center shadow-[0_24px_60px_rgba(105,65,198,.14)] sm:px-12"><div className="future-mesh pointer-events-none absolute inset-0"/><FutureOrbit/><div className="relative"><Zap className="mx-auto text-violet-300" size={32}/><h2 className="mt-5 text-4xl font-black tracking-[-.04em] text-white sm:text-6xl">Ready to delegate?</h2><p className="mx-auto mt-5 max-w-xl text-lg text-slate-400">Give Alpha the outcome. Keep the approval. Get your time back.</p><Link to="/auth" className="mt-8 inline-flex min-h-12 items-center gap-2 rounded-xl bg-[#6941C6] px-6 font-semibold text-white shadow-[0_10px_25px_rgba(105,65,198,.25)]">Start automating <ArrowRight size={18}/></Link><p className="mt-4 text-xs font-semibold text-[#98A2B3]">No credit card required for planning</p></div></div></section>
+  const { user } = useAuth()
+  return <section className="relative overflow-hidden border-t border-white/10 bg-black px-4 py-28 text-center sm:px-6"><div className="absolute left-1/2 top-1/2 size-[520px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#6B21A8]/25 blur-[140px]"/><div className="relative mx-auto max-w-4xl"><Zap className="mx-auto text-[#FFD700]"/><h2 className="mt-6 text-5xl font-black tracking-[-.055em] text-white sm:text-7xl">Stop Posting.<br/><span className="bg-gradient-to-r from-[#FFD700] to-[#8B3FC7] bg-clip-text text-transparent">Start Growing.</span></h2><p className="mt-6 text-lg text-white/45">Your second you is ready.</p><Link to={user ? '/dashboard' : '/auth'} className="mt-9 inline-flex min-h-14 items-center gap-2 rounded-full bg-[#FFD700] px-8 font-black text-black shadow-[0_0_50px_rgba(107,33,168,.5)]">Launch My Second You — Start Free <ArrowRight size={19}/></Link></div></section>
 }
 
 function Footer() {
-  return <footer className="border-t border-violet-400/20 bg-[#0A0F1E] px-4 pb-24 pt-10 sm:px-6 md:pb-10"><div className="mx-auto flex max-w-7xl flex-col gap-8"><div className="flex flex-col justify-between gap-6 md:flex-row md:items-center"><Logo/><nav className="flex flex-wrap gap-5 text-sm font-semibold text-slate-200"><a href="#how-it-works">How it works</a><a href="#pricing">Pricing</a><Link to="/privacy">Privacy</Link><Link to="/terms">Terms</Link><a href="https://twitter.com" aria-label="AlphaTekx on X"><Twitter size={18}/></a><a href="https://linkedin.com" aria-label="AlphaTekx on LinkedIn"><Linkedin size={18}/></a></nav></div><div className="h-px bg-[#475569]"/><div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm font-medium text-slate-400">© 2026 AlphaTekx. Built for real work.</p><Link to="/founders-legacy" className="text-xs font-bold text-slate-400 hover:text-violet-300">Built with grind at 6AM</Link></div></div></footer>
+  return <footer className="border-t border-white/10 bg-black px-4 py-8 sm:px-6"><div className="mx-auto flex max-w-7xl flex-col gap-4 text-sm text-white/35 sm:flex-row sm:items-center sm:justify-between"><span className="font-black tracking-[.12em] text-white">ALPHATEKX</span><div className="flex gap-5"><Link to="/privacy">Privacy</Link><Link to="/terms">Terms</Link></div><span>© 2026 AlphaTekX</span></div></footer>
 }
 
-function MobileStickyCTA() {
+function MobileCTA() {
   const { user } = useAuth()
-  const [visible, setVisible] = useState(false)
-  useEffect(() => {
-    const hero = document.getElementById('hero')
-    if (!hero) return
-    const observer = new IntersectionObserver(([entry]) => setVisible(!entry.isIntersecting), { threshold: .08 })
-    observer.observe(hero)
-    return () => observer.disconnect()
-  }, [])
-  return <AnimatePresence>{visible && <motion.div initial={{ y: 90, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 90, opacity: 0 }} transition={{ type: 'spring', stiffness: 240, damping: 24 }} className="fixed inset-x-0 bottom-0 z-40 border-t border-violet-400/20 bg-violet-500/10 p-3 backdrop-blur-2xl md:hidden"><Link to={user ? '/dashboard' : '/auth'} className="mx-auto flex min-h-12 max-w-sm items-center justify-center gap-2 rounded-full bg-[#6941C6] px-6 font-black text-white shadow-[0_14px_35px_rgba(105,65,198,.28)]">Start Automating — Free <ArrowRight size={17}/></Link></motion.div>}</AnimatePresence>
+  return <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-black/80 p-3 backdrop-blur-2xl md:hidden"><Link to={user ? '/dashboard' : '/auth'} className="flex min-h-12 items-center justify-center gap-2 rounded-full bg-[#FFD700] font-black text-black">Launch My Second You <ChevronRight size={18}/></Link></div>
 }
 
 export default function Landing() {
-  return <div className="min-h-screen overflow-x-hidden bg-violet-500/10 font-sans text-white">
-    <SEO title="AlphaTekx — Delegate the work. Turn Your Idea Into Reality" description="Your AI Employee that asks, plans, waits for approval, and executes while you sleep."/>
-    <div aria-hidden className="premium-noise pointer-events-none fixed inset-0 z-[60] opacity-[.02]"/>
-    <ScrollProgress/><Header/><main><Hero/><LogoMarquee/><ProblemSolution/><HowItWorks/><InteractiveDemo/><AutomationGallery/><ActivityRail/><ConnectedApps/><FeatureDeepDive/><Stats/><Testimonials/><Pricing/><FAQ/><FinalCTA/></main><Footer/><MobileStickyCTA/>
+  const { scrollYProgress } = useScroll()
+  const scaleX = useSpring(scrollYProgress, { stiffness: 130, damping: 28 })
+  return <div className="min-h-screen overflow-x-hidden bg-black font-['Inter',sans-serif] text-white">
+    <SEO title="AlphaTekX — Your Second You That Never Sleeps" description="AI creates, posts, and grows your socials while you live your real life."/>
+    <motion.div style={{ scaleX }} className="fixed inset-x-0 top-0 z-[60] h-0.5 origin-left bg-gradient-to-r from-[#6B21A8] to-[#FFD700]"/>
+    <Header/><main><Hero/><Problem/><HowItWorks/><ScrollDemo/><Pricing/><FinalCTA/></main><Footer/><MobileCTA/>
   </div>
 }
