@@ -5,7 +5,6 @@ import { getConnector } from '../../lib/agents/connectorRegistry'
 import { getAgents, saveAgent, setCache } from '../../lib/agents/agentStore'
 import type { Agent } from '../../lib/agents/types'
 import type { IntegrationStatus, ServiceStatus } from '../../lib/integrations'
-import { scheduleDistanceMultiplier } from '../../lib/schedulePricing'
 
 type Props = {
   agent: Agent
@@ -55,6 +54,14 @@ function connectorConnected(id: string, status: IntegrationStatus) {
   const s = status[id] || status[(id === 'x' ? 'twitter' : id)]
   if (!isServiceStatus(s)) return false
   return Boolean(s.connected && s.ready)
+}
+
+function connectorState(id: string, status: IntegrationStatus) {
+  const value = status[id] || status[(id === 'x' ? 'twitter' : id)]
+  if (!isServiceStatus(value)) return { connected: false, ready: false, label: 'Not connected' }
+  if (value.connected && value.ready) return { connected: true, ready: true, label: id === 'linkedin' ? 'LinkedIn personal profile ready' : 'Ready to publish' }
+  if (value.connected) return { connected: true, ready: false, label: id === 'linkedin' ? 'Reconnect to approve LinkedIn publishing' : 'Reconnect required' }
+  return { connected: false, ready: false, label: 'Not connected' }
 }
 
 export default function CampaignPreview({ agent, integrationStatus, credits, isAdmin, authHeaders, onClose, onActivated }: Props) {
@@ -110,15 +117,25 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
       .catch(() => {})
   }, [agent.id])
 
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape' && !activating) onClose() }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [activating, onClose])
+
   const campaign = draft.campaign
   if (!campaign) return null
 
   const platformIds = campaign.meta.platforms
   const missingBrand = !brand.audience.trim() || !brand.tone.trim()
   const requiredConnectors = platformIds.filter(id => !connectorConnected(id, integrationStatus))
-  const total = campaign.totalCredits
-  const furthestSchedule = campaign.posts.reduce((latest, post) => new Date(post.scheduledAt).getTime() > new Date(latest).getTime() ? post.scheduledAt : latest, campaign.posts[0]?.scheduledAt || new Date().toISOString())
-  const distanceMultiplier = scheduleDistanceMultiplier(furthestSchedule)
+  // One approved content item costs one credit across all selected platforms.
+  const total = Math.max(1, campaign.posts.length)
   const balance = credits ?? 0
   const canAfford = isAdmin || balance >= total
   const startAtDate = scheduleDate && scheduleTime ? new Date(`${scheduleDate}T${scheduleTime}`) : null
@@ -184,7 +201,7 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
       const res = await fetch(`/api/agents/campaign/${encodeURIComponent(draft.id)}/review`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ postId, platform: 'linkedin', action, tone }),
+        body: JSON.stringify({ postId, platform, action, tone }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Could not update the post')
@@ -202,7 +219,7 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
     }
     setStartError('')
     setActivating(true)
-    setNotice('Saving your approval and activating the LinkedIn schedule…')
+    setNotice(`Saving approval and activating ${platformIds.map(id => platformNames[id] || id).join(', ')}…`)
     try {
       const approvedAgent = {
         ...draft,
@@ -228,7 +245,8 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
       window.clearTimeout(timer)
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Activation failed')
-      setNotice(postingOption === 'now' ? `Published successfully. LinkedIn post ID: ${data.execution?.steps?.[0]?.linkedinPostId || data.agent?.campaign?.posts?.[0]?.providerPostId || 'confirmed'}` : `Approved and scheduled. No credits charged yet. ${confirmation}`)
+      const providerIds = (data.execution?.steps || []).map((step: { providerPostId?: string; linkedinPostId?: string }) => step.providerPostId || step.linkedinPostId).filter(Boolean)
+      setNotice(postingOption === 'now' ? `Published successfully to ${platformIds.map(id => platformNames[id] || id).join(', ')}. Provider ID${providerIds.length === 1 ? '' : 's'}: ${providerIds.join(', ') || data.agent?.campaign?.posts?.[0]?.providerPostId || 'confirmed'}` : `Approved and scheduled. No credits charged yet. ${confirmation}`)
       setDraft(data.agent)
       setCache([data.agent, ...getAgents().filter(item => item.id !== data.agent.id)])
       onActivated(data.agent)
@@ -257,41 +275,45 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
     finally { setActivating(false) }
   }
 
-  return <div className="fixed inset-0 z-50 flex items-end justify-center bg-[#0A0F1E]/90 p-0 sm:items-center sm:p-4" onClick={onClose} role="dialog" aria-modal="true" aria-label="Review and approve automation">
-    <div className="max-h-[94dvh] w-full max-w-full overflow-y-auto rounded-t-3xl border border-violet-400/20 bg-background p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl sm:max-w-3xl sm:rounded-3xl sm:p-6" onClick={e => e.stopPropagation()}>
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-medium text-indigo-400"><Zap size={12}/> Content Employee plan</div>
-          <h2 className="mt-1 text-xl font-semibold">{campaign.name}</h2>
-          <p className="mt-1 text-sm text-white/55">{campaign.description}</p>
+  return <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 p-0 backdrop-blur-sm sm:items-center sm:p-4" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="campaign-preview-title">
+    <div className="relative flex max-h-[96dvh] w-full max-w-full flex-col overflow-hidden rounded-t-3xl border border-[#FFD700]/20 bg-[#15151F] shadow-[0_0_50px_rgba(255,215,0,.13)] sm:max-h-[92dvh] sm:max-w-3xl sm:rounded-3xl" onClick={e => e.stopPropagation()}>
+      <div className="shrink-0 border-b border-white/10 bg-[#15151F]/95 px-4 py-4 backdrop-blur-2xl sm:px-6 sm:py-5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[.14em] text-[#FFD700]"><Zap size={13} strokeWidth={1.5}/> Alpha execution plan</div>
+          <h2 id="campaign-preview-title" className="mt-2 break-words text-xl font-black text-white sm:text-2xl">{campaign.name}</h2>
+          <p className="mt-1 max-w-2xl text-sm font-medium leading-6 text-[#A0A0B0]">{campaign.description}</p>
         </div>
-        <button onClick={onClose} className="rounded-lg p-2 text-white/50 hover:bg-violet-500/10"><X size={18}/></button>
+        <button onClick={onClose} aria-label="Close automation review" className="grid size-11 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[.035] text-[#A0A0B0] transition hover:border-[#FFD700]/25 hover:text-white"><X size={19}/></button>
+      </div>
       </div>
 
-      {notice && <div className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200">{notice}</div>}
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 sm:px-6 sm:pb-6">
+
+      {notice && <div role="status" aria-live="polite" className="mt-4 rounded-xl border border-emerald-400/25 bg-emerald-400/[.07] p-3 text-sm font-bold leading-6 text-emerald-200">{notice}</div>}
 
       <div className="mt-6 grid gap-3 sm:grid-cols-3">
-        <div className="liquid-glass rounded-xl p-4">
+        <div className="luxury-card rounded-xl p-4">
           <div className="text-xs text-white/55">Posts</div>
           <div className="mt-1 text-2xl font-semibold">{campaign.meta.totalPosts}</div>
           <div className="text-xs text-white/40">{campaign.meta.publishingMode === 'once_now' ? 'Publish once now' : campaign.meta.publishingMode === 'once_later' ? 'Schedule once' : `${campaign.meta.frequencyText}`}</div>
         </div>
-        <div className="liquid-glass rounded-xl p-4">
+        <div className="luxury-card rounded-xl p-4">
           <div className="text-xs text-white/55">Platforms</div>
           <div className="mt-1 flex flex-wrap gap-1">
-            {platformIds.map(id => <span key={id} className="rounded-md bg-violet-500/10 px-2 py-1 text-xs">{platformNames[id] || id}</span>)}
+            {platformIds.map(id => <span key={id} className={`rounded-lg border px-2 py-1 text-xs font-black ${id === 'linkedin' ? 'border-[#0A66C2]/35 bg-[#0A66C2]/15 text-[#78B9F2]' : 'border-white/10 bg-white/[.045] text-white'}`}>{platformNames[id] || id}{id === 'linkedin' ? ' · Native' : ''}</span>)}
           </div>
         </div>
-        <div className="liquid-glass rounded-xl p-4">
+        <div className="luxury-card rounded-xl p-4">
           <div className="text-xs text-white/55">Total cost</div>
-          <div className="mt-1 text-2xl font-semibold">{total} credits</div>
+          <div className="mt-1 text-2xl font-black text-[#FFD700]">{isAdmin ? 'Admin' : `${total} credit${total === 1 ? '' : 's'}`}</div>
           <div className="text-xs text-white/40">{isAdmin ? 'Admin — free' : `Balance: ${balance}`}</div>
         </div>
       </div>
 
-      <div className="mt-6 flex gap-2 border-b border-violet-400/20 pb-2">
+      <div className="mt-6 grid grid-cols-3 gap-1 rounded-xl border border-white/10 bg-[#0A0A0F] p-1">
         {(['calendar', 'cost', 'brand'] as const).map(t => (
-          <button key={t} onClick={() => setTab(t)} className={`rounded-lg px-3 py-1.5 text-xs font-medium ${tab === t ? 'bg-indigo-500 text-white' : 'text-white/60 hover:bg-violet-500/10'}`}>
+          <button key={t} onClick={() => setTab(t)} className={`min-h-10 rounded-lg px-2 text-xs font-black transition ${tab === t ? 'bg-gradient-to-r from-[#FFD700] to-[#6C5CE7] text-[#0A0A0F] shadow-lg' : 'text-[#A0A0B0] hover:bg-white/[.055] hover:text-white'}`}>
             {t[0].toUpperCase() + t.slice(1)}
           </button>
         ))}
@@ -371,17 +393,15 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
         ))}
       </div>}
 
-      {tab === 'cost' && <div className="mt-4 space-y-3 text-sm text-white/70">
-        <div className="rounded-xl border border-violet-400/20 bg-violet-500/10 p-4">
-          <p>AI writing: 3 credits × {campaign.meta.totalPosts} posts = {3 * campaign.meta.totalPosts}</p>
-          {campaign.meta.includeImages && <p>Image generation: 2 credits × {campaign.meta.totalPosts} = {2 * campaign.meta.totalPosts}</p>}
-          {campaign.meta.imageRequested && !campaign.meta.includeImages && <p className="text-amber-300">Image generation is not configured. This automation will publish text only and will not charge image credits.</p>}
-          <p>Publishing: {platformIds.length} platform(s) × {campaign.meta.totalPosts} posts = {platformIds.length * campaign.meta.totalPosts}</p>
-          <div className="mt-2 border-t border-violet-400/20 pt-2 text-base font-semibold text-white">Total: {total} credits</div>
+      {tab === 'cost' && <div className="mt-4 space-y-3 text-sm text-[#A0A0B0]">
+        <div className="luxury-card rounded-xl p-4">
+          <p className="font-bold text-white">One content item publishes adapted versions to every selected platform.</p>
+          <p className="mt-2">{campaign.posts.length} post{campaign.posts.length === 1 ? '' : 's'} across {platformIds.length} platform{platformIds.length === 1 ? '' : 's'}.</p>
+          <div className="mt-3 border-t border-[#FFD700]/10 pt-3 text-base font-black text-[#FFD700]">Total: {total} credit{total === 1 ? '' : 's'}</div>
         </div>
-        {distanceMultiplier > 1 && <p className="rounded-lg bg-amber-400/10 p-3 text-amber-200">Long-term schedule multiplier: {distanceMultiplier}×. Paystack collects the configured local-currency equivalent when you buy the required credits.</p>}
-        <p>Current balance: <span className="font-semibold">{isAdmin ? '∞' : balance}</span></p>
-        {!canAfford && <p className="text-amber-300">You need {total - balance} more credits.</p>}
+        <p className="rounded-xl border border-white/10 bg-white/[.035] p-3">Credits are charged only after every selected provider confirms the post.</p>
+        <p>Current balance: <span className="font-black text-[#FFD700]">{isAdmin ? 'Admin · unlimited' : balance}</span></p>
+        {!canAfford && <p className="font-bold text-amber-300">You need {total - balance} more credits.</p>}
       </div>}
 
       {tab === 'brand' && <div className="mt-4 space-y-3">
@@ -394,21 +414,22 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
         <button onClick={saveBrand} disabled={savingBrand} className="rounded-lg bg-indigo-500 px-4 py-2 text-sm text-white hover:bg-indigo-400 disabled:opacity-50">{savingBrand ? 'Saving...' : 'Save brand profile'}</button>
       </div>}
 
-      <div className="mt-6 rounded-xl border border-violet-400/20 bg-violet-500/10 p-4">
-        <h3 className="text-sm font-semibold">Required connections</h3>
-        <div className="mt-2 space-y-2">
+      <div className="luxury-card mt-6 rounded-xl p-4">
+        <h3 className="text-sm font-black text-white">Publishing connections</h3>
+        <p className="mt-1 text-xs leading-5 text-[#A0A0B0]">LinkedIn uses AlphaTekX native secure publishing. Other selected social platforms use their verified connection.</p>
+        <div className="mt-3 space-y-2">
           {platformIds.map(id => {
-            const connected = connectorConnected(id, integrationStatus)
+            const state = connectorState(id, integrationStatus)
             const C = getConnector(id) || { id, name: platformNames[id] || id, icon: 'bot', color: '#6366f1', authType: 'apiKey', category: 'Communication', description: '', triggers: [], actions: [], permissions: [] }
-            return <div key={id} className="flex items-center justify-between text-xs">
-              <span className="flex items-center gap-2"><ConnectorIcon connector={C}/> {C.name}</span>
-              {connected ? <span className="text-emerald-400 flex items-center gap-1"><CheckCircle2 size={12}/> Connected personal profile</span> : <a href={`/connected-apps?service=${id}`} className="text-indigo-400 hover:underline">Connect</a>}
+            return <div key={id} className={`flex min-w-0 flex-col gap-3 rounded-xl border p-3 text-xs min-[420px]:flex-row min-[420px]:items-center min-[420px]:justify-between ${id === 'linkedin' ? 'border-[#0A66C2]/25 bg-[#0A66C2]/[.07]' : 'border-white/10 bg-white/[.025]'}`}>
+              <span className="flex min-w-0 items-center gap-2 font-black text-white"><span className="grid size-9 shrink-0 place-items-center rounded-lg bg-white/[.055]"><ConnectorIcon connector={C}/></span><span className="min-w-0"><strong className="block truncate">{C.name}</strong>{id === 'linkedin' && <small className="font-bold text-[#78B9F2]">Native personal-profile publishing</small>}</span></span>
+              {state.ready ? <span className="flex shrink-0 items-center gap-1 font-bold text-emerald-300"><CheckCircle2 size={13}/> {state.label}</span> : <a href={`/connected-apps?service=${id}`} className="flex min-h-10 shrink-0 items-center justify-center rounded-lg border border-[#FFD700]/20 bg-[#FFD700]/[.07] px-3 font-black text-[#FFD700] hover:bg-[#FFD700]/10">{state.connected ? 'Reconnect' : 'Connect'} {C.name}</a>}
             </div>
           })}
         </div>
       </div>
 
-      <div className="sticky bottom-0 z-10 mt-6 border-t border-violet-400/20 bg-background/95 px-2 py-3 backdrop-blur sm:px-0">
+      <div className="sticky bottom-0 z-10 -mx-4 mt-6 border-t border-[#FFD700]/10 bg-[#15151F]/95 px-4 py-4 backdrop-blur-2xl sm:-mx-6 sm:px-6">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-xs text-white/50">
             {!canActivate && (
@@ -422,13 +443,14 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
             type="button"
             onClick={() => activate()}
             disabled={!canActivate || activating}
-            className="flex min-h-10 items-center justify-center gap-2 rounded-lg bg-indigo-500 px-5 text-sm text-white hover:bg-indigo-400 disabled:opacity-40"
+            className="solar-action flex min-h-12 w-full items-center justify-center gap-2 rounded-xl px-5 text-sm sm:w-auto disabled:cursor-not-allowed disabled:opacity-40"
           >
             {activating ? <LoaderCircle className="animate-spin" size={16}/> : <Sparkles size={16}/>}
             {postingOption === 'now' ? `Approve & Publish Now · ${total} credits` : campaign.status === 'running' ? 'Approve & Update Schedule' : `Approve & Schedule · estimated ${total} credits`}
           </button>
         </div>
       </div>
+    </div>
     </div>
   </div>
 }
