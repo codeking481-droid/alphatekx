@@ -586,6 +586,39 @@ export function confirmedProviderId(value, depth = 0) {
   return ''
 }
 
+export function confirmedPublishedContentId(providerId, value, depth = 0) {
+  if (!value || depth > 6) return ''
+  const provider = resolveProviderAlias(providerId) || String(providerId || '').toLowerCase()
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = confirmedPublishedContentId(provider, item, depth + 1)
+      if (found) return found
+    }
+    return ''
+  }
+  if (typeof value !== 'object') return ''
+
+  const keys = provider === 'twitter'
+    ? ['tweet_id', 'post_id', 'id']
+    : provider === 'facebook'
+      ? ['post_id', 'id']
+      : provider === 'instagram'
+        ? ['media_id', 'post_id', 'id']
+        : ['post_id', 'message_id', 'video_id', 'id']
+  for (const key of keys) {
+    const candidate = value[key]
+    if (candidate != null && ['string', 'number'].includes(typeof candidate)) {
+      const normalized = String(candidate).trim()
+      if (normalized && !/^success$/i.test(normalized)) return normalized
+    }
+  }
+  for (const nested of ['data', 'response', 'result', 'post', 'tweet', 'video', 'media', 'message']) {
+    const found = confirmedPublishedContentId(provider, value[nested], depth + 1)
+    if (found) return found
+  }
+  return ''
+}
+
 function findFacebookPage(value, preferredId = '', depth = 0) {
   if (!value || depth > 6) return null
   if (Array.isArray(value)) {
@@ -1156,7 +1189,9 @@ export async function executeProviderAction(user, providerId, actionId, payload)
     throw new Error('Provider did not confirm a successful execution')
   }
 
-  const confirmedId = confirmedProviderId(responseData)
+  // Confirm the identifier of the published object, not an upload/container,
+  // managed Page, request log, or other intermediate provider resource.
+  const confirmedId = confirmedPublishedContentId(pid, responseData)
   if (!confirmedId) {
     await finishExecution(user.id, idempotencyKey, { status: 'failed', error_code: 'missing_provider_id' })
     throw new Error('Provider completed without returning a confirmed post or message ID')
