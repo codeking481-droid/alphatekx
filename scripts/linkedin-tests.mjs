@@ -124,6 +124,44 @@ await test('Successful response requires and returns LinkedIn post ID', async ()
   await assert.rejects(() => publishLinkedInTextPost(validCredentials, { text: 'Test post' }, { fetchImpl: async () => new Response('', { status: 201 }) }), /confirmed post identifier/i)
 })
 
+await test('LinkedIn image publishing uploads the real image before creating the post', async () => {
+  const calls = []
+  const response = await publishLinkedInTextPost(validCredentials, {
+    text: 'Image post',
+    image_url: 'https://images.test/post.png',
+    imageAlt: 'AlphaTekx campaign image',
+  }, {
+    fetchImpl: async (url, init = {}) => {
+      calls.push({ url: String(url), method: init.method || 'GET', body: init.body })
+      if (String(url) === 'https://images.test/post.png') return new Response(new Uint8Array([137, 80, 78, 71]), { status: 200, headers: { 'content-type': 'image/png' } })
+      if (String(url).includes('/rest/images?action=initializeUpload')) return Response.json({ value: { uploadUrl: 'https://uploads.test/linkedin-image', image: 'urn:li:image:asset-123' } })
+      if (String(url) === 'https://uploads.test/linkedin-image') return new Response('', { status: 201 })
+      const body = JSON.parse(String(init.body || '{}'))
+      assert.equal(body.content.media.id, 'urn:li:image:asset-123')
+      assert.equal(body.content.media.altText, 'AlphaTekx campaign image')
+      return new Response('', { status: 201, headers: { 'x-restli-id': 'urn:li:share:image-post-123' } })
+    },
+  })
+  assert.equal(response.id, 'urn:li:share:image-post-123')
+  assert.equal(response.imageId, 'urn:li:image:asset-123')
+  assert.deepEqual(calls.map(call => call.method), ['GET', 'POST', 'PUT', 'POST'])
+})
+
+await test('LinkedIn image failure prevents post creation and cannot be charged as success', async () => {
+  let postCalled = false
+  await assert.rejects(() => publishLinkedInTextPost(validCredentials, {
+    text: 'Image post', imageUrl: 'https://images.test/post.png',
+  }, {
+    fetchImpl: async url => {
+      if (String(url) === 'https://images.test/post.png') return new Response(new Uint8Array([1]), { status: 200, headers: { 'content-type': 'image/png' } })
+      if (String(url).includes('/rest/images?action=initializeUpload')) return Response.json({ value: {} })
+      postCalled = true
+      return new Response('', { status: 201 })
+    },
+  }), /confirmed image upload asset/i)
+  assert.equal(postCalled, false)
+})
+
 let providerCalls = 0
 const providerRequests = []
 const provider = http.createServer(async (req, res) => {
