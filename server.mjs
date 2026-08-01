@@ -3569,11 +3569,11 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
   return execution
 }
 
-async function runAgent(agent, trigger = 'schedule') {
+async function runAgent(agent, trigger = 'schedule', authenticatedOwner = null) {
   const startTime = Date.now()
   const now = new Date()
   const existing = await getServerAgent(agent.id) || agent
-  const user = existing.userId ? await getUser(existing.userId, existing.userEmail || '') : null
+  const user = existing.userId ? await resolveExecutionUser(existing.userId, existing.userEmail || '', authenticatedOwner) : null
   const userId = user?.id || existing.userId || ''
   const userEmail = user?.email || existing.userEmail || ''
   const timezone = user?.timezone || existing.userTimezone || 'UTC'
@@ -6612,6 +6612,27 @@ async function getUser(userId, email = '') {
   return defaultUser(userId, email)
 }
 
+async function resolveExecutionUser(userId, storedEmail = '', authenticatedOwner = null) {
+  if (!userId) return null
+  if (authenticatedOwner?.id === userId) {
+    return { ...(await getUser(userId, authUserEmail(authenticatedOwner))), ...authenticatedOwner, id: userId, email: authUserEmail(authenticatedOwner) }
+  }
+  const stored = await getUser(userId, storedEmail)
+  if (authUserEmail(stored)) return stored
+  const config = supabaseConfig()
+  if (config.url && config.service) {
+    try {
+      const response = await fetch(`${config.url}/auth/v1/admin/users/${encodeURIComponent(userId)}`, { headers: serviceHeaders(config.service) })
+      if (response.ok) {
+        const authOwner = await response.json()
+        const verifiedEmail = authUserEmail(authOwner)
+        if (verifiedEmail) return { ...stored, ...authOwner, id: userId, email: verifiedEmail }
+      }
+    } catch {}
+  }
+  return stored
+}
+
 async function saveUser(user) {
   if (!user?.id) return false
   const config = supabaseConfig()
@@ -8219,7 +8240,7 @@ const server = http.createServer(async (req, res) => {
             charged: false,
           })
         }
-        const execution = await runAgent(existingAgent, 'manual')
+        const execution = await runAgent(existingAgent, 'manual', user)
         const ok = execution.status === 'success' || execution.status === 'partial'
         const idempotentNoop = execution.error_code === 'NO_DUE_POSTS' || execution.error_code === 'DUPLICATE'
         const statusCode = execution.status === 'partial' ? 207 : ok || idempotentNoop ? 200 : execution.error_code === 'INSUFFICIENT_CREDITS' ? 402 : execution.error_code === 'APPROVAL_REQUIRED' ? 409 : 502

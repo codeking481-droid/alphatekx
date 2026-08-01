@@ -73,6 +73,13 @@ test('missing execution history storage cannot block automation deletion', () =>
   assert.match(server, /try \{ await supabaseDeleteAgent\(id\); primaryDeleted = true \} catch/)
 })
 
+test('manual and scheduled executions recover the trusted owner identity before credit checks', () => {
+  assert.match(server, /resolveExecutionUser\(existing\.userId, existing\.userEmail \|\| '', authenticatedOwner\)/)
+  assert.match(server, /authenticatedOwner\?\.id === userId/)
+  assert.match(server, /\/auth\/v1\/admin\/users\/\$\{encodeURIComponent\(userId\)\}/)
+  assert.match(server, /runAgent\(existingAgent, 'manual', user\)/)
+})
+
 test('execution history falls back to the encrypted integration vault when connected_accounts rejects the record', () => {
   assert.match(server, /connected_accounts save failed: HTTP/)
   assert.match(server, /saveUserIntegration\(userId, AGENT_EXECUTIONS_PROVIDER/)
