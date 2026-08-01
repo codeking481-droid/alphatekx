@@ -365,9 +365,13 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
 
       await saveAgent(agent as any)
 
+      const accessToken = (await supabase?.auth.getSession())?.data?.session?.access_token || session?.access_token
       const activationRes = await fetch(`/api/agents/campaign/${encodeURIComponent(agent.id)}/activate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
         body: JSON.stringify({
           autoPublish: true,
           postingOption: data.publishMode === 'publish-now' ? 'now' : 'later',

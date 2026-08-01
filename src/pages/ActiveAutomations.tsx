@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { deleteAgent, saveAgent, setAgentLifecycle, useAgents } from '../lib/agents/agentStore'
 import type { Agent, AgentStatus } from '../lib/agents/types'
 import { formatCountdown } from '../lib/scheduling/countdown.mjs'
+import { supabase } from '../lib/supabase'
 
 const filters = ['All', 'Running', 'Waiting', 'Paused', 'Needs Attention', 'Completed'] as const
 type Filter = typeof filters[number]
@@ -33,13 +34,13 @@ function lastResult(agent: Agent) {
 }
 
 function progress(agent: Agent) {
-  const done = agent.executionsDone || 0
+  const done = agent.campaign?.posts?.filter(post => post.status === 'posted').length || 0
   const total = agent.executionsTotal || agent.campaign?.posts?.length || 0
   return total > 0 ? `${Math.min(done, total)}/${total} done` : `${done} completed`
 }
 
 function progressPercent(agent: Agent) {
-  const done = agent.executionsDone || 0
+  const done = agent.campaign?.posts?.filter(post => post.status === 'posted').length || 0
   const total = agent.executionsTotal || agent.campaign?.posts?.length || 0
   return total > 0 ? Math.max(0, Math.min(100, Math.round(done / total * 100))) : 0
 }
@@ -68,7 +69,10 @@ function ProgressCard({ agent }: { agent: Agent }) {
     let active = true
     const load = async () => {
       try {
-        const response = await fetch(`/api/automations/${encodeURIComponent(agent.id)}/progress`)
+        const accessToken = (await supabase?.auth.getSession())?.data?.session?.access_token
+        const response = await fetch(`/api/automations/${encodeURIComponent(agent.id)}/progress`, {
+          headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+        })
         const data = await response.json().catch(() => ({}))
         if (!active) return
         if (Array.isArray(data?.posts)) setPosts(data.posts)
@@ -122,7 +126,7 @@ export default function ActiveAutomations() {
   const visible = useMemo(() => agents.filter(agent => agent.status !== 'deleted' && matchesFilter(agent, filter)), [agents, filter])
 
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 15_000)
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000)
     return () => window.clearInterval(timer)
   }, [])
 
@@ -247,14 +251,14 @@ function AutomationCard({ agent }: { agent: Agent }) {
   const [now, setNow] = useState(Date.now())
 
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 15_000)
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000)
     return () => window.clearInterval(timer)
   }, [])
 
   const nextRunLabel = nextRun ? `${new Date(nextRun).toLocaleString()} · ${formatCountdown(nextRun, now)}` : 'No future run'
   return <Link to={`/active-automations/${agent.id}`} className="rounded-3xl border border-violet-400/20 bg-violet-500/10 p-6 shadow-[0_18px_45px_rgba(30,41,59,.10)] transition hover:-translate-y-1 hover:border-violet-300 hover:shadow-[0_24px_60px_rgba(109,40,217,.16)]">
     <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-xs font-black uppercase tracking-[.16em] text-violet-300">{platformNames(agent)}</p><h2 className="mt-2 truncate text-lg font-black text-white">{agent.name}</h2></div><span className="rounded-full bg-violet-500/10 px-3 py-1 text-[11px] font-black text-violet-200">{displayStatus(agent)}</span></div>
-    <dl className="mt-6 grid grid-cols-2 gap-4 text-sm"><CardStat label="Schedule" value={agent.campaign?.meta?.frequencyText || agent.trigger?.cron || 'One time'} /><CardStat label="Progress" value={progress(agent)} /><CardStat label="Next run" value={nextRunLabel} /><CardStat label="Last result" value={lastResult(agent)} /></dl>
+    <dl className="mt-6 grid grid-cols-1 gap-4 text-sm min-[420px]:grid-cols-2"><CardStat label="Schedule" value={agent.campaign?.meta?.frequencyText || agent.trigger?.cron || 'One time'} /><CardStat label="Progress" value={progress(agent)} /><CardStat label="Next run" value={nextRunLabel} /><CardStat label="Last result" value={lastResult(agent)} /></dl>
     <div className="mt-5 h-2 overflow-hidden rounded-full bg-white/[.06]"><div className="h-full rounded-full bg-gradient-to-r from-violet-500 to-blue-500" style={{ width: `${progressPercent(agent)}%` }}/></div>
     {displayStatus(agent) === 'Needs Attention' && <p className="mt-4 flex items-center gap-2 text-xs font-bold text-amber-300"><AlertCircle size={14}/>Open to see what needs attention.</p>}
   </Link>

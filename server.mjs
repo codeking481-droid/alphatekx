@@ -31,7 +31,6 @@ import * as eliteBuilder from './server/eliteBuilderService.mjs'
 import { claimPendingAction, createPendingAction, finishPendingAction, listPendingActions } from './server/ceoPendingActions.mjs'
 import { scheduledCreditCost } from './server/schedulePricing.mjs'
 import generatePostHandler from './api/ai/generate-post.mjs'
-import { applyBackgroundGenerationOutcomeToPost, createBackgroundGenerationOutcome } from './src/lib/automation/backgroundGeneration.ts'
 
 function loadEnv() {
   for (const filename of ['.env.local', '.env']) {
@@ -2419,61 +2418,123 @@ async function executeAgentAction(agent, action) {
 }
 
 async function getAutomationProgressPayload(agent) {
-  const generatedPosts = Array.isArray(agent.generatedPosts) ? agent.generatedPosts : []
-  const total = Math.max(1, Array.isArray(agent.campaign?.posts) ? agent.campaign.posts.length : generatedPosts.length)
+  const campaignPosts = Array.isArray(agent.campaign?.posts) ? agent.campaign.posts : []
+  const generatedPosts = campaignPosts.map(post => ({
+    id: post.id,
+    content: post.captions?.[post.platforms?.[0]] || '',
+    image_url: post.imageUrl || post.image_url || null,
+    scheduled_for: post.scheduledAt || null,
+    status: post.status || 'preparing',
+  }))
+  const total = Math.max(1, campaignPosts.length)
+  const readyCount = campaignPosts.filter(post => {
+    const primary = post.platforms?.[0]
+    return Boolean(primary && String(post.captions?.[primary] || '').trim())
+  }).length
   const progress = typeof agent.backgroundProgress === 'number'
     ? agent.backgroundProgress
-    : (generatedPosts.length ? Math.round((generatedPosts.length / total) * 100) : 0)
+    : (readyCount ? Math.round((readyCount / total) * 100) : 0)
   return {
     ok: true,
     progress: Math.max(0, Math.min(100, progress)),
-    status: agent.status || 'active',
+    status: agent.backgroundGeneration?.status || agent.status || 'active',
     posts: generatedPosts,
+    error: agent.backgroundGeneration?.error || null,
+  }
+}
+
+async function prepareCampaignPostContent(agent, post, user, index) {
+  const platforms = Array.isArray(post?.platforms) && post.platforms.length ? post.platforms : ['linkedin']
+  const topic = String(post?.topic || agent.campaign?.brand?.business || agent.name || 'your business growth')
+  const goal = String(agent.campaign?.description || agent.description || 'Grow reach and trust')
+  const audience = String(agent.campaign?.brand?.audience || 'ideal audience')
+  const tone = String(agent.campaign?.brand?.tone || 'confident and professional')
+  const captions = { ...(post?.captions || {}) }
+
+  for (const platform of platforms) {
+    if (String(captions[platform] || '').trim()) continue
+    const generated = await callLLMForRole(
+      'content',
+      'Write one original, ready-to-publish social post. Return only the post text. Do not use placeholders or claim an action was completed.',
+      `Post ${index + 1}. Platform: ${platform}. Topic: ${topic}. Goal: ${goal}. Audience: ${audience}. Tone: ${tone}.`,
+      { jsonMode: false, maxTokens: 500, fallbackOrder: ['groq', 'qwen', 'kimi', 'minimax', 'flatkey', 'openai'] },
+    )
+    const content = String(generated.result || '').trim()
+    if (content.length < 20) throw new Error(`The content provider returned an incomplete ${platform} post.`)
+    captions[platform] = content
+  }
+
+  let imageUrl = post.imageUrl || post.image_url || ''
+  let imageStoragePath = post.imageStoragePath || post.image_storage_path || ''
+  const needsImage = agent.campaign?.meta?.includeImages === true || platforms.includes('instagram')
+  if (needsImage && !imageUrl) {
+    const image = await mediaLibrary.findSmartImage(supabaseConfig(), user, `${topic}. ${captions[platforms[0]] || ''}`, goal, platforms[0])
+    imageUrl = image.image_url
+    imageStoragePath = image.image_storage_path || ''
+    if (!imageUrl) throw new Error(`A verified image is required before publishing to ${platforms.join(', ')}.`)
+  }
+
+  return {
+    ...post,
+    captions,
+    imageUrl,
+    image_url: imageUrl,
+    imageStoragePath,
+    image_storage_path: imageStoragePath,
+    status: post.status === 'draft' || post.status === 'pending_approval' ? 'scheduled' : (post.status || 'scheduled'),
   }
 }
 
 async function runAutomationBackgroundGeneration(agentId, userId) {
+  const startedAt = new Date().toISOString()
   try {
-    const agent = await getServerAgent(agentId, userId)
+    let agent = await getServerAgent(agentId, userId)
     if (!agent) return
-    const posts = Array.isArray(agent.campaign?.posts) ? agent.campaign.posts : []
+    if (agent.backgroundGeneration?.status === 'generating') return
+    const posts = Array.isArray(agent.campaign?.posts) ? agent.campaign.posts.map(post => ({ ...post })) : []
+    if (!posts.length) throw new Error('This automation has no posts to generate.')
     const total = Math.max(1, posts.length)
-    const existingPosts = Array.isArray(agent.generatedPosts) ? agent.generatedPosts : []
-    const generated = [...existingPosts]
-    const topic = String(agent.campaign?.brand?.business || agent.name || 'your business growth')
-    const goal = String(agent.campaign?.description || agent.description || 'Grow reach and trust')
-    const audience = String(agent.campaign?.brand?.audience || 'ideal audience')
-    const tone = String(agent.campaign?.brand?.tone || 'confident and professional')
-    const length = 'medium'
-    const platform = 'linkedin'
+    const previousStatus = agent.status === 'paused' ? 'paused' : 'running'
+    agent = {
+      ...agent,
+      status: 'preparing',
+      backgroundProgress: 0,
+      backgroundGeneration: { status: 'generating', startedAt, error: null },
+      trigger: { ...agent.trigger, nextRun: null },
+      campaign: { ...agent.campaign, posts },
+      updated_at: startedAt,
+    }
+    await saveServerAgent(agent)
 
     for (let index = 0; index < total; index += 1) {
-      const post = posts[index]
-      const scheduledFor = post?.scheduledAt ? new Date(post.scheduledAt) : new Date()
-      const outcome = await createBackgroundGenerationOutcome({
-        topic,
-        goal,
-        audience,
-        tone,
-        length,
-        platform,
-        index: index + 1,
-        scheduledFor,
-      })
-      generated.push({
-        id: `${agent.id}-${index + 1}`,
-        content: outcome.content,
-        image_url: outcome.imageUrl || null,
-        scheduled_for: outcome.scheduledFor,
-        status: outcome.status,
-      })
+      const post = agent.campaign.posts[index]
+      agent.campaign.posts[index] = await prepareCampaignPostContent(agent, post, { id: userId, email: agent.userEmail || '' }, index)
       const progress = Math.max(0, Math.min(100, Math.round(((index + 1) / total) * 100)))
-      await saveServerAgent({ ...agent, generatedPosts: generated.slice(-total), backgroundProgress: progress, status: 'running', updated_at: new Date().toISOString() })
+      agent = { ...agent, backgroundProgress: progress, updated_at: new Date().toISOString() }
+      await saveServerAgent(agent)
     }
 
-    await saveServerAgent({ ...agent, generatedPosts: generated.slice(-total), backgroundProgress: 100, status: 'running', updated_at: new Date().toISOString() })
-  } catch {
-    // Keep the automation visible even if generation is unavailable.
+    const nextRun = campaignNextRun(agent.campaign)
+    await saveServerAgent({
+      ...agent,
+      status: previousStatus,
+      backgroundProgress: 100,
+      backgroundGeneration: { status: 'completed', startedAt, completedAt: new Date().toISOString(), error: null },
+      trigger: { ...agent.trigger, type: 'campaign', nextRun },
+      nextRunAt: nextRun || null,
+      updated_at: new Date().toISOString(),
+    })
+  } catch (error) {
+    const latest = await getServerAgent(agentId, userId).catch(() => null)
+    if (latest) {
+      const message = error instanceof Error ? error.message : 'Background generation failed.'
+      await saveServerAgent({
+        ...latest,
+        status: 'warning',
+        backgroundGeneration: { ...(latest.backgroundGeneration || {}), status: 'failed', error: message, failedAt: new Date().toISOString() },
+        updated_at: new Date().toISOString(),
+      }).catch(() => {})
+    }
   }
 }
 
@@ -2573,29 +2634,19 @@ async function activateCampaignHandler(req, res) {
   for (let index = 0; index < (agent.campaign.posts || []).length; index += 1) {
     const post = agent.campaign.posts[index]
     const platforms = Array.isArray(post?.platforms) && post.platforms.length ? post.platforms : ['linkedin']
-    const primaryPlatform = platforms[0] || 'linkedin'
-    const hasCaption = String(post?.captions?.[primaryPlatform] || '').trim().length > 0
+    const hasAllCaptions = platforms.every(platform => String(post?.captions?.[platform] || '').trim().length > 0)
+    const needsImage = agent.campaign?.meta?.includeImages === true || platforms.includes('instagram')
+    const hasRequiredImage = !needsImage || Boolean(post?.imageUrl || post?.image_url)
     const base = { ...post, approved: true, charged: post.charged === true, timezone, postingOption, scheduledLocalDate: body.localDate || null, scheduledLocalTime: body.localTime || null, status: post.status === 'pending_approval' || post.status === 'draft' ? 'scheduled' : post.status }
-    if (hasCaption) {
+    if (hasAllCaptions && hasRequiredImage) {
       preparedPosts.push(base)
       continue
     }
-    const topic = String(agent.campaign?.brand?.business || agent.name || 'your business growth')
-    const goal = String(agent.campaign?.description || agent.description || 'Grow reach and trust')
-    const audience = String(agent.campaign?.brand?.audience || 'ideal audience')
-    const tone = String(agent.campaign?.brand?.tone || 'confident and professional')
-    const scheduledFor = post?.scheduledAt ? new Date(post.scheduledAt) : new Date()
-    const outcome = await createBackgroundGenerationOutcome({
-      topic,
-      goal,
-      audience,
-      tone,
-      length: 'medium',
-      platform: primaryPlatform,
-      index: index + 1,
-      scheduledFor,
-    })
-    preparedPosts.push(applyBackgroundGenerationOutcomeToPost(base, { ...outcome, scheduledFor: outcome.scheduledFor || scheduledFor.toISOString(), createdAt: new Date().toISOString() }, primaryPlatform))
+    try {
+      preparedPosts.push(await prepareCampaignPostContent(agent, base, user, index))
+    } catch (error) {
+      return json(res, 503, { error: error instanceof Error ? error.message : 'Content preparation failed.', code: 'CONTENT_PREPARATION_FAILED' })
+    }
   }
   agent.campaign.posts = preparedPosts
   agent.trigger = { type: 'campaign', nextRun: campaignNextRun(agent.campaign), cron: agent.campaign.meta?.frequencyText || 'campaign' }
@@ -3153,7 +3204,8 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
   }
   await saveServerAgent({ ...existing, campaign })
 
-  const duePosts = (campaign.posts || []).filter(p => (p.status === 'scheduled' || p.status === 'pending_approval') && new Date(p.scheduledAt).getTime() <= now.getTime() + 5 * 60 * 1000)
+  const dueCutoff = trigger === 'manual' ? now.getTime() + 5 * 60 * 1000 : now.getTime()
+  const duePosts = (campaign.posts || []).filter(p => (p.status === 'scheduled' || p.status === 'pending_approval') && new Date(p.scheduledAt).getTime() <= dueCutoff)
     .sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime())
 
   let creditsUsed = 0
@@ -3162,7 +3214,7 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
   const steps = []
 
   for (const post of duePosts) {
-    const postResults = {}
+    const postResults = { ...(post.result || {}) }
     let postSuccess = 0
     let postFailed = 0
     let postSkipped = 0
@@ -3212,6 +3264,11 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
     }
 
     for (const platform of (post.platforms || [])) {
+      const confirmedPreviousResult = postResults[platform]
+      if (confirmedPreviousResult?.status === 'success' && confirmedPreviousResult?.id) {
+        postSuccess++
+        continue
+      }
       const usesComposio = composioPublishingPlatforms.has(platform)
       const action = { connector: platform, action: 'post', params: { text: post.captions?.[platform] || '', _skipFreeLimit: true } }
       const ready = usesComposio
@@ -3338,6 +3395,8 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
     campaign,
     executionHistory,
     executionsDone: executionHistory.length,
+    confirmedPosts: (campaign.posts || []).filter(post => post.status === 'posted').length,
+    executionsTotal: (campaign.posts || []).length,
     successfulRuns,
     failedRuns,
     successRate: executionHistory.length ? Math.round((successfulRuns / executionHistory.length) * 100) : 0,
@@ -7766,8 +7825,9 @@ const server = http.createServer(async (req, res) => {
     if (!user) return json(res, 401, { error: 'Authentication required' })
     const agent = await getServerAgent(automationId, user.id).catch(() => null)
     if (!agent) return json(res, 404, { error: 'Automation not found' })
+    if (agent.backgroundGeneration?.status === 'generating') return json(res, 202, { ok: true, started: false, status: 'generating' })
     void runAutomationBackgroundGeneration(automationId, user.id)
-    return json(res, 200, { ok: true, started: true })
+    return json(res, 202, { ok: true, started: true, status: 'generating' })
   }
   if (req.method === 'GET' && req.url === '/api/agents') {
     try {
