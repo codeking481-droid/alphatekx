@@ -4,6 +4,7 @@ import { getConnector } from './connectorRegistry'
 import { sendEmail } from '../integrations'
 import { randomUUID } from '../utils'
 import type { Agent, AgentExecution } from './types'
+import { supabase } from '../supabase'
 
 async function runLocalAction(agent: Agent, action: Agent['actions'][number], index: number): Promise<AgentExecution> {
   const start = Date.now()
@@ -49,7 +50,9 @@ export async function executeAgentNow(agent: Agent): Promise<AgentExecution[]> {
 export function useAgentExecutor() {
   useEffect(() => {
     const trigger = () => {
-      void fetch('/api/agents/run-due').then(async r => {
+      void (async () => {
+        const accessToken = (await supabase?.auth.getSession())?.data?.session?.access_token
+        const r = await fetch('/api/agents/run-due', { headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {} })
         if (!r.ok) return
         const data = await r.json().catch(() => null)
         if (data?.executed) {
@@ -64,7 +67,7 @@ export function useAgentExecutor() {
             setCache(merged)
           }
         }
-      }).catch(() => {})
+      })().catch(() => {})
     }
     trigger()
     const interval = window.setInterval(trigger, 20_000)

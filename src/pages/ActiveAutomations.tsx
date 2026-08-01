@@ -296,11 +296,11 @@ export default function ActiveAutomations() {
         <button onClick={() => setView('calendar')} className={`view-button ${view === 'calendar' ? 'view-button-active' : ''}`}><CalendarDays size={15}/>Calendar</button>
       </div>
     </div>
-    {visible.length === 0 ? <Empty title={agents.length ? 'No automations match this filter' : 'No running automations yet'} body={agents.length ? 'Choose another filter.' : 'Approve a plan in Command Centre and it will appear here.'} /> : view === 'calendar' ? <CalendarView agents={visible} /> : <section className="mt-6 grid gap-5 md:grid-cols-2">{visible.map(agent => <AutomationCard key={agent.id} agent={agent} />)}</section>}
+    {visible.length === 0 ? <Empty title={agents.length ? 'No automations match this filter' : 'No running automations yet'} body={agents.length ? 'Choose another filter.' : 'Approve a plan in Command Centre and it will appear here.'} /> : view === 'calendar' ? <CalendarView agents={visible} /> : <section className="mt-6 grid gap-5 md:grid-cols-2">{visible.map(agent => <AutomationCard key={agent.id} agent={agent} runningNow={runningNow} onRun={publishDueNow} />)}</section>}
   </Page>
 }
 
-function AutomationCard({ agent }: { agent: Agent }) {
+function AutomationCard({ agent, runningNow, onRun }: { agent: Agent; runningNow: boolean; onRun: (agent: Agent) => Promise<void> }) {
   const nextRun = nextRunOf(agent)
   const [now, setNow] = useState(Date.now())
 
@@ -311,13 +311,19 @@ function AutomationCard({ agent }: { agent: Agent }) {
 
   const nextRunLabel = nextRun ? `${new Date(nextRun).toLocaleString()} · ${formatCountdown(nextRun, now)}` : 'No future run'
   const state = displayStatus(agent)
-  return <Link to={`/active-automations/${agent.id}`} className="luxury-card block w-full max-w-full p-5 transition-all duration-300 hover:-translate-y-1 md:p-6">
+  const isDue = Boolean(nextRun && new Date(nextRun).getTime() <= now && ['running', 'active', 'warning', 'needs_attention'].includes(agent.status))
+  return <article className="luxury-card block w-full max-w-full p-5 transition-all duration-300 hover:-translate-y-1 md:p-6">
+    <Link to={`/active-automations/${agent.id}`} className="block">
     <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-xs font-black uppercase tracking-[.16em] text-[#FFD700]">{platformNames(agent)}</p><h2 className="mt-2 break-words text-lg font-black text-white">{agent.name}</h2></div><span className={`flex shrink-0 items-center gap-2 rounded-full px-3 py-1 text-[11px] font-black ${state === 'Running' ? 'bg-emerald-400/10 text-emerald-300' : state === 'Needs Attention' ? 'bg-[#FFD700]/10 text-[#FFD700]' : 'bg-white/[.055] text-slate-300'}`}><i className={`size-2 animate-pulse rounded-full ${state === 'Running' ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,.8)]' : 'bg-[#FFD700] shadow-[0_0_10px_rgba(255,215,0,.7)]'}`}/>{state}</span></div>
     <dl className="mt-6 grid grid-cols-2 gap-4 text-sm"><CardStat label="Schedule" value={agent.campaign?.meta?.frequencyText || agent.trigger?.cron || 'One time'} /><CardStat label="Progress" value={progress(agent)} /><CardStat label="Next run" value={nextRunLabel} /><CardStat label="Last result" value={lastResult(agent)} /></dl>
     <div className="mt-5 h-2 overflow-hidden rounded-full bg-white/[.08]"><div className="solar-progress h-full rounded-full transition-[width] duration-500" style={{ width: `${progressPercent(agent)}%` }}/></div>
-    <span className="mt-4 flex min-h-11 w-full items-center justify-center rounded-xl border border-white/10 bg-white/[.035] px-4 text-sm font-black text-white transition hover:bg-white/[.07]">View posts</span>
+    </Link>
+    <div className="mt-4 grid gap-2 sm:grid-cols-2">
+      <Link to={`/active-automations/${agent.id}`} className="flex min-h-11 w-full items-center justify-center rounded-xl border border-white/10 bg-white/[.035] px-4 text-sm font-black text-white transition hover:bg-white/[.07]">View posts</Link>
+      {isDue && <button type="button" onClick={() => void onRun(agent)} disabled={runningNow} className="solar-action min-h-11 rounded-xl px-4 text-sm disabled:opacity-50">{runningNow ? 'Publishing & verifying…' : 'Run now'}</button>}
+    </div>
     {displayStatus(agent) === 'Needs Attention' && <p className="mt-4 flex items-center gap-2 text-xs font-bold text-amber-300"><AlertCircle size={14}/>Open to see what needs attention.</p>}
-  </Link>
+  </article>
 }
 
 function CalendarView({ agents }: { agents: Agent[] }) {
