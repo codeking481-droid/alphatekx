@@ -429,6 +429,7 @@ export function createConversationEngine(deps) {
     spendUserCredits,
     getIntegrationStatus,
     getSmartImage,
+    executeAgent,
   } = deps
 
   function normalizeImageCommand(value) {
@@ -1911,7 +1912,11 @@ Return JSON: { "text": "..." }`
       draft.campaign.approved = true
       draft.campaign.status = 'running'
       draft.campaign.charged = false
-      draft.campaign.posts.forEach(p => { if (p.status === 'pending_approval' || p.status === 'draft' || p.status === 'awaiting_approval') p.status = 'scheduled' })
+      draft.campaign.posts.forEach(post => {
+        if (['posted', 'publishing', 'cancelled'].includes(post.status)) return
+        post.status = 'scheduled'
+        post.approved = true
+      })
     }
     draft.updatedAt = nowIso()
     const normalizedDraft = normalizeAutomationLifecycle(draft)
@@ -1921,13 +1926,29 @@ Return JSON: { "text": "..." }`
       draft.campaign = normalizedDraft.campaign
     }
 
+    await saveServerAgent(draft)
+    let finalAgent = draft
+    const publishNow = draft.campaign?.meta?.publishingMode === 'once_now' || draft.campaign?.meta?.postingOption === 'now'
+    if (publishNow && typeof executeAgent === 'function') {
+      const execution = await executeAgent(draft, user)
+      finalAgent = await getServerAgent(draft.id, user.id) || draft
+      conversation.automationDraft = finalAgent
+      if (execution.status === 'success' || execution.status === 'partial') {
+        const confirmed = (execution.steps || []).flatMap(step => Object.entries(step.result || {}))
+          .filter(([, result]) => result?.status === 'success' && result?.id)
+          .map(([platform, result]) => `${platform}: ${result.id}`)
+        addMessage(conversation, 'alpha', `Approved and published **${draft.name}**.${confirmed.length ? ` Confirmed provider ID${confirmed.length === 1 ? '' : 's'}: ${confirmed.join(', ')}.` : ''}`)
+      } else {
+        addMessage(conversation, 'alpha', `Approval was saved, but publication was not confirmed: ${execution.log || 'the provider did not confirm a post'}. No credit was charged for an unconfirmed post.`)
+      }
+    } else {
+      conversation.automationDraft = finalAgent
+      addMessage(conversation, 'alpha', `Automation **${draft.name}** is active.`)
+    }
     conversation.conversationStage = 'created'
     conversation.status = 'completed'
-    addMessage(conversation, 'alpha', `Automation **${draft.name}** is active.`)
-
-    await saveServerAgent(draft)
     await saveConversation(conversation)
-    return draft
+    return finalAgent
   }
 
   async function start(user, prompt) {

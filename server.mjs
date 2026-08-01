@@ -3901,6 +3901,7 @@ function getConversationEngine() {
     getUserCredits: user => getUserCredits(user, supabaseConfig()),
     spendUserCredits,
     getSmartImage: (user, content, objective, platform, options) => mediaLibrary.findSmartImage(supabaseConfig(), user, content, objective, platform, options),
+    executeAgent: (agent, user) => runAgent(agent, 'manual', user),
     getIntegrationStatus: async (userId, provider, userEmail = '') => {
       if (composioAutomationConnectors.has(provider)) {
         const composioStatus = await alphaConnector.getConnectionStatus({ id: userId, email: userEmail }, provider).catch(() => null)
@@ -8110,7 +8111,7 @@ const server = http.createServer(async (req, res) => {
           merged.campaign.approved = true
           merged.campaign.charged = false
           merged.campaign.posts = (merged.campaign.posts || []).map(post => {
-            if (post.status === 'pending_approval' || post.status === 'draft' || post.status === 'awaiting_approval') {
+            if (post.status === 'pending_approval' || post.status === 'draft' || post.status === 'awaiting_approval' || post.status === 'scheduled') {
               return { ...post, status: 'scheduled', approved: true, charged: false, providerPostId: undefined, providerUrl: undefined, executionKey: undefined }
             }
             return post
