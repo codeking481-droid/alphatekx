@@ -22,6 +22,7 @@
     "test:v1-reliability": "node --experimental-strip-types scripts/v1-reliability-tests.mjs",
     "test:signup": "node scripts/signup-reliability-tests.mjs",
     "test:campaign-popup": "node scripts/campaign-popup-tests.mjs",
+    "test:approval-execution": "node scripts/chat-approval-execution-tests.mjs",
     "test:connector-routing": "node scripts/connector-routing-tests.mjs",
     "test:whatsapp": "node scripts/whatsapp-tests.mjs",
     "test:facebook": "node scripts/facebook-oauth-tests.mjs",
