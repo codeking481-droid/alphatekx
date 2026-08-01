@@ -59,6 +59,14 @@ const tests = [
     assert.match(popup, /if \(postingOption !== 'now'\) onActivated/)
     assert.match(popup, /if \(result\?\.id\) confirmations\.push/)
   }],
+  ['go live never fails as a silent disabled click', () => {
+    assert.match(popup, /const activationBlocker =/)
+    assert.match(popup, /Cannot go live yet:/)
+    assert.match(popup, /disabled=\{activating\}/)
+    assert.doesNotMatch(popup, /disabled=\{!canActivate \|\| activating\}/)
+    assert.doesNotMatch(popup, /await saveAgent\(approvedAgent\)/)
+    assert.match(popup, /postingOption === 'now' \? 180_000 : 45_000/)
+  }],
 ]
 
 let failed = 0

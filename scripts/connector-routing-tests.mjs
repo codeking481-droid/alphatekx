@@ -5,6 +5,7 @@ const connectors = fs.readFileSync(new URL('../src/pages/Connectors.tsx', import
 const creations = fs.readFileSync(new URL('../src/pages/Creations.tsx', import.meta.url), 'utf8')
 const service = fs.readFileSync(new URL('../server/composioConnectorService.mjs', import.meta.url), 'utf8')
 const server = fs.readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
+const agents = fs.readFileSync(new URL('../src/pages/Agents.tsx', import.meta.url), 'utf8')
 
 const tests = [
   ['LinkedIn remains the only native connection on Connected Apps', () => {
@@ -36,6 +37,12 @@ const tests = [
     assert.match(server, /user_integrations\?user_id=eq\./)
     assert.match(server, /if \(toolkit === 'linkedin'\)/)
     assert.match(server, /LinkedIn disconnect could not be verified/)
+  }],
+  ['planner uses the same authoritative connection status as Connected Apps', () => {
+    assert.match(agents, /getConnectedApps/)
+    assert.match(agents, /Promise\.allSettled/)
+    assert.match(agents, /provider\.provider === 'twitter' \? 'x'/)
+    assert.match(agents, /provider\.ready === true \|\| provider\.status === 'connected'/)
   }],
 ]
 
