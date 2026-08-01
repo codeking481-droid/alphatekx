@@ -96,8 +96,9 @@ const tests = [
   ['automation planning and approval stay inside Alpha chat without popup entry points', () => {
     assert.doesNotMatch(agents, /MatureAutomationWizard|CampaignPreview|WorkflowPlan|wizard\.openWizard/)
     assert.doesNotMatch(home, /MatureAutomationWizard|useMatureWizard/)
-    assert.match(agents, /Approve and activate in chat/)
-    assert.match(agents, /awaiting_content_review' \? 'approve all' : 'approve'/)
+    assert.match(agents, /Approve & publish now/)
+    assert.match(agents, /Approve & activate/)
+    assert.match(agents, /onClick=\{\(\) => void send\('approve'\)\}/)
     assert.match(agents, /Plan ready in chat/)
   }],
   ['Alpha chat uses the resilient session client for admin and standard accounts', () => {
