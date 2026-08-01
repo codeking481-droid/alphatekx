@@ -3,6 +3,7 @@ import fs from 'node:fs'
 
 const popup = fs.readFileSync(new URL('../src/components/agents/CampaignPreview.tsx', import.meta.url), 'utf8')
 const agents = fs.readFileSync(new URL('../src/pages/Agents.tsx', import.meta.url), 'utf8')
+const wizard = fs.readFileSync(new URL('../src/components/automation/MatureAutomationWizard.tsx', import.meta.url), 'utf8')
 
 const tests = [
   ['LinkedIn is explicitly presented as native personal-profile publishing', () => {
@@ -69,6 +70,13 @@ const tests = [
   }],
   ['connect actions preserve the stopped campaign and return to it', () => {
     assert.match(popup, /returnTo=\$\{encodeURIComponent\(`\/automations\?resume=\$\{draft\.id\}`\)\}/)
+  }],
+  ['wizard Go Live performs one explicit confirmed activation', () => {
+    assert.doesNotMatch(wizard, /await generateContent\(\)\s*\n\s*\/\/ Auto-activate[\s\S]*?await autoActivate\(\)/)
+    assert.match(wizard, /if \(saving\) return/)
+    assert.match(wizard, /Activating securely/)
+    assert.match(wizard, /server did not confirm activation/i)
+    assert.match(wizard, /status: 'awaiting_approval'/)
   }],
 ]
 
