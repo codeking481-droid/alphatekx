@@ -9,6 +9,7 @@ import { hydrateCredits } from '../../lib/creditStore'
 import { saveAgent } from '../../lib/agents/agentStore'
 import { getApprovalBadgeState } from '../../lib/automation/approvalState'
 import { buildCampaignSchedulePlan, getPartsInTimeZone } from '../../lib/scheduling/nextPostCalculator'
+import { isAdminUser } from '../../lib/adminAccess'
 
 const WIZARD_KEY = 'alphatekx:mature-wizard'
 const WIZARD_DONE_KEY = 'alphatekx:mature-wizard-done'
@@ -112,6 +113,7 @@ function createDayContent(topic: string, goal: string, tone: string, audience: s
 
 export default function MatureAutomationWizard({ open, onComplete }: { open: boolean; onComplete: () => void }) {
   const { session, user } = useAuth()
+  const isAdmin = isAdminUser(user)
   const [step, setStep] = useState(0)
   const [direction, setDirection] = useState(1)
   const [showSkipConfirm, setShowSkipConfirm] = useState(false)
@@ -173,12 +175,10 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
   const selectedDuration = data.duration === 'custom'
     ? { id: 'custom', label: `Custom (${Math.max(1, Math.min(60, Number(data.customPostCount) || 4))} posts)`, postCount: Math.max(1, Math.min(60, Number(data.customPostCount) || 4)), description: 'Choose exactly how many posts' }
     : (DURATION_OPTIONS.find(option => option.id === data.duration) || DURATION_OPTIONS[1])
-  const getCreditsPerWeek = () => {
-    const dayCount = data.postDays.length || 1
-    return dayCount * Math.max(1, data.platforms.length) * 2
-  }
-  const totalCreditsNeeded = getCreditsPerWeek() * Math.max(1, Math.round(selectedDuration.postCount / Math.max(1, data.postDays.length || 1)))
-  const hasEnoughCredits = creditBalance >= totalCreditsNeeded
+  // One approved content item costs one credit even when Alpha adapts it for
+  // several platforms. The server recomputes this value authoritatively.
+  const totalCreditsNeeded = selectedDuration.postCount
+  const hasEnoughCredits = isAdmin || creditBalance >= totalCreditsNeeded
 
   const handleApprove = async () => {
     if (!user?.id) { setError('Please sign in.'); return }
@@ -187,8 +187,6 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
       setSaving(false)
       setGenerating(true); setGenProgress(0); setStep(7)
       await generateContent()
-      // Auto-activate after generation
-      await autoActivate()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Generation failed.')
       setSaving(false)
@@ -271,12 +269,13 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
   }
 
   const autoActivate = async () => {
+    if (saving) return
+    setSaving(true)
+    setError('')
     try {
       const raw = localStorage.getItem('alphatekx:running-automation')
       if (!raw) throw new Error('No automation draft found')
       const auto = JSON.parse(raw)
-      auto.status = 'active'
-      localStorage.setItem('alphatekx:running-automation', JSON.stringify(auto))
 
       const timezone = data.timezone || 'Africa/Lagos'
       const firstScheduled = Array.isArray(auto.scheduledDates) && auto.scheduledDates.length ? new Date(auto.scheduledDates[0]) : null
@@ -303,8 +302,8 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
           imageUrl: postEntry.imageUrl || '',
           imageSource: 'pollination',
           captions: Object.fromEntries(platforms.map(platform => [platform, postEntry.content || `Fresh ${data.topic} insight for ${platform}`])),
-          baseCredits: 3,
-          credits: 3,
+          baseCredits: 1,
+          credits: 1,
         }
       }) : []
 
@@ -320,9 +319,9 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
         integrations: data.platforms,
         timezone,
         schedule: { time: data.postTime, timezone, frequency: 'weekly' as const },
-        status: 'running' as const,
-        approvalState: getApprovalBadgeState({ status: 'running', approved: true, campaign: { status: 'running', approved: true } }).label,
-        approved: true,
+        status: 'awaiting_approval' as const,
+        approvalState: getApprovalBadgeState({ status: 'awaiting_approval', approved: false, campaign: { status: 'ready_for_confirmation', approved: false } }).label,
+        approved: false,
         approvalPolicy: 'implicit' as const,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -332,7 +331,7 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
         executionsDone: 0,
         executionsTotal: auto.totalRuns,
         creditsNeeded: totalCreditsNeeded,
-        creditsPerRun: totalCreditsNeeded,
+        creditsPerRun: 1,
         nextRunAt: data.publishMode === 'publish-now' ? new Date().toISOString() : (auto.scheduledDates?.[0] || new Date().toISOString()),
         campaign: {
           id: crypto.randomUUID(),
@@ -350,8 +349,8 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
           },
           posts,
           totalCredits: totalCreditsNeeded,
-          status: 'running',
-          approved: true,
+          status: 'ready_for_confirmation',
+          approved: false,
           charged: false,
           autoPublish: true,
         },
@@ -366,6 +365,8 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
       await saveAgent(agent as any)
 
       const accessToken = (await supabase?.auth.getSession())?.data?.session?.access_token || session?.access_token
+      const controller = new AbortController()
+      const timer = window.setTimeout(() => controller.abort(), data.publishMode === 'publish-now' ? 180_000 : 45_000)
       const activationRes = await fetch(`/api/agents/campaign/${encodeURIComponent(agent.id)}/activate`, {
         method: 'POST',
         headers: {
@@ -380,12 +381,29 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
           timezone,
           startAt: data.publishMode === 'publish-now' ? new Date().toISOString() : (firstScheduled ? firstScheduled.toISOString() : new Date().toISOString()),
         }),
+        signal: controller.signal,
       })
+      window.clearTimeout(timer)
       const activationData = await activationRes.json().catch(() => ({}))
       if (!activationRes.ok) throw new Error(activationData.error || 'Activation failed')
+      const immediateConfirmed = data.publishMode === 'publish-now'
+        && activationData.execution?.status === 'success'
+        && (activationData.execution?.steps || []).some((step: { providerPostId?: string; linkedinPostId?: string }) => step.providerPostId || step.linkedinPostId)
+      const scheduledConfirmed = data.publishMode !== 'publish-now'
+        && activationData.agent?.status === 'running'
+        && activationData.agent?.campaign?.approved === true
+      if (!activationData.agent || (!immediateConfirmed && !scheduledConfirmed)) {
+        throw new Error('The server did not confirm activation. Nothing was marked live.')
+      }
+      auto.status = 'active'
+      localStorage.setItem('alphatekx:running-automation', JSON.stringify(auto))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not activate the automation.')
+      setError(err instanceof DOMException && err.name === 'AbortError'
+        ? 'Activation timed out before the server confirmed it. Nothing was marked live; please retry once.'
+        : (err instanceof Error ? err.message : 'Could not activate the automation.'))
       return
+    } finally {
+      setSaving(false)
     }
     try { localStorage.setItem(WIZARD_DONE_KEY, '1') } catch {}
     try { localStorage.removeItem(WIZARD_KEY) } catch {}
@@ -446,6 +464,7 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
             <div className="h-full bg-gradient-to-r from-indigo-500 to-pink-500 rounded-full transition-all duration-500" style={{ width: `${genProgress}%` }} />
           </div>
           <p className="text-xs text-zinc-500 font-bold">{genProgress}%</p>
+          {error && <div role="alert" aria-live="assertive" className="mt-4 flex w-full items-start gap-2 rounded-xl border border-rose-500/25 bg-rose-500/10 p-3 text-left text-sm font-semibold text-rose-200"><AlertCircle size={16} className="mt-0.5 shrink-0"/><span>{error}</span></div>}
           {showConfirm && generatedPreview && (
             <div className="mt-6 w-full">
               <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 mb-4 text-left">
@@ -456,8 +475,8 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
                 )}
               </div>
               <p className="text-xs text-zinc-500 mb-4">+ {generatedPreview.totalRuns - 1} more posts ready to publish according to your schedule</p>
-              <button onClick={autoActivate} className="w-full min-h-12 rounded-xl bg-indigo-600 text-sm font-semibold text-white hover:bg-indigo-500">
-                <CheckCircle2 size={16} className="inline mr-2" /> Go Live
+              <button onClick={() => void autoActivate()} disabled={saving} className="w-full min-h-12 rounded-xl bg-indigo-600 text-sm font-semibold text-white hover:bg-indigo-500 disabled:cursor-wait disabled:opacity-60">
+                {saving ? <LoaderCircle size={16} className="mr-2 inline animate-spin" /> : <CheckCircle2 size={16} className="inline mr-2" />} {saving ? 'Activating securely...' : 'Go Live'}
               </button>
             </div>
           )}
@@ -627,7 +646,7 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
           {data.postTime && data.postDays.length > 0 && (
             <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/10 p-3 space-y-1">
               <p className="text-sm font-semibold text-indigo-300">{selectedDuration.label} · {data.publishMode === 'publish-now' ? 'publish now' : `posts every ${data.postDays.join(', ')} at ${data.postTime} WAT`}</p>
-              <p className="text-xs text-indigo-400">{selectedDuration.postCount} planned posts · {getCreditsPerWeek()} credits/week</p>
+              <p className="text-xs text-indigo-400">{selectedDuration.postCount} planned posts · one credit per confirmed post</p>
             </div>
           )}
           <div className="mt-5 flex flex-col gap-2 sm:flex-row">
@@ -663,7 +682,7 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
             </div>
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-semibold text-zinc-400">Your balance</span>
-              <span className={`text-sm font-bold ${hasEnoughCredits ? 'text-emerald-400' : 'text-rose-400'}`}>{creditBalance}</span>
+              <span className={`text-sm font-bold ${hasEnoughCredits ? 'text-emerald-400' : 'text-rose-400'}`}>{isAdmin ? 'Unlimited' : creditBalance}</span>
             </div>
             {!hasEnoughCredits && (
               <div className="mt-3 flex gap-2">
