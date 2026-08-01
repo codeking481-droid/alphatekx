@@ -755,8 +755,17 @@ export function confirmedPublishedContentId(providerId, value, depth = 0) {
   return ''
 }
 
-function findFacebookPage(value, preferredId = '', depth = 0) {
+export function findFacebookPage(value, preferredId = '', depth = 0) {
   if (!value || depth > 6) return null
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed || (!trimmed.startsWith('{') && !trimmed.startsWith('['))) return null
+    try {
+      return findFacebookPage(JSON.parse(trimmed), preferredId, depth + 1)
+    } catch {
+      return null
+    }
+  }
   if (Array.isArray(value)) {
     const pages = value.map(item => findFacebookPage(item, preferredId, depth + 1)).filter(Boolean)
     return pages.find(page => preferredId && page.id === preferredId) || pages[0] || null
@@ -765,7 +774,7 @@ function findFacebookPage(value, preferredId = '', depth = 0) {
   const id = String(value.page_id || value.pageId || value.id || '').trim()
   const looksLikePage = id && (value.name || value.page_name || value.access_token || value.tasks || value.category)
   if (looksLikePage && (!preferredId || id === preferredId)) return { id, name: String(value.name || value.page_name || '') }
-  for (const nested of ['data', 'pages', 'items', 'response', 'result']) {
+  for (const nested of ['data', 'pages', 'managed_pages', 'accounts', 'items', 'response', 'result']) {
     const found = findFacebookPage(value[nested], preferredId, depth + 1)
     if (found) return found
   }
@@ -1241,10 +1250,10 @@ export async function executeProviderAction(user, providerId, actionId, payload,
           let pageId = String(actionArguments.page_id || actionArguments.pageId || '').trim()
           let pageName = ''
           if (!pageId) {
-            const pagesResult = await executeTool(ACTION_TOOL_MAP['facebook.list_managed_pages'], {})
+            const pagesResult = await executeTool(ACTION_TOOL_MAP['facebook.list_managed_pages'], { limit: 100 })
             if (pagesResult?.successful !== true || pagesResult?.data == null) throw new Error(pagesResult?.error || 'Facebook did not return any managed Pages')
             const page = findFacebookPage(pagesResult.data)
-            if (!page?.id) throw new Error('No managed Facebook Page was found for this connection')
+            if (!page?.id) throw new Error('No managed Facebook Page was returned. Reconnect Facebook and approve pages_show_list, pages_read_engagement, and pages_manage_posts, then select a Page you manage.')
             pageId = page.id
             pageName = page.name
           }

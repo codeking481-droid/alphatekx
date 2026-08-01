@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { buildSocialPublishingAction, providerPostIds, xPostText } from '../server/automation/socialPublishing.mjs'
-import { confirmedProviderId, confirmedPublishedContentId, shouldReclaimClaimedExecution } from '../server/composioConnectorService.mjs'
+import { confirmedProviderId, confirmedPublishedContentId, findFacebookPage, shouldReclaimClaimedExecution } from '../server/composioConnectorService.mjs'
 
 let passed = 0
 function test(name, fn) {
@@ -66,7 +66,14 @@ test('Facebook resolves a managed Page and chooses the correct media tool', () =
   const source = fs.readFileSync(new URL('../server/composioConnectorService.mjs', import.meta.url), 'utf8')
   assert.match(source, /FACEBOOK_LIST_MANAGED_PAGES/)
   assert.match(source, /FACEBOOK_CREATE_PHOTO_POST/)
-  assert.match(source, /No managed Facebook Page was found/)
+  assert.match(source, /pages_show_list, pages_read_engagement, and pages_manage_posts/)
+})
+
+test('Facebook resolves managed Pages from current Composio response shapes', () => {
+  const page = { id: '123456789012345', name: 'AlphaTekx', access_token: 'redacted', tasks: ['CREATE_CONTENT'] }
+  assert.deepEqual(findFacebookPage({ data: [page] }), { id: page.id, name: page.name })
+  assert.deepEqual(findFacebookPage(JSON.stringify({ data: [page] })), { id: page.id, name: page.name })
+  assert.deepEqual(findFacebookPage({ response: { accounts: [page] } }), { id: page.id, name: page.name })
 })
 
 test('X uploads media then attaches the confirmed media ID to the real post', () => {
