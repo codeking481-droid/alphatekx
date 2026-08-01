@@ -4,6 +4,25 @@
 
 begin;
 
+create table if not exists public.connector_executions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  toolkit_slug text not null,
+  capability_id text not null,
+  status text not null default 'claimed',
+  approval_id text not null,
+  idempotency_key text not null,
+  provider_execution_id text,
+  result_metadata jsonb not null default '{}'::jsonb,
+  credits_charged integer not null default 0,
+  error_code text,
+  created_at timestamptz not null default now(),
+  completed_at timestamptz,
+  unique(user_id, idempotency_key)
+);
+create index if not exists connector_executions_history
+  on public.connector_executions(user_id, toolkit_slug, created_at desc);
+
 create table if not exists public.user_integrations (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,

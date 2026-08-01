@@ -3,6 +3,7 @@
 // No credentials/tokens leave the server
 
 import { Composio } from '@composio/core'
+import { createHash } from 'node:crypto'
 import { supabaseServiceHeaders } from './supabaseHeaders.mjs'
 import { AUTH_CONFIGS } from './composioAuthConfigs.mjs'
 
@@ -469,8 +470,69 @@ async function persistExecution(record) {
     body: JSON.stringify(record),
   })
   if (response.status === 409) return false
-  if (!response.ok) throw new Error('Execution history could not be saved')
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '')
+    if (response.status === 400 || response.status === 404) return persistExecutionFallback(record)
+    console.error('[AlphaTekX] connector_executions insert failed', response.status, detail)
+    throw new Error(`Execution history could not be saved (${response.status})`)
+  }
   return true
+}
+
+function fallbackExecutionId(userId, idempotencyKey) {
+  return `connector:${createHash('sha256').update(`${userId}:${idempotencyKey}`).digest('hex')}`
+}
+
+async function findExecutionFallback(userId, idempotencyKey) {
+  const config = persistenceConfig()
+  if (!config) return null
+  const id = fallbackExecutionId(userId, idempotencyKey)
+  const response = await fetch(`${config.url}/rest/v1/agent_executions?id=eq.${encodeURIComponent(id)}&select=data&limit=1`, {
+    headers: supabaseServiceHeaders(config.service),
+  })
+  if (!response.ok) {
+    console.error('[AlphaTekX] fallback execution history read failed', response.status, await response.text().catch(() => ''))
+    throw new Error(`Durable execution history could not be read (${response.status})`)
+  }
+  return (await response.json())?.[0]?.data || null
+}
+
+async function persistExecutionFallback(record) {
+  const config = persistenceConfig()
+  if (!config) return true
+  const id = fallbackExecutionId(record.user_id, record.idempotency_key)
+  const response = await fetch(`${config.url}/rest/v1/agent_executions`, {
+    method: 'POST',
+    headers: supabaseServiceHeaders(config.service, { Prefer: 'return=minimal' }),
+    body: JSON.stringify({ id, agent_id: String(record.idempotency_key).split(':')[0] || id, data: record }),
+  })
+  if (response.status === 409) return false
+  if (!response.ok) {
+    console.error('[AlphaTekX] fallback execution claim failed', response.status, await response.text().catch(() => ''))
+    throw new Error(`Durable execution claim could not be saved (${response.status})`)
+  }
+  return true
+}
+
+async function finishExecutionFallback(userId, idempotencyKey, changes) {
+  const config = persistenceConfig()
+  if (!config) return
+  const previous = await findExecutionFallback(userId, idempotencyKey)
+  if (!previous) throw new Error('Durable execution claim disappeared before completion')
+  const id = fallbackExecutionId(userId, idempotencyKey)
+  const response = await fetch(`${config.url}/rest/v1/agent_executions?id=eq.${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: supabaseServiceHeaders(config.service, { Prefer: 'return=minimal' }),
+    body: JSON.stringify({
+      data: {
+        ...previous,
+        ...changes,
+        completed_at: Object.prototype.hasOwnProperty.call(changes, 'completed_at') ? changes.completed_at : new Date().toISOString(),
+      },
+      updated_at: new Date().toISOString(),
+    }),
+  })
+  if (!response.ok) throw new Error(`Durable execution result could not be saved (${response.status})`)
 }
 
 async function finishExecution(userId, idempotencyKey, changes) {
@@ -481,7 +543,10 @@ async function finishExecution(userId, idempotencyKey, changes) {
     headers: supabaseServiceHeaders(config.service, { Prefer: 'return=minimal' }),
     body: JSON.stringify({ ...changes, completed_at: new Date().toISOString() }),
   })
-  if (!response.ok) throw new Error('Execution result could not be saved')
+  if (!response.ok) {
+    if (response.status === 400 || response.status === 404) return finishExecutionFallback(userId, idempotencyKey, changes)
+    throw new Error(`Execution result could not be saved (${response.status})`)
+  }
 }
 
 async function reclaimFailedExecution(userId, idempotencyKey, approvalId) {
@@ -500,7 +565,18 @@ async function reclaimFailedExecution(userId, idempotencyKey, approvalId) {
       credits_charged: 0,
     }),
   })
-  if (!response.ok) throw new Error('Failed publication could not be reclaimed safely')
+  if (!response.ok) {
+    if (response.status === 400 || response.status === 404) {
+      const previous = await findExecutionFallback(userId, idempotencyKey)
+      if (previous?.status !== 'failed') return false
+      await finishExecutionFallback(userId, idempotencyKey, {
+        status: 'claimed', approval_id: approvalId, error_code: null, completed_at: null,
+        provider_execution_id: null, result_metadata: { retriedAt: new Date().toISOString() }, credits_charged: 0,
+      })
+      return true
+    }
+    throw new Error(`Failed publication could not be reclaimed safely (${response.status})`)
+  }
   const rows = await response.json().catch(() => [])
   return Array.isArray(rows) && rows.length === 1
 }
@@ -511,7 +587,12 @@ async function findExecution(userId, idempotencyKey) {
   const response = await fetch(`${config.url}/rest/v1/connector_executions?user_id=eq.${encodeURIComponent(userId)}&idempotency_key=eq.${encodeURIComponent(idempotencyKey)}&select=*&limit=1`, {
     headers: supabaseServiceHeaders(config.service),
   })
-  if (!response.ok) throw new Error('Execution history could not be read')
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '')
+    if (response.status === 400 || response.status === 404) return findExecutionFallback(userId, idempotencyKey)
+    console.error('[AlphaTekX] connector_executions read failed', response.status, detail)
+    throw new Error(`Execution history could not be read (${response.status})`)
+  }
   return (await response.json())?.[0] || null
 }
 
