@@ -3,7 +3,6 @@
 import { useEffect, useState, type ReactNode } from "react"
 import {
   ArrowRight,
-  Check,
   CheckCircle2,
   ChevronRight,
   FileText,
@@ -254,6 +253,50 @@ export default function Page() {
               <p className="mt-3 text-sm leading-7 text-[#888888]">{card.body}</p>
             </GlassCard>
           ))}
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+          <GlassCard className="border-[#FFD60A]/20 bg-[linear-gradient(135deg,rgba(255,214,10,0.12),rgba(168,85,247,0.16))]">
+            <p className="text-[11px] font-black uppercase tracking-[0.32em] text-[#FFD60A]">What changes</p>
+            <h3 className="mt-3 text-2xl font-black text-white sm:text-3xl">You stop doing the work that should be automated.</h3>
+            <p className="mt-4 text-sm leading-8 text-[#888888] sm:text-base">
+              AlphaTekX becomes your operating layer for content, replies, approvals, and publishing. It does not replace your judgment; it removes the repetitive layer between your idea and your public output.
+            </p>
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              {[
+                { title: "One approval layer", body: "You approve once and the engine handles the rest." },
+                { title: "One voice model", body: "Your words, your tone, your standards—every output stays aligned." },
+                { title: "One growth engine", body: "Posts, replies, and distribution stay consistent even when you are offline." },
+                { title: "One operating system", body: "Your Docs, Gmail, GitHub, and Sheets all feed the same motion." },
+              ].map((item) => (
+                <div key={item.title} className="rounded-[1rem] border border-[#1A1A1A] bg-[#0A0A0A] p-4">
+                  <h4 className="text-sm font-black uppercase tracking-[0.24em] text-white">{item.title}</h4>
+                  <p className="mt-2 text-sm leading-7 text-[#888888]">{item.body}</p>
+                </div>
+              ))}
+            </div>
+          </GlassCard>
+
+          <GlassCard className="border-[#1A1A1A] bg-[#0A0A0A]">
+            <p className="text-[11px] font-black uppercase tracking-[0.32em] text-[#FFD60A]">Built for founders</p>
+            <div className="mt-4 space-y-3">
+              {[
+                ["Voice trained on your real work", "From docs, emails, and GitHub history."],
+                ["Approval stays under your control", "One click, no chaos, no blind autopilot."],
+                ["Publishing happens on time", "Even when you are in deep work or asleep."],
+              ].map(([title, body]) => (
+                <div key={title} className="rounded-[1rem] border border-[#1A1A1A] bg-[#000000] p-4">
+                  <div className="text-sm font-black uppercase tracking-[0.24em] text-white">{title}</div>
+                  <div className="mt-2 text-sm leading-7 text-[#888888]">{body}</div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-6 rounded-[1rem] border border-[#FFD60A]/20 bg-[#FFD60A]/10 p-4 text-sm leading-8 text-[#FDE68A]">
+              “The system does not replace your judgment. It removes the friction between your idea and your audience.”
+            </div>
+          </GlassCard>
         </div>
       </section>
 
