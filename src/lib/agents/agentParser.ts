@@ -62,13 +62,8 @@ function detectActions(input: string, userEmail?: string): AgentAction[] {
   const lower = input.toLowerCase()
   const actions: AgentAction[] = []
   const platforms: Record<string, string> = {
-    facebook: 'facebook',
     linkedin: 'linkedin',
-    x: 'x',
-    twitter: 'x',
-    instagram: 'instagram',
     threads: 'threads',
-    tiktok: 'tiktok',
     youtube: 'youtube',
     pinterest: 'pinterest',
     reddit: 'reddit',
@@ -85,7 +80,7 @@ function detectActions(input: string, userEmail?: string): AgentAction[] {
   if (lower.includes('post') || lower.includes('publish') || lower.includes('share')) {
     const targets: string[] = []
     Object.keys(platforms).forEach(key => { if (lower.includes(key)) targets.push(platforms[key]) })
-    if (!targets.length) targets.push('linkedin', 'x')
+    if (!targets.length) targets.push('linkedin')
     const research = /news|search the internet|latest|trending|updates|what.*happening/.test(lower)
     const includeImage = /picture|image|photo|with a pic|including pictures|with an image/.test(lower)
     const topicMatch = input.match(/about\s+([^,.!?]+)/i) || input.match(/post\s+(?:news|an?\s+)?(?:about|on)?\s*([^,.!?]+)/i)

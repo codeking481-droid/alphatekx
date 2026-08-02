@@ -27,7 +27,7 @@ type BrandForm = {
 type PublishConfirmation = { platform: string; id: string; url?: string }
 
 const platformNames: Record<string, string> = {
-  facebook: 'Facebook', linkedin: 'LinkedIn', instagram: 'Instagram', x: 'X', twitter: 'X', whatsapp: 'WhatsApp', telegram: 'Telegram', slack: 'Slack', discord: 'Discord'
+  linkedin: 'LinkedIn', youtube: 'YouTube', whatsapp: 'WhatsApp', telegram: 'Telegram', slack: 'Slack', discord: 'Discord'
 }
 
 function toDatetimeLocal(iso?: string) {
@@ -53,13 +53,13 @@ function isServiceStatus(value: unknown): value is Partial<ServiceStatus> {
 }
 
 function connectorConnected(id: string, status: IntegrationStatus) {
-  const s = status[id] || status[(id === 'x' ? 'twitter' : id)]
+  const s = status[id]
   if (!isServiceStatus(s)) return false
   return Boolean(s.connected && s.ready)
 }
 
 function connectorState(id: string, status: IntegrationStatus) {
-  const value = status[id] || status[(id === 'x' ? 'twitter' : id)]
+  const value = status[id]
   if (!isServiceStatus(value)) return { connected: false, ready: false, label: 'Not connected' }
   if (value.connected && value.ready) return { connected: true, ready: true, label: id === 'linkedin' ? 'LinkedIn personal profile ready' : 'Ready to publish' }
   if (value.connected) return { connected: true, ready: false, label: id === 'linkedin' ? 'Reconnect to approve LinkedIn publishing' : 'Reconnect required' }
@@ -139,8 +139,11 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
   const missingBrand = !brand.audience.trim() || !brand.tone.trim()
   const requiredConnectors = platformIds.filter(id => !connectorConnected(id, integrationStatus))
   const missingCaptions = campaign.posts.some(post => (post.platforms || []).some(platform => !String(post.captions?.[platform] || '').trim()))
-  const requiresImage = campaign.meta.includeImages === true || platformIds.includes('instagram')
-  const missingImages = requiresImage && campaign.posts.some(post => !String(post.imageUrl || post.image_url || '').trim())
+  const requiresImage = campaign.meta.includeImages === true
+  const missingImages = requiresImage && campaign.posts.some(post => {
+    const imageValue = (post as { imageUrl?: string; image_url?: string }).imageUrl || (post as { imageUrl?: string; image_url?: string }).image_url
+    return !String(imageValue || '').trim()
+  })
   const previewReady = !missingCaptions && !missingImages
   // One approved content item costs one credit across all selected platforms.
   const total = Math.max(1, campaign.posts.length)

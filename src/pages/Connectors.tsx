@@ -1,20 +1,20 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, CheckCircle2, LoaderCircle, X, ExternalLink, AlertCircle, Bot, Activity, ChevronRight } from 'lucide-react'
-import { FaFacebook, FaInstagram, FaLinkedin, FaXTwitter, FaTiktok, FaYoutube, FaGoogle, FaGithub, FaDiscord } from 'react-icons/fa6'
+import { FaLinkedin, FaYoutube, FaGoogle, FaGithub, FaDiscord } from 'react-icons/fa6'
 import { useAuth } from '../lib/auth'
 import { getConnectedApps, connectProvider, disconnectProvider } from '../lib/connectors/connectorApi'
 import { startLinkedInAuth } from '../lib/integrations'
 
 function normalizeProviderId(provider: string) {
-  return provider === 'twitter' ? 'x' : provider
+  return provider
 }
 
 function connectedCacheKey(userId?: string) {
   return `alphatekx:connected-platforms:${userId || 'anonymous'}`
 }
 
-const composioOAuthProviders = new Set(['gmail', 'github', 'googledocs', 'googlesheets', 'discord', 'whatsapp', 'facebook', 'instagram', 'x', 'youtube'])
+const composioOAuthProviders = new Set(['gmail', 'github', 'googledocs', 'googlesheets', 'discord', 'whatsapp', 'youtube'])
 const serverManagedProviders = new Set<string>()
 const releasedPlatforms = ['linkedin', 'gmail', ...composioOAuthProviders]
 const publicConnectorIds = new Set(releasedPlatforms)
@@ -27,12 +27,7 @@ const PLATFORM_LIST = [
   { id: 'googlesheets', name: 'Google Sheets', icon: FaGoogle, color: '#34A853', description: 'Spreadsheet workflows', native: false },
   { id: 'discord', name: 'Discord', icon: FaDiscord, color: '#5865F2', description: 'Server alerts and channels', native: false },
   { id: 'whatsapp', name: 'WhatsApp', icon: FaGoogle, color: '#25D366', description: 'Business messaging', native: false },
-  { id: 'facebook', name: 'Facebook', icon: FaFacebook, color: '#1877F2', description: 'Pages and publishing', native: false },
-  { id: 'instagram', name: 'Instagram', icon: FaInstagram, color: '#E4405F', description: 'Posts, reels and stories', native: false },
-  { id: 'x', name: 'X', icon: FaXTwitter, color: '#000000', description: 'Posts and threads', native: false },
   { id: 'youtube', name: 'YouTube', icon: FaYoutube, color: '#FF0000', description: 'Videos and channel actions', native: false },
-  { id: 'tiktok', name: 'TikTok', icon: FaTiktok, color: '#000000', description: 'Short-form video', native: false, comingSoon: true },
-  { id: 'snapchat', name: 'Snapchat', icon: FaTiktok, color: '#FFFC00', description: 'Stories and creative campaigns', native: false, comingSoon: true },
 ]
 
 export default function Connectors() {

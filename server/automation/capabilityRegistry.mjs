@@ -123,29 +123,6 @@ const CAPABILITIES = [
       /sheets?.*(?:append|add|log)/i,
     ],
   },
-  {
-    id: 'facebook-post',
-    name: 'Post to Facebook',
-    description: 'Publish a post to a Facebook page.',
-    supported: true,
-    requiredConnectors: ['facebook'],
-    patterns: [
-      /post.*(?:to\s+)?facebook/i,
-      /facebook\s*(?:post|publish)/i,
-    ],
-  },
-  {
-    id: 'instagram-post',
-    name: 'Post to Instagram',
-    description: 'Publish a post to Instagram.',
-    supported: false,
-    reason: 'Instagram integration is not available in this release.',
-    alternative: 'Try Telegram, Slack, email, or a Google Sheets log.',
-    patterns: [
-      /post.*(?:to\s+)?instagram/i,
-      /instagram\s*(?:post|publish)/i,
-    ],
-  },
 ]
 
 function extractTime(text) {
@@ -714,8 +691,6 @@ export const SUPPORTED_CONNECTOR_ACTIONS = {
   slack: ['send_message'],
   discord: ['send_message'],
   linkedin: ['post'],
-  x: ['post', 'tweet'],
-  facebook: ['post', 'tweet'],
   whatsapp: ['send_message'],
   notion: ['create_page', 'append_block'],
   supabase: ['insert_row', 'backup'],
