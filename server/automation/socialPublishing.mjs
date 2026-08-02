@@ -27,16 +27,6 @@ export function buildSocialPublishingAction(platformValue, post = {}, captionVal
     return { action: 'upload_video', params: { title: String(post.title || post.topic || 'AlphaTekx video').slice(0, 100), description: caption, tags: post.tags || [], privacyStatus: post.privacyStatus || 'public', video_url: videoUrl } }
   }
   throw new Error(`No Composio publishing action exists for ${platformValue}.`)
-    const to = String(post.to || campaign.meta?.to || campaign.meta?.recipient || '').trim()
-    if (!to) throw new Error('WhatsApp needs the recipient phone number with country code before publishing.')
-    return { action: 'send_message', params: { to, message: caption } }
-  }
-  if (platform === 'youtube') {
-    const videoUrl = String(post.videoUrl || post.video_url || '').trim()
-    if (!videoUrl) throw new Error('YouTube needs a video selected from Media Library before publishing.')
-    return { action: 'upload_video', params: { title: String(post.title || post.topic || 'AlphaTekx video').slice(0, 100), description: caption, tags: post.tags || [], privacyStatus: post.privacyStatus || 'public', video_url: videoUrl } }
-  }
-  throw new Error(`No Composio publishing action exists for ${platformValue}.`)
 }
 
 export function providerPostIds(results = {}) {
