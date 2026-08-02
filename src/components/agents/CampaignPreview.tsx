@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AlertCircle, CalendarClock, CheckCircle2, ExternalLink, LoaderCircle, Sparkles, X, Zap } from 'lucide-react'
 import { ConnectorIcon } from './ConnectorIcon'
-import { getConnector } from '../../lib/agents/connectorRegistry'
+import { getAllowedConnector } from '../../lib/agents/connectorRegistry'
 import { getAgents, saveAgent, setCache } from '../../lib/agents/agentStore'
 import type { Agent } from '../../lib/agents/types'
 import type { IntegrationStatus, ServiceStatus } from '../../lib/integrations'
@@ -27,7 +27,14 @@ type BrandForm = {
 type PublishConfirmation = { platform: string; id: string; url?: string }
 
 const platformNames: Record<string, string> = {
-  facebook: 'Facebook', linkedin: 'LinkedIn', instagram: 'Instagram', x: 'X', twitter: 'X', whatsapp: 'WhatsApp', telegram: 'Telegram', slack: 'Slack', discord: 'Discord'
+  linkedin: 'LinkedIn Native',
+  gmail: 'Gmail',
+  discord: 'Discord',
+  github: 'GitHub',
+  googledocs: 'Google Docs',
+  google_docs: 'Google Docs',
+  googlesheets: 'Google Sheets',
+  google_sheets: 'Google Sheets',
 }
 
 function toDatetimeLocal(iso?: string) {
@@ -53,13 +60,13 @@ function isServiceStatus(value: unknown): value is Partial<ServiceStatus> {
 }
 
 function connectorConnected(id: string, status: IntegrationStatus) {
-  const s = status[id] || status[(id === 'x' ? 'twitter' : id)]
+  const s = status[id]
   if (!isServiceStatus(s)) return false
   return Boolean(s.connected && s.ready)
 }
 
 function connectorState(id: string, status: IntegrationStatus) {
-  const value = status[id] || status[(id === 'x' ? 'twitter' : id)]
+  const value = status[id]
   if (!isServiceStatus(value)) return { connected: false, ready: false, label: 'Not connected' }
   if (value.connected && value.ready) return { connected: true, ready: true, label: id === 'linkedin' ? 'LinkedIn personal profile ready' : 'Ready to publish' }
   if (value.connected) return { connected: true, ready: false, label: id === 'linkedin' ? 'Reconnect to approve LinkedIn publishing' : 'Reconnect required' }
@@ -139,8 +146,11 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
   const missingBrand = !brand.audience.trim() || !brand.tone.trim()
   const requiredConnectors = platformIds.filter(id => !connectorConnected(id, integrationStatus))
   const missingCaptions = campaign.posts.some(post => (post.platforms || []).some(platform => !String(post.captions?.[platform] || '').trim()))
-  const requiresImage = campaign.meta.includeImages === true || platformIds.includes('instagram')
-  const missingImages = requiresImage && campaign.posts.some(post => !String(post.imageUrl || post.image_url || '').trim())
+  const requiresImage = campaign.meta.includeImages === true
+  const missingImages = requiresImage && campaign.posts.some(post => {
+    const imageValue = (post as { imageUrl?: string; image_url?: string }).imageUrl || (post as { imageUrl?: string; image_url?: string }).image_url
+    return !String(imageValue || '').trim()
+  })
   const previewReady = !missingCaptions && !missingImages
   // One approved content item costs one credit across all selected platforms.
   const total = Math.max(1, campaign.posts.length)
@@ -419,7 +429,10 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
                     {post.platforms.map(platform => (
                       <div key={platform} className="rounded-lg border border-violet-400/20 bg-[#0A0F1E]/45 p-2">
                         <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-1.5 text-[10px] font-medium text-white/50"><ConnectorIcon connector={getConnector(platform) || { id: platform, name: platformNames[platform] || platform, icon: 'bot', color: '#6366f1', authType: 'apiKey', category: 'Communication', description: '', triggers: [], actions: [], permissions: [] }}/> {platformNames[platform] || platform}</div>
+                          <div className="flex items-center gap-1.5 text-[10px] font-medium text-white/50">
+                            <ConnectorIcon connector={getAllowedConnector(platform) || { id: platform, name: platformNames[platform] || 'Unsupported connector', icon: 'bot', color: '#6366f1', authType: 'apiKey', category: 'Communication', description: '', triggers: [], actions: [], permissions: [] }}/>
+                            {platformNames[platform] || 'Unsupported connector'}
+                          </div>
                           {editing?.postId === post.id && editing?.platform === platform ? null : <button onClick={() => startEditPost(post.id, platform, post.captions[platform] || '')} className="text-[10px] text-indigo-300 hover:text-white">Edit</button>}
                         </div>
                         {editing?.postId === post.id && editing?.platform === platform ? (
@@ -482,7 +495,7 @@ export default function CampaignPreview({ agent, integrationStatus, credits, isA
         <div className="mt-3 space-y-2">
           {platformIds.map(id => {
             const state = connectorState(id, integrationStatus)
-            const C = getConnector(id) || { id, name: platformNames[id] || id, icon: 'bot', color: '#6366f1', authType: 'apiKey', category: 'Communication', description: '', triggers: [], actions: [], permissions: [] }
+            const C = getAllowedConnector(id) || { id, name: platformNames[id] || 'Unsupported connector', icon: 'bot', color: '#6366f1', authType: 'apiKey', category: 'Communication', description: '', triggers: [], actions: [], permissions: [] }
             return <div key={id} className={`flex min-w-0 flex-col gap-3 rounded-xl border p-3 text-xs min-[420px]:flex-row min-[420px]:items-center min-[420px]:justify-between ${id === 'linkedin' ? 'border-[#0A66C2]/25 bg-[#0A66C2]/[.07]' : 'border-white/10 bg-white/[.025]'}`}>
               <span className="flex min-w-0 items-center gap-2 font-black text-white"><span className="grid size-9 shrink-0 place-items-center rounded-lg bg-white/[.055]"><ConnectorIcon connector={C}/></span><span className="min-w-0"><strong className="block truncate">{C.name}</strong>{id === 'linkedin' && <small className="font-bold text-[#78B9F2]">Native personal-profile publishing</small>}</span></span>
               {state.ready ? <span className="flex shrink-0 items-center gap-1 font-bold text-emerald-300"><CheckCircle2 size={13}/> {state.label}</span> : <a href={`/connected-apps?service=${id}&returnTo=${encodeURIComponent(`/automations?resume=${draft.id}`)}`} className="flex min-h-10 shrink-0 items-center justify-center rounded-lg border border-[#FFD700]/20 bg-[#FFD700]/[.07] px-3 font-black text-[#FFD700] hover:bg-[#FFD700]/10">{state.connected ? 'Reconnect' : 'Connect'} {C.name}</a>}

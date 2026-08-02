@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowRight, CheckCircle2, Instagram, Linkedin, Mail, Plug, Sparkles, Twitter, Youtube } from 'lucide-react'
+import { ArrowRight, CheckCircle2, GitBranch, Linkedin, Mail, MessageCircle, Plug, Sparkles, Table2, FileText } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { getConnectedApps } from '../lib/connectors/connectorApi'
 import { getIntegrationStatus } from '../lib/integrations'
 
 const platforms = [
-  { id: 'x', label: 'Twitter / X', description: 'Posts and threads', icon: Twitter, soon: false },
-  { id: 'instagram', label: 'Instagram', description: 'Posts, reels and stories', icon: Instagram, soon: false },
   { id: 'linkedin', label: 'LinkedIn', description: 'Professional publishing', icon: Linkedin, soon: false },
   { id: 'gmail', label: 'Gmail', description: 'Email and attachments', icon: Mail, soon: false },
-  { id: 'youtube', label: 'YouTube', description: 'Videos and channel actions', icon: Youtube, soon: false },
+  { id: 'github', label: 'GitHub', description: 'Repo and issue automation', icon: GitBranch, soon: false },
+  { id: 'googledocs', label: 'Google Docs', description: 'Document generation', icon: FileText, soon: false },
+  { id: 'googlesheets', label: 'Google Sheets', description: 'Spreadsheet workflows', icon: Table2, soon: false },
+  { id: 'discord', label: 'Discord', description: 'Server alerts and channels', icon: MessageCircle, soon: false },
 ]
 
 export default function Home() {
@@ -29,11 +30,11 @@ export default function Home() {
       ])
       const ready = new Set<string>()
       for (const [id, state] of Object.entries(native)) {
-        if (id === '_access') continue
+        if (id === '_access' || !state) continue
         if ('connected' in state && state.connected && state.ready) ready.add(id)
       }
       for (const provider of composio.providers) {
-        if (provider.connected) ready.add(provider.provider === 'twitter' ? 'x' : provider.provider)
+        if (provider.connected) ready.add(provider.provider)
       }
       if (ready.has('google')) ready.add('gmail')
       setConnected(ready)

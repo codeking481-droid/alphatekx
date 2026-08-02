@@ -62,6 +62,36 @@ export const connectors: Connector[] = [
     permissions: ['Manage Google Drive files'],
   },
   {
+    id: 'googledocs',
+    name: 'Google Docs',
+    icon: 'file-text',
+    authType: 'oauth',
+    category: 'Productivity',
+    color: '#4285F4',
+    description: 'Generate and manage documents.',
+    triggers: [],
+    actions: [
+      { id: 'create_document', label: 'Create document', description: 'Create a Google Docs document.', params: ['title', 'content'] },
+      { id: 'append_to_document', label: 'Append text', description: 'Append content to a document.', params: ['documentId', 'content'] },
+    ],
+    permissions: ['Read and write Google Docs'],
+  },
+  {
+    id: 'googlesheets',
+    name: 'Google Sheets',
+    icon: 'sheet',
+    authType: 'oauth',
+    category: 'Productivity',
+    color: '#0F9D58',
+    description: 'Read and write spreadsheets.',
+    triggers: [],
+    actions: [
+      { id: 'append_row', label: 'Append row', description: 'Append a row to a spreadsheet.', params: ['spreadsheetId', 'sheetName', 'values'] },
+      { id: 'read_rows', label: 'Read rows', description: 'Read rows from a spreadsheet.', params: ['spreadsheetId', 'sheetName'] },
+    ],
+    permissions: ['Read and edit Google Sheets'],
+  },
+  {
     id: 'github',
     name: 'GitHub',
     icon: 'github',
@@ -90,30 +120,6 @@ export const connectors: Connector[] = [
     triggers: [],
     actions: [{ id: 'post', label: 'Publish post', description: 'Publish a post to LinkedIn.', params: ['text', 'url'] }],
     permissions: ['Post on your behalf'],
-  },
-  {
-    id: 'x',
-    name: 'X',
-    icon: 'twitter',
-    authType: 'oauth',
-    category: 'Social Media',
-    color: '#0A0F1E',
-    description: 'Publish posts and threads.',
-    triggers: [],
-    actions: [{ id: 'tweet', label: 'Publish post', description: 'Publish a post to X.', params: ['text'] }],
-    permissions: ['Post on your behalf'],
-  },
-  {
-    id: 'facebook',
-    name: 'Facebook',
-    icon: 'facebook',
-    authType: 'oauth',
-    category: 'Social Media',
-    color: '#1877F2',
-    description: 'Publish posts to pages and groups.',
-    triggers: [],
-    actions: [{ id: 'post', label: 'Publish post', description: 'Publish a post to Facebook.', params: ['text', 'url'] }],
-    permissions: ['Publish to pages you manage'],
   },
   {
     id: 'whatsapp',
@@ -235,4 +241,13 @@ export const connectors: Connector[] = [
   },
 ]
 
+export const ALLOWED_CONNECTOR_IDS = ['linkedin', 'gmail', 'discord', 'github', 'googledocs', 'googlesheets'] as const
+export const allowedConnectors = connectors.filter(c => ALLOWED_CONNECTOR_IDS.includes(c.id as typeof ALLOWED_CONNECTOR_IDS[number]))
 export const getConnector = (id: string) => connectors.find(c => c.id === id)
+export const getAllowedConnector = (id: string) => {
+  const connector = allowedConnectors.find(c => c.id === id)
+  if (connector) return connector
+  if (id === 'google_docs') return allowedConnectors.find(c => c.id === 'googledocs')
+  if (id === 'google_sheets') return allowedConnectors.find(c => c.id === 'googlesheets')
+  return undefined
+}

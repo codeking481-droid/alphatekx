@@ -28,7 +28,7 @@ const PENDING_KEY = 'alphatekx:pending-agent:v2'
 const PLANNING_OWNER_KEY = 'alphatekx:planning-owner:v2'
 const examples = [
   { title: 'Publish one professional post', prompt: 'Create one professional LinkedIn post with a matched image. Show me the post and image for review before publishing.' },
-  { title: 'Launch a social campaign', prompt: 'Promote my business on Facebook, Instagram, X, and LinkedIn with unique posts and matched images. Ask me for the schedule and show everything for review.' },
+  { title: 'Launch a social campaign', prompt: 'Promote my business on LinkedIn with unique posts and matched images. Ask me for the schedule and show everything for review.' },
   { title: 'Create a premium image', prompt: 'Create a premium professional image for my business and save it to my Media Library.' },
   { title: 'Build a weekly schedule', prompt: 'Create a weekly social media schedule for my business. Ask me which platforms, days, time, audience, and tone.' },
   { title: 'Send a useful email', prompt: 'Help me create and send a professional email. Ask for the recipient, subject, and message before sending.' },
@@ -36,10 +36,12 @@ const examples = [
 ]
 
 const socialConnections = [
-  { id: 'linkedin', name: 'LinkedIn' },
-  { id: 'facebook', name: 'Facebook' },
-  { id: 'instagram', name: 'Instagram' },
-  { id: 'x', name: 'X' },
+  { id: 'linkedin', name: 'LinkedIn Native', icon: 'linkedin' },
+  { id: 'gmail', name: 'Gmail', icon: 'gmail' },
+  { id: 'discord', name: 'Discord', icon: 'discord' },
+  { id: 'github', name: 'GitHub', icon: 'github' },
+  { id: 'googledocs', name: 'Google Docs', icon: 'docs' },
+  { id: 'googlesheets', name: 'Google Sheets', icon: 'sheets' },
 ] as const
 
 function readStored<T>(key: string): T | null {
@@ -74,7 +76,7 @@ export default function Agents() {
 
     if (connectedAppsResult.status === 'fulfilled') {
       for (const provider of connectedAppsResult.value.providers || []) {
-        const id = provider.provider === 'twitter' ? 'x' : provider.provider
+        const id = provider.provider
         const previous = merged[id]
         merged[id] = {
           ...(previous && 'connected' in previous ? previous : { connected: false }),
@@ -282,7 +284,7 @@ type GuidedPlan = {
 }
 
 function GuidedCommandCentre({ platform, creating, notice, onComplete, onBack }: { platform: string; creating: boolean; notice: string; onComplete: (message: string) => void; onBack: () => void }) {
-  const platformName = platform === 'x' ? 'Twitter / X' : platform.charAt(0).toUpperCase() + platform.slice(1)
+  const platformName = platform.charAt(0).toUpperCase() + platform.slice(1)
   const [step, setStep] = useState(0)
   const [plan, setPlan] = useState<GuidedPlan>({ platform: platformName, days: '', time: '', duration: '', topic: '' })
   const [custom, setCustom] = useState('')
