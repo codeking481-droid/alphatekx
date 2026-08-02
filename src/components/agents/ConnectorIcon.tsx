@@ -3,8 +3,6 @@ import {
   FileSpreadsheet,
   Github,
   Linkedin,
-  Twitter,
-  Facebook,
   MessageCircle,
   CreditCard,
   Database,
@@ -18,17 +16,10 @@ import {
 } from 'lucide-react'
 import {
   siDiscord,
-  siFacebook,
   siGithub,
   siGmail,
   siGoogledocs,
   siGooglesheets,
-  siInstagram,
-  siSnapchat,
-  siTiktok,
-  siWhatsapp,
-  siX,
-  siYoutube,
 } from 'simple-icons'
 import type { Connector } from '../../lib/agents/types'
 
@@ -36,20 +27,12 @@ type BrandMark = { path: string; title: string }
 
 const brandMarks: Record<string, BrandMark> = {
   discord: siDiscord,
-  facebook: siFacebook,
   github: siGithub,
   gmail: siGmail,
   google_docs: siGoogledocs,
   googledocs: siGoogledocs,
   google_sheets: siGooglesheets,
   googlesheets: siGooglesheets,
-  instagram: siInstagram,
-  snapchat: siSnapchat,
-  tiktok: siTiktok,
-  whatsapp: siWhatsapp,
-  x: siX,
-  twitter: siX,
-  youtube: siYoutube,
 }
 
 const icons: Record<string, LucideIcon> = {
@@ -57,8 +40,6 @@ const icons: Record<string, LucideIcon> = {
   sheet: FileSpreadsheet,
   github: Github,
   linkedin: Linkedin,
-  twitter: Twitter,
-  facebook: Facebook,
   'message-circle': MessageCircle,
   'credit-card': CreditCard,
   database: Database,

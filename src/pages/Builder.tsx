@@ -8,7 +8,7 @@ import { addArchitectureMemory, addProjectMemory } from '../lib/companyMemory'
 import { createAgentFromNL, suggestedAgentsForMission } from '../lib/agents/agentParser'
 import { saveAgent } from '../lib/agents/agentStore'
 import type { Agent } from '../lib/agents/types'
-import { connectors, getConnector } from '../lib/agents/connectorRegistry'
+import { allowedConnectors, getAllowedConnector } from '../lib/agents/connectorRegistry'
 import { ConnectorIcon } from '../components/agents/ConnectorIcon'
 import { getIntegrationStatus, getLocalUser, type IntegrationStatus } from '../lib/integrations'
 import { useAuth } from '../lib/auth'
@@ -639,7 +639,7 @@ export default function Builder() {
                   </div>
                   <div className="mt-4 space-y-2">
                     {aiDraft.actions.map((a, i) => {
-                      const c = getConnector(a.connector)
+                      const c = getAllowedConnector(a.connector)
                       return (
                         <div key={i} className="flex items-center gap-2 rounded-xl border border-violet-400/20 bg-violet-500/10 p-3 text-sm">
                           {c ? <ConnectorIcon connector={c} /> : <Bot size={16} />}
@@ -667,7 +667,7 @@ export default function Builder() {
                 <div className="mt-6 rounded-xl border border-violet-400/20 bg-violet-500/10 p-4">
                   <h3 className="text-sm font-semibold">Connected services</h3>
                   <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                    {connectors.filter(c => c.id !== 'calendar').map(c => {
+                    {allowedConnectors.map(c => {
                       const status = integrationStatus?.[c.id] || { connected: false, ready: false }
                       return (
                         <Link key={c.id} to={`/connectors?service=${c.id}`} className="rounded-xl border border-violet-400/20 bg-violet-500/10 p-3 transition-all hover:bg-violet-500/10">

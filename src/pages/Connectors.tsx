@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, CheckCircle2, LoaderCircle, X, ExternalLink, AlertCircle, Bot, Activity, ChevronRight } from 'lucide-react'
-import { FaLinkedin, FaYoutube, FaGoogle, FaGithub, FaDiscord } from 'react-icons/fa6'
+import { FaLinkedin, FaGoogle, FaGithub, FaDiscord } from 'react-icons/fa6'
 import { useAuth } from '../lib/auth'
 import { getConnectedApps, connectProvider, disconnectProvider } from '../lib/connectors/connectorApi'
 import { startLinkedInAuth } from '../lib/integrations'
@@ -14,7 +14,7 @@ function connectedCacheKey(userId?: string) {
   return `alphatekx:connected-platforms:${userId || 'anonymous'}`
 }
 
-const composioOAuthProviders = new Set(['gmail', 'github', 'googledocs', 'googlesheets', 'discord', 'whatsapp', 'youtube'])
+const composioOAuthProviders = new Set(['gmail', 'github', 'googledocs', 'googlesheets', 'discord'])
 const serverManagedProviders = new Set<string>()
 const releasedPlatforms = ['linkedin', 'gmail', ...composioOAuthProviders]
 const publicConnectorIds = new Set(releasedPlatforms)
@@ -26,8 +26,6 @@ const PLATFORM_LIST = [
   { id: 'googledocs', name: 'Google Docs', icon: FaGoogle, color: '#4285F4', description: 'Document generation', native: false },
   { id: 'googlesheets', name: 'Google Sheets', icon: FaGoogle, color: '#34A853', description: 'Spreadsheet workflows', native: false },
   { id: 'discord', name: 'Discord', icon: FaDiscord, color: '#5865F2', description: 'Server alerts and channels', native: false },
-  { id: 'whatsapp', name: 'WhatsApp', icon: FaGoogle, color: '#25D366', description: 'Business messaging', native: false },
-  { id: 'youtube', name: 'YouTube', icon: FaYoutube, color: '#FF0000', description: 'Videos and channel actions', native: false },
 ]
 
 export default function Connectors() {

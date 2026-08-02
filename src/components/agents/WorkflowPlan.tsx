@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { AlertCircle, Bot, CalendarClock, CheckCircle2, Link2, PlugZap, Wallet, Webhook, X, Zap } from 'lucide-react'
-import { getConnector } from '../../lib/agents/connectorRegistry'
+import { getAllowedConnector } from '../../lib/agents/connectorRegistry'
 import { ConnectorIcon } from './ConnectorIcon'
 import type { Agent, MissingField } from '../../lib/agents/types'
 import type { IntegrationStatus, ServiceStatus } from '../../lib/integrations'
@@ -239,7 +239,7 @@ export default function WorkflowPlan({ agent, integrationStatus, credits, isAdmi
 
       <div className="mt-4 space-y-2">
         {draft.actions.map((action, i) => {
-          const c = getConnector(action.connector)
+          const c = getAllowedConnector(action.connector)
           return <div key={i} className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-4">
             <div className="flex items-center gap-3">
               {c ? <ConnectorIcon connector={c}/> : <Bot size={18} className="text-white/50"/>}
@@ -281,7 +281,7 @@ export default function WorkflowPlan({ agent, integrationStatus, credits, isAdmi
         <div className="text-xs text-white/45">Required connectors</div>
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
           {requiredConnectors.map(id => {
-            const c = getConnector(id)
+            const c = getAllowedConnector(id)
             const s = connectorStatus(id, integrationStatus)
             return <div key={id} className="flex items-center gap-2 rounded-xl border border-violet-400/20 bg-violet-500/10 p-2">
               {c ? <ConnectorIcon connector={c}/> : <PlugZap size={14} className="text-white/50"/>}
