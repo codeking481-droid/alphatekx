@@ -75,6 +75,18 @@ export default function Dashboard() {
         <h1 className="text-2xl font-bold md:text-3xl">What do you want to do today?</h1>
         <p className="mt-1 text-sm text-white/55">Pick one. Alpha handles the rest.</p>
 
+        {(paymentRef || searchParams.get('payment') === 'success') && (
+          <div className="mt-5 rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="font-semibold">Need help with a payment or credit?</div>
+                <p className="mt-1 text-amber-100/80">Send your payment reference and we’ll fix it in under a minute.</p>
+              </div>
+              <button onClick={() => window.dispatchEvent(new CustomEvent('alphatekx:open-contact-us'))} className="shrink-0 rounded-full bg-[#FFD700] px-3 py-1.5 text-xs font-black text-black">Contact us</button>
+            </div>
+          </div>
+        )}
+
         <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {actions.map(a => (
             <button key={a.label} onClick={() => navigate(a.to)} className="group rounded-2xl border border-violet-400/20 bg-violet-500/10 p-5 text-left transition-all hover:border-indigo-500/40 hover:bg-violet-500/10">

@@ -186,6 +186,18 @@ export default function Settings() {
             <Stat label="Renewal Date" value={renewalText} />
           </div>
 
+          {(/payment|credit|verify/i.test(notice) || searchParams.get('reference')) && (
+            <div className="mt-5 rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="font-semibold">Billing issue? We’re here.</div>
+                  <p className="mt-1 text-amber-100/80">If your payment reference is stuck, send it to us and we’ll resolve it in under a minute.</p>
+                </div>
+                <button onClick={() => window.dispatchEvent(new CustomEvent('alphatekx:open-contact-us'))} className="shrink-0 rounded-full bg-[#FFD700] px-3 py-1.5 text-xs font-black text-black">Contact support</button>
+              </div>
+            </div>
+          )}
+
           <div className="mt-6">
             <h3 className="flex items-center gap-2 font-black text-white"><Sparkles size={16} className="text-cyan-300"/> Upgrade plan</h3>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">

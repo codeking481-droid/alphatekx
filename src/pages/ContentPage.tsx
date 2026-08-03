@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, MessageSquareText, ShieldCheck, Zap } from 'lucide-react'
 import SEO from '../components/SEO'
+import { ContactForm } from '../components/ContactUs'
 
 interface PageData {
   title: string
@@ -33,10 +34,33 @@ const PAGES: Record<string, PageData> = {
     title: 'Contact',
     body: (
       <>
-        <p className="text-white/70">We would love to hear from you. Reach out and we will respond as soon as possible.</p>
+        <p className="text-white/70">If you paid and your credit or plan didn’t show up, do not panic. Send the reference and we will fix it in under a minute.</p>
+        <div className="mt-6 grid gap-4 md:grid-cols-3">
+          <div className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-4">
+            <MessageSquareText className="text-violet-300" size={18} />
+            <p className="mt-3 font-medium text-white">Fast response</p>
+            <p className="mt-1 text-sm text-white/60">Reply in 1 minute for payment support issues.</p>
+          </div>
+          <div className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-4">
+            <ShieldCheck className="text-violet-300" size={18} />
+            <p className="mt-3 font-medium text-white">Verified fix</p>
+            <p className="mt-1 text-sm text-white/60">We confirm the reference and add the correct credit or plan.</p>
+          </div>
+          <div className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-4">
+            <Zap className="text-violet-300" size={18} />
+            <p className="mt-3 font-medium text-white">No silent failure</p>
+            <p className="mt-1 text-sm text-white/60">If the payment was blocked or delayed, we resolve it without leaving you hanging.</p>
+          </div>
+        </div>
+        <div className="mt-8 rounded-2xl border border-violet-400/20 bg-[#12131A] p-6">
+          <ContactForm />
+        </div>
         <div className="mt-6 rounded-2xl border border-violet-400/20 bg-violet-500/10 p-6 backdrop-blur-xl">
-          <p className="font-medium text-white">Email</p>
-          <a href="mailto:hello@alphatekx.name.ng" className="mt-1 text-violet-300 hover:underline">hello@alphatekx.name.ng</a>
+          <p className="font-medium text-white">Need a direct line?</p>
+          <div className="mt-3 flex flex-wrap gap-3 text-sm">
+            <a href="mailto:support@alphatekx.name.ng" className="text-violet-300 hover:underline">support@alphatekx.name.ng</a>
+            <a href="https://wa.me/2349046802069" target="_blank" rel="noreferrer" className="text-violet-300 hover:underline">WhatsApp</a>
+          </div>
           <p className="mt-4 text-sm text-white/55">AlphaTekx is built and owned by Daniel Thompson.</p>
         </div>
       </>
