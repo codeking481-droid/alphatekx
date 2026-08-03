@@ -53,6 +53,21 @@ await test('Paystack preserves explicit NGN pack currency for the ₦100 test pu
   assert.deepEqual(charge, { amount: 10000, currency: 'NGN', listPriceUsdCents: 10000 })
 })
 
+await test('Paystack defaults to NGN checkout when the merchant has no USD support', () => {
+  const previousCurrency = process.env.PAYSTACK_CHECKOUT_CURRENCY
+  const previousAllowUsd = process.env.PAYSTACK_ALLOW_USD
+  delete process.env.PAYSTACK_CHECKOUT_CURRENCY
+  delete process.env.PAYSTACK_ALLOW_USD
+  const charge = resolvePaystackCharge({ amountKobo: 1000, currency: 'USD' })
+  assert.equal(charge.currency, 'NGN')
+  assert.equal(charge.amount, 1600000)
+  assert.equal(charge.listPriceUsdCents, 1000)
+  if (previousCurrency == null) delete process.env.PAYSTACK_CHECKOUT_CURRENCY
+  else process.env.PAYSTACK_CHECKOUT_CURRENCY = previousCurrency
+  if (previousAllowUsd == null) delete process.env.PAYSTACK_ALLOW_USD
+  else process.env.PAYSTACK_ALLOW_USD = previousAllowUsd
+})
+
 await test('Alpha conversation reload uses an owner-scoped durable lookup', async () => {
   let lookup = null
   const record = { id: 'conversation-1', userId: 'owner-1', messages: [], knownFields: {}, missingFields: [], askedFields: [] }
