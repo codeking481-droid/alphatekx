@@ -1,5 +1,6 @@
 import { lazy, Suspense, type ReactNode } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import ContactUs from './components/ContactUs'
 const Landing = lazy(() => import('./pages/Landing'))
 import About from './pages/About'
 import { AuthProvider } from './lib/auth'
@@ -113,6 +114,7 @@ export default function App() {
 
       <Route path="*" element={toDashboard} />
       </Routes>
+      <ContactUs />
     </>
   )
 }

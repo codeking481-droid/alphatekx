@@ -3927,8 +3927,40 @@ async function addUserCredits(user, creditsToAdd, reference, type = 'purchase', 
 }
 
 const pendingTransactionsFile = path.resolve(dataDir, 'pending-transactions.json')
+const contactRequestsFile = path.resolve(dataDir, 'contact-requests.json')
 function readPendingTransactions() { return readJsonFile(pendingTransactionsFile, {}) }
 function writePendingTransactions(all) { writeJsonFile(pendingTransactionsFile, all) }
+
+async function handleContactRequest(req, res) {
+  const config = supabaseConfig()
+  const user = await currentOrLocalUser(req, config.url, config.anon)
+  const body = await readBody(req).catch(() => ({}))
+  const name = String(body.name || user?.user_metadata?.name || (user?.email ? user.email.split('@')[0] : '') || '').trim()
+  const email = String(body.email || user?.email || '').trim()
+  const issueType = String(body.issueType || 'Other').trim() || 'Other'
+  const reference = String(body.reference || '').trim()
+  const message = String(body.message || '').trim()
+
+  if (!email || !message) {
+    return json(res, 400, { error: 'Email and message are required to submit a support ticket.' })
+  }
+
+  const requests = readJsonFile(contactRequestsFile, [])
+  const record = {
+    id: randomUUID(),
+    name: name || 'User',
+    email,
+    issueType,
+    reference: reference || null,
+    message,
+    userId: user?.id || null,
+    createdAt: new Date().toISOString(),
+  }
+
+  requests.unshift(record)
+  writeJsonFile(contactRequestsFile, requests.slice(0, 500))
+  return json(res, 200, { success: true, message: 'Support request received. We will reply in 1 minute.' })
+}
 
 async function initializePaystackPayment(req, res) {
   const config = supabaseConfig()
@@ -8385,6 +8417,9 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'POST' && req.url === '/api/paystack/webhook') {
     try { return await paystackWebhookHandler(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Webhook failed' }) }
+  }
+  if (req.method === 'POST' && req.url === '/api/contact') {
+    try { return await handleContactRequest(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Contact request failed' }) }
   }
   if (req.method === 'GET' && req.url === '/api/credits/balance') {
     try { return await creditsBalance(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Balance failed' }) }
