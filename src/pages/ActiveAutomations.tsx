@@ -231,7 +231,7 @@ export default function ActiveAutomations() {
       <button onClick={() => navigate('/active-automations')} className="text-sm font-bold text-violet-300 hover:text-violet-200">← Running Automations</button>
       {notice && <Notice>{notice}</Notice>}
       {displayStatus(selected) === 'Needs Attention' && /credit/i.test(selected.campaign?.posts?.find(post => post.lastError)?.lastError || '') && <div className="mt-5 rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4 text-sm font-bold text-amber-100">Out of credits - Buy $3 for 20 credits to keep your AI employee working. <Link to="/settings?section=billing" className="underline">Buy credits</Link></div>}
-      <section className="mt-6 rounded-[2rem] border border-violet-400/20 bg-violet-500/10 p-5 shadow-[0_24px_70px_rgba(30,41,59,.14)] sm:p-8">
+      <section className="mt-6 rounded-[2rem] border border-white/8 bg-[#0D1322]/70 p-5 shadow-[0_24px_70px_rgba(2,6,23,0.28)] sm:p-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div><p className="eyebrow">{displayStatus(selected)}</p><h1 className="mt-2 text-2xl font-black text-white sm:text-3xl">{selected.name}</h1><p className="mt-2 text-sm font-semibold capitalize text-slate-400">{platformNames(selected)}</p></div>
           <div className="flex flex-wrap gap-2">
@@ -283,19 +283,19 @@ export default function ActiveAutomations() {
 
   return <Page>
     <header className="flex flex-wrap items-end justify-between gap-4">
-      <div><p className="eyebrow">Your work</p><h1 className="mt-2 text-3xl font-black text-white sm:text-4xl">Running Automations</h1><p className="mt-2 max-w-2xl text-sm font-medium text-slate-400">Track every approved automation, its next run, and its confirmed progress.</p></div>
+      <div><p className="eyebrow text-[11px] font-black uppercase tracking-[0.18em] text-[#8A8A93]">Your work</p><h1 className="mt-2 text-3xl font-black text-white sm:text-4xl">Running Automations</h1><p className="mt-2 max-w-2xl text-sm font-medium text-[#8A8A93]">Track every approved automation, its next run, and its confirmed progress.</p></div>
       <Link to="/automations" className="primary-button"><Plus size={17}/>New automation</Link>
     </header>
     {notice && <Notice>{notice}</Notice>}
     {visible.some(agent => displayStatus(agent) === 'Needs Attention' && /credit/i.test(agent.campaign?.posts?.find(post => post.lastError)?.lastError || '')) && (
-      <div className="mt-5 rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4 text-sm font-bold text-amber-100">
+      <div className="mt-5 rounded-2xl border border-[#F5C518]/30 bg-[#F5C518]/[0.04] p-4 text-sm font-bold text-white">
         Out of credits - Buy $3 for 20 credits to keep your AI employee working. <Link to="/settings?section=billing" className="ml-1 underline">Buy credits</Link>
       </div>
     )}
-    {!isAdminUser(user) && profile && <p className="mt-4 text-sm font-bold text-slate-300">Credits left: {profile.credits.toLocaleString()}</p>}
+    {!isAdminUser(user) && profile && <p className="mt-4 text-sm font-bold text-[#8A8A93]">Credits left: {profile.credits.toLocaleString()}</p>}
     <div className="mt-7 flex flex-wrap items-center justify-between gap-3">
-      <div className="flex gap-2 overflow-x-auto pb-2" aria-label="Automation filters">{filters.map(item => <button key={item} onClick={() => setFilter(item)} className={`whitespace-nowrap rounded-full px-3 py-2 text-xs font-bold ${filter === item ? 'bg-[#6D28D9] text-white shadow-lg shadow-violet-200' : 'border border-violet-400/20 bg-violet-500/10 text-slate-400'}`}>{item}</button>)}</div>
-      <div className="flex rounded-xl border border-violet-400/20 bg-violet-500/10 p-1 shadow-sm">
+      <div className="flex gap-2 overflow-x-auto pb-2" aria-label="Automation filters">{filters.map(item => <button key={item} onClick={() => setFilter(item)} className={`whitespace-nowrap rounded-full px-3 py-2 text-[11px] font-black ${filter === item ? 'bg-white text-[#0B0B0C]' : 'border border-white/10 bg-white/[.02] text-[#8A8A93]'}`}>{item}</button>)}</div>
+      <div className="flex rounded-xl border border-white/10 bg-white/[.02] p-1">
         <button onClick={() => setView('list')} className={`view-button ${view === 'list' ? 'view-button-active' : ''}`}><List size={15}/>List</button>
         <button onClick={() => setView('calendar')} className={`view-button ${view === 'calendar' ? 'view-button-active' : ''}`}><CalendarDays size={15}/>Calendar</button>
       </div>
@@ -318,7 +318,7 @@ function AutomationCard({ agent, runningNow, onRun }: { agent: Agent; runningNow
   const isDue = Boolean(nextRun && new Date(nextRun).getTime() <= now && ['running', 'active', 'warning', 'needs_attention'].includes(agent.status))
   return <article className="luxury-card block w-full max-w-full p-5 transition-all duration-300 hover:-translate-y-1 md:p-6">
     <Link to={`/active-automations/${agent.id}`} className="block">
-    <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-xs font-black uppercase tracking-[.16em] text-[#FFD700]">{platformNames(agent)}</p><h2 className="mt-2 break-words text-lg font-black text-white">{agent.name}</h2></div><span className={`flex shrink-0 items-center gap-2 rounded-full px-3 py-1 text-[11px] font-black ${state === 'Running' ? 'bg-emerald-400/10 text-emerald-300' : state === 'Needs Attention' ? 'bg-[#FFD700]/10 text-[#FFD700]' : 'bg-white/[.055] text-slate-300'}`}><i className={`size-2 animate-pulse rounded-full ${state === 'Running' ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,.8)]' : 'bg-[#FFD700] shadow-[0_0_10px_rgba(255,215,0,.7)]'}`}/>{state}</span></div>
+    <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-[10px] font-black uppercase tracking-[.18em] text-[#FFD700]">{platformNames(agent)}</p><h2 className="mt-2 break-words text-lg font-black text-white">{agent.name}</h2></div><span className={`flex shrink-0 items-center gap-2 rounded-full px-3 py-1 text-[11px] font-black ${state === 'Running' ? 'bg-emerald-400/10 text-emerald-300' : state === 'Needs Attention' ? 'bg-[#FFD700]/10 text-[#FFD700]' : 'bg-white/[.055] text-slate-300'}`}><i className={`size-2 animate-pulse rounded-full ${state === 'Running' ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,.8)]' : 'bg-[#FFD700] shadow-[0_0_10px_rgba(255,215,0,.7)]'}`}/>{state}</span></div>
     <dl className="mt-6 grid grid-cols-2 gap-4 text-sm"><CardStat label="Schedule" value={agent.campaign?.meta?.frequencyText || agent.trigger?.cron || 'One time'} /><CardStat label="Progress" value={progress(agent)} /><CardStat label="Next run" value={nextRunLabel} /><CardStat label="Last result" value={lastResult(agent)} /></dl>
     <div className="mt-5 h-2 overflow-hidden rounded-full bg-white/[.08]"><div className="solar-progress h-full rounded-full transition-[width] duration-500" style={{ width: `${progressPercent(agent)}%` }}/></div>
     </Link>

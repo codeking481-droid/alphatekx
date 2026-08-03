@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import { getCreditPack as getClientCreditPack } from '../src/lib/billing.ts'
 import { createConversationEngine } from '../server/alpha/conversationEngine.mjs'
-import { parsePaystackResponse, resolvePaystackCharge } from '../server/billing.mjs'
+import { getCreditPack as getServerCreditPack, parsePaystackResponse, resolvePaystackCharge } from '../server/billing.mjs'
 
 const results = []
 async function test(name, fn) {
@@ -51,6 +52,19 @@ await test('Paystack USD mode falls back to NGN below the two-dollar minimum', (
 await test('Paystack preserves explicit NGN pack currency for the ₦100 test purchase', () => {
   const charge = resolvePaystackCharge({ amountKobo: 10000, currency: 'NGN' })
   assert.deepEqual(charge, { amount: 10000, currency: 'NGN', listPriceUsdCents: 10000 })
+})
+
+await test('The ₦100 credit pack resolves consistently across client and server checkout flows', () => {
+  const clientPack = getClientCreditPack('test_100')
+  const legacyPack = getServerCreditPack('test_50')
+  assert.ok(clientPack)
+  assert.ok(legacyPack)
+  assert.equal(clientPack.id, 'test_100')
+  assert.equal(legacyPack.id, 'test_100')
+  assert.equal(clientPack.credits, 100)
+  assert.equal(legacyPack.credits, 100)
+  assert.equal(clientPack.amountKobo, 10000)
+  assert.equal(legacyPack.amountKobo, 10000)
 })
 
 await test('Paystack defaults to NGN checkout when the merchant has no USD support', () => {
