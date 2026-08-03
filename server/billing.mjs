@@ -72,7 +72,13 @@ export const CREDIT_PACKS = [
 ]
 
 export function getPlan(id) { return PLANS[id] || PLANS.free }
-export function getCreditPack(id) { return CREDIT_PACKS.find(p => p.id === id) }
+export function getCreditPack(id) {
+  const normalizedId = String(id || '').trim()
+  const pack = CREDIT_PACKS.find(p => p.id === normalizedId)
+  if (pack) return pack
+  if (normalizedId === 'test_50') return CREDIT_PACKS.find(p => p.id === 'test_100')
+  return undefined
+}
 
 function normalizedEmail(value) { return String(value || '').trim().toLowerCase() }
 function userEmail(user) {

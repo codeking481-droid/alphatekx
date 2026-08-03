@@ -62,7 +62,7 @@ export default function Agents() {
   const [notice, setNotice] = useState('')
   const composer = useRef<HTMLTextAreaElement>(null)
   const messageEnd = useRef<HTMLDivElement>(null)
-  const linkedIn = integrationStatus.linkedin
+  const linkedIn = integrationStatus.linkedin && 'connected' in integrationStatus.linkedin ? integrationStatus.linkedin : undefined
   const linkedInReady = linkedIn?.connected === true && linkedIn?.ready === true
 
   const refreshConnections = async () => {
@@ -200,74 +200,82 @@ export default function Agents() {
   }
 
   return <main className="alpha-chat-screen flex h-[calc(100dvh-8rem)] min-h-0 w-full flex-col overflow-hidden lg:h-[calc(100dvh-4rem)]">
-    <div className="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col">
+    <div className="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col px-3 pb-2 pt-4 sm:px-6 lg:px-8">
       <header className="hidden">
-        <p className="text-xs font-medium uppercase tracking-[.24em] text-violet-300">Run your automations 24/7</p>
+        <p className="text-xs font-medium uppercase tracking-[.24em] text-white/60">Run your automations 24/7</p>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-5xl">Turn Your Ideas Into Reality</h1>
-        <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-white/58 sm:text-base">Tell Alpha what you want done. It will plan an automation that keeps working even when you are offline.</p>
+        <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-[#8A8A93] sm:text-base">Tell Alpha what you want done. It will plan an automation that keeps working even when you are offline.</p>
       </header>
 
-      {success && !conversation ? <section className="my-auto rounded-3xl border border-emerald-400/20 bg-emerald-500/[.08] p-7 text-center sm:p-10" aria-live="polite">
-        <CheckCircle2 className="mx-auto text-emerald-300" size={34}/>
-        <h2 className="mt-4 text-xl font-semibold">{success.message || 'Automation created successfully.'}</h2>
+      {success && !conversation ? <section className="my-auto rounded-3xl border border-white/10 bg-[#111214] p-7 text-center sm:p-10" aria-live="polite">
+        <CheckCircle2 className="mx-auto text-[#1CE783]" size={34}/>
+        <h2 className="mt-4 text-xl font-semibold text-white">{success.message || 'Automation created successfully.'}</h2>
         <div className="mx-auto mt-6 flex max-w-xl flex-col justify-center gap-2 sm:flex-row">
-          {success.id && <button onClick={() => navigate(`/active-automations/${success.id}`)} className="flex min-h-12 items-center justify-center gap-2 rounded-xl btn-alpha px-5 text-sm">Visit Automation<ArrowRight size={16}/></button>}
-          <button onClick={startNew} className="min-h-12 rounded-xl border border-emerald-300/20 px-5 text-sm font-black text-emerald-100">Create another</button>
-          <Link to="/connected-apps" className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-white/10 px-5 text-sm font-black text-slate-200"><Plug size={16}/>Connected Apps</Link>
+          {success.id && <button onClick={() => navigate(`/active-automations/${success.id}`)} className="flex min-h-12 items-center justify-center gap-2 rounded-xl btn-primary px-5 text-sm">Visit Automation<ArrowRight size={16}/></button>}
+          <button onClick={startNew} className="min-h-12 rounded-xl border border-white/10 px-5 text-sm font-semibold text-white">Create another</button>
+          <Link to="/connected-apps" className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-white/10 px-5 text-sm font-semibold text-white"><Plug size={16}/>Connected Apps</Link>
         </div>
-      </section> : <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-        <div className="absolute right-3 top-3 z-20 sm:right-6">{conversation && <button onClick={startNew} className="rounded-xl border border-violet-300/15 bg-[#0A0F1E]/80 px-3 py-2 text-xs font-bold text-slate-300 backdrop-blur-xl hover:text-white">New chat</button>}</div>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-5 sm:px-6 sm:py-8" aria-live="polite">
+      </section> : <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[2rem] border border-white/10 bg-[#111214]">
+        <div className="absolute right-3 top-3 z-20 sm:right-6">{conversation && <button onClick={startNew} className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-xs font-semibold text-[#8A8A93] hover:text-white">New chat</button>}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6 sm:py-6" aria-live="polite">
           {!conversation ? (
-            <div className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center px-2 py-8 text-center">
-              <span className="grid size-12 place-items-center rounded-2xl bg-violet-500/15 text-violet-300"><Sparkles size={22}/></span>
-              <h1 className="mt-5 text-2xl font-black tracking-tight sm:text-3xl">What can Alpha do for you?</h1>
-              <p className="mt-3 max-w-xl text-sm leading-6 text-slate-400">{agents.length === 0 ? 'Describe a result. Alpha will ask only what is missing, prepare the work, and wait for your approval.' : 'Ask a question, create an image, or describe the next result you want automated.'}</p>
-              <div className="mt-5 flex w-full max-w-3xl flex-wrap justify-center gap-2" aria-label="Social connection status">
-                {socialConnections.map(platform => {
-                  const state = integrationStatus[platform.id]
-                  const ready = state?.connected === true && state?.ready === true
-                  return <Link key={platform.id} to={`/connected-apps?service=${platform.id}&returnTo=${encodeURIComponent('/automations')}`} className={`inline-flex min-h-10 items-center gap-2 rounded-full border px-3 text-xs font-black transition ${ready ? 'border-emerald-400/20 bg-emerald-500/[.08] text-emerald-200' : 'border-white/10 bg-white/[.035] text-slate-300 hover:border-violet-400/30'}`}><span className={`size-2 rounded-full ${ready ? 'bg-emerald-400' : 'bg-slate-500'}`}/>{platform.name}{ready ? ' connected' : ' connect'}</Link>
-                })}
+            <div className="mx-auto flex h-full max-w-4xl flex-col items-center justify-center px-2 py-6 text-center">
+              <span className="grid size-12 place-items-center rounded-2xl border border-white/10 bg-white/[0.02] text-white"><Sparkles size={22}/></span>
+              <p className="mt-5 text-[10px] font-black uppercase tracking-[0.22em] text-[#8A8A93]">Command centre</p>
+              <h1 className="mt-3 text-3xl font-black tracking-[-0.05em] text-white sm:text-4xl">What do you want Alpha to do?</h1>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-[#8A8A93]">{agents.length === 0 ? 'Describe an outcome. Alpha will build the plan, ask only the missing details, and wait for your approval.' : 'Ask for a post, a campaign, or a premium visual. Keep it simple and specific.'}</p>
+
+              <div className="mt-6 w-full max-w-3xl rounded-[1.5rem] border border-white/10 bg-[#17171B] p-4 text-left sm:p-5">
+                <div className={`flex items-center gap-3 rounded-2xl border p-3 ${linkedInReady ? 'border-[#1CE783]/30 bg-[#1CE783]/[0.04]' : 'border-[#F5C518]/30 bg-[#F5C518]/[0.04]'}`}>
+                  <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-[#0A66C2] text-white"><Linkedin size={21}/></span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-black text-white">LinkedIn <span className="ml-1 text-[10px] font-black uppercase tracking-[0.18em] text-white/70">Native</span></p>
+                    <p className={`mt-0.5 text-xs font-medium ${linkedInReady ? 'text-[#1CE783]' : 'text-[#F5C518]'}`}>{linkedInReady ? 'Connected · Publishing ready' : linkedIn?.connected ? 'Reconnect required for publishing access' : 'Not connected yet'}</p>
+                  </div>
+                  {linkedInReady ? <CheckCircle2 className="shrink-0 text-[#1CE783]" size={19}/> : <Link to="/connected-apps?service=linkedin" className="flex min-h-10 shrink-0 items-center gap-1 rounded-xl border border-white/10 px-3 text-xs font-semibold text-white">Connect <ExternalLink size={13}/></Link>}
+                </div>
               </div>
-              <div className={`mt-5 flex w-full max-w-xl items-center gap-3 rounded-2xl border p-3 text-left ${linkedInReady ? 'border-[#0A66C2]/35 bg-[#0A66C2]/10' : 'border-amber-300/20 bg-amber-300/[.06]'}`}>
-                <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-[#0A66C2] text-white"><Linkedin size={21}/></span>
-                <div className="min-w-0 flex-1"><p className="text-sm font-black text-white">LinkedIn <span className="ml-1 text-[10px] font-black uppercase tracking-wider text-[#78B9F2]">Native</span></p><p className={`mt-0.5 text-xs font-bold ${linkedInReady ? 'text-emerald-300' : 'text-amber-200'}`}>{linkedInReady ? 'Connected · Personal profile publishing ready' : linkedIn?.connected ? 'Reconnect required for publishing permission' : 'Not connected yet'}</p></div>
-                {linkedInReady ? <CheckCircle2 className="shrink-0 text-emerald-300" size={19}/> : <Link to="/connected-apps?service=linkedin" className="flex min-h-10 shrink-0 items-center gap-1 rounded-xl border border-amber-300/25 px-3 text-xs font-black text-amber-200">Connect <ExternalLink size={13}/></Link>}
+
+              <div className="mt-5 flex w-full max-w-3xl flex-wrap justify-center gap-2" aria-label="Suggested prompts">
+                {examples.slice(0, 3).map(example => (
+                  <button key={example.title} onClick={() => { setInput(example.prompt); window.setTimeout(() => composer.current?.focus(), 0) }} className="group inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.02] px-3 py-2 text-xs font-semibold text-white transition hover:bg-white/[0.04]">
+                    {example.title.includes('image') ? <Image size={14} className="text-white"/> : <Sparkles size={14} className="text-white"/>}
+                    {example.title}
+                  </button>
+                ))}
               </div>
-              <div className="mt-7 grid w-full max-w-3xl gap-2 sm:grid-cols-2 lg:grid-cols-3" aria-label="Try a suggestion">{examples.map(example => <button key={example.title} onClick={() => { setInput(example.prompt); window.setTimeout(() => composer.current?.focus(), 0) }} className="group min-h-20 rounded-2xl border border-violet-400/15 bg-white/[.035] px-4 py-3 text-left transition hover:-translate-y-0.5 hover:border-violet-400/35 hover:bg-violet-500/10"><span className="flex items-center gap-2 text-sm font-black text-slate-100">{example.title.includes('image') ? <Image size={15} className="text-violet-300"/> : <Sparkles size={15} className="text-violet-300"/>}{example.title}</span><span className="mt-1.5 block text-xs leading-5 text-slate-400">Click to edit this prompt before sending.</span></button>)}</div>
             </div>
           ) : (
             <div className="mx-auto w-full max-w-3xl space-y-6">
               {conversation.messages?.map((message, index) => <div key={`${message.ts}-${index}`} className={message.role === 'user' ? 'ml-auto max-w-[88%] sm:max-w-[75%]' : 'max-w-full'}>
-                <div className={message.role === 'user' ? 'rounded-3xl rounded-br-lg bg-violet-600 px-4 py-3 text-sm leading-6 text-white sm:px-5' : 'text-sm leading-7 text-slate-100'}>
-                  {message.role === 'alpha' && <p className="mb-1.5 text-xs font-black text-violet-300">Alpha</p>}
-                  <ReactMarkdown components={{ img: props => <figure className="mt-3"><img {...props} className="max-h-[420px] w-full rounded-2xl border border-violet-300/15 object-contain" loading="lazy"/>{props.src&&<a href={props.src} download="alphatekx-image" target="_blank" rel="noreferrer" className="mt-2 inline-flex min-h-10 items-center gap-2 rounded-xl border border-violet-300/15 bg-white/5 px-3 text-xs font-black text-violet-200 hover:bg-violet-500/10"><Download size={14}/>Save image</a>}</figure>, p: props => <p {...props} className="whitespace-pre-wrap"/> }}>{message.text}</ReactMarkdown>
+                <div className={message.role === 'user' ? 'rounded-3xl rounded-br-lg bg-white px-4 py-3 text-sm leading-6 text-[#0B0B0C] sm:px-5' : 'text-sm leading-7 text-white'}>
+                  {message.role === 'alpha' && <p className="mb-1.5 text-xs font-black uppercase tracking-[.12em] text-[#8A8A93]">Alpha</p>}
+                  <ReactMarkdown components={{ img: props => <figure className="mt-3"><img {...props} className="max-h-[420px] w-full rounded-2xl border border-white/10 object-contain" loading="lazy"/>{props.src&&<a href={props.src} download="alphatekx-image" target="_blank" rel="noreferrer" className="mt-2 inline-flex min-h-10 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] px-3 text-xs font-semibold text-white"><Download size={14}/>Save image</a>}</figure>, p: props => <p {...props} className="whitespace-pre-wrap"/> }}>{message.text}</ReactMarkdown>
                 </div>
               </div>)}
-              {creating && <div className="flex items-center gap-2 text-sm text-slate-400"><LoaderCircle className="animate-spin" size={16}/>Alpha is thinking…</div>}
-              {pendingAgent && conversation && ['awaiting_content_review', 'awaiting_approval', 'ready_to_create'].includes(conversation.conversationStage) && <div className="rounded-2xl border border-violet-400/20 bg-violet-500/[.08] p-4 sm:p-5" aria-label="Automation approval in chat">
-                <p className="text-xs font-black uppercase tracking-[.16em] text-violet-300">Plan ready in chat</p>
+              {creating && <div className="flex items-center gap-2 text-sm text-[#8A8A93]"><LoaderCircle className="animate-spin" size={16}/>Alpha is thinking…</div>}
+              {pendingAgent && conversation && ['awaiting_content_review', 'awaiting_approval', 'ready_to_create'].includes(conversation.conversationStage) && <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 sm:p-5" aria-label="Automation approval in chat">
+                <p className="text-xs font-black uppercase tracking-[.16em] text-[#8A8A93]">Plan ready in chat</p>
                 <p className="mt-2 text-sm font-bold text-white">{pendingAgent.name || 'Your automation'}</p>
-                <p className="mt-1 text-xs leading-5 text-slate-400">Review Alpha's messages above. One approval publishes an immediate post or activates the confirmed schedule.</p>
+                <p className="mt-1 text-xs leading-5 text-[#8A8A93]">Review Alpha's messages above. One approval publishes an immediate post or activates the confirmed schedule.</p>
                 <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                  <button type="button" onClick={() => void send('approve')} disabled={creating} className="min-h-11 rounded-xl bg-violet-600 px-5 text-sm font-black text-white disabled:opacity-50">{pendingAgent.campaign?.meta?.publishingMode === 'once_now' ? 'Approve & publish now' : 'Approve & activate'}</button>
-                  {conversation.conversationStage === 'awaiting_content_review' && <button type="button" onClick={() => void send('regenerate')} disabled={creating} className="min-h-11 rounded-xl border border-violet-300/20 px-5 text-sm font-black text-violet-200 disabled:opacity-50">Regenerate in chat</button>}
+                  <button type="button" onClick={() => void send('approve')} disabled={creating} className="min-h-11 rounded-xl btn-primary px-5 text-sm disabled:opacity-50">{pendingAgent.campaign?.meta?.publishingMode === 'once_now' ? 'Approve & publish now' : 'Approve & activate'}</button>
+                  {conversation.conversationStage === 'awaiting_content_review' && <button type="button" onClick={() => void send('regenerate')} disabled={creating} className="min-h-11 rounded-xl border border-white/10 px-5 text-sm font-semibold text-white disabled:opacity-50">Regenerate in chat</button>}
                 </div>
               </div>}
               <div ref={messageEnd}/>
             </div>
           )}
         </div>
-        {needsConnection && <div className="mx-4 mb-3 rounded-xl border border-amber-400/20 bg-amber-500/[.08] p-4 text-sm sm:mx-6"><p className="text-amber-100">{needsConnection} needs to be connected before Alpha can publish.</p><Link to={`/connected-apps?platform=${encodeURIComponent(needsConnection)}&returnTo=${encodeURIComponent(`/automations?resume=${conversation?.id || ''}`)}`} className="mt-3 inline-flex min-h-10 items-center rounded-lg bg-amber-300 px-4 text-xs font-medium text-zinc-950">Connect {needsConnection}</Link></div>}
-        {notice && <div role="alert" className="mx-4 mb-3 flex items-start justify-between gap-3 rounded-xl border border-rose-400/20 bg-rose-500/10 p-3 text-sm text-rose-100 sm:mx-6"><span>{notice}</span><button onClick={() => setNotice('')} aria-label="Dismiss error"><X size={16}/></button></div>}
-        <div className="shrink-0 bg-gradient-to-t from-[#0A0F1E] via-[#0A0F1E] to-transparent px-3 pb-3 pt-3 sm:px-6 sm:pb-5">
+        {needsConnection && <div className="mx-4 mb-3 rounded-xl border border-[#F5C518]/30 bg-[#F5C518]/[0.04] p-4 text-sm sm:mx-6"><p className="text-white">{needsConnection} needs to be connected before Alpha can publish.</p><Link to={`/connected-apps?platform=${encodeURIComponent(needsConnection)}&returnTo=${encodeURIComponent(`/automations?resume=${conversation?.id || ''}`)}`} className="mt-3 inline-flex min-h-10 items-center rounded-lg bg-white px-4 text-xs font-semibold text-[#0B0B0C]">Connect {needsConnection}</Link></div>}
+        {notice && <div role="alert" className="mx-4 mb-3 flex items-start justify-between gap-3 rounded-xl border border-red-500/30 bg-red-500/[0.04] p-3 text-sm text-red-200 sm:mx-6"><span>{notice}</span><button onClick={() => setNotice('')} aria-label="Dismiss error"><X size={16}/></button></div>}
+        <div className="shrink-0 border-t border-white/10 bg-[#111214] px-3 pb-3 pt-3 sm:px-6 sm:pb-5">
           <label htmlFor="automation-request" className="sr-only">{conversation ? 'Answer Alpha' : 'Message Alpha'}</label>
-          <div className="mx-auto flex max-w-3xl items-end gap-2 rounded-3xl border border-violet-300/20 bg-[#13192B] p-2 shadow-[0_14px_44px_rgba(0,0,0,.28)] focus-within:border-violet-400/55">
-            <textarea id="automation-request" ref={composer} value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} rows={1} maxLength={10000} placeholder="Message Alpha…" className="max-h-36 min-h-11 flex-1 resize-none bg-transparent px-3 py-2.5 text-base leading-6 text-white outline-none placeholder:text-slate-500"/>
-            <button onClick={() => void send()} disabled={!input.trim() || creating} className="grid size-11 shrink-0 place-items-center rounded-full bg-violet-600 text-white transition hover:bg-violet-500 disabled:bg-slate-700 disabled:text-slate-500" aria-label="Send request">{creating ? <LoaderCircle className="animate-spin" size={18}/> : <Send size={18}/>}</button>
+          <div className="mx-auto flex max-w-3xl items-end gap-2 rounded-3xl border border-white/10 bg-[#17171B] p-2 focus-within:border-white/30">
+            <textarea id="automation-request" ref={composer} value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} rows={1} maxLength={10000} placeholder="Message Alpha…" className="max-h-36 min-h-11 flex-1 resize-none bg-transparent px-3 py-2.5 text-base leading-6 text-white outline-none placeholder:text-[#8A8A93]"/>
+            <button onClick={() => void send()} disabled={!input.trim() || creating} className="grid size-11 shrink-0 place-items-center rounded-full bg-white text-[#0B0B0C] transition hover:bg-[#F0F0F0] disabled:bg-white/10 disabled:text-[#8A8A93]" aria-label="Send request">{creating ? <LoaderCircle className="animate-spin" size={18}/> : <Send size={18}/>}</button>
           </div>
-          <p className="mx-auto mt-2 max-w-3xl text-center text-[10px] font-semibold text-slate-500">Review every plan before approval.</p>
+          <p className="mx-auto mt-2 max-w-3xl text-center text-[10px] font-semibold text-[#8A8A93]">Review every plan before approval.</p>
         </div>
       </section>}
     </div>
