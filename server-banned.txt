@@ -1,0 +1,38 @@
+﻿server/alphaBrain.mjs:374:    writeJsonFile(goalsFile, readJsonFile(goalsFile, []).map(g => (g.user_id === userId || g.userId === userId) ? goals.find(x => x.id === g.id) || g : g))
+server/alphaBrain.mjs:576:    if (lower.includes('facebook')) platforms.push('facebook')
+server/alphaBrain.mjs:578:    if (lower.includes('x ') || lower.includes('twitter')) platforms.push('x')
+server/alphaFallbackTemplates.mjs:67:    <div className="h-screen w-full overflow-y-auto overflow-x-hidden bg-[#0A0A0A] text-zinc-100">
+server/automation/capabilityRegistry.mjs:575:  if (!topic) missing.push({ field: 'topic', step: 'Content', connector: 'facebook', reason: 'What should the Facebook Page post be about?' })
+server/automation/capabilityRegistry.mjs:576:  if (!audienceMatch?.[1]) missing.push({ field: 'audience', step: 'Content', connector: 'facebook', reason: 'Who should this post speak to?' })
+server/automation/capabilityRegistry.mjs:577:  if (!toneMatch?.[1]) missing.push({ field: 'tone', step: 'Content', connector: 'facebook', reason: 'What tone should the post use?' })
+server/automation/capabilityRegistry.mjs:590:    actions: [{ connector: 'facebook', action: 'post', label: 'Publish approved Facebook Page post', requiresApproval: true, approvalStatus: 'pending', params: { text: '', topic, audience: audienceMatch?.[1]?.trim() || '', tone: toneMatch?.[1]?.trim() || '', generate: true, profileType: 'page', totalPosts: 1 } }],
+server/automation/capabilityRegistry.mjs:645:    case 'facebook-post': return buildFacebookPlan(prompt, user, extracted)
+server/billing.mjs:105:  if (['x', 'linkedin', 'facebook', 'instagram', 'youtube'].includes(action.connector)) return 2
+server/composioConnectorService.mjs:1171:        if (pid === 'instagram' && actionId === 'publish_post') {
+server/composioConnectorService.mjs:1172:          const createSlug = ACTION_TOOL_MAP['instagram.create_media']
+server/composioConnectorService.mjs:1181:        } else if (pid === 'facebook' && actionId === 'create_page_post') {
+server/composioConnectorService.mjs:1185:            const pagesResult = await executeTool(ACTION_TOOL_MAP['facebook.list_managed_pages'], { limit: 100 })
+server/composioConnectorService.mjs:1193:            result = await executeTool(ACTION_TOOL_MAP['facebook.create_photo_post'], {
+server/composioConnectorService.mjs:1200:        } else if (pid === 'twitter' && actionArguments.image_url) {
+server/composioConnectorService.mjs:1204:            toolSlug: ACTION_TOOL_MAP['twitter.upload_media'],
+server/composioConnectorService.mjs:1205:            toolkitSlug: 'twitter',
+server/composioConnectorService.mjs:1210:          const uploadResult = await executeTool(ACTION_TOOL_MAP['twitter.upload_media'], {
+server/composioConnectorService.mjs:669:  const keys = provider === 'twitter'
+server/composioConnectorService.mjs:671:    : provider === 'facebook'
+server/composioConnectorService.mjs:673:      : provider === 'instagram'
+server/composioConnectorService.mjs:814:    completedUrl.searchParams.set('connected', pid === 'twitter' ? 'x' : pid)
+server/composioConnectorService.mjs:815:    completedUrl.searchParams.set('provider', pid === 'twitter' ? 'x' : pid)
+server/featureAccess.mjs:137:    ['facebook', /\bfacebook\b/], ['instagram', /\binstagram\b/], ['whatsapp', /\bwhats\s*app\b|\bwhatsapp\b/], ['youtube', /\byoutube\b/],
+server/featureAccess.mjs:138:    ['x', /\btwitter\b|\bpost\s+(?:on|to)\s+x\b|\bx\s+(?:post|automation|account)\b/], ['linkedin', /\blinked\s*in\b|\blinkedin\b/],
+server/linkedin.mjs:76:  const postId = response.headers.get('x-restli-id') || response.headers.get('X-Restli-Id')
+server/marketplace.mjs:119:  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="340"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="${c1}"/><stop offset="100%" stop-color="${c2}"/></linearGradient></defs><rect width="600" height="340" fill="url(#g)"/><text x="300" y="200" font-family="Arial,sans-serif" font-size="120" font-weight="700" fill="white" text-anchor="middle">${letter}</text></svg>`
+server/marketplace.mjs:314:    const p = products.find(x => x.id === o.productId) || { title: 'Unknown', previewUrl: '' }
+server/marketplace.mjs:65:  const id = String(req.headers['x-local-user-id'] || '')
+server/marketplace.mjs:66:  const email = String(req.headers['x-local-user-email'] || '')
+server/marketplace.mjs:68:  const header = String(req.headers['x-local-user'] || '')
+server/mediaLibraryService.mjs:202:  const originalName = nameForMime(req.headers['x-file-name'], mime)
+server/mediaLibraryService.mjs:206:    headers: headers(config.service, { 'Content-Type': mime, 'Content-Length': String(size), 'x-upsert': 'false' }),
+server/mediaLibraryService.mjs:284:  const context = String(platform || 'social').replace('twitter', 'x')
+server/mediaLibraryService.mjs:339:    headers: headers(config.service, { 'Content-Type': mime, 'x-upsert': 'false' }),
+server/mediaLibraryService.mjs:426:    headers: headers(config.service, { 'Content-Type': downloaded.mime, 'x-upsert': 'false' }),
+server/whatsapp.mjs:30:  return `https://graph.facebook.com/${credentials.apiVersion}`

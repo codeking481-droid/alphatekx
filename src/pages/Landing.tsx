@@ -1,12 +1,25 @@
-import { useEffect, useRef, useState } from 'react'
+﻿import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import {
-  motion, useMotionValue, useReducedMotion, useScroll,
-  useSpring, useTransform, type MotionValue,
+  motion,
+  useMotionValue,
+  useReducedMotion,
+  useScroll,
+  useSpring,
+  useTransform,
+  type MotionValue,
 } from 'framer-motion'
 import { Link } from 'react-router-dom'
 import {
-  ArrowRight, BarChart3, BrainCircuit, CalendarDays, Check, ChevronRight,
-  Menu, Rocket, Sparkles, TrendingUp, X, Zap,
+  ArrowRight,
+  BarChart3,
+  BrainCircuit,
+  Check,
+  ChevronRight,
+  Menu,
+  Rocket,
+  Sparkles,
+  X,
+  Zap,
 } from 'lucide-react'
 import SEO from '../components/SEO'
 import { useAuth } from '../lib/auth'
@@ -15,148 +28,830 @@ const GOLD = '#FFD700'
 const PURPLE = '#6B21A8'
 const ease = [0.22, 1, 0.36, 1] as const
 
+function AnimatedCounter({ value, suffix = '' }: { value: number; suffix?: string }) {
+  const [display, setDisplay] = useState(0)
+  const ref = useRef<HTMLSpanElement>(null)
+  const { scrollYProgress } = useScroll({
+    target: ref,
+    offset: ['start end', 'end start'],
+  })
+
+  useEffect(() => {
+    const unsubscribe = scrollYProgress.on('change', (progress) => {
+      if (progress > 0.3 && progress < 0.8) {
+        const normalized = (progress - 0.3) / 0.5
+        setDisplay(Math.round(normalized * value))
+      } else if (progress >= 0.8) {
+        setDisplay(value)
+      }
+    })
+
+    return () => unsubscribe()
+  }, [scrollYProgress, value])
+
+  return <span ref={ref}>{display.toLocaleString()}{suffix}</span>
+}
+
 function Header() {
   const { user } = useAuth()
   const [open, setOpen] = useState(false)
-  const links = [['How it works', '#how-it-works'], ['Demo', '#demo'], ['Pricing', '#pricing']]
-  return <header className="fixed inset-x-0 top-0 z-50 border-b border-white/10 bg-black/70 backdrop-blur-2xl">
-    <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
-      <a href="#top" className="flex items-center gap-2.5 text-white"><span className="grid size-9 place-items-center rounded-xl bg-gradient-to-br from-[#FFD700] to-[#6B21A8] text-black shadow-[0_0_28px_rgba(255,215,0,.22)]"><Sparkles size={18}/></span><span className="font-black tracking-[.14em]">ALPHATEKX</span></a>
-      <nav className="hidden items-center gap-8 md:flex">{links.map(([label, href]) => <a key={href} href={href} className="text-sm font-semibold text-white/60 transition hover:text-white">{label}</a>)}</nav>
-      <div className="hidden md:block"><Link to={user ? '/dashboard' : '/auth'} className="inline-flex h-10 items-center rounded-full bg-[#FFD700] px-5 text-sm font-black text-black transition hover:brightness-110">{user ? 'Open dashboard' : 'Start free'}</Link></div>
-      <button aria-label="Toggle navigation" onClick={() => setOpen(value => !value)} className="grid size-10 place-items-center rounded-xl border border-white/10 text-white md:hidden">{open ? <X/> : <Menu/>}</button>
-    </div>
-    {open && <motion.nav initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="grid gap-1 border-t border-white/10 bg-black px-4 py-4 md:hidden">{links.map(([label, href]) => <a key={href} href={href} onClick={() => setOpen(false)} className="rounded-xl px-4 py-3 font-bold text-white/70">{label}</a>)}<Link to={user ? '/dashboard' : '/auth'} className="mt-2 rounded-xl bg-[#FFD700] px-4 py-3 text-center font-black text-black">Launch My Second You</Link></motion.nav>}
-  </header>
+  const links = [
+    ['How it works', '#how-it-works'],
+    ['Demo', '#demo'],
+    ['Pricing', '#pricing'],
+  ]
+
+  return (
+    <header className="fixed inset-x-0 top-0 z-50 border-b border-white/10 bg-black/70 backdrop-blur-2xl">
+      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
+        <a href="#top" className="flex items-center gap-2.5 text-white">
+          <span className="grid size-9 place-items-center rounded-xl bg-gradient-to-br from-[#FFD700] to-[#6B21A8] text-black shadow-[0_0_28px_rgba(255,215,0,.22)]">
+            <Sparkles size={18} />
+          </span>
+          <span className="font-black tracking-[.14em]">ALPHATEKX</span>
+        </a>
+
+        <nav className="hidden items-center gap-8 md:flex">
+          {links.map(([label, href]) => (
+            <a key={href} href={href} className="text-sm font-semibold text-white/60 transition hover:text-white">
+              {label}
+            </a>
+          ))}
+        </nav>
+
+        <div className="hidden md:block">
+          <Link
+            to={user ? '/dashboard' : '/auth'}
+            className="inline-flex h-10 items-center rounded-full bg-[#FFD700] px-5 text-sm font-black text-black transition hover:brightness-110"
+          >
+            {user ? 'Open dashboard' : 'Start free'}
+          </Link>
+        </div>
+
+        <button
+          aria-label="Toggle navigation"
+          onClick={() => setOpen((value) => !value)}
+          className="grid size-10 place-items-center rounded-xl border border-white/10 text-white md:hidden"
+        >
+          {open ? <X /> : <Menu />}
+        </button>
+      </div>
+
+      {open && (
+        <motion.nav
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: 'auto' }}
+          className="grid gap-1 border-t border-white/10 bg-black px-4 py-4 md:hidden"
+        >
+          {links.map(([label, href]) => (
+            <a
+              key={href}
+              href={href}
+              onClick={() => setOpen(false)}
+              className="rounded-xl px-4 py-3 font-bold text-white/70"
+            >
+              {label}
+            </a>
+          ))}
+          <Link
+            to={user ? '/dashboard' : '/auth'}
+            className="mt-2 rounded-xl bg-[#FFD700] px-4 py-3 text-center font-black text-black"
+          >
+            Launch My Second You
+          </Link>
+        </motion.nav>
+      )}
+    </header>
+  )
 }
 
 function WordReveal({ text }: { text: string }) {
   const reduced = useReducedMotion()
-  return <>{text.split(' ').map((word, index) => <span key={`${word}-${index}`} className="mr-[.2em] inline-block overflow-hidden align-bottom last:mr-0"><motion.span initial={reduced ? false : { y: '110%', opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: .8, delay: .1 + index * .09, ease }} className="inline-block">{word}</motion.span></span>)}</>
+
+  return (
+    <>
+      {text.split(' ').map((word, index) => (
+        <span key={`${word}-${index}`} className="mr-[.2em] inline-block overflow-hidden align-bottom last:mr-0">
+          <motion.span
+            initial={reduced ? false : { y: '110%', opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ duration: 0.8, delay: 0.1 + index * 0.09, ease }}
+            className="inline-block"
+          >
+            {word}
+          </motion.span>
+        </span>
+      ))}
+    </>
+  )
 }
 
 function DashboardMockup() {
   const reduced = useReducedMotion()
   const x = useMotionValue(0)
   const y = useMotionValue(0)
-  const rotateX = useSpring(useTransform(y, [-.5, .5], [5, -5]), { stiffness: 130, damping: 24 })
-  const rotateY = useSpring(useTransform(x, [-.5, .5], [-7, 7]), { stiffness: 130, damping: 24 })
-  const onMove = (event: React.MouseEvent<HTMLDivElement>) => {
+  const rotateX = useSpring(useTransform(y, [-0.5, 0.5], [5, -5]), { stiffness: 130, damping: 24 })
+  const rotateY = useSpring(useTransform(x, [-0.5, 0.5], [-7, 7]), { stiffness: 130, damping: 24 })
+
+  const onMove = (event: MouseEvent<HTMLDivElement>) => {
     if (reduced) return
     const bounds = event.currentTarget.getBoundingClientRect()
-    x.set((event.clientX - bounds.left) / bounds.width - .5)
-    y.set((event.clientY - bounds.top) / bounds.height - .5)
+    x.set((event.clientX - bounds.left) / bounds.width - 0.5)
+    y.set((event.clientY - bounds.top) / bounds.height - 0.5)
   }
-  return <div className="relative mx-auto w-full max-w-[620px] py-12" onMouseMove={onMove} onMouseLeave={() => { x.set(0); y.set(0) }}>
-    <div className="absolute inset-[12%] rounded-full bg-[#6B21A8]/40 blur-[90px]"/>
-    <motion.div style={reduced ? undefined : { rotateX, rotateY, transformPerspective: 1100 }} initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 1, delay: .35, ease }} className="relative overflow-hidden rounded-[26px] border border-white/15 bg-[#0B0B0F]/95 p-3 shadow-[0_40px_120px_rgba(107,33,168,.32)]">
-      <div className="flex items-center gap-2 border-b border-white/10 px-3 pb-3"><i className="size-2.5 rounded-full bg-[#FF5F57]"/><i className="size-2.5 rounded-full bg-[#FEBC2E]"/><i className="size-2.5 rounded-full bg-[#28C840]"/><span className="ml-auto rounded-full border border-white/10 px-3 py-1 text-[9px] font-bold text-white/40">ALPHA COMMAND</span></div>
-      <div className="grid min-h-[330px] grid-cols-[62px_1fr] gap-3 pt-3 sm:grid-cols-[92px_1fr]">
-        <aside className="rounded-2xl border border-white/10 bg-white/[.03] p-2"><div className="mx-auto grid size-9 place-items-center rounded-xl bg-[#FFD700] text-black"><Sparkles size={16}/></div><div className="mt-5 space-y-2">{[1,2,3,4].map(item => <i key={item} className={`mx-auto block h-8 rounded-lg ${item === 1 ? 'bg-[#6B21A8]/60' : 'bg-white/[.04]'}`}/>)}</div></aside>
-        <main className="space-y-3"><div className="grid grid-cols-3 gap-2">{[['28','Posts'],['4','Platforms'],['+38%','Growth']].map(([value,label], index) => <div key={label} className={`rounded-xl border p-3 ${index === 1 ? 'border-[#FFD700]/35 bg-[#FFD700]/[.07]' : 'border-white/10 bg-white/[.035]'}`}><p className="text-lg font-black text-white sm:text-2xl">{value}</p><p className="text-[9px] font-bold uppercase tracking-wider text-white/35">{label}</p></div>)}</div>
-          <div className="rounded-2xl border border-white/10 bg-white/[.035] p-4"><div className="flex items-center justify-between"><div><p className="text-xs font-black text-white">Growth engine</p><p className="text-[9px] text-white/35">Last 30 days</p></div><span className="rounded-full bg-emerald-400/10 px-2 py-1 text-[9px] font-bold text-emerald-300">LIVE</span></div><div className="mt-7 flex h-28 items-end gap-2">{[32,48,42,67,58,82,96].map((height, index) => <motion.i key={index} initial={{ height: 0 }} animate={{ height: `${height}%` }} transition={{ delay: .8 + index * .08, duration: .6, ease }} className="flex-1 rounded-t bg-gradient-to-t from-[#6B21A8] to-[#FFD700]"/>)}</div></div>
-          <div className="flex items-center gap-3 rounded-2xl border border-[#FFD700]/20 bg-[#FFD700]/[.05] p-3"><span className="grid size-9 place-items-center rounded-xl bg-[#FFD700] text-black"><Check size={17}/></span><div><p className="text-xs font-black text-white">LinkedIn posted at 9:00 AM</p><p className="text-[9px] text-white/35">Confirmed · 1 credit across all platforms</p></div></div>
-        </main>
-      </div>
-    </motion.div>
-    <motion.div animate={reduced ? undefined : { y: [0,-8,0] }} transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }} className="absolute -left-2 top-3 rounded-2xl border border-[#FFD700]/25 bg-black/70 px-4 py-3 shadow-2xl backdrop-blur-xl sm:-left-10"><p className="text-[10px] font-bold text-white/40">TODAY</p><p className="mt-1 text-xs font-black text-white">4 posts confirmed <span className="text-[#FFD700]">✓</span></p></motion.div>
-  </div>
+
+  return (
+    <div className="relative mx-auto w-full max-w-[620px] py-12" onMouseMove={onMove} onMouseLeave={() => { x.set(0); y.set(0) }}>
+      <div className="absolute inset-[12%] rounded-full bg-[#6B21A8]/40 blur-[90px]" />
+      <motion.div
+        style={reduced ? undefined : { rotateX, rotateY, transformPerspective: 1100 }}
+        initial={{ opacity: 0, y: 40 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 1, delay: 0.35, ease }}
+        className="relative overflow-hidden rounded-[26px] border border-white/15 bg-[#0B0B0F]/95 p-3 shadow-[0_40px_120px_rgba(107,33,168,.32)]"
+      >
+        <div className="flex items-center gap-2 border-b border-white/10 px-3 pb-3">
+          <i className="size-2.5 rounded-full bg-[#FF5F57]" />
+          <i className="size-2.5 rounded-full bg-[#FEBC2E]" />
+          <i className="size-2.5 rounded-full bg-[#28C840]" />
+          <span className="ml-auto rounded-full border border-white/10 px-3 py-1 text-[9px] font-bold text-white/40">
+            ALPHA COMMAND
+          </span>
+        </div>
+
+        <div className="grid min-h-[330px] grid-cols-[62px_1fr] gap-3 pt-3 sm:grid-cols-[92px_1fr]">
+          <aside className="rounded-2xl border border-white/10 bg-white/[.03] p-2">
+            <div className="mx-auto grid size-9 place-items-center rounded-xl bg-[#FFD700] text-black">
+              <Sparkles size={16} />
+            </div>
+            <div className="mt-5 space-y-2">
+              {[1, 2, 3, 4].map((item) => (
+                <i key={item} className={`mx-auto block h-8 rounded-lg ${item === 1 ? 'bg-[#6B21A8]/60' : 'bg-white/[.04]'}`} />
+              ))}
+            </div>
+          </aside>
+
+          <main className="space-y-3">
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                ['84', 'Reach'],
+                ['4', 'Posts'],
+                ['4', 'Platforms'],
+              ].map(([value, label], index) => (
+                <div
+                  key={label}
+                  className={`rounded-xl border p-3 ${
+                    index === 1 ? 'border-[#FFD700]/35 bg-[#FFD700]/[.07]' : 'border-white/10 bg-white/[.035]'
+                  }`}
+                >
+                  <p className="text-lg font-black text-white sm:text-2xl">{value}</p>
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-white/35">{label}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-white/[.035] p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-black text-white">Growth engine</p>
+                  <p className="text-[9px] text-white/35">Last 30 days</p>
+                </div>
+                <span className="rounded-full bg-emerald-400/10 px-2 py-1 text-[9px] font-bold text-emerald-300">
+                  LIVE
+                </span>
+              </div>
+              <div className="mt-7 flex h-28 items-end gap-2">
+                {[32, 48, 42, 67, 58, 82, 96].map((height, index) => (
+                  <motion.i
+                    key={index}
+                    initial={{ height: 0 }}
+                    animate={{ height: `${height}%` }}
+                    transition={{ delay: 0.8 + index * 0.08, duration: 0.6, ease }}
+                    className="flex-1 rounded-t bg-gradient-to-t from-[#6B21A8] to-[#FFD700]"
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 rounded-2xl border border-[#FFD700]/20 bg-[#FFD700]/[.05] p-3">
+              <span className="grid size-9 place-items-center rounded-xl bg-[#FFD700] text-black">
+                <Check size={17} />
+              </span>
+              <div>
+                <p className="text-xs font-black text-white">LinkedIn posted at 9:00 AM</p>
+                <p className="text-[9px] text-white/35">Confirmed · 1 credit across all platforms</p>
+              </div>
+            </div>
+          </main>
+        </div>
+      </motion.div>
+
+      <motion.div
+        animate={reduced ? undefined : { y: [0, -8, 0] }}
+        transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+        className="absolute -left-2 top-3 rounded-2xl border border-[#FFD700]/25 bg-black/70 px-4 py-3 shadow-2xl backdrop-blur-xl sm:-left-10"
+      >
+        <p className="text-[10px] font-bold text-white/40">TODAY</p>
+        <p className="mt-1 text-xs font-black text-white">
+          4 posts confirmed <span className="text-[#FFD700]">✓</span>
+        </p>
+      </motion.div>
+    </div>
+  )
 }
 
 function Hero() {
   const { user } = useAuth()
-  return <section id="top" className="relative min-h-screen overflow-hidden bg-black px-4 pb-20 pt-28 sm:px-6 lg:flex lg:items-center lg:pt-20">
-    <div className="pointer-events-none absolute -left-48 top-12 size-[520px] rounded-full bg-[#6B21A8]/25 blur-[130px]"/><div className="pointer-events-none absolute bottom-0 right-0 size-[420px] rounded-full bg-[#FFD700]/[.06] blur-[120px]"/>
-    <div className="relative mx-auto grid w-full max-w-7xl items-center gap-14 lg:grid-cols-[.92fr_1.08fr]">
-      <div className="text-center lg:text-left"><motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: .1 }} className="inline-flex items-center gap-2 rounded-full border border-[#FFD700]/25 bg-[#FFD700]/[.06] px-3 py-2 text-[11px] font-black uppercase tracking-[.16em] text-[#FFD700]"><i className="size-2 animate-pulse rounded-full bg-[#FFD700]"/>Your AI employee is ready</motion.div>
-        <h1 className="mt-7 font-['Space_Grotesk',Inter,sans-serif] text-[44px] font-black leading-[.96] tracking-[-.055em] text-white sm:text-6xl lg:text-[76px]"><WordReveal text="Your Second You"/><br/><span className="bg-gradient-to-r from-[#FFD700] via-[#FFC300] to-[#8B3FC7] bg-clip-text text-transparent"><WordReveal text="That Never Sleeps."/></span></h1>
-        <motion.p initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: .75 }} className="mx-auto mt-7 max-w-xl text-base font-medium leading-7 text-white/55 sm:text-lg lg:mx-0">AI creates, posts, and grows your socials — while you live your real life.</motion.p>
-        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: .9 }} className="mt-9 flex flex-col items-center gap-4 sm:flex-row lg:items-start"><Link to={user ? '/dashboard' : '/auth'} className="group inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-full bg-[#FFD700] px-7 font-black text-black shadow-[0_0_42px_rgba(107,33,168,.55)] transition hover:-translate-y-1 hover:shadow-[0_0_55px_rgba(255,215,0,.28)] sm:w-auto">Launch My Second You <ArrowRight className="transition group-hover:translate-x-1" size={19}/></Link><span className="text-xs font-semibold text-white/35 sm:pt-5">Start free · Approval stays yours</span></motion.div>
-      </div><DashboardMockup/>
-    </div>
-  </section>
+
+  return (
+    <section id="top" className="relative min-h-screen overflow-hidden bg-black px-4 pb-24 pt-28 sm:px-6 lg:flex lg:items-center lg:pt-20">
+      <div className="pointer-events-none absolute -left-48 top-12 size-[520px] rounded-full bg-[#6B21A8]/25 blur-[130px]" />
+      <div className="pointer-events-none absolute bottom-0 right-0 size-[420px] rounded-full bg-[#FFD700]/[.06] blur-[120px]" />
+
+      <div className="relative mx-auto grid w-full max-w-7xl items-center gap-14 lg:grid-cols-[.92fr_1.08fr]">
+        <div className="text-center lg:text-left">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.1 }}
+            className="inline-flex items-center gap-2 rounded-full border border-[#FFD700]/25 bg-[#FFD700]/[.06] px-3 py-2 text-[11px] font-black uppercase tracking-[.16em] text-[#FFD700]"
+          >
+            <i className="size-2 animate-pulse rounded-full bg-[#FFD700]" />
+            Your AI employee is ready
+          </motion.div>
+
+          <h1 className="mt-7 font-['Space_Grotesk',Inter,sans-serif] text-[44px] font-black leading-[.96] tracking-[-.055em] text-white sm:text-6xl lg:text-[76px]">
+            <WordReveal text="Your Second You" />
+            <br />
+            <span className="bg-gradient-to-r from-[#FFD700] via-[#FFC300] to-[#8B3FC7] bg-clip-text text-transparent">
+              <WordReveal text="That Never Sleeps." />
+            </span>
+          </h1>
+
+          <motion.p
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.75 }}
+            className="mx-auto mt-7 max-w-xl text-base font-medium leading-7 text-white/55 sm:text-lg lg:mx-0"
+          >
+            AI creates, posts, and grows your socials — while you live your real life.
+          </motion.p>
+
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 1.1 }}
+            className="mx-auto mt-6 max-w-lg lg:mx-0"
+          >
+            <div className="flex flex-wrap items-center justify-center gap-3 text-[10px] font-bold text-white/50 sm:justify-start lg:text-xs">
+              <span className="flex items-center gap-1.5"><Check size={12} className="text-emerald-400" /> 4-day live test</span>
+              <span className="flex items-center gap-1.5"><Check size={12} className="text-emerald-400" /> Official LinkedIn API</span>
+              <span className="flex items-center gap-1.5"><Check size={12} className="text-emerald-400" /> Fingerprint anti-fraud</span>
+              <span className="flex items-center gap-1.5"><Check size={12} className="text-emerald-400" /> Paystack live</span>
+            </div>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.9 }}
+            className="mt-9 flex flex-col items-center gap-4 sm:flex-row lg:items-start"
+          >
+            <Link
+              to={user ? '/dashboard' : '/auth'}
+              className="group inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-full bg-[#FFD700] px-7 font-black text-black shadow-[0_0_42px_rgba(107,33,168,.55)] transition hover:-translate-y-1 hover:shadow-[0_0_55px_rgba(255,215,0,.28)] sm:w-auto"
+            >
+              Launch My Second You — Start Free
+              <ArrowRight className="transition group-hover:translate-x-1" size={19} />
+            </Link>
+            <span className="text-xs font-semibold text-white/35 sm:pt-5">Start free · Approval stays yours</span>
+          </motion.div>
+        </div>
+
+        <DashboardMockup />
+      </div>
+    </section>
+  )
 }
 
 function Problem() {
-  const cards = [['Burnout','Your attention was not designed to be a publishing queue.'],['Inconsistency','Growth dies when life interrupts the content calendar.'],['Zero Growth','Manual posting keeps you busy, not compounding.']]
-  return <section className="border-y border-white/10 bg-[#050505] px-4 py-24 sm:px-6 lg:py-32"><div className="mx-auto max-w-7xl"><motion.h2 initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="mx-auto max-w-4xl text-center font-['Space_Grotesk',Inter,sans-serif] text-4xl font-black tracking-[-.045em] text-white sm:text-6xl">Posting manually every day is <span className="text-[#FFD700]">modern slavery.</span></motion.h2><div className="mt-16 grid gap-4 md:grid-cols-3">{cards.map(([title,copy], index) => <motion.article initial={{ opacity: 0, y: 32 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: index * .14, duration: .7, ease }} key={title} className="rounded-3xl border border-white/10 bg-white/[.025] p-7"><span className="font-mono text-xs text-[#FFD700]">0{index+1}</span><h3 className="mt-12 text-2xl font-black text-white">{title}</h3><p className="mt-3 leading-7 text-white/40">{copy}</p></motion.article>)}</div></div></section>
+  const cards = [
+    ['Burnout', 'Your attention was not designed to be a publishing queue.'],
+    ['Inconsistency', 'Growth dies when life interrupts the content calendar.'],
+    ['Zero Growth', 'Manual posting keeps you busy, not compounding.'],
+  ]
+
+  return (
+    <section className="border-y border-white/10 bg-[#050505] px-4 py-24 sm:px-6 lg:py-32">
+      <div className="mx-auto max-w-7xl">
+        <motion.h2
+          initial={{ opacity: 0, y: 30 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="mx-auto max-w-4xl text-center font-['Space_Grotesk',Inter,sans-serif] text-4xl font-black tracking-[-.045em] text-white sm:text-6xl"
+        >
+          Posting manually every day is <span className="text-[#FFD700]">modern slavery.</span>
+        </motion.h2>
+
+        <div className="mt-16 grid gap-4 md:grid-cols-3">
+          {cards.map(([title, copy], index) => (
+            <motion.article
+              initial={{ opacity: 0, y: 32 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: index * 0.14, duration: 0.7, ease }}
+              key={title}
+              className="rounded-3xl border border-white/10 bg-white/[.025] p-7"
+            >
+              <span className="font-mono text-xs text-[#FFD700]">0{index + 1}</span>
+              <h3 className="mt-12 text-2xl font-black text-white">{title}</h3>
+              <p className="mt-3 leading-7 text-white/40">{copy}</p>
+            </motion.article>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
 }
 
 const stackCards = [
-  { label: 'AI CREATES', copy: 'Original scripts, hooks, captions, and campaign ideas shaped around your voice.', icon: BrainCircuit, border: 'border-white/10', glow: 'shadow-black' },
-  { label: 'AI POSTS', copy: 'One approved plan becomes a dependable calendar across every connected platform.', icon: Rocket, border: 'border-[#FFD700]/45', glow: 'shadow-[0_30px_90px_rgba(255,215,0,.10)]' },
-  { label: 'AI GROWS', copy: 'Real execution data closes the loop, so every cycle gets sharper and more valuable.', icon: BarChart3, border: 'border-[#6B21A8]', glow: 'shadow-[0_30px_100px_rgba(107,33,168,.28)]' },
+  {
+    label: 'AI CREATES',
+    copy: 'Original scripts, hooks, captions, and campaign ideas shaped around your voice.',
+    icon: BrainCircuit,
+    border: 'border-white/10',
+    glow: 'shadow-black',
+  },
+  {
+    label: 'AI POSTS',
+    copy: 'One approved plan becomes a dependable calendar across every connected platform.',
+    icon: Rocket,
+    border: 'border-[#FFD700]/45',
+    glow: 'shadow-[0_30px_90px_rgba(255,215,0,.10)]',
+  },
+  {
+    label: 'AI GROWS',
+    copy: 'Real execution data closes the loop, so every cycle gets sharper and more valuable.',
+    icon: BarChart3,
+    border: 'border-[#6B21A8]',
+    glow: 'shadow-[0_30px_100px_rgba(107,33,168,.28)]',
+  },
 ]
 
-function StackCard({ card, index, progress }: { card: typeof stackCards[number]; index: number; progress: MotionValue<number> }) {
-  const start = index * .2
-  const y = useTransform(progress, [start, Math.min(start + .35, 1)], [index ? 170 : 0, index * 26])
-  const scale = useTransform(progress, [start, Math.min(start + .35, 1)], [.95, 1 - index * .015])
-  const opacity = useTransform(progress, [start, Math.min(start + .16, 1)], [index ? .15 : 1, 1])
+function StackCard({ card, index, progress }: { card: (typeof stackCards)[number]; index: number; progress: MotionValue<number> }) {
+  const start = index * 0.2
+  const y = useTransform(progress, [start, Math.min(start + 0.35, 1)], [index ? 170 : 0, index * 26])
+  const scale = useTransform(progress, [start, Math.min(start + 0.35, 1)], [0.95, 1 - index * 0.015])
+  const opacity = useTransform(progress, [start, Math.min(start + 0.16, 1)], [index ? 0.15 : 1, 1])
   const Icon = card.icon
-  return <motion.article style={{ y, scale, opacity, zIndex: index + 1 }} className={`absolute inset-x-0 top-0 min-h-[390px] overflow-hidden rounded-[32px] border bg-[#0A0A0D] p-7 sm:p-10 ${card.border} ${card.glow}`}><div className="absolute -right-24 -top-24 size-72 rounded-full bg-[#6B21A8]/20 blur-[90px]"/><div className="relative flex h-full min-h-[320px] flex-col justify-between"><div className="flex items-start justify-between"><span className="text-xs font-black tracking-[.2em] text-[#FFD700]">0{index+1}</span><span className="grid size-14 place-items-center rounded-2xl border border-white/10 bg-white/[.04] text-[#FFD700]"><Icon size={25}/></span></div><div><h3 className="font-['Space_Grotesk',Inter,sans-serif] text-4xl font-black tracking-[-.04em] text-white sm:text-6xl">{card.label}</h3><p className="mt-5 max-w-xl text-base leading-7 text-white/45 sm:text-lg">{card.copy}</p></div></div></motion.article>
+
+  return (
+    <motion.article
+      style={{ y, scale, opacity, zIndex: index + 1 }}
+      className={`absolute inset-x-0 top-0 min-h-[390px] overflow-hidden rounded-[32px] border bg-[#0A0A0D] p-7 sm:p-10 ${card.border} ${card.glow}`}
+    >
+      <div className="absolute -right-24 -top-24 size-72 rounded-full bg-[#6B21A8]/20 blur-[90px]" />
+      <div className="relative flex h-full min-h-[320px] flex-col justify-between">
+        <div className="flex items-start justify-between">
+          <span className="text-xs font-black tracking-[.2em] text-[#FFD700]">0{index + 1}</span>
+          <span className="grid size-14 place-items-center rounded-2xl border border-white/10 bg-white/[.04] text-[#FFD700]">
+            <Icon size={25} />
+          </span>
+        </div>
+        <div>
+          <h3 className="font-['Space_Grotesk',Inter,sans-serif] text-4xl font-black tracking-[-.04em] text-white sm:text-6xl">
+            {card.label}
+          </h3>
+          <p className="mt-5 max-w-xl text-base leading-7 text-white/45 sm:text-lg">{card.copy}</p>
+        </div>
+      </div>
+    </motion.article>
+  )
 }
 
 function HowItWorks() {
   const ref = useRef<HTMLElement>(null)
-  const { scrollYProgress } = useScroll({ target: ref, offset: ['start start','end end'] })
-  return <section id="how-it-works" ref={ref} className="relative h-[260vh] bg-black px-4 sm:px-6 max-md:h-auto max-md:py-24"><div className="sticky top-0 mx-auto flex h-screen max-w-7xl items-center gap-12 max-md:static max-md:block max-md:h-auto"><div className="w-[36%] max-md:w-full"><p className="text-xs font-black uppercase tracking-[.2em] text-[#FFD700]">How it works</p><h2 className="mt-5 text-4xl font-black tracking-[-.045em] text-white sm:text-5xl">How AlphaTekX<br/>Becomes You</h2><p className="mt-5 max-w-sm leading-7 text-white/40">Your standards stay. The repetitive execution disappears.</p></div><div className="relative h-[430px] flex-1 max-md:mt-12 max-md:grid max-md:h-auto max-md:gap-5">{stackCards.map((card,index) => <div key={card.label} className="max-md:relative max-md:h-[390px]"><StackCard card={card} index={index} progress={scrollYProgress}/></div>)}</div></div></section>
+  const { scrollYProgress } = useScroll({ target: ref, offset: ['start start', 'end end'] })
+
+  return (
+    <section id="how-it-works" ref={ref} className="relative h-[260vh] bg-black px-4 sm:px-6 max-md:h-auto max-md:py-24">
+      <div className="sticky top-0 mx-auto flex h-screen max-w-7xl items-center gap-12 max-md:static max-md:block max-md:h-auto">
+        <div className="w-[36%] max-md:w-full">
+          <p className="text-xs font-black uppercase tracking-[.2em] text-[#FFD700]">How it works</p>
+          <h2 className="mt-5 text-4xl font-black tracking-[-.045em] text-white sm:text-5xl">
+            How AlphaTekX
+            <br />
+            Becomes You
+          </h2>
+          <p className="mt-5 max-w-sm leading-7 text-white/40">
+            Your standards stay. The repetitive execution disappears.
+          </p>
+        </div>
+
+        <div className="relative h-[430px] flex-1 max-md:mt-12 max-md:grid max-md:h-auto max-md:gap-5">
+          {stackCards.map((card, index) => (
+            <div key={card.label} className="max-md:relative max-md:h-[390px]">
+              <StackCard card={card} index={index} progress={scrollYProgress} />
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
 }
 
 function DemoDashboard({ progress }: { progress: MotionValue<number> }) {
-  const fill = useTransform(progress, [.25,.55], ['0%','100%'])
-  const glow = useTransform(progress, [.55,.82], [.15, 1])
-  const number = useTransform(progress, [.72,1], [2400,128400])
-  const rounded = useTransform(number, value => Math.round(value).toLocaleString())
-  return <div className="relative overflow-hidden rounded-[30px] border border-white/10 bg-[#09090C] p-4 shadow-[0_40px_120px_rgba(107,33,168,.2)] sm:p-6"><div className="flex items-center justify-between border-b border-white/10 pb-4"><span className="text-xs font-black text-white">ALPHA OVERVIEW</span><span className="flex items-center gap-2 text-[10px] font-bold text-emerald-300"><i className="size-2 rounded-full bg-emerald-400"/>EXECUTING</span></div><div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3"><div className="rounded-2xl border border-white/10 bg-white/[.035] p-4"><motion.p className="text-2xl font-black text-white">{rounded}</motion.p><p className="mt-1 text-[9px] font-bold uppercase tracking-wider text-white/30">Reach</p></div>{[['Posts','30'],['Platforms','4']].map(([label,value]) => <div key={label} className="rounded-2xl border border-white/10 bg-white/[.035] p-4"><p className="text-2xl font-black text-white">{value}</p><p className="mt-1 text-[9px] font-bold uppercase tracking-wider text-white/30">{label}</p></div>)}</div><div className="mt-4 rounded-2xl border border-white/10 bg-white/[.025] p-4"><div className="flex justify-between text-[10px] font-bold text-white/40"><span>30-day content engine</span><span>READY</span></div><div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10"><motion.i style={{ width: fill }} className="block h-full rounded-full bg-gradient-to-r from-[#6B21A8] to-[#FFD700]"/></div><div className="mt-5 grid grid-cols-7 gap-1.5">{Array.from({ length: 28 },(_,index) => <motion.i key={index} style={{ opacity: glow }} transition={{ delay: index * .01 }} className="aspect-square rounded-md border border-[#FFD700]/20 bg-[#FFD700]/20"/>)}</div></div><div className="mt-4 grid grid-cols-4 gap-2">{['in','f','𝕏','◎'].map((icon,index) => <PlatformTile key={icon} icon={icon} index={index} progress={progress}/>)}</div></div>
+  const [filled, setFilled] = useState(0)
+  const cells = [
+    'Founder story',
+    'Algorithm pulse',
+    'Hook test',
+    'Post prep',
+    'Review cycle',
+    'LinkedIn live',
+    'Caption swap',
+    'Distribution',
+    'Engagement day',
+    'Story hook',
+    'Trend check',
+    'Founder story',
+    'Network push',
+    'Headline refresh',
+    'Content edit',
+    'Platform sync',
+    'A/B caption',
+    'CTA refresh',
+    'Boost prompt',
+    'Hashtag lab',
+    'DM flow',
+    'Analytics check',
+    'Weekend burst',
+    'Niche angle',
+    'Follow-up post',
+    'Repurpose clip',
+    'Momentum reset',
+    'Live test',
+  ]
+
+  useEffect(() => {
+    const unsubscribe = progress.on('change', (value) => {
+      const active = Math.max(0, Math.min(cells.length, Math.floor(((value - 0.25) / 0.35) * cells.length)))
+      setFilled(active)
+    })
+
+    return () => unsubscribe()
+  }, [cells.length, progress])
+
+  const progressPct = `${Math.round((filled / cells.length) * 100)}%`
+  const displayLabel = filled > 0 ? `Day ${filled}: ${cells[filled - 1]}` : 'Day 1: Founder story'
+
+  return (
+    <div className="relative overflow-hidden rounded-[30px] border border-white/10 bg-[#09090C] p-4 shadow-[0_40px_120px_rgba(107,33,168,.2)] sm:p-6">
+      <div className="flex items-center justify-between border-b border-white/10 pb-4">
+        <div>
+          <p className="text-xs font-black text-white">ALPHA OVERVIEW</p>
+          <p className="text-[10px] text-white/40">84 impressions on launch day</p>
+        </div>
+        <span className="flex items-center gap-2 text-[10px] font-bold text-emerald-300">
+          <i className="size-2 rounded-full bg-emerald-400" />
+          EXECUTING
+        </span>
+      </div>
+
+      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div className="rounded-2xl border border-white/10 bg-white/[.035] p-4">
+          <motion.p className="text-2xl font-black text-white">
+            <AnimatedCounter value={84} />
+          </motion.p>
+          <p className="mt-1 text-[9px] font-bold uppercase tracking-wider text-white/30">Impressions</p>
+        </div>
+
+        {[
+          ['Posts', '4 tested'],
+          ['Platforms', '4'],
+        ].map(([label, value]) => (
+          <div key={label} className="rounded-2xl border border-white/10 bg-white/[.035] p-4">
+            <p className="text-2xl font-black text-white">{value}</p>
+            <p className="mt-1 text-[9px] font-bold uppercase tracking-wider text-white/30">{label}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-white/10 bg-white/[.025] p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-[10px] font-bold text-white/40">30-day content engine</p>
+            <p className="text-[10px] text-white/30">Live grid fills with every execution day</p>
+          </div>
+          <span className="rounded-full bg-white/5 px-3 py-1 text-[10px] font-semibold text-white/60">
+            {displayLabel}
+          </span>
+        </div>
+
+        <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-[#6B21A8] to-[#FFD700]"
+            style={{ width: progressPct }}
+          />
+        </div>
+
+        <div className="mt-5 grid grid-cols-7 gap-1.5">
+          {cells.map((label, index) => {
+            const active = index < filled
+            return (
+              <motion.div
+                key={`${label}-${index}`}
+                whileHover={{ scale: 1.05 }}
+                className={`group relative aspect-square rounded-md border ${
+                  active ? 'border-[#FFD700] bg-[#FFD700]/20 shadow-[0_0_30px_rgba(255,215,0,.08)]' : 'border-white/10 bg-white/[.03]'
+                }`}
+                title={`Day ${index + 1}: ${label}`}
+              >
+                <span
+                  className={`absolute inset-x-0 top-2 text-center text-[9px] font-bold uppercase tracking-[.2em] ${
+                    active ? 'text-white' : 'text-white/30'
+                  }`}
+                >
+                  {index + 1}
+                </span>
+                <span className="pointer-events-none absolute inset-x-0 bottom-2 text-center text-[9px] text-white/25 opacity-0 group-hover:opacity-100">
+                  {label}
+                </span>
+              </motion.div>
+            )
+          })}
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-4 gap-2">
+        {['in', 'f', '𝕏', '◎'].map((icon, index) => (
+          <PlatformTile key={icon} icon={icon} index={index} progress={progress} />
+        ))}
+      </div>
+    </div>
+  )
 }
 
 function PlatformTile({ icon, index, progress }: { icon: string; index: number; progress: MotionValue<number> }) {
-  const opacity = useTransform(progress,[.48 + index*.05,.62 + index*.05],[.15,1])
-  return <motion.div style={{ opacity }} className="grid h-12 place-items-center rounded-xl border border-white/10 bg-white/[.03] font-black text-[#FFD700]">{icon}</motion.div>
+  const opacity = useTransform(progress, [0.48 + index * 0.05, 0.62 + index * 0.05], [0.15, 1])
+
+  return (
+    <motion.div
+      style={{ opacity }}
+      className="grid h-12 place-items-center rounded-xl border border-white/10 bg-white/[.03] font-black text-[#FFD700]"
+    >
+      {icon}
+    </motion.div>
+  )
 }
 
 function ScrollDemo() {
   const ref = useRef<HTMLElement>(null)
-  const { scrollYProgress } = useScroll({ target: ref, offset: ['start start','end end'] })
+  const { scrollYProgress } = useScroll({ target: ref, offset: ['start start', 'end end'] })
   const stages = [
-    ['Your dashboard begins with an outcome.','Tell Alpha what growth looks like.'],
-    ['1 Credit = Post to ALL platforms.','One unit of work. No per-channel punishment.'],
-    ['Thirty days, created in moments.','Every post stays reviewable before execution.'],
-    ['Approved work goes live.','Connected platforms light up only after confirmation.'],
-    ['Work compounds while you live.','Reach, followers, and engagement keep moving.'],
+    ['Your dashboard begins with an outcome.', 'Tell Alpha what growth looks like.'],
+    ['1 Credit = Post to ALL platforms.', 'One unit of work. No per-channel punishment.'],
+    ['Thirty days, created in moments.', 'Every post stays reviewable before execution.'],
+    ['Approved work goes live.', 'Connected platforms light up only after confirmation.'],
+    ['Work compounds while you live.', 'Reach, followers, and engagement keep moving.'],
   ]
-  const [stage,setStage] = useState(0)
-  useEffect(() => scrollYProgress.on('change', value => setStage(Math.min(4, Math.floor(value * 5)))), [scrollYProgress])
-  return <section id="demo" ref={ref} className="relative h-[250vh] bg-[#050505] px-4 sm:px-6 max-md:h-auto max-md:py-24"><div className="sticky top-0 mx-auto grid h-screen max-w-7xl items-center gap-12 lg:grid-cols-[.75fr_1.25fr] max-md:static max-md:h-auto"><div><p className="text-xs font-black uppercase tracking-[.2em] text-[#FFD700]">See the shift</p><div className="hidden md:block"><motion.div key={stage} initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .45, ease }}><h2 className="mt-5 text-4xl font-black tracking-[-.045em] text-white sm:text-5xl">{stages[stage][0]}</h2><p className="mt-5 max-w-md leading-7 text-white/40">{stages[stage][1]}</p></motion.div><div className="mt-9 flex gap-2">{stages.map((_,index) => <i key={index} className={`h-1.5 rounded-full transition-all ${index === stage ? 'w-10 bg-[#FFD700]' : 'w-4 bg-white/15'}`}/>)}</div></div><div className="mt-7 space-y-4 md:hidden">{stages.map(([title,copy],index) => <motion.article initial={{ opacity: 0, y: 18 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} key={title} className="rounded-2xl border border-white/10 bg-white/[.03] p-5"><span className="text-[10px] font-black text-[#FFD700]">0{index+1}</span><h2 className="mt-3 text-2xl font-black tracking-[-.035em] text-white">{title}</h2><p className="mt-2 text-sm leading-6 text-white/40">{copy}</p></motion.article>)}</div></div><div className="max-md:mt-8"><DemoDashboard progress={scrollYProgress}/></div></div></section>
+  const [stage, setStage] = useState(0)
+
+  useEffect(() => {
+    const unsubscribe = scrollYProgress.on('change', (value) => {
+      setStage(Math.min(4, Math.floor(value * 5)))
+    })
+    return () => unsubscribe()
+  }, [scrollYProgress])
+
+  return (
+    <section id="demo" ref={ref} className="relative h-[250vh] bg-[#050505] px-4 sm:px-6 max-md:h-auto max-md:py-24">
+      <div className="sticky top-0 mx-auto grid h-screen max-w-7xl items-center gap-12 lg:grid-cols-[.75fr_1.25fr] max-md:static max-md:h-auto">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[.2em] text-[#FFD700]">See the shift</p>
+
+          <div className="hidden md:block">
+            <motion.div
+              key={stage}
+              initial={{ opacity: 0, y: 18 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.45, ease }}
+            >
+              <h2 className="mt-5 text-4xl font-black tracking-[-.045em] text-white sm:text-5xl">
+                {stages[stage][0]}
+              </h2>
+              <p className="mt-5 max-w-md leading-7 text-white/40">{stages[stage][1]}</p>
+            </motion.div>
+
+            <div className="mt-9 flex gap-2">
+              {stages.map((_, index) => (
+                <span
+                  key={index}
+                  className={`h-1.5 rounded-full transition-all ${
+                    index === stage ? 'w-10 bg-[#FFD700]' : 'w-4 bg-white/15'
+                  }`}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-7 space-y-4 md:hidden">
+            {stages.map(([title, copy], index) => (
+              <motion.article
+                key={title}
+                initial={{ opacity: 0, y: 18 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                className="rounded-2xl border border-white/10 bg-white/[.03] p-5"
+              >
+                <span className="text-[10px] font-black text-[#FFD700]">0{index + 1}</span>
+                <h2 className="mt-3 text-2xl font-black tracking-[-.035em] text-white">{title}</h2>
+                <p className="mt-2 text-sm leading-6 text-white/40">{copy}</p>
+              </motion.article>
+            ))}
+          </div>
+        </div>
+
+        <div className="max-md:mt-8">
+          <DemoDashboard progress={scrollYProgress} />
+        </div>
+      </div>
+    </section>
+  )
 }
 
 function Pricing() {
-  const [yearly,setYearly] = useState(true)
-  const plans = [['Starter','$15','150 credits'],['Founder','$29','400 credits'],['Scale','$79','1,200 credits']]
-  return <section id="pricing" className="bg-black px-4 py-24 sm:px-6 lg:py-32"><div className="mx-auto max-w-7xl"><div className="text-center"><p className="text-xs font-black uppercase tracking-[.2em] text-[#FFD700]">Simple by design</p><h2 className="mt-5 text-4xl font-black tracking-[-.045em] text-white sm:text-6xl">One Credit. All Platforms.</h2><p className="mx-auto mt-5 max-w-2xl leading-7 text-white/40">Unlike tools that charge for every channel, AlphaTekX prices the job—not the number of places it needs to happen.</p><div className="mx-auto mt-8 flex w-fit rounded-full border border-white/10 bg-white/[.04] p-1"><button onClick={() => setYearly(false)} className={`rounded-full px-5 py-2.5 text-sm font-bold ${!yearly ? 'bg-white text-black' : 'text-white/40'}`}>Monthly</button><button onClick={() => setYearly(true)} className={`rounded-full px-5 py-2.5 text-sm font-bold ${yearly ? 'bg-[#FFD700] text-black' : 'text-white/40'}`}>Yearly <span className="ml-1 text-[10px]">Founder deal</span></button></div></div><div className="mt-14 grid gap-5 lg:grid-cols-3">{plans.map(([name,price,credits],index) => <motion.article whileHover={{ y: -6 }} key={name} className={`relative rounded-[28px] border bg-[#09090C] p-7 ${index === 1 ? 'border-[#FFD700] shadow-[0_0_60px_rgba(255,215,0,.10)]' : 'border-[#FFD700]/20'}`}>{index === 1 && <span className="absolute right-5 top-5 rounded-full bg-[#FFD700] px-3 py-1 text-[9px] font-black uppercase text-black">Founder choice</span>}<p className="text-xs font-black uppercase tracking-[.16em] text-[#FFD700]">{name}</p><p className="mt-7 text-5xl font-black text-white">{yearly ? price : `$${Math.ceil(Number(price.slice(1))*1.25)}`}<span className="text-sm font-semibold text-white/30">/mo</span></p><p className="mt-3 font-semibold text-white/45">{credits} · every channel included</p><div className="my-7 h-px bg-white/10"/>{['One approval flow','Confirmed publishing','No per-channel fee'].map(item => <p key={item} className="mt-3 flex items-center gap-2 text-sm font-semibold text-white/65"><Check size={16} className="text-[#FFD700]"/>{item}</p>)}<Link to="/auth" className={`mt-8 flex min-h-12 items-center justify-center rounded-full font-black ${index === 1 ? 'bg-[#FFD700] text-black' : 'border border-white/15 text-white'}`}>Choose {name}</Link></motion.article>)}</div></div></section>
+  const [yearly, setYearly] = useState(true)
+  const plans = [
+    { name: 'Starter', price: 15, credits: '150 credits', naira: '~₦23,500' },
+    { name: 'Founder', price: 29, credits: '400 credits', naira: '~₦45,600', featured: true },
+    { name: 'Scale', price: 79, credits: '1,200 credits', naira: '~₦124,100' },
+  ]
+
+  return (
+    <section id="pricing" className="bg-black px-4 py-24 sm:px-6 lg:py-32">
+      <div className="mx-auto max-w-7xl">
+        <div className="text-center">
+          <p className="text-xs font-black uppercase tracking-[.2em] text-[#FFD700]">Simple by design</p>
+          <h2 className="mt-5 text-4xl font-black tracking-[-.045em] text-white sm:text-6xl">
+            One Credit. All Platforms.
+          </h2>
+          <p className="mx-auto mt-5 max-w-2xl leading-7 text-white/40">
+            Unlike tools that charge for every channel, AlphaTekX prices the job—not the number of places it needs to happen.
+          </p>
+
+          <div className="mx-auto mt-8 flex w-fit rounded-full border border-white/10 bg-white/[.04] p-1">
+            <button
+              onClick={() => setYearly(false)}
+              className={`rounded-full px-5 py-2.5 text-sm font-bold ${!yearly ? 'bg-white text-black' : 'text-white/40'}`}
+            >
+              Monthly
+            </button>
+            <button
+              onClick={() => setYearly(true)}
+              className={`rounded-full px-5 py-2.5 text-sm font-bold ${yearly ? 'bg-[#FFD700] text-black' : 'text-white/40'}`}
+            >
+              Yearly <span className="ml-1 text-[10px]">Founder deal</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-14 grid gap-5 lg:grid-cols-3">
+          {plans.map((plan) => (
+            <motion.article
+              whileHover={{ y: -6 }}
+              key={plan.name}
+              className={`relative rounded-[28px] border bg-[#09090C] p-7 ${
+                plan.featured ? 'border-[#FFD700] shadow-[0_0_60px_rgba(255,215,0,.10)]' : 'border-[#FFD700]/20'
+              }`}
+            >
+              {plan.featured && (
+                <span className="absolute right-5 top-5 rounded-full bg-[#FFD700] px-3 py-1 text-[9px] font-black uppercase text-black">
+                  Founder choice
+                </span>
+              )}
+
+              <p className="text-xs font-black uppercase tracking-[.16em] text-[#FFD700]">{plan.name}</p>
+              <p className="mt-7 text-5xl font-black text-white">
+                ${yearly ? plan.price : Math.ceil(plan.price * 1.25)}
+                <span className="text-sm font-semibold text-white/30">/mo</span>
+              </p>
+              <p className="mt-2 text-xs font-semibold text-white/45">{plan.naira} via Paystack</p>
+              <p className="mt-1 font-semibold text-white/45">{plan.credits} · every channel included</p>
+              <div className="my-7 h-px bg-white/10" />
+
+              {['One approval flow', 'Confirmed publishing', 'No per-channel fee'].map((item) => (
+                <div key={item} className="mt-3 flex items-center gap-2 text-sm font-semibold text-white/65">
+                  <Check size={16} className="text-[#FFD700]" />
+                  {item}
+                </div>
+              ))}
+
+              <Link
+                to="/auth"
+                className={`mt-8 inline-flex min-h-[48px] w-full items-center justify-center rounded-full px-4 font-black ${
+                  plan.featured ? 'bg-[#FFD700] text-black' : 'border border-white/15 text-white'
+                }`}
+              >
+                Choose {plan.name}
+              </Link>
+            </motion.article>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
 }
 
 function FinalCTA() {
   const { user } = useAuth()
-  return <section className="relative overflow-hidden border-t border-white/10 bg-black px-4 py-28 text-center sm:px-6"><div className="absolute left-1/2 top-1/2 size-[520px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#6B21A8]/25 blur-[140px]"/><div className="relative mx-auto max-w-4xl"><Zap className="mx-auto text-[#FFD700]"/><h2 className="mt-6 text-5xl font-black tracking-[-.055em] text-white sm:text-7xl">Stop Posting.<br/><span className="bg-gradient-to-r from-[#FFD700] to-[#8B3FC7] bg-clip-text text-transparent">Start Growing.</span></h2><p className="mt-6 text-lg text-white/45">Your second you is ready.</p><Link to={user ? '/dashboard' : '/auth'} className="mt-9 inline-flex min-h-14 items-center gap-2 rounded-full bg-[#FFD700] px-8 font-black text-black shadow-[0_0_50px_rgba(107,33,168,.5)]">Launch My Second You — Start Free <ArrowRight size={19}/></Link></div></section>
+
+  return (
+    <section className="relative overflow-hidden border-t border-white/10 bg-black px-4 py-28 text-center sm:px-6">
+      <div className="absolute left-1/2 top-1/2 size-[520px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#6B21A8]/25 blur-[140px]" />
+      <div className="relative mx-auto max-w-4xl">
+        <Zap className="mx-auto text-[#FFD700]" />
+        <h2 className="mt-6 text-5xl font-black tracking-[-.055em] text-white sm:text-7xl">
+          Stop Posting.
+          <br />
+          <span className="bg-gradient-to-r from-[#FFD700] to-[#8B3FC7] bg-clip-text text-transparent">
+            Start Growing.
+          </span>
+        </h2>
+        <p className="mt-6 text-lg text-white/45">Your second you is ready.</p>
+        <Link
+          to={user ? '/dashboard' : '/auth'}
+          className="mt-9 inline-flex min-h-14 items-center gap-2 rounded-full bg-[#FFD700] px-8 font-black text-black shadow-[0_0_50px_rgba(107,33,168,.5)]"
+        >
+          Claim Founder Deal $29 →
+          <ArrowRight size={19} />
+        </Link>
+      </div>
+    </section>
+  )
 }
 
 function Footer() {
-  return <footer className="border-t border-white/10 bg-black px-4 py-8 sm:px-6"><div className="mx-auto flex max-w-7xl flex-col gap-4 text-sm text-white/35 sm:flex-row sm:items-center sm:justify-between"><span className="font-black tracking-[.12em] text-white">ALPHATEKX</span><div className="flex gap-5"><Link to="/privacy">Privacy</Link><Link to="/terms">Terms</Link></div><span>© 2026 AlphaTekX</span></div></footer>
+  return (
+    <footer className="border-t border-white/10 bg-black px-4 py-8 sm:px-6">
+      <div className="mx-auto flex max-w-7xl flex-col gap-4 text-sm text-white/35 sm:flex-row sm:items-center sm:justify-between">
+        <span className="font-black tracking-[.12em] text-white">ALPHATEKX</span>
+        <div className="flex gap-5">
+          <Link to="/privacy">Privacy</Link>
+          <Link to="/terms">Terms</Link>
+        </div>
+        <span>© 2026 AlphaTekX</span>
+      </div>
+    </footer>
+  )
 }
 
 function MobileCTA() {
   const { user } = useAuth()
-  return <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-black/80 p-3 backdrop-blur-2xl md:hidden"><Link to={user ? '/dashboard' : '/auth'} className="flex min-h-12 items-center justify-center gap-2 rounded-full bg-[#FFD700] font-black text-black">Launch My Second You <ChevronRight size={18}/></Link></div>
+  const [visible, setVisible] = useState(false)
+  const { scrollYProgress } = useScroll()
+
+  useEffect(() => {
+    const unsubscribe = scrollYProgress.on('change', (progress) => {
+      setVisible(progress > 0.5)
+    })
+    return () => unsubscribe()
+  }, [scrollYProgress])
+
+  if (!visible) return null
+
+  return (
+    <div className="fixed inset-x-0 bottom-4 z-50 mx-4 md:hidden">
+      <Link
+        to={user ? '/dashboard' : '/auth'}
+        className="flex h-[56px] max-h-[56px] items-center justify-center gap-2 rounded-full bg-[#FFD700] px-5 text-sm font-black text-black shadow-[0_18px_40px_rgba(0,0,0,.25)]"
+      >
+        Claim Founder Deal $29 →
+        <ChevronRight size={18} />
+      </Link>
+    </div>
+  )
 }
 
 export default function Landing() {
   const { scrollYProgress } = useScroll()
   const scaleX = useSpring(scrollYProgress, { stiffness: 130, damping: 28 })
-  return <div className="min-h-screen overflow-x-hidden bg-black font-['Inter',sans-serif] text-white">
-    <SEO title="AlphaTekX — Your Second You That Never Sleeps" description="AI creates, posts, and grows your socials while you live your real life."/>
-    <motion.div style={{ scaleX }} className="fixed inset-x-0 top-0 z-[60] h-0.5 origin-left bg-gradient-to-r from-[#6B21A8] to-[#FFD700]"/>
-    <Header/><main><Hero/><Problem/><HowItWorks/><ScrollDemo/><Pricing/><FinalCTA/></main><Footer/><MobileCTA/>
-  </div>
+
+  return (
+    <div className="min-h-screen overflow-x-hidden bg-black pb-[100px] font-['Inter',sans-serif] text-white">
+      <SEO title="AlphaTekX — Your Second You That Never Sleeps" description="AI creates, posts, and grows your socials while you live your real life." />
+      <motion.div style={{ scaleX }} className="fixed inset-x-0 top-0 z-[60] h-0.5 origin-left bg-gradient-to-r from-[#6B21A8] to-[#FFD700]" />
+      <Header />
+      <main className="overflow-hidden">
+        <Hero />
+        <Problem />
+        <HowItWorks />
+        <ScrollDemo />
+        <Pricing />
+        <FinalCTA />
+      </main>
+      <Footer />
+      <MobileCTA />
+    </div>
+  )
 }

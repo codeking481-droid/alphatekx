@@ -155,7 +155,7 @@ await test('Revert: revertCreation restores a specific version', () => {
   saveCreation({ missionId, title: 'Revert Second', code: 'v2', type: 'web-app' })
   const firstVersion = first.versions?.[0]
   assert(firstVersion, 'first version missing')
-  const restored = revertCreation(first.id, firstVersion.id)
+  const restored = revertCreation(first.id, firstVersion.id as string)
   assert(restored?.code === 'v1', 'revert did not restore v1')
   assert(restored?.versions && restored.versions.length > 2, 'revert did not append a new version')
 })

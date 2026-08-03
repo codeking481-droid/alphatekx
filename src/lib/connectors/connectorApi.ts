@@ -56,10 +56,8 @@ export type ExecuteResponse = {
 
 export type ComposioStatusResponse = {
   youtube: boolean
-  instagram: boolean
-  x: boolean
-  facebook: boolean
   whatsapp: boolean
+  linkedin: boolean
   connections: Array<{ platform: string; connected: boolean; connectionId: string | null; status: string }>
 }
 

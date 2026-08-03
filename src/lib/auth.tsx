@@ -9,6 +9,14 @@ type LocalUser = { id: string; email: string; name?: string }
 type AuthUser = User | LocalUser
 
 type Profile = { id: string; email: string; credits: number; plan: string; revenue: number; display_name?: string }
+type ProfileRow = {
+  id: string
+  email: string
+  credits: number
+  plan: string
+  revenue: number
+  display_name?: string | null
+}
 type AuthValue = {
   session: Session | null
   user: AuthUser | null
@@ -45,12 +53,12 @@ function readLocalUser(): LocalUser | null {
   } catch { return null }
 }
 
-async function withTimeout<T>(work: Promise<T>, label: string, timeoutMs = PROFILE_TIMEOUT_MS): Promise<T> {
+async function withTimeout<T>(work: PromiseLike<T>, label: string, timeoutMs = PROFILE_TIMEOUT_MS): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new Error(`${label} took too long. Please refresh and try again.`)), timeoutMs)
   })
-  try { return await Promise.race([work, timeout]) }
+  try { return await Promise.race([Promise.resolve(work), timeout]) }
   finally { if (timer) clearTimeout(timer) }
 }
 
@@ -77,18 +85,19 @@ export function AuthProvider({ children }: PropsWithChildren) {
         revenue: 0,
         display_name: String(auth.user.user_metadata?.name || auth.user.user_metadata?.full_name || email.split('@')[0] || 'AlphaTekx user'),
       }
-      let { data } = await withTimeout(
-        supabase.from('profiles').select('id,email,credits,plan,revenue,display_name').eq('id', auth.user.id).maybeSingle(),
-        'Profile load'
-      )
-      if (!data) {
+      let profileRow: ProfileRow | null = null
+      const profileQuery = supabase.from('profiles').select('id,email,credits,plan,revenue,display_name').eq('id', auth.user.id).maybeSingle<ProfileRow>()
+      const profileResponse = await withTimeout(profileQuery, 'Profile load')
+      profileRow = profileResponse.data
+      if (!profileRow) {
         await withTimeout(supabase.rpc('ensure_user_profile'), 'Profile setup')
-        data = (await withTimeout(
-          supabase.from('profiles').select('id,email,credits,plan,revenue,display_name').eq('id', auth.user.id).maybeSingle(),
+        const reloadResponse = await withTimeout(
+          supabase.from('profiles').select('id,email,credits,plan,revenue,display_name').eq('id', auth.user.id).maybeSingle<ProfileRow>(),
           'Profile reload'
-        )).data
+        )
+        profileRow = reloadResponse.data
       }
-      let nextProfile = (data || fallback) as Profile
+      let nextProfile = (profileRow || fallback) as Profile
       const balance = await hydrateCredits().catch(() => Number.NaN)
       if (Number.isFinite(balance)) nextProfile = { ...nextProfile, credits: balance }
       setProfile(nextProfile)

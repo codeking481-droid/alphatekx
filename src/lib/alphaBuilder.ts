@@ -156,7 +156,7 @@ export function parseBuilderOutput(value: string): { code: string; files: Creati
 function normalizeAppCode(code: string, appLike: boolean) {
   if (!appLike) return code
   const rootMatch = code.match(/<div\b[^>]*?className=["']([^"']*)["'][^>]*>/)
-  if (rootMatch) {
+  if (rootMatch?.index !== undefined) {
     const tag = rootMatch[0]
     let cls = rootMatch[1]
     const ensure = (c: string) => { if (!new RegExp(`\\b${c}\\b`).test(cls)) cls += ' ' + c }
@@ -164,7 +164,7 @@ function normalizeAppCode(code: string, appLike: boolean) {
     code = code.slice(0, rootMatch.index) + tag.replace(rootMatch[1], cls.trim()) + code.slice(rootMatch.index + tag.length)
   }
   const mainMatch = code.match(/<main\b[^>]*?className=["']([^"']*)["'][^>]*>/)
-  if (mainMatch) {
+  if (mainMatch?.index !== undefined) {
     const tag = mainMatch[0]
     let cls = mainMatch[1]
     const ensure = (c: string) => { if (!new RegExp(`\\b${c}\\b`).test(cls)) cls += ' ' + c }

@@ -1,4 +1,4 @@
-import { getJson, postJson } from './apiClient'
+import { deleteJson, getJson, postJson } from './apiClient'
 import type { MarketplaceProduct, MarketplaceOrder, SellerWallet, Withdrawal } from './types'
 
 export type { MarketplaceProduct, MarketplaceOrder, SellerWallet, Withdrawal }
@@ -71,10 +71,16 @@ export async function verifyMarketplacePayment(reference: string): Promise<{ suc
   }
 }
 
+function readEnv(name: string) {
+  const value = typeof import.meta !== 'undefined' && import.meta && 'env' in import.meta ? (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env?.[name] : undefined
+  return value || (typeof window !== 'undefined' ? (window as Window & { __APP_ENV__?: Record<string, string | undefined> }).__APP_ENV__?.[name] : undefined)
+}
+
 export async function startMarketplaceCheckout(product: MarketplaceProduct): Promise<void> {
   const { authorization_url, reference, amount } = await buyProduct(product.id)
-  const publicKey = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY?.trim()
-  if (!publicKey || !window.PaystackPop) {
+  const publicKey = readEnv('VITE_PAYSTACK_PUBLIC_KEY')?.trim()
+  const paystackPop = window.PaystackPop
+  if (!publicKey || !paystackPop) {
     window.location.href = authorization_url || `/marketplace?payment=pending&reference=${reference}`
     return
   }
@@ -84,7 +90,7 @@ export async function startMarketplaceCheckout(product: MarketplaceProduct): Pro
     return
   }
   return new Promise((resolve, reject) => {
-    const handler = window.PaystackPop.setup({
+    const handler = paystackPop.setup({
       key: publicKey,
       email,
       amount,

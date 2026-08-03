@@ -89,8 +89,13 @@ export { getLocalUser }
 
 const GOOGLE_OAUTH_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/drive.file'
 
+function readEnv(name: string) {
+  const value = typeof import.meta !== 'undefined' && import.meta && 'env' in import.meta ? (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env?.[name] : undefined
+  return value || (typeof window !== 'undefined' ? (window as Window & { __APP_ENV__?: Record<string, string | undefined> }).__APP_ENV__?.[name] : undefined)
+}
+
 export function getGoogleOAuthUrl() {
-  const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID
+  const clientId = readEnv('VITE_GOOGLE_CLIENT_ID')
   if (!clientId) throw new Error('Google Client ID is not configured.')
   const redirect = `${window.location.origin}/api/auth/gmail/callback`
   const params = new URLSearchParams({
@@ -122,12 +127,6 @@ export const saveIntegration = (provider: string, token: string | undefined, cre
 export const deleteIntegration = (provider: string, token: string | undefined) =>
   request<{ deleted: boolean; provider: string }>(`/api/integrations/${provider}`, token, { method: 'DELETE' })
 
-export async function startCustomOAuth(provider: 'tiktok' | 'snapchat', token?: string) {
-  const data = await request<{ url: string }>(`/api/${provider}/auth`, token, { method: 'POST', body: '{}' })
-  if (!data.url) throw new Error(`${provider} did not return a secure connection URL.`)
-  window.location.assign(data.url)
-}
-
 export const getUserUsage = (token?: string) => request<UserUsage>('/api/user/usage', token)
 
 export const saveConnector = (platform: string, token: string | undefined, credentials: Record<string, unknown>, identifier?: string) =>
@@ -144,15 +143,3 @@ export async function startLinkedInAuth(token?: string, redirect = '/connectors'
   if (!data.url) throw new Error('LinkedIn OAuth URL was not returned')
   window.location.assign(data.url)
 }
-
-export async function startFacebookAuth(token?: string, redirect = '/connected-apps') {
-  const data = await request<{ url: string }>('/api/connectors/facebook/start', token, { method: 'POST', body: JSON.stringify({ redirect }) })
-  if (!data.url) throw new Error('Facebook OAuth URL was not returned')
-  window.location.assign(data.url)
-}
-
-export const getFacebookPages = (token?: string) =>
-  request<{ pages: { id: string; name: string }[] }>('/api/connectors/facebook/pages', token)
-
-export const selectFacebookPage = (pageId: string, token?: string) =>
-  request<{ connected: true; page: { id: string; name: string } }>('/api/connectors/facebook/select-page', token, { method: 'POST', body: JSON.stringify({ pageId }) })

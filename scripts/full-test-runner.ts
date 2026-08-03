@@ -1,3 +1,5 @@
+export {}
+
 const storage=new Map<string,string>();const events=new EventTarget();Object.assign(globalThis,{localStorage:{getItem:(key:string)=>storage.get(key)??null,setItem:(key:string,value:string)=>storage.set(key,String(value)),removeItem:(key:string)=>storage.delete(key),clear:()=>storage.clear()},window:{localStorage:null,dispatchEvent:(event:Event)=>events.dispatchEvent(event),addEventListener:(type:string,listener:EventListener)=>events.addEventListener(type,listener),removeEventListener:(type:string,listener:EventListener)=>events.removeEventListener(type,listener),setTimeout}});(globalThis.window as unknown as {localStorage:unknown}).localStorage=globalThis.localStorage
 const assert=(condition:unknown,message:string)=>{if(!condition)throw new Error(message)}
 const store=await import('../src/lib/missionStore.ts');const credits=await import('../src/lib/creditStore.ts');const reviews=await import('../src/lib/reviewStore.ts')

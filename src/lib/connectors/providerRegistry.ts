@@ -25,52 +25,6 @@ export type ConnectorProvider = {
 
 export const PROVIDER_REGISTRY: ConnectorProvider[] = [
   {
-    id: 'facebook',
-    name: 'Facebook',
-    description: 'Post content, manage pages, engage your audience.',
-    authType: 'oauth',
-    icon: 'facebook',
-    color: '#1877F2',
-    category: 'Social Media',
-    composioAppName: 'facebook',
-    actions: [
-      { id: 'create_post', label: 'Create Post', description: 'Create a new post on a Facebook page.', params: ['pageId', 'message'] },
-      { id: 'upload_photo', label: 'Upload Photo', description: 'Upload a photo to Facebook.', params: ['pageId', 'imageUrl', 'caption'] },
-      { id: 'upload_video', label: 'Upload Video', description: 'Upload a video to Facebook.', params: ['pageId', 'videoUrl', 'title', 'description'] },
-    ],
-  },
-  {
-    id: 'instagram',
-    name: 'Instagram',
-    description: 'Create posts, carousels, and reels.',
-    authType: 'oauth',
-    icon: 'instagram',
-    color: '#E4405F',
-    category: 'Social Media',
-    composioAppName: 'instagram',
-    actions: [
-      { id: 'create_post', label: 'Create Post', description: 'Create a new Instagram post.', params: ['imageUrl', 'caption'] },
-      { id: 'create_carousel', label: 'Create Carousel', description: 'Create a carousel post.', params: ['mediaUrls', 'caption'] },
-      { id: 'create_reel', label: 'Create Reel', description: 'Create a reel.', params: ['videoUrl', 'caption'] },
-    ],
-  },
-  {
-    id: 'twitter',
-    name: 'X (Twitter)',
-    description: 'Post tweets, threads, and engage.',
-    authType: 'oauth',
-    icon: 'twitter',
-    color: '#0A0F1E',
-    category: 'Social Media',
-    composioAppName: 'twitter',
-    actions: [
-      { id: 'create_tweet', label: 'Create Tweet', description: 'Post a new tweet.', params: ['text'] },
-      { id: 'create_thread', label: 'Create Thread', description: 'Post a thread of tweets.', params: ['tweets'] },
-      { id: 'reply_to_tweet', label: 'Reply', description: 'Reply to a tweet.', params: ['tweetId', 'text'] },
-      { id: 'quote_tweet', label: 'Quote Tweet', description: 'Quote a tweet.', params: ['tweetId', 'text'] },
-    ],
-  },
-  {
     id: 'youtube',
     name: 'YouTube',
     description: 'Upload and manage videos.',
@@ -93,11 +47,11 @@ export const PROVIDER_REGISTRY: ConnectorProvider[] = [
     icon: 'whatsapp',
     color: '#25D366',
     category: 'Communication',
-    composioAppName: 'whatsapp_business',
+    composioAppName: 'whatsapp',
     actions: [
       { id: 'send_message', label: 'Send Message', description: 'Send a WhatsApp message.', params: ['to', 'message'] },
-      { id: 'send_template', label: 'Send Template', description: 'Send a template message.', params: ['to', 'templateName', 'parameters'] },
-      { id: 'send_media', label: 'Send Media', description: 'Send a media message (image/video/document).', params: ['to', 'mediaUrl', 'mediaType', 'caption'] },
+      { id: 'send_template', label: 'Send Template', description: 'Send a template message.', params: ['to', 'templateId'] },
+      { id: 'send_media', label: 'Send Media', description: 'Send an image or document.', params: ['to', 'mediaUrl', 'caption'] },
     ],
   },
   {

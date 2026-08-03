@@ -4,7 +4,12 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 import './index.css'
 
-const BUILD_ID = import.meta.env.VITE_BUILD_ID || 'dev'
+function readEnv(name: string) {
+  const value = typeof import.meta !== 'undefined' && import.meta && 'env' in import.meta ? (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env?.[name] : undefined
+  return value || (typeof window !== 'undefined' ? (window as Window & { __APP_ENV__?: Record<string, string | undefined> }).__APP_ENV__?.[name] : undefined)
+}
+
+const BUILD_ID = readEnv('VITE_BUILD_ID') || 'dev'
 console.log('AlphaTekX build:', BUILD_ID)
 
 const staleChunkReloadKey = `alphatekx:chunk-reload:${BUILD_ID}`
