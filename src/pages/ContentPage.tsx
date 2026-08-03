@@ -56,11 +56,8 @@ const PAGES: Record<string, PageData> = {
           <ContactForm />
         </div>
         <div className="mt-6 rounded-2xl border border-violet-400/20 bg-violet-500/10 p-6 backdrop-blur-xl">
-          <p className="font-medium text-white">Need a direct line?</p>
-          <div className="mt-3 flex flex-wrap gap-3 text-sm">
-            <a href="mailto:support@alphatekx.name.ng" className="text-violet-300 hover:underline">support@alphatekx.name.ng</a>
-            <a href="https://wa.me/2349046802069" target="_blank" rel="noreferrer" className="text-violet-300 hover:underline">WhatsApp</a>
-          </div>
+          <p className="font-medium text-white">Need help with a payment or support issue?</p>
+          <p className="mt-3 text-sm text-white/60">Use the support form above and we’ll reply in under a minute.</p>
           <p className="mt-4 text-sm text-white/55">AlphaTekx is built and owned by Daniel Thompson.</p>
         </div>
       </>

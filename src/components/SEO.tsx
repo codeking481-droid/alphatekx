@@ -1,11 +1,9 @@
 const founder = 'Daniel Thompson'
-const contactEmail = 'iamdan4live@gmail.com'
 
 const founderProfile = {
   '@type': 'Person',
   name: founder,
   jobTitle: 'Founder and CEO of AlphaTekX',
-  email: contactEmail,
   nationality: 'Nigerian',
   url: 'https://alphatekx.name.ng/about',
   sameAs: ['https://alphatekx.name.ng/about'],
@@ -61,4 +59,4 @@ export default function SEO({
   )
 }
 
-export { contactEmail, founder }
+export { founder }

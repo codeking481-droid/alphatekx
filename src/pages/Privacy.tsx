@@ -45,7 +45,7 @@ export default function Privacy() {
 
           <h2 className="text-lg font-semibold text-white">6. Contact Us</h2>
           <p>
-            If you have questions about this Privacy Policy, please contact us at <a href="mailto:iamdan4live@gmail.com" className="text-indigo-400 hover:underline">iamdan4live@gmail.com</a>.
+            If you have questions about this Privacy Policy, please submit a support request through the app and our team will respond as soon as possible.
           </p>
         </section>
       </main>

@@ -60,7 +60,7 @@ export default function Terms() {
 
           <h2 className="text-lg font-semibold text-white">9. Contact Us</h2>
           <p>
-            For questions about these Terms, contact us at <a href="mailto:alphatekxcompany@gmail.com" className="text-indigo-400 hover:underline">alphatekxcompany@gmail.com</a>.
+            For questions about these Terms, submit a support request through the app and our team will respond promptly.
           </p>
         </section>
       </main>

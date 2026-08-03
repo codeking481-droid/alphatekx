@@ -23,7 +23,7 @@ import { ALPHATEKX_BRAIN } from './server/alpha/brainKnowledge.mjs'
 import * as providerHealth from './server/alpha/providerHealth.mjs'
 import * as billing from './server/billing.mjs'
 import { hasUsableLinkedInStorage, normalizeLinkedInScopes, publishLinkedInTextPost } from './server/linkedin.mjs'
-import { allowedWhatsAppRecipients, applyWhatsAppStatusEvent, executeApprovedWhatsAppMessage, sendWhatsAppText, verifyWhatsAppPhoneRegistration, verifyWhatsAppWebhookSignature, whatsappCredentials, whatsappWebhookEvents } from './server/whatsapp.mjs'
+import { allowedWhatsAppRecipients, applyWhatsAppStatusEvent, executeApprovedWhatsAppMessage, normalizeWhatsAppRecipient, sendWhatsAppText, verifyWhatsAppPhoneRegistration, verifyWhatsAppWebhookSignature, whatsappCredentials, whatsappWebhookEvents } from './server/whatsapp.mjs'
 import { connectorFeatureAccess, featureStatusForUser, refreshFeatureConfig, unavailableConnectorMessage, unavailablePromptConnector } from './server/featureAccess.mjs'
 import * as alphaConnector from './server/composioConnectorService.mjs'
 import * as mediaLibrary from './server/mediaLibraryService.mjs'
@@ -44,6 +44,9 @@ function loadEnv() {
   }
 }
 loadEnv()
+
+const supportEmail = String(process.env.SUPPORT_EMAIL || 'alphatekxcompany@gmail.com').trim()
+const supportWhatsAppNumber = normalizeWhatsAppRecipient(process.env.SUPPORT_WHATSAPP || '9046802069')
 
 const port = Number(process.env.PORT || 3001)
 const root = path.dirname(fileURLToPath(import.meta.url))
@@ -3962,9 +3965,47 @@ async function handleContactRequest(req, res) {
     createdAt: new Date().toISOString(),
   }
 
+  const notification = await notifySupportRequest(user?.id || 'system', record).catch((error) => ({ emailSent: false, whatsappSent: false, emailError: String(error), whatsappError: String(error) }))
+  record.supportNotification = notification
   requests.unshift(record)
   writeJsonFile(contactRequestsFile, requests.slice(0, 500))
   return json(res, 200, { success: true, message: 'Support request received. We will reply in 1 minute.' })
+}
+
+async function notifySupportEmail(userId, request) {
+  if (!supportEmail) throw new Error('Support email is not configured.')
+  const subject = `AlphaTekX support request: ${request.issueType}${request.reference ? ` (${request.reference})` : ''}`
+  const text = [`Name: ${request.name}`, `Email: ${request.email}`, `Issue: ${request.issueType}`, `Reference: ${request.reference || 'none'}`, '', request.message].join('\n')
+  const html = `<p><strong>Name:</strong> ${escapeHtml(request.name)}</p><p><strong>Email:</strong> ${escapeHtml(request.email)}</p><p><strong>Issue:</strong> ${escapeHtml(request.issueType)}</p><p><strong>Reference:</strong> ${escapeHtml(request.reference || 'none')}</p><p><strong>Message:</strong></p><p>${escapeHtml(request.message).replace(/\n/g, '<br/>')}</p>`
+  return await sendEmailViaResend(userId, { to: supportEmail, subject, html, text })
+}
+
+async function notifySupportWhatsApp(request) {
+  if (!supportWhatsAppNumber) throw new Error('Support WhatsApp number is not configured.')
+  const credentials = whatsappCredentials()
+  if (!credentials.configured) throw new Error('WhatsApp support is not configured on the server.')
+  await verifyWhatsAppPhoneRegistration(credentials)
+  const messageText = `New AlphaTekX support request from ${request.name} (${request.email}). Issue: ${request.issueType}. Reference: ${request.reference || 'none'}. Message: ${request.message}`
+  const text = messageText.length > 1000 ? `${messageText.slice(0, 997)}...` : messageText
+  const response = await fetch(`${String(credentials.apiVersion).startsWith('v') ? `https://graph.facebook.com/${credentials.apiVersion}` : `https://graph.facebook.com/v15.0`}/${encodeURIComponent(credentials.phoneNumberId)}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${credentials.accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: supportWhatsAppNumber, type: 'text', text: { body: text } }),
+  })
+  const data = await response.json().catch(() => ({}))
+  if (!response.ok || data.error) throw new Error(data.error?.message || 'WhatsApp support notification failed.')
+  return data
+}
+
+async function notifySupportRequest(userId, request) {
+  const result = { emailSent: false, whatsappSent: false, emailError: '', whatsappError: '' }
+  try { await notifySupportEmail(userId, request); result.emailSent = true } catch (error) { result.emailError = error instanceof Error ? error.message : String(error) }
+  try { await notifySupportWhatsApp(request); result.whatsappSent = true } catch (error) { result.whatsappError = error instanceof Error ? error.message : String(error) }
+  return result
+}
+
+function escapeHtml(value) {
+  return String(value || '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char])
 }
 
 async function initializePaystackPayment(req, res) {
