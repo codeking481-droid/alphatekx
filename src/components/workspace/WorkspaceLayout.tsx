@@ -61,7 +61,17 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
     }
   }, [])
   useEffect(() => { void hydrateCredits() }, [user?.id])
-  useEffect(() => { if (profile) { setCredits(profile.credits); setPlan(profile.plan || 'free') } }, [profile])
+  useEffect(() => {
+    const storedPlan = (() => {
+      try { return localStorage.getItem('alphatekx_plan') || 'free' } catch { return 'free' }
+    })()
+    if (profile) {
+      setCredits(profile.credits)
+      setPlan(profile.plan || storedPlan || 'free')
+      return
+    }
+    setPlan(storedPlan)
+  }, [profile])
   useEffect(() => {
     if (!user) return
     const body = JSON.stringify({ user: { id: user.id, email: user.email, name: ('name' in user ? user.name : undefined), credits: getCredits() } })

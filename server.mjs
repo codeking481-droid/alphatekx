@@ -4331,26 +4331,30 @@ function resolvePlanFromBody(body) {
 export async function verifyPaystack(req, res) {
   applyCors(req, res)
   const config = supabaseConfig()
-  // Support GET redirect flow: /api/paystack/verify?reference=...
+  const acceptsJson = String(req.headers.accept || '').includes('application/json') || String(req.headers['x-requested-with'] || '').includes('XMLHttpRequest')
   if ((req.method || '').toUpperCase() === 'GET') {
     try {
       const requestUrl = new URL(req.url || '/', publicAppUrl())
-      const reference = String(requestUrl.searchParams.get('reference') || '')
-      if (!reference) return json(res, 400, { error: 'Missing payment reference.' })
+      const reference = String(requestUrl.searchParams.get('reference') || requestUrl.searchParams.get('ref') || '')
+      if (!reference) return acceptsJson ? json(res, 400, { error: 'Missing payment reference.' }) : json(res, 400, { error: 'Missing payment reference.' })
       const result = await billing.verifyPayment('paystack', reference, config)
-      if (!result.ok) return json(res, 400, { error: result.message || 'Verification failed' })
+      if (!result.ok) {
+        if (acceptsJson) return json(res, 400, { error: result.message || 'Verification failed', reference })
+        return json(res, 400, { error: result.message || 'Verification failed' })
+      }
+      if (acceptsJson) return json(res, 200, { verified: true, credits: result.balance, plan: result.plan || 'free', amount: result.amount || 0, reference: result.reference || reference })
       const destination = new URL('/dashboard', publicAppUrl())
       destination.searchParams.set('payment', 'success')
+      destination.searchParams.set('reference', reference)
       destination.searchParams.set('ref', reference)
       destination.searchParams.set('credits', String(result.credits || result.balance || 0))
       res.writeHead(302, { Location: destination.toString(), 'Cache-Control': 'no-store' })
       return res.end()
     } catch (err) {
-      return json(res, 500, { error: err instanceof Error ? err.message : String(err) })
+      return acceptsJson ? json(res, 500, { error: err instanceof Error ? err.message : String(err) }) : json(res, 500, { error: err instanceof Error ? err.message : String(err) })
     }
   }
   try {
-    const config = supabaseConfig()
     const body = await readBody(req)
     const reference = String(body.reference || '')
     if (!reference) return json(res, 400, { error: 'Missing payment reference.' })
@@ -4372,7 +4376,7 @@ export async function verifyPaystack(req, res) {
 
     const result = await billing.verifyPayment('paystack', reference, config)
     if (!result.ok) return json(res, 400, { error: result.message || 'Verification failed' })
-    return json(res, 200, { verified: true, credits: result.balance, plan: result.plan || 'free', amount: result.amount || 0, reference: result.reference })
+    return json(res, 200, { verified: true, credits: result.balance, plan: result.plan || 'free', amount: result.amount || 0, reference: result.reference || reference })
   } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Verification failed.' }) }
 }
 

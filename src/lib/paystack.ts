@@ -45,6 +45,20 @@ function readEnv(name: string) {
   return value || (typeof window !== 'undefined' ? (window as Window & { __APP_ENV__?: Record<string, string | undefined> }).__APP_ENV__?.[name] : undefined)
 }
 
+function savePendingPayment(reference: string, email: string, pack: PaymentPack) {
+  try {
+    localStorage.setItem('alphatekx:pending-payment', JSON.stringify({
+      reference,
+      email,
+      packId: pack.id,
+      plan: pack.plan || pack.id,
+      credits: pack.credits || 0,
+      amountKobo: pack.amountKobo,
+      createdAt: Date.now(),
+    }))
+  } catch {}
+}
+
 export async function initiatePaystackPack(pack: PaymentPack) {
   const publicKey = readEnv('VITE_PAYSTACK_PUBLIC_KEY')?.trim()
 
@@ -79,6 +93,8 @@ export async function initiatePaystackPack(pack: PaymentPack) {
   const authorizationUrl = String(initData.authorization_url || '')
   if (!reference || !amount) throw new Error('Payment initialization returned invalid data. Please retry.')
 
+  savePendingPayment(reference, email, pack)
+
   if (!publicKey || !window.PaystackPop) {
     if (!authorizationUrl) throw new Error('Paystack checkout is unavailable. Please try again later.')
     window.location.href = authorizationUrl
@@ -93,16 +109,20 @@ export async function initiatePaystackPack(pack: PaymentPack) {
       ref: reference,
       onClose: () => reject(new Error('Payment cancelled. No charge was made.')),
       callback: (response: { reference?: string; status?: string; message?: string }) => {
-        // Redirect to server-side verify endpoint which will complete the purchase and then redirect to the dashboard
         const ref = response?.reference || reference
         if (!ref) {
           reject(new Error(response?.message || 'Payment did not return a reference.'))
           return
         }
+        savePendingPayment(ref, email, pack)
+        const destination = new URL('/dashboard', window.location.origin)
+        destination.searchParams.set('payment', 'success')
+        destination.searchParams.set('reference', ref)
+        destination.searchParams.set('ref', ref)
+        destination.searchParams.set('credits', String(pack.credits || 0))
         try {
-          window.location.href = `/api/paystack/verify?reference=${encodeURIComponent(ref)}`
+          window.location.href = `${destination.pathname}${destination.search}`
         } catch (err) {
-          // Fallback: attempt client-side verification
           void verifyPaystack(ref, pack)
             .then(() => resolve({ success: true as const, plan: (pack.plan || pack.id) as PlanValue, reference: ref }))
             .catch(reject)

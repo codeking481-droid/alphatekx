@@ -235,6 +235,24 @@ async function writeProfile(user, config, patch) {
   writeJsonFile(path.resolve(dataDir, 'users.json'), users)
 }
 
+async function findUserByEmail(email, config) {
+  const normalized = normalizedEmail(email)
+  if (!normalized) return null
+  if (config?.url && config?.service) {
+    try {
+      const response = await fetch(`${config.url}/rest/v1/profiles?email=eq.${encodeURIComponent(normalized)}&select=id,email,credits,plan&limit=1`, { headers: serviceHeaders(config.service) })
+      if (response.ok) {
+        const rows = await response.json()
+        if (Array.isArray(rows) && rows[0]) return rows[0]
+      }
+    } catch {}
+  }
+  const users = readJsonFile(path.resolve(dataDir, 'users.json'), [])
+  const local = users.find(u => normalizedEmail(u.email) === normalized || normalizedEmail(u?.user_metadata?.email) === normalized)
+  if (local) return { id: local.id, email: local.email || normalized, credits: Number(local.credits) || 0, plan: local.plan || 'free' }
+  return null
+}
+
 export async function getUserCredits(user, config) {
   if (isAdmin(user)) return 999999
   const profile = await readProfile(user, config)
@@ -532,7 +550,7 @@ async function initializePaystack(user, item, config) {
   const pending = readJsonFile(path.resolve(dataDir, 'pending-transactions.json'), {})
   pending[reference] = { userId: user.id, email, credits, amount, currency, listPriceUsdCents, source, status: 'pending', createdAt: nowIso(), item }
   writeJsonFile(path.resolve(dataDir, 'pending-transactions.json'), pending)
-  const callback = String(process.env.PAYSTACK_CALLBACK_URL || `${publicAppUrl()}/settings`)
+  const callback = String(process.env.PAYSTACK_CALLBACK_URL || `${publicAppUrl()}/dashboard?payment=success`)
   if (!secret) {
     if (process.env.NODE_ENV === 'production') throw new Error('Paystack secret key is not configured')
     // Dev mode: immediately redirect back with the reference for simulated verification
@@ -600,13 +618,23 @@ async function verifyPaystack(reference, config) {
     return { ok: false, reference, message: 'Payment amount or currency does not match the initialized checkout' }
   }
   const meta = data.data?.metadata || pendingRecord?.item || {}
+  const customerEmail = String(data.data?.customer?.email || pendingRecord?.email || '').trim().toLowerCase()
   const userId = data.data?.metadata?.user_id || pendingRecord?.userId
   const source = String(data.data?.metadata?.source || pendingRecord?.source || '')
   const planId = data.data?.metadata?.plan || meta?.planId || (source.startsWith('subscription_') ? source.replace('subscription_', '') : null)
   const packId = data.data?.metadata?.pack || meta?.packId || (source.startsWith('credits_') ? source.replace('credits_', '') : null)
   const credits = Number(data.data?.metadata?.credits || pendingRecord?.credits || 0)
-  if (!userId || !credits) return { ok: false, reference, message: 'Missing metadata' }
-  const user = { id: userId, email: data.data.customer?.email || pendingRecord?.email || '' }
+  let user = { id: userId || '', email: customerEmail }
+  if (!user.id && customerEmail) {
+    const matched = await findUserByEmail(customerEmail, config)
+    if (matched?.id) user = { id: matched.id, email: matched.email || customerEmail }
+  }
+  if (!user.id || !credits) return { ok: false, reference, message: 'Missing payment metadata or user record' }
+  if (pendingRecord) {
+    pendingRecord.userId = user.id
+    pendingRecord.email = user.email || pendingRecord.email || customerEmail
+    writeJsonFile(path.resolve(dataDir, 'pending-transactions.json'), pending)
+  }
   let result
   if (planId) {
     result = await setPlan(user, planId, config, { reference })
