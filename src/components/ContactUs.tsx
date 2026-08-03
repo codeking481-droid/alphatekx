@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Mail, MessageCircle, Move, Send, X } from 'lucide-react'
 import { useLocation } from 'react-router-dom'
-import { useAuth } from '../lib/auth'
+import { useAuthOptional } from '../lib/auth'
 
 const ISSUE_OPTIONS = [
   'Payment - No credit',
@@ -27,7 +27,8 @@ export function openContactUs() {
 
 export function ContactForm({ compact = false, onSuccess }: { compact?: boolean; onSuccess?: () => void }) {
   const location = useLocation()
-  const { user } = useAuth()
+  const auth = useAuthOptional()
+  const user = auth?.user ?? null
   const [form, setForm] = useState({
     name: '',
     email: '',
