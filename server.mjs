@@ -3973,10 +3973,14 @@ async function initializePaystackPayment(req, res) {
   if (!user) return json(res, 401, { error: 'Authentication required' })
   const body = await readBody(req)
   let item
+  const requestedPlan = String(body.plan || '').trim().toLowerCase()
+  const requestedAmount = Number(body.amount || 0)
   if (body.planId) {
     item = { type: 'subscription', planId: String(body.planId) }
   } else if (body.packId) {
     item = { type: 'credits', packId: String(body.packId) }
+  } else if (requestedPlan === 'early_founder_19' || requestedAmount === 19) {
+    item = { type: 'credits', packId: 'early_founder_19', amountUsd: requestedAmount || 19, plan: requestedPlan || 'early_founder_19', credits: 500 }
   } else {
     // Backwards-compatible fallback: derive pack from credits amount
     const credits = Number(body.credits || 0)

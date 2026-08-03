@@ -15,6 +15,8 @@ export default function Dashboard() {
   const [showContactBanner, setShowContactBanner] = useState(false)
   const [paymentRef, setPaymentRef] = useState('')
   const [paymentCredits, setPaymentCredits] = useState<number | null>(null)
+  const [celebrationTitle, setCelebrationTitle] = useState('Congratulations')
+  const [celebrationMessage, setCelebrationMessage] = useState('Payment successful! Credits were added to your account.')
   const [insights, setInsights] = useState<{ id: string; title: string; description: string; severity: string }[]>([])
 
   useEffect(() => { void getJson<{ predictions: { id: string; title: string; description: string; severity: string }[] }>('/api/brain/predictions').then(d => setInsights(d.predictions || [])).catch(() => {}) }, [])
@@ -42,7 +44,15 @@ export default function Dashboard() {
         const data = await response.json().catch(() => ({} as Record<string, unknown>))
         if (response.ok && (data.success === true || data.verified === true)) {
           const credited = Number(data.credits || searchParams.get('credits') || 0)
+          const plan = String(data.plan || searchParams.get('plan') || '')
           setPaymentCredits(credited)
+          if (plan === 'early_founder_19') {
+            setCelebrationTitle('Early Founder Deal Activated')
+            setCelebrationMessage(`Congratulations! 🎉 Your ${credited || 500} credits are live and LinkedIn automation is unlocked.`)
+          } else {
+            setCelebrationTitle('Congratulations')
+            setCelebrationMessage(`Payment successful! ${credited ? `${credited.toLocaleString()} credits` : 'Credits'} were added to your account.`)
+          }
           setShowCongrats(true)
           try { localStorage.removeItem('alphatekx:pending-payment'); localStorage.removeItem('lastRef') } catch {}
           const next = new URLSearchParams(searchParams)
@@ -140,8 +150,8 @@ export default function Dashboard() {
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/85 px-4">
           <div className="mx-auto w-full max-w-lg rounded-[24px] border border-[#24242A] bg-[#151519] p-8 text-center shadow-2xl">
             <div className="text-4xl">🎉🎉🎉🎉</div>
-            <h2 className="mt-4 text-2xl font-bold text-white">Congratulations</h2>
-            <p className="mt-2 text-sm text-white/75">Payment successful! {paymentCredits ? `${paymentCredits.toLocaleString()} credits` : 'Credits'} were added to your account.</p>
+            <h2 className="mt-4 text-2xl font-bold text-white">{celebrationTitle}</h2>
+            <p className="mt-2 text-sm text-white/75">{celebrationMessage}</p>
             <p className="mt-2 text-xs text-white/40">Ref: {paymentRef || 'pending verification'}</p>
             <div className="mt-6 flex justify-center gap-3">
               <button onClick={() => { setShowCongrats(false); setShowContactBanner(false); navigate('/dashboard', { replace: true }) }} className="rounded-full bg-[#FFD700] px-4 py-2 font-semibold text-black">Continue</button>

@@ -69,6 +69,7 @@ export const CREDIT_PACKS = [
   { id: 'creator_20', credits: 20, amountKobo: 300, currency: 'USD', label: 'Creator', description: '20 credits for $3' },
   { id: 'builder_40', credits: 40, amountKobo: 500, currency: 'USD', label: 'Builder', description: '40 credits for $5' },
   { id: 'scale_100', credits: 100, amountKobo: 1000, currency: 'USD', label: 'Scale', description: '100 credits for $10' },
+  { id: 'early_founder_19', credits: 500, amountKobo: 1900, currency: 'USD', label: 'Early Founder Deal', description: '500 credits for $19' },
 ]
 
 export function getPlan(id) { return PLANS[id] || PLANS.free }
@@ -530,14 +531,30 @@ export async function parsePaystackResponse(response, operation) {
 async function initializePaystack(user, item, config) {
   const secret = process.env.PAYSTACK_SECRET_KEY
   const isSubscription = item.type === 'subscription'
+  const isEarlyFounder = String(item?.plan || item?.packId || '').toLowerCase() === 'early_founder_19' || String(item?.packId || '').toLowerCase() === 'early_founder_19'
   const pack = isSubscription ? null : getCreditPack(item.packId)
   const plan = isSubscription ? getPlan(item.planId) : null
-  if (!isSubscription && !pack) throw new Error('Invalid credit pack')
+  if (!isSubscription && !pack && !isEarlyFounder) throw new Error('Invalid credit pack')
   if (isSubscription && !plan) throw new Error('Invalid plan')
-  const charge = resolvePaystackCharge(isSubscription ? { priceKobo: plan.priceKobo, currency: plan.currency } : { amountKobo: pack.amountKobo, currency: pack.currency })
-  const { amount, currency, listPriceUsdCents } = charge
-  const credits = isSubscription ? plan.monthlyCredits : pack.credits
-  const source = isSubscription ? `subscription_${plan.id}` : `credits_${pack.id}`
+
+  let amount = 0
+  let currency = 'NGN'
+  let listPriceUsdCents = 0
+  let credits = 0
+  let source = ''
+
+  if (isEarlyFounder) {
+    credits = Number(item?.credits || 500)
+    amount = 3_040_000
+    currency = 'NGN'
+    listPriceUsdCents = 1900
+    source = 'credits_early_founder_19'
+  } else {
+    const charge = resolvePaystackCharge(isSubscription ? { priceKobo: plan.priceKobo, currency: plan.currency } : { amountKobo: pack.amountKobo, currency: pack.currency })
+    ;({ amount, currency, listPriceUsdCents } = charge)
+    credits = isSubscription ? plan.monthlyCredits : pack.credits
+    source = isSubscription ? `subscription_${plan.id}` : `credits_${pack.id}`
+  }
   const email = String(user.email || '')
   // For test credit pack use a deterministic test reference format avoiding user id leakage
   let reference
@@ -572,8 +589,8 @@ async function initializePaystack(user, item, config) {
         source,
         currency,
         list_price_usd_cents: listPriceUsdCents,
-        plan: isSubscription ? plan.id : undefined,
-        pack: !isSubscription ? pack.id : undefined,
+        plan: isSubscription ? plan.id : (isEarlyFounder ? 'early_founder_19' : undefined),
+        pack: !isSubscription ? (isEarlyFounder ? 'early_founder_19' : pack?.id) : undefined,
       },
     })
   })
@@ -624,6 +641,7 @@ async function verifyPaystack(reference, config) {
   const planId = data.data?.metadata?.plan || meta?.planId || (source.startsWith('subscription_') ? source.replace('subscription_', '') : null)
   const packId = data.data?.metadata?.pack || meta?.packId || (source.startsWith('credits_') ? source.replace('credits_', '') : null)
   const credits = Number(data.data?.metadata?.credits || pendingRecord?.credits || 0)
+  const isEarlyFounder = String(data.data?.metadata?.plan || '').toLowerCase() === 'early_founder_19' || String(packId || '').toLowerCase() === 'early_founder_19'
   let user = { id: userId || '', email: customerEmail }
   if (!user.id && customerEmail) {
     const matched = await findUserByEmail(customerEmail, config)
@@ -638,9 +656,10 @@ async function verifyPaystack(reference, config) {
   let result
   if (planId) {
     result = await setPlan(user, planId, config, { reference })
-  } else if (packId) {
+  } else if (packId || isEarlyFounder) {
     const pack = getCreditPack(packId)
-    result = await addCredits(user, credits, config, { reference, type: 'purchase', reason: `Credit pack: ${pack?.label || packId}`, metadata: { packId, provider: 'paystack' } })
+    const creditsToAdd = Number(credits || (isEarlyFounder ? 500 : 0))
+    result = await addCredits(user, creditsToAdd, config, { reference, type: 'purchase', reason: isEarlyFounder ? 'Early Founder Deal' : `Credit pack: ${pack?.label || packId}`, metadata: { packId: packId || 'early_founder_19', provider: 'paystack', plan: isEarlyFounder ? 'early_founder_19' : undefined } })
   } else {
     result = await addCredits(user, credits, config, { reference, type: 'purchase', metadata: { source, provider: 'paystack' } })
   }

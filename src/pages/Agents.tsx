@@ -208,15 +208,15 @@ export default function Agents() {
     return <GuidedCommandCentre platform={guidedPlatform} creating={creating} notice={notice} onComplete={message => void send(message)} onBack={() => navigate('/dashboard')} />
   }
 
-  return <main className="flex min-h-[calc(100dvh-4rem)] w-full flex-1 flex-col overflow-hidden bg-[#0A0A0B]">
-    <div className="mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col px-3 pb-3 pt-3 sm:px-6 lg:px-8 lg:pt-4">
+  return <main className="flex h-[100dvh] w-full flex-1 flex-col overflow-hidden bg-[#0A0A0B]">
+    <div className="mx-auto flex h-full w-full max-w-none flex-1 flex-col px-0 pb-0 pt-0 sm:max-w-7xl sm:px-6 sm:pb-4 sm:pt-4 lg:px-8">
       <header className="hidden">
         <p className="text-xs font-medium uppercase tracking-[.24em] text-white/60">Run your automations 24/7</p>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-5xl">Turn Your Ideas Into Reality</h1>
         <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-[#8A8A93] sm:text-base">Tell Alpha what you want done. It will plan an automation that keeps working even when you are offline.</p>
       </header>
 
-      {success && !conversation ? <section className="my-auto rounded-[2rem] border border-white/10 bg-[#111214] p-7 text-center shadow-[0_30px_90px_rgba(0,0,0,0.35)] sm:p-10" aria-live="polite">
+      {success && !conversation ? <section className="my-auto rounded-none border-0 bg-[#111214] p-6 text-center shadow-none sm:rounded-[2rem] sm:border sm:border-white/10 sm:p-10 sm:shadow-[0_30px_90px_rgba(0,0,0,0.35)]" aria-live="polite">
         <CheckCircle2 className="mx-auto text-[#1CE783]" size={34}/>
         <h2 className="mt-4 text-xl font-semibold text-white">{success.message || 'Automation created successfully.'}</h2>
         <div className="mx-auto mt-6 flex max-w-xl flex-col justify-center gap-2 sm:flex-row">
@@ -224,9 +224,9 @@ export default function Agents() {
           <button onClick={startNew} className="min-h-12 rounded-xl border border-white/10 px-5 text-sm font-semibold text-white">Create another</button>
           <Link to="/connected-apps" className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-white/10 px-5 text-sm font-semibold text-white"><Plug size={16}/>Connected Apps</Link>
         </div>
-      </section> : <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[2rem] border border-white/10 bg-[#111214]">
+      </section> : <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-none border-0 bg-[#111214] sm:rounded-[2rem] sm:border sm:border-white/10">
         <div className="absolute right-3 top-3 z-20 sm:right-6">{conversation && <button onClick={startNew} className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-xs font-semibold text-[#8A8A93] hover:text-white">New chat</button>}</div>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6 sm:py-6" aria-live="polite">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-6 sm:py-6" aria-live="polite">
           {!conversation ? (
             <div className="mx-auto flex h-full max-w-4xl flex-col items-center justify-center px-2 py-6 text-center">
               <span className="grid size-12 place-items-center rounded-2xl border border-white/10 bg-white/[0.02] text-white"><Sparkles size={22}/></span>
@@ -280,7 +280,7 @@ export default function Agents() {
         {notice && <div role="alert" className="mx-4 mb-3 flex items-start justify-between gap-3 rounded-xl border border-red-500/30 bg-red-500/[0.04] p-3 text-sm text-red-200 sm:mx-6"><span>{notice}</span><button onClick={() => setNotice('')} aria-label="Dismiss error"><X size={16}/></button></div>}
         <div className="shrink-0 border-t border-white/10 bg-[#111214] px-3 pb-3 pt-3 sm:px-6 sm:pb-5">
           <label htmlFor="automation-request" className="sr-only">{conversation ? 'Answer Alpha' : 'Message Alpha'}</label>
-          <div className="mx-auto flex max-w-3xl items-end gap-2 rounded-3xl border border-white/10 bg-[#17171B] p-2 focus-within:border-white/30">
+          <div className="mx-auto flex max-w-3xl items-end gap-2 rounded-[1.35rem] border border-white/10 bg-[#17171B] p-2 focus-within:border-white/30">
             <textarea id="automation-request" ref={composer} value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} rows={1} maxLength={10000} placeholder="Message Alpha…" className="max-h-36 min-h-11 flex-1 resize-none bg-transparent px-3 py-2.5 text-base leading-6 text-white outline-none placeholder:text-[#8A8A93]"/>
             <button onClick={() => void send()} disabled={!input.trim() || creating} className="grid size-11 shrink-0 place-items-center rounded-full bg-white text-[#0B0B0C] transition hover:bg-[#F0F0F0] disabled:bg-white/10 disabled:text-[#8A8A93]" aria-label="Send request">{creating ? <LoaderCircle className="animate-spin" size={18}/> : <Send size={18}/>}</button>
           </div>

@@ -32,6 +32,52 @@ export async function initiatePaystack(plan: Plan) {
   return initiatePaystackPack(pack)
 }
 
+export async function startPayment(amount: number, plan: string) {
+  const normalizedPlan = String(plan || '').trim()
+  const normalizedAmount = Number(amount)
+  if (!normalizedPlan || !Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
+    throw new Error('Invalid payment selection.')
+  }
+
+  const initRes = await fetch('/api/paystack/initialize', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+    body: JSON.stringify({ amount: normalizedAmount, plan: normalizedPlan, source: 'landing' }),
+  })
+
+  const initText = await initRes.text()
+  let initData: Record<string, unknown> = {}
+  if (initText.trim()) {
+    try { initData = JSON.parse(initText) as Record<string, unknown> } catch { throw new Error(`Payment server returned an invalid response (${initRes.status}). Please retry.`) }
+  }
+
+  if (!initRes.ok) throw new Error(String(initData.error || `Payment initialization failed (${initRes.status}).`))
+
+  const reference = String(initData.reference || '')
+  const amountValue = Number(initData.amount || 0)
+  const authorizationUrl = String(initData.authorization_url || '')
+  if (!reference || !amountValue || !authorizationUrl) throw new Error('Payment initialization returned invalid data. Please retry.')
+
+  const email = getUserEmail() || ''
+  savePendingPayment(reference, email, {
+    id: normalizedPlan,
+    label: normalizedPlan === 'early_founder_19' ? 'Early Founder Deal' : normalizedPlan,
+    amountKobo: Math.max(10000, Math.round(normalizedAmount * 100)),
+    credits: Number(initData.credits || 0),
+  })
+
+  const destination = new URL('/dashboard', window.location.origin)
+  destination.searchParams.set('payment', 'success')
+  destination.searchParams.set('reference', reference)
+  destination.searchParams.set('ref', reference)
+  destination.searchParams.set('plan', normalizedPlan)
+  destination.searchParams.set('credits', String(initData.credits || 0))
+
+  const redirectTarget = authorizationUrl.includes('?') ? `${authorizationUrl}&redirect_to=${encodeURIComponent(`${destination.pathname}${destination.search}`)}` : `${authorizationUrl}?redirect_to=${encodeURIComponent(`${destination.pathname}${destination.search}`)}`
+  window.location.assign(redirectTarget)
+  return { success: true as const, plan: normalizedPlan, reference }
+}
+
 function readEnv(name: string) {
   const value = typeof import.meta !== 'undefined' && import.meta && 'env' in import.meta ? (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env?.[name] : undefined
   return value || (typeof window !== 'undefined' ? (window as Window & { __APP_ENV__?: Record<string, string | undefined> }).__APP_ENV__?.[name] : undefined)

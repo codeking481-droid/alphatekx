@@ -23,6 +23,7 @@ import {
 } from 'lucide-react'
 import SEO from '../components/SEO'
 import { useAuth } from '../lib/auth'
+import { startPayment } from '../lib/paystack'
 
 const GOLD = '#FFD700'
 const PURPLE = '#6B21A8'
@@ -684,12 +685,28 @@ function ScrollDemo() {
 }
 
 function Pricing() {
+  const { user } = useAuth()
   const [yearly, setYearly] = useState(true)
   const plans = [
     { name: 'Starter', price: 15, credits: '150 credits', naira: '~₦23,500' },
     { name: 'Founder', price: 29, credits: '400 credits', naira: '~₦45,600', featured: true },
     { name: 'Scale', price: 79, credits: '1,200 credits', naira: '~₦124,100' },
   ]
+
+  const handleEarlyFounderDeal = async () => {
+    if (!user) {
+      localStorage.setItem('selectedPlan', 'early_founder_19')
+      localStorage.setItem('selectedAmount', '19')
+      window.location.assign('/auth?plan=early_founder_19')
+      return
+    }
+    try {
+      await startPayment(19, 'early_founder_19')
+    } catch (error) {
+      console.error('Early founder checkout failed', error)
+      window.location.assign('/auth?plan=early_founder_19')
+    }
+  }
 
   return (
     <section id="pricing" className="bg-black px-4 py-24 sm:px-6 lg:py-32">
@@ -714,9 +731,23 @@ function Pricing() {
               onClick={() => setYearly(true)}
               className={`rounded-full px-5 py-2.5 text-sm font-bold ${yearly ? 'bg-[#FFD700] text-black' : 'text-white/40'}`}
             >
-              Yearly <span className="ml-1 text-[10px]">Founder deal</span>
+              Yearly <span className="ml-1 text-[10px]">New deal</span>
             </button>
           </div>
+        </div>
+
+        <div className="mx-auto mt-10 max-w-3xl rounded-[24px] border border-[#FFD700]/30 bg-gradient-to-r from-[#FFD700]/15 via-transparent to-[#8B3FC7]/15 p-5 text-left shadow-[0_0_60px_rgba(255,215,0,.08)]">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="rounded-full bg-[#FFD700] px-3 py-1 text-[10px] font-black uppercase tracking-[.2em] text-black">
+              New deal
+            </span>
+            <span className="text-sm font-semibold text-white/80">
+              First 100 founders lock in $19/month for launch access with 500 credits.
+            </span>
+          </div>
+          <p className="mt-3 text-sm leading-6 text-white/55">
+            Early access includes full publishing flow, live approvals, and no per-channel fee while the launch rate lasts.
+          </p>
         </div>
 
         <div className="mt-14 grid gap-5 lg:grid-cols-3">
@@ -730,7 +761,7 @@ function Pricing() {
             >
               {plan.featured && (
                 <span className="absolute right-5 top-5 rounded-full bg-[#FFD700] px-3 py-1 text-[9px] font-black uppercase text-black">
-                  Founder choice
+                  Launch choice
                 </span>
               )}
 
@@ -750,14 +781,15 @@ function Pricing() {
                 </div>
               ))}
 
-              <Link
-                to="/auth"
+              <button
+                type="button"
+                onClick={() => void (plan.featured ? handleEarlyFounderDeal() : (window.location.assign('/auth')))}
                 className={`mt-8 inline-flex min-h-[48px] w-full items-center justify-center rounded-full px-4 font-black ${
                   plan.featured ? 'bg-[#FFD700] text-black' : 'border border-white/15 text-white'
                 }`}
               >
-                Choose {plan.name}
-              </Link>
+                {plan.featured ? 'Claim New Deal' : `Choose ${plan.name}`}
+              </button>
             </motion.article>
           ))}
         </div>
@@ -768,6 +800,21 @@ function Pricing() {
 
 function FinalCTA() {
   const { user } = useAuth()
+
+  const handleEarlyFounderDeal = async () => {
+    if (!user) {
+      localStorage.setItem('selectedPlan', 'early_founder_19')
+      localStorage.setItem('selectedAmount', '19')
+      window.location.assign('/auth?plan=early_founder_19')
+      return
+    }
+    try {
+      await startPayment(19, 'early_founder_19')
+    } catch (error) {
+      console.error('Early founder checkout failed', error)
+      window.location.assign('/auth?plan=early_founder_19')
+    }
+  }
 
   return (
     <section className="relative overflow-hidden border-t border-white/10 bg-black px-4 py-28 text-center sm:px-6">
@@ -782,13 +829,18 @@ function FinalCTA() {
           </span>
         </h2>
         <p className="mt-6 text-lg text-white/45">Your second you is ready.</p>
-        <Link
-          to={user ? '/dashboard' : '/auth'}
-          className="mt-9 inline-flex min-h-14 items-center gap-2 rounded-full bg-[#FFD700] px-8 font-black text-black shadow-[0_0_50px_rgba(107,33,168,.5)]"
+        <button
+          type="button"
+          onClick={() => void handleEarlyFounderDeal()}
+          style={{ background: '#FFFFFF', color: '#000000', height: '48px', borderRadius: '12px', fontWeight: 600 }}
+          className="mt-9 inline-flex min-h-14 items-center justify-center gap-2 rounded-full bg-[#FFD700] px-8 font-black text-black shadow-[0_0_50px_rgba(107,33,168,.5)]"
         >
-          Claim Founder Deal $29 →
+          Claim New Deal $19 - Early Founder
           <ArrowRight size={19} />
-        </Link>
+        </button>
+        <p className="mt-4 text-center text-[13px] text-[#8A8A93]">
+          ✅ Instant credit + 🎉 celebration after payment • If not, Contact us - 1 min reply ⚡ • Secured by Paystack
+        </p>
       </div>
     </section>
   )
@@ -825,13 +877,25 @@ function MobileCTA() {
 
   return (
     <div className="fixed inset-x-0 bottom-4 z-50 mx-4 md:hidden">
-      <Link
-        to={user ? '/dashboard' : '/auth'}
+      <button
+        type="button"
+        onClick={() => {
+          if (!user) {
+            localStorage.setItem('selectedPlan', 'early_founder_19')
+            localStorage.setItem('selectedAmount', '19')
+            window.location.assign('/auth?plan=early_founder_19')
+            return
+          }
+          void startPayment(19, 'early_founder_19').catch((error) => {
+            console.error('Early founder checkout failed', error)
+            window.location.assign('/auth?plan=early_founder_19')
+          })
+        }}
         className="flex h-[56px] max-h-[56px] items-center justify-center gap-2 rounded-full bg-[#FFD700] px-5 text-sm font-black text-black shadow-[0_18px_40px_rgba(0,0,0,.25)]"
       >
-        Claim Founder Deal $29 →
+        Claim New Deal $19 →
         <ChevronRight size={18} />
-      </Link>
+      </button>
     </div>
   )
 }
