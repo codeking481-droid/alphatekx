@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Mail, MessageCircle, Send, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Mail, MessageCircle, Move, Send, X } from 'lucide-react'
 import { useLocation } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 
@@ -21,6 +21,7 @@ function buildWhatsAppLink(reference: string) {
 }
 
 export function openContactUs() {
+  if (typeof window === 'undefined') return
   window.dispatchEvent(new CustomEvent('alphatekx:open-contact-us'))
 }
 
@@ -141,12 +142,49 @@ export function ContactForm({ compact = false, onSuccess }: { compact?: boolean;
 export default function ContactUs() {
   const location = useLocation()
   const [open, setOpen] = useState(false)
+  const [dragging, setDragging] = useState(false)
+  const [position, setPosition] = useState({ x: 24, y: 24 })
+  const dragStart = useRef<{ x: number; y: number } | null>(null)
+  const panelRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     const handler = () => setOpen(true)
     window.addEventListener('alphatekx:open-contact-us', handler)
     return () => window.removeEventListener('alphatekx:open-contact-us', handler)
   }, [])
+
+  useEffect(() => {
+    if (!open) return
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [open])
+
+  useEffect(() => {
+    if (!dragging) return
+
+    const handleMove = (event: MouseEvent) => {
+      if (!dragStart.current) return
+      const deltaX = event.clientX - dragStart.current.x
+      const deltaY = event.clientY - dragStart.current.y
+      dragStart.current = { x: event.clientX, y: event.clientY }
+      setPosition((current) => ({ x: current.x + deltaX, y: current.y + deltaY }))
+    }
+
+    const handleUp = () => {
+      dragStart.current = null
+      setDragging(false)
+    }
+
+    window.addEventListener('mousemove', handleMove)
+    window.addEventListener('mouseup', handleUp)
+    return () => {
+      window.removeEventListener('mousemove', handleMove)
+      window.removeEventListener('mouseup', handleUp)
+    }
+  }, [dragging])
 
   if (location.pathname.startsWith('/auth')) return null
 
@@ -165,10 +203,24 @@ export default function ContactUs() {
 
       {open && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 p-4">
-          <div className="relative w-full max-w-[480px] rounded-[24px] border border-[#24242A] bg-[#151519] p-6 shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
-            <button type="button" onClick={() => setOpen(false)} className="absolute right-4 top-4 grid h-8 w-8 place-items-center rounded-full border border-[#24242A] bg-[#0B0B0C] text-[#8A8A93] hover:text-white">
-              <X size={14} />
-            </button>
+          <div
+            ref={panelRef}
+            className="fixed z-[10000] w-full max-w-[480px] rounded-[24px] border border-[#24242A] bg-[#151519] p-6 shadow-[0_18px_50px_rgba(0,0,0,0.35)]"
+            style={{ left: position.x, top: position.y, transform: 'translate(0, 0)' }}
+            onMouseDown={(event) => {
+              if ((event.target as HTMLElement).closest('button, a, input, textarea, select')) return
+              dragStart.current = { x: event.clientX, y: event.clientY }
+              setDragging(true)
+            }}
+          >
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-sm font-semibold text-white/80">
+                <Move size={14} className="text-[#FFD700]" /> Drag me around
+              </div>
+              <button type="button" onClick={() => setOpen(false)} className="grid h-8 w-8 place-items-center rounded-full border border-[#24242A] bg-[#0B0B0C] text-[#8A8A93] hover:text-white">
+                <X size={14} />
+              </button>
+            </div>
             <ContactForm compact onSuccess={() => setOpen(false)} />
           </div>
         </div>

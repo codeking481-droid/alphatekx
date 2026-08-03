@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { FaLinkedin } from 'react-icons/fa6'
+import { FaLinkedin, FaFacebookF } from 'react-icons/fa6'
 import { CheckCircle2, ArrowRight, ArrowLeft, Sparkles, Clock, Target, Users, Image, AlertCircle, LoaderCircle, CreditCard, Zap } from 'lucide-react'
 import { useAuth } from '../../lib/auth'
 import { supabase } from '../../lib/supabase'
@@ -10,6 +10,7 @@ import { saveAgent } from '../../lib/agents/agentStore'
 import { getApprovalBadgeState } from '../../lib/automation/approvalState'
 import { buildCampaignSchedulePlan, getPartsInTimeZone } from '../../lib/scheduling/nextPostCalculator'
 import { isAdminUser } from '../../lib/adminAccess'
+import { createSmartImage } from '../../lib/mediaLibrary'
 
 const WIZARD_KEY = 'alphatekx:mature-wizard'
 const WIZARD_DONE_KEY = 'alphatekx:mature-wizard-done'
@@ -222,18 +223,14 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
         }
       } catch {}
 
-      // Fallback: Generate unique Pollination image with seed if API didn't return one
+      // Premium fallback: use the current smart-image generator when the AI response does not include a direct image URL.
       if (!imageUrl) {
-        const styles = [
-          'dark mode SaaS, neon blue glow, premium',
-          'light mode, clean white, subtle gradient, professional',
-          'abstract 3D, isometric, modern tech, vibrant',
-        ]
-        const style = styles[Math.floor(Math.random() * styles.length)]
-        const seed = Math.floor(Math.random() * 9999999)
-        const enhancedPrompt = `${data.topic} ${topics[i]} social media high quality branded, premium LinkedIn SaaS visual, ultra detailed 4k, cinematic lighting, modern SaaS gradient background (dark blue to electric blue), minimalist professional style, abstract tech elements, 2026 design trend, ${style}, no stock photo, no blurry, no watermark, no text, no words, no low quality, no cartoon, no old design`
-        const imgPrompt = encodeURIComponent(enhancedPrompt)
-        imageUrl = `https://gen.pollinations.ai/image/${imgPrompt}?model=flux&width=1200&height=628&enhance=true&nologo=true&seed=${seed}&t=${Date.now()}`
+        try {
+          const smartImage = await createSmartImage(topics[i], data.goal, data.platforms[0] || 'linkedin')
+          imageUrl = smartImage.image_url || ''
+        } catch {
+          imageUrl = ''
+        }
       }
       posts[`day_${i + 1}`] = { content: dayContent, imageUrl }
       setGenProgress(Math.round(((i + 1) / totalRuns) * 100))
@@ -303,7 +300,7 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
           status: 'scheduled',
           approved: true,
           imageUrl: postEntry.imageUrl || '',
-          imageSource: 'pollination',
+          imageSource: postEntry.imageUrl ? 'smart-image' : 'none',
           captions: Object.fromEntries(platforms.map(platform => [platform, postEntry.content || `Fresh ${data.topic} insight for ${platform}`])),
           baseCredits: 1,
           credits: 1,
@@ -525,7 +522,7 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
       case 2: return (
         <div>
           <div className="flex items-center gap-3 mb-4">
-            <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 text-white shadow-lg"><FaFacebook size={18} /></div>
+            <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 text-white shadow-lg"><FaFacebookF size={18} /></div>
             <div><h2 className="text-lg font-bold text-white">Where should we post?</h2><p className="text-sm text-zinc-400">Select connected platforms</p></div>
           </div>
           <div className="space-y-2.5">

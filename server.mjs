@@ -3244,7 +3244,7 @@ function campaignNextRun(campaign) {
 
 // LinkedIn is the only native publishing connector. Every other released
 // publishing platform is executed through the user's Composio connection.
-const composioPublishingPlatforms = new Set(['youtube', 'instagram', 'facebook', 'whatsapp', 'x', 'twitter'])
+const composioPublishingPlatforms = new Set(['youtube', 'instagram', 'x', 'twitter', 'facebook', 'whatsapp'])
 const composioAutomationConnectors = new Set(['gmail', 'github', 'googledocs', 'googlesheets', 'discord', ...composioPublishingPlatforms])
 
 async function runCampaignAgent(existing, trigger, executionId, user, admin) {

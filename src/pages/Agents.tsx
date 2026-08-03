@@ -208,15 +208,15 @@ export default function Agents() {
     return <GuidedCommandCentre platform={guidedPlatform} creating={creating} notice={notice} onComplete={message => void send(message)} onBack={() => navigate('/dashboard')} />
   }
 
-  return <main className="alpha-chat-screen flex h-[calc(100dvh-8rem)] min-h-0 w-full flex-col overflow-hidden lg:h-[calc(100dvh-4rem)]">
-    <div className="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col px-3 pb-2 pt-4 sm:px-6 lg:px-8">
+  return <main className="flex min-h-[calc(100dvh-4rem)] w-full flex-1 flex-col overflow-hidden bg-[#0A0A0B]">
+    <div className="mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col px-3 pb-3 pt-3 sm:px-6 lg:px-8 lg:pt-4">
       <header className="hidden">
         <p className="text-xs font-medium uppercase tracking-[.24em] text-white/60">Run your automations 24/7</p>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-5xl">Turn Your Ideas Into Reality</h1>
         <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-[#8A8A93] sm:text-base">Tell Alpha what you want done. It will plan an automation that keeps working even when you are offline.</p>
       </header>
 
-      {success && !conversation ? <section className="my-auto rounded-3xl border border-white/10 bg-[#111214] p-7 text-center sm:p-10" aria-live="polite">
+      {success && !conversation ? <section className="my-auto rounded-[2rem] border border-white/10 bg-[#111214] p-7 text-center shadow-[0_30px_90px_rgba(0,0,0,0.35)] sm:p-10" aria-live="polite">
         <CheckCircle2 className="mx-auto text-[#1CE783]" size={34}/>
         <h2 className="mt-4 text-xl font-semibold text-white">{success.message || 'Automation created successfully.'}</h2>
         <div className="mx-auto mt-6 flex max-w-xl flex-col justify-center gap-2 sm:flex-row">
