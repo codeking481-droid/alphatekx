@@ -4592,7 +4592,6 @@ async function handleCheckAvailability(req, res) {
   return json(res, 200, result)
 }
 
-const escapeHtml = (value) => String(value).replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character])
 const scriptJson = (value) => JSON.stringify(value).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029')
 
 export function normalizePublishedCode(rawCode) {
