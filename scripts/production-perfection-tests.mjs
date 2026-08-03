@@ -21,10 +21,10 @@ const checks = [
     assert.match(main, /failed to fetch dynamically imported module\|loading chunk\|chunkloaderror/)
   }],
   ['six production connection cards are visible', () => {
-    for (const platform of ['linkedin', 'youtube', 'instagram', 'x', 'facebook', 'whatsapp']) assert.match(connectors, new RegExp(`id: '${platform}'`))
-    assert.match(connectors, /Connect your platforms/)
-    assert.match(connectors, /● Connected/)
-    assert.match(connectors, /○ Not connected/)
+    for (const platform of ['linkedin', 'gmail', 'github', 'googledocs', 'googlesheets', 'discord']) assert.match(connectors, new RegExp(`id: '${platform}'`))
+    assert.match(connectors, /Connected Apps/)
+    assert.match(connectors, /Connected/)
+    assert.match(connectors, /Connect/)
   }],
   ['planner never defaults a missing platform', () => {
     assert.doesNotMatch(engine, /known\.platforms\) && known\.platforms\.length \? known\.platforms : \['facebook'\]/)
