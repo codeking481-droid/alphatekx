@@ -64,7 +64,7 @@ export const PLANS = {
 }
 
 export const CREDIT_PACKS = [
-  { id: 'test_50', credits: 1, amountKobo: 10000, currency: 'NGN', label: 'Test purchase', description: 'Test payment for ₦100' },
+  { id: 'test_100', credits: 100, amountKobo: 10000, currency: 'NGN', label: 'Test purchase', description: 'Test payment for ₦100' },
   { id: 'spark_5', credits: 5, amountKobo: 100, currency: 'USD', label: 'Spark', description: '5 credits for $1' },
   { id: 'creator_20', credits: 20, amountKobo: 300, currency: 'USD', label: 'Creator', description: '20 credits for $3' },
   { id: 'builder_40', credits: 40, amountKobo: 500, currency: 'USD', label: 'Builder', description: '40 credits for $5' },
@@ -515,7 +515,14 @@ async function initializePaystack(user, item, config) {
   const credits = isSubscription ? plan.monthlyCredits : pack.credits
   const source = isSubscription ? `subscription_${plan.id}` : `credits_${pack.id}`
   const email = String(user.email || '')
-  const reference = `alphatekx_${source}_${user.id.slice(0, 8)}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  // For test credit pack use a deterministic test reference format avoiding user id leakage
+  let reference
+  if (!isSubscription && pack && typeof pack.id === 'string' && pack.id.startsWith('test_')) {
+    // Use the requested test reference format: alphatekx_credits_test_100_<rand>_<ts>_<rand>
+    reference = `alphatekx_credits_test_100_${Math.random().toString(36).substr(2, 8)}_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`
+  } else {
+    reference = `alphatekx_${source}_${user.id.slice(0, 8)}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  }
   const pending = readJsonFile(path.resolve(dataDir, 'pending-transactions.json'), {})
   pending[reference] = { userId: user.id, email, credits, amount, currency, listPriceUsdCents, source, status: 'pending', createdAt: nowIso(), item }
   writeJsonFile(path.resolve(dataDir, 'pending-transactions.json'), pending)

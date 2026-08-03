@@ -4330,6 +4330,25 @@ function resolvePlanFromBody(body) {
 
 export async function verifyPaystack(req, res) {
   applyCors(req, res)
+  const config = supabaseConfig()
+  // Support GET redirect flow: /api/paystack/verify?reference=...
+  if ((req.method || '').toUpperCase() === 'GET') {
+    try {
+      const requestUrl = new URL(req.url || '/', publicAppUrl())
+      const reference = String(requestUrl.searchParams.get('reference') || '')
+      if (!reference) return json(res, 400, { error: 'Missing payment reference.' })
+      const result = await billing.verifyPayment('paystack', reference, config)
+      if (!result.ok) return json(res, 400, { error: result.message || 'Verification failed' })
+      const destination = new URL('/dashboard', publicAppUrl())
+      destination.searchParams.set('payment', 'success')
+      destination.searchParams.set('ref', reference)
+      destination.searchParams.set('credits', String(result.credits || result.balance || 0))
+      res.writeHead(302, { Location: destination.toString(), 'Cache-Control': 'no-store' })
+      return res.end()
+    } catch (err) {
+      return json(res, 500, { error: err instanceof Error ? err.message : String(err) })
+    }
+  }
   try {
     const config = supabaseConfig()
     const body = await readBody(req)

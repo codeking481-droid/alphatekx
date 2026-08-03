@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Bot, Plus, Rocket, ShoppingBag, Sparkles, TrendingUp } from 'lucide-react'
 import OnboardingModal, { useOnboarding } from '../components/OnboardingModal'
 import { useAuth } from '../lib/auth'
@@ -9,10 +9,29 @@ import { getJson } from '../lib/apiClient'
 export default function Dashboard() {
   const { user } = useAuth()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const onboarding = useOnboarding()
+  const [showCongrats, setShowCongrats] = useState(false)
+  const [paymentRef, setPaymentRef] = useState('')
+  const [paymentCredits, setPaymentCredits] = useState<number | null>(null)
   const [insights, setInsights] = useState<{ id: string; title: string; description: string; severity: string }[]>([])
 
   useEffect(() => { void getJson<{ predictions: { id: string; title: string; description: string; severity: string }[] }>('/api/brain/predictions').then(d => setInsights(d.predictions || [])).catch(() => {}) }, [])
+
+  useEffect(() => {
+    const payment = searchParams.get('payment')
+    if (payment === 'success') {
+      const ref = searchParams.get('ref') || ''
+      const credits = Number(searchParams.get('credits') || '0')
+      setPaymentRef(ref)
+      setPaymentCredits(credits)
+      setShowCongrats(true)
+      // refresh local credits display
+      void getJson('/api/credits/balance').then(d => {
+        // optionally update any client-side stores; this app has creditStore in other places
+      }).catch(() => {})
+    }
+  }, [searchParams])
 
   const creations = getCreations().slice(0, 6)
   const emailFirstName = user?.email ? user.email.split('@')[0].split('.')[0].replace(/^./, c => c.toUpperCase()) : 'Builder'
@@ -81,6 +100,19 @@ export default function Dashboard() {
         )}
       </div>
       <OnboardingModal open={onboarding.open} onComplete={onboarding.finish} onClose={onboarding.close} />
+      {showCongrats && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+          <div className="mx-auto w-full max-w-lg rounded-2xl bg-[#0A0A0A] p-6 text-center border border-white/5">
+            <div className="text-4xl">🎉🎉🎉🎉</div>
+            <h2 className="mt-4 text-2xl font-bold">Congratulations</h2>
+            <p className="mt-2 text-sm text-white/70">Payment successful! NGN {paymentCredits ? (paymentCredits).toLocaleString() : '0.00'} received. {paymentCredits ? paymentCredits : 0} credits added to your account!</p>
+            <p className="mt-2 text-xs text-white/40">Ref: {paymentRef}</p>
+            <div className="mt-6 flex justify-center gap-3">
+              <button onClick={() => { setShowCongrats(false); setSearchParams({}) }} className="rounded-full bg-[#FFD700] px-4 py-2 font-semibold text-black">Continue to Dashboard</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
