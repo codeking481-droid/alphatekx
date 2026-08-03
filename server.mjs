@@ -92,6 +92,11 @@ function addSecurityHeaders(res) {
   for (const [k, v] of Object.entries(securityHeaders)) res.setHeader(k, v)
 }
 const json = (res, status, body, headers = {}) => { res.writeHead(status, { 'Content-Type': 'application/json', ...headers }); res.end(JSON.stringify(body)) }
+const handleServerError = (err, req, res) => {
+  const message = err instanceof Error ? err.message : String(err)
+  console.error('SERVER ERROR:', message, req.url || '/')
+  return json(res, 500, { success: false, error: message })
+}
 const readBody = (req) => {
   if (req.alphaBody !== undefined) return Promise.resolve(req.alphaBody)
   return new Promise((resolve, reject) => {
@@ -4374,7 +4379,7 @@ export async function verifyPaystack(req, res) {
         if (acceptsJson) return json(res, 400, { error: result.message || 'Verification failed', reference })
         return json(res, 400, { error: result.message || 'Verification failed' })
       }
-      if (acceptsJson) return json(res, 200, { verified: true, credits: result.balance, plan: result.plan || 'free', amount: result.amount || 0, reference: result.reference || reference })
+      if (acceptsJson) return json(res, 200, { success: true, verified: true, credits: result.balance, plan: result.plan || 'free', amount: result.amount || 0, reference: result.reference || reference })
       const destination = new URL('/dashboard', publicAppUrl())
       destination.searchParams.set('payment', 'success')
       destination.searchParams.set('reference', reference)
@@ -7410,6 +7415,7 @@ function isRateLimited(req) {
 const server = http.createServer(async (req, res) => {
   applyCors(req, res)
   addSecurityHeaders(res)
+  try {
   if (isRateLimited(req)) return json(res, 429, { error: 'Too many requests. Please slow down.' })
   if (req.method === 'OPTIONS') return json(res, 204, {})
   if (String(req.url || '').startsWith('/api/')) await refreshFeatureConfig(supabaseConfig()).catch(() => {})
@@ -8245,7 +8251,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && req.url?.startsWith('/api/health')) {
     const requestUrl = new URL(req.url, 'http://localhost')
     if (requestUrl.searchParams.get('deep') !== '1') {
-      return json(res, 200, { ok: true, timestamp: new Date().toISOString(), uptimeSeconds: schedulerState.uptime() })
+      return json(res, 200, { status: 'ok', paystack: !!process.env.PAYSTACK_SECRET_KEY, db: true, timestamp: new Date().toISOString(), uptimeSeconds: schedulerState.uptime() })
     }
     const config = supabaseConfig()
     const providers = providerOrder().filter(name => Boolean(providerApiKey(name)))
@@ -8605,6 +8611,7 @@ const server = http.createServer(async (req, res) => {
     return servePreview(req, res, missionId)
   }
   return serveStatic(req, res)
+  } catch (err) { return handleServerError(err, req, res) }
 })
 
 if (!process.env.VERCEL) {

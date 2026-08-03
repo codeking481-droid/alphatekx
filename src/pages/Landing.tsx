@@ -326,6 +326,9 @@ function Hero() {
             </Link>
             <span className="text-xs font-semibold text-white/35 sm:pt-5">Start free · Approval stays yours</span>
           </motion.div>
+          <Link to="/founders-legacy" className="mt-4 inline-flex items-center gap-2 text-sm font-black uppercase tracking-[0.24em] text-[#FFD700] transition hover:text-[#FFE66D]">
+            Built with grind at 6AM
+          </Link>
         </div>
 
         <DashboardMockup />

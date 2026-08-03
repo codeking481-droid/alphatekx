@@ -31,11 +31,12 @@ test('all server persistence modules share the safe header implementation', () =
 })
 
 test('Google OAuth always starts a fresh account-specific flow', () => {
-  const source = read('src/pages/Auth.tsx')
-  assert.match(source, /signOut\(\{ scope: 'local' \}\)/)
-  assert.match(source, /skipBrowserRedirect: true/)
-  assert.match(source, /prompt: 'select_account'/)
-  assert.match(source, /window\.location\.replace\(data\.url\)/)
+  const authSource = read('src/lib/auth.tsx')
+  const pageSource = read('src/pages/Auth.tsx')
+  assert.match(authSource, /signOut\(\{ scope: 'local' \}\)/)
+  assert.match(pageSource, /skipBrowserRedirect: true/)
+  assert.match(pageSource, /prompt: 'select_account'/)
+  assert.match(pageSource, /window\.location\.replace\(data\.url\)/)
 })
 
 test('deep health reports durable Supabase and AI readiness without secrets', () => {

@@ -24,6 +24,19 @@ function recoverFromStaleDeploymentChunk() {
   return true
 }
 
+window.onerror = (message, source, lineno, colno, error) => {
+  const payload = { msg: typeof message === 'string' ? message : String(message), url: source || '', line: (lineno || 0).toString(), column: (colno || 0).toString(), time: Date.now() }
+  console.error('FRONTEND ERROR:', payload, error)
+  try { localStorage.setItem('lastError', JSON.stringify(payload)) } catch {}
+  return false
+}
+
+window.addEventListener('unhandledrejection', event => {
+  const payload = { msg: event.reason instanceof Error ? event.reason.message : String(event.reason || 'Unhandled promise rejection'), time: Date.now() }
+  console.error('FRONTEND UNHANDLED REJECTION:', payload)
+  try { localStorage.setItem('lastError', JSON.stringify(payload)) } catch {}
+})
+
 window.addEventListener('vite:preloadError', event => {
   event.preventDefault()
   recoverFromStaleDeploymentChunk()

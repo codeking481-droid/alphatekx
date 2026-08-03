@@ -550,7 +550,7 @@ async function initializePaystack(user, item, config) {
   const pending = readJsonFile(path.resolve(dataDir, 'pending-transactions.json'), {})
   pending[reference] = { userId: user.id, email, credits, amount, currency, listPriceUsdCents, source, status: 'pending', createdAt: nowIso(), item }
   writeJsonFile(path.resolve(dataDir, 'pending-transactions.json'), pending)
-  const callback = String(process.env.PAYSTACK_CALLBACK_URL || `${publicAppUrl()}/dashboard?payment=success`)
+  const callback = String(process.env.PAYSTACK_CALLBACK_URL || `${process.env.PUBLIC_APP_URL || process.env.VITE_PUBLIC_APP_URL || 'https://alphatekx.name.ng'}/dashboard?payment=success`)
   if (!secret) {
     if (process.env.NODE_ENV === 'production') throw new Error('Paystack secret key is not configured')
     // Dev mode: immediately redirect back with the reference for simulated verification
@@ -645,6 +645,9 @@ async function verifyPaystack(reference, config) {
     result = await addCredits(user, credits, config, { reference, type: 'purchase', metadata: { source, provider: 'paystack' } })
   }
   if (pendingRecord) { pendingRecord.status = 'completed'; writeJsonFile(path.resolve(dataDir, 'pending-transactions.json'), pending) }
+  try {
+    await writeProfile(user, config, { last_payment_at: nowIso() })
+  } catch {}
   const paidAt = data.data.paid_at || nowIso()
   return { ok: true, reference, credits, balance: result.remaining, plan: result.plan, paidAt, provider: 'paystack', amount: Number(data.data?.amount || 0) / 100, user }
 }

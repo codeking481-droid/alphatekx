@@ -35,7 +35,7 @@ export default function Settings() {
   }
 
   useEffect(() => subscribeCredits(() => setCredits(getCredits())), [])
-  useEffect(() => { void hydrateCredits() }, [user?.id])
+  useEffect(() => { void hydrateCredits() }, [user?.id, user?.email])
 
   const loadBilling = async () => {
     setLoadingBilling(true)
@@ -74,11 +74,15 @@ export default function Settings() {
         setNotice(String(data?.error || `Could not load billing (${res.status})`))
       }
     } catch (error) {
+      console.error('Settings load error', error)
       setNotice(error instanceof Error ? error.message : 'Could not load billing. Please refresh.')
     } finally { setLoadingBilling(false) }
   }
 
-  useEffect(() => { void loadBilling() }, [user?.id, notice])
+  useEffect(() => {
+    if (!user?.id) return
+    void loadBilling()
+  }, [user?.id, user?.email])
 
   useEffect(() => {
     const reference = searchParams.get('reference')
@@ -153,6 +157,24 @@ export default function Settings() {
   }
 
   const renewalText = billing?.renewalDate ? new Date(billing.renewalDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
+
+  if (!user) {
+    return (
+      <div className="min-h-screen w-full max-w-full overflow-x-hidden px-4 py-8 text-white sm:px-6 md:px-10">
+        <div className="mx-auto max-w-3xl space-y-4">
+          <div className="luxury-card animate-pulse p-5 sm:p-6">
+            <div className="h-5 w-36 rounded bg-white/10" />
+            <div className="mt-4 h-12 w-full rounded-2xl bg-white/10" />
+            <div className="mt-3 h-12 w-full rounded-2xl bg-white/10" />
+          </div>
+          <div className="luxury-card animate-pulse p-5 sm:p-6">
+            <div className="h-4 w-24 rounded bg-white/10" />
+            <div className="mt-3 h-20 w-full rounded-2xl bg-white/10" />
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-hidden px-4 py-8 text-white sm:px-6 md:px-10">
