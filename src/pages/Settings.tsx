@@ -41,7 +41,8 @@ export default function Settings() {
     setLoadingBilling(true)
     try {
       const res = await fetch('/api/billing', { headers: authHeaders() })
-      const data = await res.json()
+      let data: Record<string, any> = {}
+      try { data = await res.json() } catch (err) { data = {} }
       if (res.ok) {
         const summary: BillingSummary = {
           credits: data.credits,
@@ -68,7 +69,12 @@ export default function Settings() {
         }
         setBilling(summary)
         setCredits(summary.credits)
+      } else {
+        setBilling(null)
+        setNotice(String(data?.error || `Could not load billing (${res.status})`))
       }
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Could not load billing. Please refresh.')
     } finally { setLoadingBilling(false) }
   }
 
