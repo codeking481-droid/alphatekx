@@ -4,7 +4,7 @@ import { Check, CreditCard, Globe, LoaderCircle, LogOut, Moon, Palette, Receipt,
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { getCredits, hydrateCredits, setCredits as saveCredits, subscribeCredits } from '../lib/creditStore'
-import { CREDIT_PACKS, formatCredits, formatAmount, getPlan, PLANS, type BillingSummary, type CreditPack, type PlanId } from '../lib/billing'
+import { CREDIT_PACKS, formatCredits, formatAmount, formatCurrency, getPlan, PLANS, type BillingSummary, type CreditPack, type PlanId } from '../lib/billing'
 import { initializeCheckout, verifyCheckout } from '../lib/payment'
 
 export default function Settings() {
