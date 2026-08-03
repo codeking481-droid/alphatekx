@@ -285,6 +285,60 @@ function keywordsFor(content, objective = '', platform = '') {
   return base.map((word, index) => index === 0 ? `${word} premium real-world scene` : index === 1 ? `${word} professional commercial setting` : `${word} authentic ${context} campaign`)
 }
 
+const PREMIUM_IMAGE_STYLES = [
+  'dark mode SaaS, neon blue glow, premium',
+  'light mode, clean white, subtle gradient, professional',
+  'abstract 3D, isometric, modern tech, vibrant',
+]
+
+const NEGATIVE_IMAGE_PHRASE = 'no stock photo, no blurry, no watermark, no text, no words, no low quality, no cartoon, no old design'
+
+function randomPollinationsSeed() {
+  return Math.floor(Math.random() * 9999999)
+}
+
+function pickPremiumStyle() {
+  return PREMIUM_IMAGE_STYLES[Math.floor(Math.random() * PREMIUM_IMAGE_STYLES.length)]
+}
+
+async function enhanceImagePrompt(topic) {
+  const cleanTopic = String(topic || '').replace(/\s+/g, ' ').trim().slice(0, 500)
+  const system = 'You are a premium LinkedIn visual designer for SaaS founders. Convert a topic into a premium image prompt. Must include: ultra detailed, 4k, cinematic lighting, modern SaaS gradient background (dark blue to electric blue), minimalist, professional, no text, no faces unless needed, abstract tech, 2026 design trend.'
+  const user = `topic = "${cleanTopic}"`
+  const key = String(process.env.GROQ_API_KEY || process.env.GROQ_API_KEY_1 || '')
+  const model = String(process.env.GROQ_MODEL || 'llama-3.3-70b-versatile').trim()
+
+  if (key) {
+    try {
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${key}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content: user },
+          ],
+          temperature: 0.6,
+          max_tokens: 180,
+        }),
+      })
+      if (response.ok) {
+        const data = await response.json()
+        const candidate = String(data?.choices?.[0]?.message?.content || '').trim()
+        if (candidate) return candidate
+      }
+    } catch (error) {
+      console.warn(`[AlphaTekX] Groq prompt enhancement failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  return `Premium LinkedIn SaaS visual for ${cleanTopic}. Ultra detailed 4k cinematic lighting, modern SaaS gradient background (dark blue to electric blue), minimalist professional style, abstract tech elements, 2026 design trend, no text, no watermark, no faces unless needed.`
+}
+
 export function generateAdvancedImagePrompt(content, objective = '', platform = '') {
   const keywords = keywordsFor(content, objective, platform)
   if (!keywords.length) throw new Error('Add a clear topic before Alpha selects an image.')
@@ -296,7 +350,13 @@ export function generateAdvancedImagePrompt(content, objective = '', platform = 
   }
 }
 
-export function pollinationsImageUrl(advancedPrompt, negativePrompt, seed = `${Date.now()}-${Math.floor(Math.random() * 100000)}`, options = {}) {
+async function buildPremiumPollinationsPrompt(topic) {
+  const prompt = await enhanceImagePrompt(topic)
+  const style = pickPremiumStyle()
+  return `${prompt}, ${style}, ${NEGATIVE_IMAGE_PHRASE}`
+}
+
+export function pollinationsImageUrl(advancedPrompt, negativePrompt, seed = randomPollinationsSeed(), options = {}) {
   // Pollinations expects a numeric seed. Previous timestamp labels containing
   // hyphens were rejected by some image workers before generation started.
   const numericSeed = Number.isSafeInteger(Number(seed))
@@ -304,12 +364,13 @@ export function pollinationsImageUrl(advancedPrompt, negativePrompt, seed = `${D
     : parseInt(createHash('sha256').update(String(seed)).digest('hex').slice(0, 8), 16) % 2147483647
   const params = new URLSearchParams({
     model: 'flux',
-    width: '1080',
-    height: '1080',
+    width: '1200',
+    height: '628',
     enhance: 'true',
     nologo: 'true',
     negative: negativePrompt,
     seed: String(numericSeed),
+    t: String(Date.now()),
   })
   const host = options.legacy || options.backup ? 'https://image.pollinations.ai/prompt' : 'https://gen.pollinations.ai/image'
   return `${host}/${encodeURIComponent(advancedPrompt)}?${params.toString()}`
@@ -448,6 +509,8 @@ export async function findSmartImage(config, user, content, objective = '', plat
   assertConfig(config)
   await ensureBucket(config)
   const { keywords, advancedPrompt, negativePrompt } = generateAdvancedImagePrompt(content, objective, platform)
+  const promptTopic = String(objective || content || platform || 'premium LinkedIn SaaS visual').trim()
+  const premiumPrompt = await buildPremiumPollinationsPrompt(promptTopic)
   const query = keywords.join(' ')
   const uniqueNonce = options.forceUnique === true ? String(options.uniqueNonce || `${Date.now()}-${Math.random()}`) : ''
   const queryHash = createHash('sha256').update(`${platform}:${query}:${uniqueNonce}`).digest('hex')
@@ -474,7 +537,7 @@ export async function findSmartImage(config, user, content, objective = '', plat
   const delays = [0, 2_000, 5_000]
   for (let attempt = 0; attempt < (pollinationsKey ? 3 : 0) && !downloaded; attempt += 1) {
     if (delays[attempt]) await wait(delays[attempt])
-    remoteUrl = pollinationsImageUrl(advancedPrompt, negativePrompt, `${Date.now()}-${attempt}-${Math.floor(Math.random() * 100000)}`)
+    remoteUrl = pollinationsImageUrl(premiumPrompt, negativePrompt, `${Date.now()}-${attempt}-${Math.floor(Math.random() * 100000)}`)
     downloaded = await downloadImage(remoteUrl, 10 * 1024, 60_000, pollinationsHeaders).catch(error => {
       console.warn(`[AlphaTekX] Pollinations authenticated image attempt ${attempt + 1} failed: ${error instanceof Error ? error.message : error}`)
       return null
@@ -484,7 +547,7 @@ export async function findSmartImage(config, user, content, objective = '', plat
     source = 'pollinations-legacy'
     for (let attempt = 0; attempt < 3 && !downloaded; attempt += 1) {
       if (delays[attempt]) await wait(delays[attempt])
-      remoteUrl = pollinationsImageUrl(advancedPrompt, negativePrompt, `${Date.now()}-legacy-${attempt}`, { legacy: true })
+      remoteUrl = pollinationsImageUrl(premiumPrompt, negativePrompt, `${Date.now()}-legacy-${attempt}`, { legacy: true })
       downloaded = await downloadImage(remoteUrl, 10 * 1024, 60_000).catch(error => {
         console.warn(`[AlphaTekX] Pollinations public image attempt ${attempt + 1} failed: ${error instanceof Error ? error.message : error}`)
         return null
@@ -494,7 +557,7 @@ export async function findSmartImage(config, user, content, objective = '', plat
   if (!downloaded) {
     await wait(2_000)
     source = 'pollinations-legacy-backup'
-    remoteUrl = pollinationsImageUrl(advancedPrompt, negativePrompt, `${Date.now()}-backup`, { backup: true })
+    remoteUrl = pollinationsImageUrl(premiumPrompt, negativePrompt, `${Date.now()}-backup`, { backup: true })
     downloaded = await downloadImage(remoteUrl, 10 * 1024, 60_000).catch(error => {
       console.warn(`[AlphaTekX] Pollinations backup image attempt failed: ${error instanceof Error ? error.message : error}`)
       return null

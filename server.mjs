@@ -7058,7 +7058,7 @@ Return only one JSX code block containing a single React component named App.
 - Make it mobile-first, responsive, accessible, and premium using #0A0A0F, #1A1A23, #7C3AED and #E9E7FF.
 - Add realistic data, working interactions, focus states, and useful copy.
 - Use inline SVG or text symbols for icons. When imagery helps, use resilient
-  https://image.pollinations.ai/prompt/{encoded-description}?width=800&height=600&nologo=true&model=flux
+  https://gen.pollinations.ai/image/{encoded-description}?model=flux&width=1200&height=628&enhance=true&nologo=true
   image URLs with a CSS gradient fallback and an onError handler so a remote
   image failure never breaks the application.
 - Landing pages need navigation, hero, proof, features, pricing, FAQ, CTA, and footer.

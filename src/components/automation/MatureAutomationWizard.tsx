@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { FaFacebook, FaInstagram, FaLinkedin, FaXTwitter, FaTiktok } from 'react-icons/fa6'
+import { FaLinkedin } from 'react-icons/fa6'
 import { CheckCircle2, ArrowRight, ArrowLeft, Sparkles, Clock, Target, Users, Image, AlertCircle, LoaderCircle, CreditCard, Zap } from 'lucide-react'
 import { useAuth } from '../../lib/auth'
 import { supabase } from '../../lib/supabase'
@@ -38,11 +38,7 @@ const QUICK_DAY_SETS = ['Everyday', 'Weekdays', 'Weekends', 'Mon / Wed / Fri']
 const TIME_OPTIONS = ['8:00 AM', '12:00 PM', '6:00 PM', '9:00 PM']
 
 const PLATFORM_DEFS = [
-  { id: 'facebook', label: 'Facebook', icon: FaFacebook, color: '#1877F2' },
-  { id: 'instagram', label: 'Instagram', icon: FaInstagram, color: '#E4405F' },
   { id: 'linkedin', label: 'LinkedIn', icon: FaLinkedin, color: '#0A66C2' },
-  { id: 'x', label: 'X / Twitter', icon: FaXTwitter, color: '#000000' },
-  { id: 'tiktok', label: 'TikTok', icon: FaTiktok, color: '#000000' },
 ]
 
 type WizardData = {
@@ -153,7 +149,7 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
         const apps = await getConnectedApps(session.access_token)
         const connected = new Set<string>()
         for (const provider of apps.providers) {
-          if (provider.connected) connected.add(provider.provider === 'twitter' ? 'x' : provider.provider)
+          if (provider.connected) connected.add(provider.provider)
         }
         const merged = new Set([...connected])
         setConnectedPlatforms(merged)
@@ -228,9 +224,16 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
 
       // Fallback: Generate unique Pollination image with seed if API didn't return one
       if (!imageUrl) {
-        const seed = Date.now() + i
-        const imgPrompt = encodeURIComponent(`${data.topic} ${topics[i]} social media high quality branded`)
-        imageUrl = `https://image.pollinations.ai/prompt/${imgPrompt}?width=1080&height=1080&nologo=true&seed=${seed}&model=flux`
+        const styles = [
+          'dark mode SaaS, neon blue glow, premium',
+          'light mode, clean white, subtle gradient, professional',
+          'abstract 3D, isometric, modern tech, vibrant',
+        ]
+        const style = styles[Math.floor(Math.random() * styles.length)]
+        const seed = Math.floor(Math.random() * 9999999)
+        const enhancedPrompt = `${data.topic} ${topics[i]} social media high quality branded, premium LinkedIn SaaS visual, ultra detailed 4k, cinematic lighting, modern SaaS gradient background (dark blue to electric blue), minimalist professional style, abstract tech elements, 2026 design trend, ${style}, no stock photo, no blurry, no watermark, no text, no words, no low quality, no cartoon, no old design`
+        const imgPrompt = encodeURIComponent(enhancedPrompt)
+        imageUrl = `https://gen.pollinations.ai/image/${imgPrompt}?model=flux&width=1200&height=628&enhance=true&nologo=true&seed=${seed}&t=${Date.now()}`
       }
       posts[`day_${i + 1}`] = { content: dayContent, imageUrl }
       setGenProgress(Math.round(((i + 1) / totalRuns) * 100))
