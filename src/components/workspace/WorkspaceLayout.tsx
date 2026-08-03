@@ -1,5 +1,5 @@
 import { useEffect, useState, type PropsWithChildren } from 'react'
-import { Bot, Code2, FolderOpen, HelpCircle, History, ListChecks, LogOut, Menu, Plug, Settings, ShieldCheck, Sparkles, X } from 'lucide-react'
+import { Code2, FolderOpen, HelpCircle, History, ListChecks, LogOut, Menu, Plug, Settings, ShieldCheck, Sparkles, X } from 'lucide-react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { getCredits, hydrateCredits, subscribeCredits } from '../../lib/creditStore'
 import { useAuth } from '../../lib/auth'
@@ -22,14 +22,6 @@ const primary = [
 const secondary = [
   ['Settings', '/settings', Settings],
   ['Help', '/help', HelpCircle],
-] as const
-
-const mobileNav = [
-  ['Automate', '/automations', Sparkles],
-  ['Active', '/active-automations', Bot],
-  ['History', '/history', History],
-  ['Apps', '/connected-apps', Plug],
-  ['Settings', '/settings', Settings],
 ] as const
 
 const needsCreditTopUp = (credits: number) => credits < 5
@@ -121,7 +113,7 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
       </div>
     </aside>
 
-    <main className="relative z-10 min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto pb-[calc(4rem+env(safe-area-inset-bottom))] pt-16 lg:pb-0">
+    <main className="relative z-10 min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto pt-16">
       {isHome && show && (
         <div className="mx-auto max-w-3xl px-4 pt-6">
           <div className="relative rounded-2xl border border-white/10 bg-[#111214] p-5">
@@ -146,15 +138,6 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
       )}
       {children}
     </main>
-
-    <nav className="fixed bottom-0 left-0 right-0 z-30 grid min-h-[4.5rem] grid-cols-5 items-center border-t border-white/10 bg-[#111214]/95 px-2 pb-[calc(env(safe-area-inset-bottom)+0.25rem)] backdrop-blur-2xl lg:hidden">
-      {mobileNav.map(([label, to, Icon]) => (
-        <NavLink key={label} to={to} title={label} className={({ isActive }) => `flex min-w-0 flex-col items-center justify-center gap-1 rounded-2xl px-1 py-2 text-[9px] font-black min-[380px]:text-[10px] ${isActive ? 'bg-white/[0.04] text-white' : 'text-[#8A8A93]'}`}>
-          <Icon size={18} />
-          {label}
-        </NavLink>
-      ))}
-    </nav>
   </div>
 }
 
