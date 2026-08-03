@@ -77,33 +77,9 @@ function readEnv(name: string) {
 }
 
 export async function startMarketplaceCheckout(product: MarketplaceProduct): Promise<void> {
-  const { authorization_url, reference, amount } = await buyProduct(product.id)
-  const publicKey = readEnv('VITE_PAYSTACK_PUBLIC_KEY')?.trim()
-  const paystackPop = window.PaystackPop
-  if (!publicKey || !paystackPop) {
-    window.location.href = authorization_url || `/marketplace?payment=pending&reference=${reference}`
-    return
-  }
-  const email = await getUserEmail()
-  if (!email) {
-    window.location.href = authorization_url || `/marketplace?payment=pending&reference=${reference}`
-    return
-  }
-  return new Promise((resolve, reject) => {
-    const handler = paystackPop.setup({
-      key: publicKey,
-      email,
-      amount,
-      ref: reference,
-      metadata: { product_id: product.id, type: 'marketplace' },
-      callback: (response: { reference?: string; status?: string }) => {
-        if (response.status !== 'success') { reject(new Error('Payment not completed')); return }
-        verifyMarketplacePayment(response.reference || reference).then(r => r.success ? resolve() : reject(new Error(r.error || 'Verification failed'))).catch(reject)
-      },
-      onClose: () => reject(new Error('Payment cancelled')),
-    })
-    handler.openIframe()
-  })
+  const { authorization_url, reference } = await buyProduct(product.id)
+  const redirectTarget = authorization_url || `/marketplace?payment=pending&reference=${reference}`
+  window.location.href = redirectTarget
 }
 
 export async function fetchEarnings(): Promise<{ wallet: SellerWallet; withdrawals: Withdrawal[] }> {
@@ -130,8 +106,3 @@ export async function markWithdrawalPaid(id: string, input: { proof?: string; tr
   return postJson<{ withdrawal: Withdrawal }>(`/api/admin/withdrawals/${id}/paid`, input, tokenOptions())
 }
 
-declare global {
-  interface Window {
-    PaystackPop?: { setup: (options: Record<string, unknown>) => { openIframe: () => void } }
-  }
-}

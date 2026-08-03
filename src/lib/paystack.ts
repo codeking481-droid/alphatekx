@@ -18,14 +18,6 @@ export const PACKS: PaymentPack[] = [
   { id: 'credits', label: 'Credit Booster', amountKobo: 200_000, credits: 100 },
 ]
 
-declare global {
-  interface Window {
-    PaystackPop?: {
-      setup: (options: Record<string, unknown>) => { openIframe: () => void }
-    }
-  }
-}
-
 function getUserEmail(): string | null {
   try {
     const local = localStorage.getItem('alphatekx:local-user')
@@ -60,13 +52,10 @@ function savePendingPayment(reference: string, email: string, pack: PaymentPack)
 }
 
 export async function initiatePaystackPack(pack: PaymentPack) {
-  const publicKey = readEnv('VITE_PAYSTACK_PUBLIC_KEY')?.trim()
-
   let email = ''
   try {
     const session = (await supabase?.auth.getSession())?.data.session
     email = session?.user?.email || getUserEmail() || ''
-    // persist pending payment user so session can be restored after redirect
     try { if (session?.user?.id) localStorage.setItem('pendingPaymentUser', String(session.user.id)) } catch {}
   } catch { email = getUserEmail() || '' }
 
@@ -95,46 +84,17 @@ export async function initiatePaystackPack(pack: PaymentPack) {
 
   savePendingPayment(reference, email, pack)
 
-  if (!publicKey || !window.PaystackPop) {
-    if (!authorizationUrl) throw new Error('Paystack checkout is unavailable. Please try again later.')
-    window.location.href = authorizationUrl
-    return { success: true as const, plan: (pack.plan || pack.id) as PlanValue, reference }
-  }
+  if (!authorizationUrl) throw new Error('Paystack checkout is unavailable. Please try again later.')
 
-  return new Promise<{ success: true; plan: PlanValue; reference: string }>((resolve, reject) => {
-    const handler = window.PaystackPop?.setup({
-      key: publicKey,
-      email,
-      amount,
-      ref: reference,
-      onClose: () => reject(new Error('Payment cancelled. No charge was made.')),
-      callback: (response: { reference?: string; status?: string; message?: string }) => {
-        const ref = response?.reference || reference
-        if (!ref) {
-          reject(new Error(response?.message || 'Payment did not return a reference.'))
-          return
-        }
-        savePendingPayment(ref, email, pack)
-        const destination = new URL('/dashboard', window.location.origin)
-        destination.searchParams.set('payment', 'success')
-        destination.searchParams.set('reference', ref)
-        destination.searchParams.set('ref', ref)
-        destination.searchParams.set('credits', String(pack.credits || 0))
-        try {
-          window.location.href = `${destination.pathname}${destination.search}`
-        } catch (err) {
-          void verifyPaystack(ref, pack)
-            .then(() => resolve({ success: true as const, plan: (pack.plan || pack.id) as PlanValue, reference: ref }))
-            .catch(reject)
-        }
-      },
-    })
-    if (!handler) {
-      reject(new Error('Paystack checkout could not start. Make sure the Paystack script loaded.'))
-      return
-    }
-    handler.openIframe()
-  })
+  const destination = new URL('/dashboard', window.location.origin)
+  destination.searchParams.set('payment', 'success')
+  destination.searchParams.set('reference', reference)
+  destination.searchParams.set('ref', reference)
+  destination.searchParams.set('credits', String(pack.credits || 0))
+
+  const redirectTarget = authorizationUrl.includes('?') ? `${authorizationUrl}&redirect_to=${encodeURIComponent(`${destination.pathname}${destination.search}`)}` : `${authorizationUrl}?redirect_to=${encodeURIComponent(`${destination.pathname}${destination.search}`)}`
+  window.location.href = redirectTarget
+  return { success: true as const, plan: (pack.plan || pack.id) as PlanValue, reference }
 }
 
 async function authHeaders(): Promise<Record<string, string>> {
