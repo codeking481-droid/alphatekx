@@ -201,12 +201,12 @@ export function contextualFallbackBuilderCode(prompt) {
   if (/\b(?:e-?commerce|online store|shop|thrift|gown|fashion store|product grid)\b/i.test(request)) {
     return `function App() {
   const products = [
-    { id: 1, name: 'Midnight Silk Gown', category: 'Evening', price: 48000, color: 'from-violet-700 to-fuchsia-400', image: 'https://image.pollinations.ai/prompt/luxury%20midnight%20silk%20gown%20fashion%20editorial?width=800&height=600&nologo=true&model=flux' },
-    { id: 2, name: 'Lagos Linen Set', category: 'Everyday', price: 32000, color: 'from-amber-500 to-orange-300', image: 'https://image.pollinations.ai/prompt/premium%20Lagos%20linen%20fashion%20set%20editorial?width=800&height=600&nologo=true&model=flux' },
-    { id: 3, name: 'Emerald Aso-Ebi', category: 'Occasion', price: 65000, color: 'from-emerald-700 to-teal-300', image: 'https://image.pollinations.ai/prompt/elegant%20emerald%20aso-ebi%20gown%20studio%20fashion?width=800&height=600&nologo=true&model=flux' },
-    { id: 4, name: 'Rose Draped Dress', category: 'Evening', price: 42000, color: 'from-rose-700 to-pink-300', image: 'https://image.pollinations.ai/prompt/rose%20draped%20evening%20dress%20luxury%20editorial?width=800&height=600&nologo=true&model=flux' },
-    { id: 5, name: 'Indigo Two-Piece', category: 'Everyday', price: 29000, color: 'from-indigo-800 to-blue-400', image: 'https://image.pollinations.ai/prompt/indigo%20two-piece%20African%20fashion%20editorial?width=800&height=600&nologo=true&model=flux' },
-    { id: 6, name: 'Golden Ceremony Gown', category: 'Occasion', price: 72000, color: 'from-yellow-600 to-amber-200', image: 'https://image.pollinations.ai/prompt/golden%20ceremony%20gown%20African%20luxury%20fashion?width=800&height=600&nologo=true&model=flux' }
+    { id: 1, name: 'Midnight Silk Gown', category: 'Evening', price: 48000, color: 'from-violet-700 to-fuchsia-400', image: 'https://gen.pollinations.ai/image/luxury%20midnight%20silk%20gown%20fashion%20editorial?model=flux&width=1200&height=628&enhance=true&nologo=true' },
+    { id: 2, name: 'Lagos Linen Set', category: 'Everyday', price: 32000, color: 'from-amber-500 to-orange-300', image: 'https://gen.pollinations.ai/image/premium%20Lagos%20linen%20fashion%20set%20editorial?model=flux&width=1200&height=628&enhance=true&nologo=true' },
+    { id: 3, name: 'Emerald Aso-Ebi', category: 'Occasion', price: 65000, color: 'from-emerald-700 to-teal-300', image: 'https://gen.pollinations.ai/image/elegant%20emerald%20aso-ebi%20gown%20studio%20fashion?model=flux&width=1200&height=628&enhance=true&nologo=true' },
+    { id: 4, name: 'Rose Draped Dress', category: 'Evening', price: 42000, color: 'from-rose-700 to-pink-300', image: 'https://gen.pollinations.ai/image/rose%20draped%20evening%20dress%20luxury%20editorial?model=flux&width=1200&height=628&enhance=true&nologo=true' },
+    { id: 5, name: 'Indigo Two-Piece', category: 'Everyday', price: 29000, color: 'from-indigo-800 to-blue-400', image: 'https://gen.pollinations.ai/image/indigo%20two-piece%20African%20fashion%20editorial?model=flux&width=1200&height=628&enhance=true&nologo=true' },
+    { id: 6, name: 'Golden Ceremony Gown', category: 'Occasion', price: 72000, color: 'from-yellow-600 to-amber-200', image: 'https://gen.pollinations.ai/image/golden%20ceremony%20gown%20African%20luxury%20fashion?model=flux&width=1200&height=628&enhance=true&nologo=true' }
   ];
   const [query, setQuery] = React.useState('');
   const [category, setCategory] = React.useState('All');

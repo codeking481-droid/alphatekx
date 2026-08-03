@@ -101,11 +101,16 @@ Make this post unique from other days. Specific, useful, human. Africa/Lagos fri
     }
 
     // Unique Pollination image URL for this post
-    const seed = Date.now() + dayIndex * 997 + Math.floor(Math.random() * 10000)
-    const imgPrompt = encodeURIComponent(
-      `${topic}, unique angle day ${dayIndex}, professional branded social media visual, vibrant, high quality, 8k, no text overlay`,
-    )
-    const imageUrl = `https://image.pollinations.ai/prompt/${imgPrompt}?width=1080&height=1080&nologo=true&seed=${seed}&model=flux`
+    const styles = [
+      'dark mode SaaS, neon blue glow, premium',
+      'light mode, clean white, subtle gradient, professional',
+      'abstract 3D, isometric, modern tech, vibrant',
+    ]
+    const style = styles[Math.floor(Math.random() * styles.length)]
+    const seed = Math.floor(Math.random() * 9999999)
+    const prompt = `${topic}, unique angle day ${dayIndex}, premium LinkedIn SaaS visual, ultra detailed 4k, cinematic lighting, modern SaaS gradient background (dark blue to electric blue), minimalist professional style, abstract tech elements, 2026 design trend, ${style}, no stock photo, no blurry, no watermark, no text, no words, no low quality, no cartoon, no old design`
+    const imgPrompt = encodeURIComponent(prompt)
+    const imageUrl = `https://gen.pollinations.ai/image/${imgPrompt}?model=flux&width=1200&height=628&enhance=true&nologo=true&seed=${seed}&t=${Date.now()}`
 
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(
