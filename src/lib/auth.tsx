@@ -98,6 +98,16 @@ export function AuthProvider({ children }: PropsWithChildren) {
         profileRow = reloadResponse.data
       }
       let nextProfile = (profileRow || fallback) as Profile
+      try {
+        const billingResponse = await fetch('/api/billing', { headers: { Authorization: `Bearer ${authUser.access_token ?? ''}` } })
+        if (billingResponse.ok) {
+          const billing = await billingResponse.json().catch(() => null)
+          if (billing && typeof billing.plan === 'string' && billing.plan.trim()) {
+            nextProfile = { ...nextProfile, plan: billing.plan, credits: Number(billing.credits ?? nextProfile.credits) }
+            try { localStorage.setItem('alphatekx_plan', billing.plan) } catch {}
+          }
+        }
+      } catch {}
       const balance = await hydrateCredits().catch(() => Number.NaN)
       if (Number.isFinite(balance)) nextProfile = { ...nextProfile, credits: balance }
       setProfile(nextProfile)

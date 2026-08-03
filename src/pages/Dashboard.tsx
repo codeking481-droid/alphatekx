@@ -20,16 +20,40 @@ export default function Dashboard() {
 
   useEffect(() => {
     const payment = searchParams.get('payment')
-    if (payment === 'success') {
-      const ref = searchParams.get('ref') || ''
+    const ref = searchParams.get('reference') || searchParams.get('ref') || ''
+    if (payment === 'success' && ref) {
       const credits = Number(searchParams.get('credits') || '0')
       setPaymentRef(ref)
       setPaymentCredits(credits)
-      setShowCongrats(true)
-      // refresh local credits display
-      void getJson('/api/credits/balance').then(d => {
-        // optionally update any client-side stores; this app has creditStore in other places
-      }).catch(() => {})
+      void fetch(`/api/paystack/verify?reference=${encodeURIComponent(ref)}`, { headers: { Accept: 'application/json' } })
+        .then(async response => {
+          const data = await response.json().catch(() => ({} as Record<string, unknown>))
+          if (response.ok && data.verified) {
+            const credited = Number(data.credits || credits || 0)
+            setPaymentCredits(credited)
+            setShowCongrats(true)
+            try { localStorage.removeItem('alphatekx:pending-payment') } catch {}
+            return
+          }
+          if (credits > 0) {
+            setShowCongrats(true)
+          }
+        })
+        .catch(() => {
+          if (credits > 0) setShowCongrats(true)
+        })
+      return
+    }
+
+    if (payment === 'success' && !ref) {
+      const pending = (() => {
+        try { return JSON.parse(localStorage.getItem('alphatekx:pending-payment') || 'null') } catch { return null }
+      })()
+      if (pending?.reference) {
+        setPaymentRef(pending.reference)
+        setPaymentCredits(Number(pending.credits || 0))
+        setShowCongrats(true)
+      }
     }
   }, [searchParams])
 

@@ -12,12 +12,10 @@ export function getCredits() {
 
 export async function spendCredits(amount: number) {
   const headers: Record<string, string> = {}
-  let userEmail = ''
   if (supabase) {
     const session = (await supabase.auth.getSession()).data.session
     if (!session) return false
     headers.Authorization = `Bearer ${session.access_token}`
-    userEmail = authUserEmail(session.user)
   } else {
     try {
       const raw = localStorage.getItem('alphatekx:local-user')
@@ -26,23 +24,25 @@ export async function spendCredits(amount: number) {
         if (u?.id && u?.email) {
           headers['x-local-user-id'] = String(u.id)
           headers['x-local-user-email'] = String(u.email)
-          userEmail = String(u.email)
         }
       }
     } catch {}
   }
+
   try {
     const response = await fetch('/api/credits/spend', { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify({ amount }) })
     const raw = await response.text()
     let result: Record<string, unknown> = {}
     try { result = raw ? JSON.parse(raw) as Record<string, unknown> : {} } catch {}
-    if (response.ok && Number.isFinite(Number(result.credits))) { setCredits(Number(result.credits)); return true }
+    if (response.ok && Number.isFinite(Number(result.credits))) {
+      setCredits(Number(result.credits))
+      return true
+    }
     if (response.status === 402) return false
-  } catch {}
-  const current = getCredits()
-  if (current < amount) return false
-  setCredits(current - amount)
-  return true
+    return false
+  } catch {
+    return false
+  }
 }
 
 export function addCredits(amount: number) { setCredits(getCredits() + amount) }
