@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Mail, MessageCircle, Move, Send, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { MessageCircle, Move, Send, X } from 'lucide-react'
 import { useLocation } from 'react-router-dom'
 import { useAuthOptional } from '../lib/auth'
 
@@ -13,11 +13,6 @@ const ISSUE_OPTIONS = [
 function getReferenceFromUrl(locationSearch: string) {
   const params = new URLSearchParams(locationSearch)
   return params.get('reference') || params.get('ref') || localStorage.getItem('lastRef') || ''
-}
-
-function buildWhatsAppLink(reference: string) {
-  const base = 'https://wa.me/2349046802069?text=' + encodeURIComponent('Hi AlphaTekX I paid but no credit. Ref: ' + (reference || ''))
-  return base
 }
 
 export function openContactUs() {
@@ -50,8 +45,6 @@ export function ContactForm({ compact = false, onSuccess }: { compact?: boolean;
     }))
   }, [location.search, user])
 
-  const whatsappLink = useMemo(() => buildWhatsAppLink(form.reference), [form.reference])
-
   const update = (field: keyof typeof form, value: string) => {
     setForm((current) => ({ ...current, [field]: value }))
   }
@@ -70,7 +63,7 @@ export function ContactForm({ compact = false, onSuccess }: { compact?: boolean;
       })
       const data = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(data?.error || 'Contact request failed.')
-      setSuccess('Sent! 🎉 We go reply in 1 minute via WhatsApp/Email. Your reference saved, we go add credit manually if needed.')
+      setSuccess('Sent! 🎉 Your support request is received and our team will respond quickly.')
       setForm((current) => ({ ...current, message: '', reference: current.reference || payload.reference }))
       onSuccess?.()
     } catch (error) {
@@ -123,18 +116,6 @@ export function ContactForm({ compact = false, onSuccess }: { compact?: boolean;
         </button>
 
         {success && <p className="text-left text-sm text-emerald-300">{success}</p>}
-
-        <div className="pt-2 text-center text-sm text-[#8A8A93]">
-          <span>Or chat us instantly:</span>
-          <div className="mt-3 flex flex-col items-center gap-2 sm:flex-row sm:justify-center">
-            <a href={whatsappLink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-full border border-[#24242A] bg-[#0B0B0C] px-3 py-2 text-white hover:border-white/20">
-              <MessageCircle size={14} className="text-emerald-400" /> WhatsApp
-            </a>
-            <a href="mailto:support@alphatekx.name.ng" className="inline-flex items-center gap-2 rounded-full border border-[#24242A] bg-[#0B0B0C] px-3 py-2 text-white hover:border-white/20">
-              <Mail size={14} className="text-violet-300" /> support@alphatekx.name.ng
-            </a>
-          </div>
-        </div>
       </form>
     </div>
   )
