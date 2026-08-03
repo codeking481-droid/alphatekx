@@ -26,11 +26,7 @@ const STAGES = [
 ]
 
 const PLATFORM_NAMES = {
-  facebook: 'Facebook',
   linkedin: 'LinkedIn',
-  instagram: 'Instagram',
-  x: 'X',
-  twitter: 'X',
   whatsapp: 'WhatsApp',
   youtube: 'YouTube',
   telegram: 'Telegram',
@@ -40,15 +36,9 @@ const PLATFORM_NAMES = {
 
 const SOCIAL_CONTENT_INTENTS = new Set([
   'social_content',
-  'facebook_posts',
   'linkedin_posts',
-  'x_posts',
-  'instagram_posts',
   'content_campaign',
-  'facebook',
   'linkedin',
-  'x',
-  'instagram',
   'youtube',
   'whatsapp',
 ])
@@ -164,7 +154,7 @@ function cleanBusiness(text) {
 function requestsSinglePost(prompt) {
   const lower = String(prompt || '').toLowerCase()
   if (/\b(every|each|daily|weekly|monthly|monday|tuesday|wednesday|thursday|friday|saturday|sunday|week|month)\b/.test(lower)) return false
-  return /\b(?:create|generate|make|write)\s+(?:a(?:\s+(?:single|strong|great))?|one)\s+(?:linkedin\s+|medium\s+|x\s+|twitter\s+|facebook\s+|instagram\s+)?(?:post|article)\b/i.test(prompt) ||
+  return /\b(?:create|generate|make|write)\s+(?:a(?:\s+(?:single|strong|great))?|one)\s+(?:linkedin\s+|medium\s+)?(?:post|article)\b/i.test(prompt) ||
     /\b(?:only|exactly)\s+one\s+posts?\b/i.test(prompt) ||
     /\bdo not schedule (?:a )?recurring campaign\b/i.test(prompt)
 }
@@ -185,19 +175,14 @@ export function heuristicParseRequest(prompt) {
   const platformList = [
     { id: 'linkedin', test: /\blinkedin\b/ },
     { id: 'medium', test: /\bmedium\b/ },
-    { id: 'x', test: /(?:^|\s)x(?:\s|$|\.|,|!|\?)/ },
-    { id: 'twitter', test: /\btwitter\b/ },
-    { id: 'facebook', test: /\bfacebook\b/ },
-    { id: 'instagram', test: /\binstagram\b/ },
     { id: 'threads', test: /\bthreads\b/ },
-    { id: 'tiktok', test: /\btiktok\b/ },
     { id: 'youtube', test: /\byoutube\b/ },
   ]
   const platforms = platformList
     .map(p => ({ ...p, match: lower.match(p.test) }))
     .filter(p => p.match)
     .sort((a, b) => (a.match?.index ?? Number.MAX_SAFE_INTEGER) - (b.match?.index ?? Number.MAX_SAFE_INTEGER))
-    .map(p => p.id === 'twitter' ? 'x' : p.id)
+    .map(p => p.id)
     .filter((platform, index, all) => all.indexOf(platform) === index)
   if (!hasPost) return result
   result.intent = 'social_content'
@@ -227,14 +212,11 @@ export function heuristicParseRequest(prompt) {
                     prompt.match(/(?:\bin a|\bwith a)\s+([^\.\n]+?)\s+\btone\b/i)
   if (toneMatch) result.knownFields.tone = toneMatch[1].trim().replace(/\s+/g, ' ')
   else if (/\badapt\s+(?:the\s+)?captions?\b/i.test(prompt) && platforms.length > 1) {
-    result.knownFields.tone = 'platform-native: story-led Facebook, punchy X, visual Gen Z Instagram, and professional founder-led LinkedIn'
+    result.knownFields.tone = 'platform-native: professional LinkedIn tone with a clear business focus'
   }
 
   const platformTimes = {}
   const platformTimePatterns = [
-    ['facebook', /\bfacebook\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i],
-    ['x', /\b(?:twitter|x)\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i],
-    ['instagram', /\binstagram\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i],
     ['linkedin', /\blinkedin\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i],
   ]
   for (const [platform, pattern] of platformTimePatterns) {
@@ -276,7 +258,7 @@ export function heuristicParseRequest(prompt) {
   const ctaMatch = prompt.match(/\b(?:cta|call to action)\s*[:=]\s*([^\n.]+)/i)
   if (ctaMatch) result.knownFields.callToAction = ctaMatch[1].trim()
 
-  const explicitPostCount = prompt.match(/\b(?:create|generate|make|write)(?:\s+only)?\s+(one|\d+)\s+(?:linkedin\s+|medium\s+|x\s+|twitter\s+|facebook\s+|instagram\s+)?posts?\b/i) ||
+  const explicitPostCount = prompt.match(/\b(?:create|generate|make|write)(?:\s+only)?\s+(one|\d+)\s+(?:linkedin\s+|medium\s+)?posts?\b/i) ||
     prompt.match(/\b(?:only|exactly|total)\s+(one|\d+)\s+posts?\b/i)
   if (explicitPostCount) result.knownFields.totalPosts = explicitPostCount[1].toLowerCase() === 'one' ? 1 : Number(explicitPostCount[1])
   const isSinglePost = requestsSinglePost(prompt)
@@ -313,10 +295,7 @@ export function heuristicParseRequest(prompt) {
 
 function normalizePlatform(name) {
   const n = String(name).toLowerCase().replace(/\s+/g, '').replace(/^@/, '')
-  if (n.includes('facebook')) return 'facebook'
   if (n.includes('linkedin')) return 'linkedin'
-  if (n.includes('instagram')) return 'instagram'
-  if (n === 'x' || n === 'twitter') return 'x'
   if (n.includes('telegram')) return 'telegram'
   if (n.includes('slack')) return 'slack'
   if (n.includes('whatsapp')) return 'whatsapp'
@@ -650,7 +629,7 @@ Analyze the user's request and return a JSON object with:
 - intent: one of social_content, send_email, gmail_attachments_to_drive, telegram_message, slack_message, whatsapp_message, calendar_summary, sheets_append, unsupported, unknown
 - goal: a short rewritten goal in plain English
 - confidence: 0 to 1
-- platforms: array of platform names mentioned (facebook, linkedin, x, instagram, telegram, slack, gmail, google_sheets, google_calendar)
+- platforms: array of platform names mentioned (linkedin, telegram, slack, gmail, google_sheets, google_calendar)
 - business: business name or description if present
 - audience: target audience if present
 - tone: tone if present
@@ -683,13 +662,7 @@ Do not return placeholder text. Use the words the user actually provided.`
 
     const capabilityPlan = buildCapabilityPlan(prompt, { email: conversation.userEmail })
     if (capabilityPlan) {
-      // Facebook Page and Instagram requests share the social-content planner.
-      if (capabilityPlan.capabilityId === 'facebook-post' || capabilityPlan.capabilityId === 'instagram-post') {
-        parsed.intent = 'social_content'
-        parsed.platforms = capabilityPlan.capabilityId === 'facebook-post' ? ['facebook'] : ['instagram']
-      } else {
         parsed.intent = mapCapabilityToIntent(capabilityPlan, parsed.intent)
-      }
       if (capabilityPlan.unsupported && parsed.intent !== 'social_content') {
         parsed.intent = 'unsupported'
         parsed.unsupportedReason = capabilityPlan.reason
@@ -769,7 +742,7 @@ Do not return placeholder text. Use the words the user actually provided.`
   }
 
   function mapCapabilityToIntent(capabilityPlan, fallback) {
-    if (capabilityPlan.actions?.some(a => a.connector === 'facebook' || a.connector === 'linkedin' || a.connector === 'x' || a.connector === 'instagram')) return 'social_content'
+    if (capabilityPlan.actions?.some(a => a.connector === 'linkedin')) return 'social_content'
     if (capabilityPlan.actions?.some(a => a.connector === 'gmail' && a.action === 'save_attachments_to_drive')) return 'gmail_attachments_to_drive'
     if (capabilityPlan.actions?.some(a => a.connector === 'gmail' || a.connector === 'email')) return 'send_email'
     if (capabilityPlan.actions?.some(a => a.connector === 'telegram')) return 'telegram_message'
@@ -1160,9 +1133,6 @@ Return JSON:
         const text = typeof value === 'string' ? value.trim() : ''
         const words = text.split(/\s+/).filter(Boolean).length
         const normalized = normalizePlatform(platform)
-        if (normalized === 'x') return text.length >= 180 && text.length <= 850
-        if (normalized === 'instagram') return words >= 150
-        if (normalized === 'facebook') return words >= 200
         if (normalized === 'linkedin') return words >= 1
         if (normalized === 'whatsapp') return words >= 100
         if (normalized === 'youtube') return words >= 300
@@ -1221,7 +1191,7 @@ Return JSON:
       totalPosts >= durationDays * platforms.length
     const postsPerDay = Math.max(1, Math.ceil(totalPosts / durationDays))
     const dontPost = Array.isArray(known.dontPost) ? known.dontPost : []
-    const automaticImagePlatforms = platforms.some(platform => ['linkedin', 'facebook', 'instagram', 'x', 'twitter'].includes(platform))
+    const automaticImagePlatforms = platforms.some(platform => ['linkedin'].includes(platform))
     const imageRequested = Boolean(known.includeImages || known.include_images || automaticImagePlatforms)
     const includeImages = imageRequested && (typeof getSmartImage === 'function' || listImageProviders().length > 0)
 
@@ -1280,10 +1250,10 @@ Return strict JSON with shape:
       "day": 1,
       "slot": "morning",
       "scheduledAt": "ISO-8601",
-      "platforms": ["facebook"],
+      "platforms": ["linkedin"],
       "topic": "short topic label",
       "postType": "educational|product|story|cta",
-      "captions": { "facebook": "post text" }
+      "captions": { "linkedin": "post text" }
     }
   ]
 }
@@ -1689,30 +1659,7 @@ Here are three useful principles to take away:
 That approach matters because dependable work is not about doing more activity. It is about creating a repeatable process, checking the result, and improving what happens next. The tone should feel ${tone}, but the promise remains simple: useful work, clear approval, and an honest result.
 
 If this sounds like the way your team wants to work, explore ${safeBusiness}, share the task you want to simplify, and see what a clearer workflow could unlock. What is the first repetitive task you would remove from your week?`
-    if (platform === 'x') {
-      const xOpenings = [
-        'Ideas do not need more tabs. They need execution.',
-        'Automation should save time, not create another job.',
-        'Small teams deserve serious operating power.',
-        'The future of work is clear intent followed by verified action.',
-        'Stop repeating work your system can handle safely.',
-        'A useful AI shows its work and confirms the result.',
-        'Build the workflow once. Put your energy into growth.',
-      ]
-      return `${xOpenings[(day - 1) % xOpenings.length]} ${safeBusiness} helps ${safeAudience} turn a clear goal into reviewed, reliable action. Start with one task today. #${tag} #Automation`
-    }
-    if (platform === 'instagram') {
-      return `${core}
-
-#${tag} #Automation #AI #BusinessGrowth #Creators #Startups #SmallBusiness #Productivity #DigitalTools #FutureOfWork`
-    }
-    if (platform === 'facebook') {
-      return `${core}
-
-The best place to begin is one real task that takes time every week. Name it, define the outcome, and keep a human review step before anything is published or sent. That is how automation earns trust: not through noise, but through results you can verify.
-
-#${tag} #BusinessAutomation #SmallBusiness`
-    }
+    return core
     if (platform === 'linkedin') {
       return `${core}
 

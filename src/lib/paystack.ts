@@ -2,9 +2,10 @@ import { supabase } from './supabase'
 import { addCredits, setCredits } from './creditStore'
 
 type Plan = 'starter' | 'pro'
+export type PlanValue = 'free' | Plan | 'credits'
 
 export type PaymentPack = {
-  id: 'starter' | 'pro' | 'credits'
+  id: string
   label: string
   amountKobo: number
   credits?: number
@@ -39,12 +40,13 @@ export async function initiatePaystack(plan: Plan) {
   return initiatePaystackPack(pack)
 }
 
+function readEnv(name: string) {
+  const value = typeof import.meta !== 'undefined' && import.meta && 'env' in import.meta ? (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env?.[name] : undefined
+  return value || (typeof window !== 'undefined' ? (window as Window & { __APP_ENV__?: Record<string, string | undefined> }).__APP_ENV__?.[name] : undefined)
+}
+
 export async function initiatePaystackPack(pack: PaymentPack) {
-  const publicKey = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY?.trim()
-  if (!publicKey) {
-    console.warn('Add VITE_PAYSTACK_PUBLIC_KEY to your Render Environment to use live Paystack.')
-    throw new Error('Paystack public key is missing. Add VITE_PAYSTACK_PUBLIC_KEY in your environment.')
-  }
+  const publicKey = readEnv('VITE_PAYSTACK_PUBLIC_KEY')?.trim()
 
   let email = ''
   try {
@@ -58,21 +60,35 @@ export async function initiatePaystackPack(pack: PaymentPack) {
     email = value.trim()
   }
 
-  const reference = `alphatekx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  const initRes = await fetch('/api/paystack/initialize', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+    body: JSON.stringify({ type: 'credits', packId: pack.id }),
+  })
+  const initText = await initRes.text()
+  let initData: Record<string, unknown> = {}
+  if (initText.trim()) {
+    try { initData = JSON.parse(initText) as Record<string, unknown> } catch { throw new Error(`Payment server returned an invalid response (${initRes.status}). Please retry.`) }
+  }
+  if (!initRes.ok) throw new Error(String(initData.error || `Payment initialization failed (${initRes.status}).`))
 
-  return new Promise<{ success: true; plan: Plan | 'credits'; reference: string }>((resolve, reject) => {
+  const reference = String(initData.reference || '')
+  const amount = Number(initData.amount || 0)
+  const authorizationUrl = String(initData.authorization_url || '')
+  if (!reference || !amount) throw new Error('Payment initialization returned invalid data. Please retry.')
+
+  if (!publicKey || !window.PaystackPop) {
+    if (!authorizationUrl) throw new Error('Paystack checkout is unavailable. Please try again later.')
+    window.location.href = authorizationUrl
+    return { success: true as const, plan: (pack.plan || pack.id) as PlanValue, reference }
+  }
+
+  return new Promise<{ success: true; plan: PlanValue; reference: string }>((resolve, reject) => {
     const handler = window.PaystackPop?.setup({
       key: publicKey,
       email,
-      amount: pack.amountKobo,
-      currency: 'NGN',
+      amount,
       ref: reference,
-      metadata: {
-        custom_fields: [
-          { display_name: 'Plan', variable_name: 'plan', value: pack.id },
-          ...(pack.credits ? [{ display_name: 'Credits', variable_name: 'credits', value: String(pack.credits) }] : []),
-        ],
-      },
       onClose: () => reject(new Error('Payment cancelled. No charge was made.')),
       callback: (response: { reference?: string; status?: string; message?: string }) => {
         if (response?.status !== 'success') {
@@ -80,7 +96,7 @@ export async function initiatePaystackPack(pack: PaymentPack) {
           return
         }
         void verifyPaystack(response.reference || reference, pack)
-          .then(() => resolve({ success: true as const, plan: pack.plan || pack.id as Plan | 'credits', reference: response.reference || reference }))
+          .then(() => resolve({ success: true as const, plan: (pack.plan || pack.id) as PlanValue, reference: response.reference || reference }))
           .catch(reject)
       },
     })
@@ -90,6 +106,25 @@ export async function initiatePaystackPack(pack: PaymentPack) {
     }
     handler.openIframe()
   })
+}
+
+async function authHeaders(): Promise<Record<string, string>> {
+  const headers: Record<string, string> = {}
+  try {
+    const session = (await supabase?.auth.getSession())?.data.session
+    if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
+  } catch {}
+  try {
+    const raw = localStorage.getItem('alphatekx:local-user')
+    if (raw) {
+      const u = JSON.parse(raw)
+      if (u?.id && u?.email) {
+        headers['x-local-user-id'] = String(u.id)
+        headers['x-local-user-email'] = String(u.email)
+      }
+    }
+  } catch {}
+  return headers
 }
 
 export async function verifyPaystack(reference: string, packOrPlan: PaymentPack | Plan) {
@@ -130,8 +165,8 @@ export async function startPaystackCheckout(plan: Plan, email: string) {
   return initiatePaystack(plan)
 }
 
-export function getCurrentPlan(): 'free' | Plan {
-  return (localStorage.getItem('alphatekx_plan') as 'free' | Plan) || 'free'
+export function getCurrentPlan(): PlanValue {
+  return (localStorage.getItem('alphatekx_plan') as PlanValue) || 'free'
 }
 
 export function canUseFreeFeature(): boolean {
