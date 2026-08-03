@@ -14,6 +14,13 @@ async function responsePayload(response: Response) {
   catch { throw new Error(`Payment server returned an invalid response (${response.status}). Please retry.`) }
 }
 
+function persistPaymentReference(reference: string) {
+  try {
+    localStorage.setItem('lastRef', reference)
+    localStorage.setItem('alphatekx:last-ref', reference)
+  } catch {}
+}
+
 async function authHeaders(): Promise<Record<string, string>> {
   const headers: Record<string, string> = {}
   try {
@@ -34,6 +41,7 @@ export async function initializeCheckout(provider: PaymentProvider, item: Paymen
   const data = await responsePayload(res)
   if (!res.ok) throw new Error(String(data.error || `Payment start failed (${res.status})`))
   if (!data.authorization_url) throw new Error('Paystack did not return a checkout link. Please retry.')
+  persistPaymentReference(String(data.reference || ''))
   return data as { authorization_url: string; reference: string; credits: number; amount: number; source: string; provider: string }
 }
 

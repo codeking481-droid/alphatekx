@@ -80,6 +80,12 @@ export default function Auth() {
   }, [location.pathname, location.search, navigate])
 
   useEffect(() => {
+    if (user && (location.pathname === '/auth' || location.pathname === '/login' || location.pathname === '/signup')) {
+      navigate('/dashboard', { replace: true })
+    }
+  }, [location.pathname, navigate, user])
+
+  useEffect(() => {
     if (!user || !session?.access_token || welcomeCreditStarted.current) return
     welcomeCreditStarted.current = true
     setPending(true)
@@ -164,7 +170,7 @@ export default function Auth() {
       }
       else {
         redirectStarted = true
-        window.location.assign(data.url)
+        window.location.replace(data.url)
       }
     } catch (error) {
       rememberSignupChoice(null)

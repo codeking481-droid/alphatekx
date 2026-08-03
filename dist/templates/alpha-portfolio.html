@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Portfolio</title>
+  <script>
+    (function(){
+      const p = new URLSearchParams(location.search);
+      const t = p.get('t');
+      if (t) document.title = t;
+    })();
+  </script>
+  <style>
+    :root{--bg:#0a0a0a;--panel:#151515;--text:#f5f5f7;--muted:#a1a1aa;--primary:#6366f1;--primary-2:#ec4899;--border:rgba(255,255,255,.08);--radius:16px;--shadow:0 4px 24px rgba(0,0,0,.06)}
+    *{box-sizing:border-box}
+    html{scroll-behavior:smooth}
+    body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);line-height:1.6}
+    a{text-decoration:none;color:inherit}
+    img{max-width:100%;display:block}
+    button,input,textarea{font:inherit}
+    button{cursor:pointer;border:none;background:none}
+    .container{width:min(1100px,92%);margin:0 auto}
+    header{position:sticky;top:0;z-index:50;background:rgba(10,10,10,.8);backdrop-filter:blur(20px);border-bottom:1px solid var(--border)}
+    nav{display:flex;align-items:center;justify-content:space-between;height:64px}
+    .logo{font-weight:700;letter-spacing:.04em;background:linear-gradient(135deg,var(--primary),var(--primary-2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+    .nav-links{display:flex;gap:28px;align-items:center}
+    .nav-links a{font-size:.9rem;color:var(--muted);transition:.2s}
+    .nav-links a:hover{color:var(--text)}
+    .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 20px;border-radius:999px;font-size:.9rem;font-weight:600;color:#fff;background:linear-gradient(135deg,var(--primary),var(--primary-2));box-shadow:var(--shadow);transition:.2s}
+    .btn:hover{transform:translateY(-1px);opacity:.95}
+    .menu-btn{display:none}
+    .hero{padding:120px 0 80px;text-align:center}
+    .hero h1{font-size:clamp(2.4rem,6vw,4.2rem);font-weight:800;margin:0;letter-spacing:-.03em}
+    .hero p{font-size:clamp(1rem,2.5vw,1.25rem);color:var(--muted);max-width:680px;margin:24px auto 0}
+    .hero-actions{display:flex;gap:16px;justify-content:center;margin-top:40px;flex-wrap:wrap}
+    .btn-outline{padding:10px 20px;border-radius:999px;border:1px solid var(--border);color:var(--text);font-weight:600;transition:.2s}
+    .btn-outline:hover{background:rgba(255,255,255,.05)}
+    .section{padding:80px 0}
+    .section h2{font-size:1.8rem;font-weight:700;margin:0 0 40px;text-align:center}
+    .grid{display:grid;gap:24px}
+    .projects{grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+    .card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;transition:.2s}
+    .card:hover{transform:translateY(-4px);box-shadow:var(--shadow)}
+    .card-thumb{height:180px;background:linear-gradient(135deg,#1e1e2e,#2a2a3c);display:grid;place-items:center;font-size:2.5rem}
+    .card-body{padding:22px}
+    .card-body h3{margin:0 0 8px;font-size:1.1rem}
+    .card-body p{margin:0;color:var(--muted);font-size:.9rem}
+    .tags{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+    .tag{font-size:.7rem;padding:4px 10px;border-radius:999px;background:rgba(99,102,241,.15);color:#c7c8ff}
+    .skills{display:flex;flex-wrap:wrap;gap:12px;justify-content:center}
+    .skill{padding:12px 20px;border-radius:12px;background:var(--panel);border:1px solid var(--border);font-size:.9rem}
+    .contact{max-width:560px;margin:0 auto;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:32px}
+    .contact label{display:block;font-size:.8rem;color:var(--muted);margin-bottom:6px}
+    .contact input,.contact textarea{width:100%;padding:12px 14px;border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.03);color:var(--text);outline:none;margin-bottom:18px}
+    .contact textarea{min-height:120px;resize:vertical}
+    .contact input:focus,.contact textarea:focus{border-color:var(--primary)}
+    .success{display:none;padding:14px;border-radius:10px;background:rgba(16,185,129,.12);color:#6ee7b7;margin-bottom:18px}
+    footer{padding:40px 0;text-align:center;color:var(--muted);font-size:.85rem;border-top:1px solid var(--border)}
+    @media (max-width:720px){
+      .menu-btn{display:block}
+      .nav-links{position:fixed;inset:64px 0 auto 0;background:rgba(10,10,10,.96);border-bottom:1px solid var(--border);flex-direction:column;align-items:flex-start;padding:20px 24px;gap:16px;display:none}
+      .nav-links.open{display:flex}
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <nav class="container">
+      <a href="#" class="logo">PORTFOLIO</a>
+      <button class="menu-btn" aria-label="Menu" onclick="document.querySelector('.nav-links').classList.toggle('open')">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <div class="nav-links">
+        <a href="#projects">Projects</a>
+        <a href="#skills">Skills</a>
+        <a href="#contact">Contact</a>
+        <a href="#contact" class="btn">Hire me</a>
+      </div>
+    </nav>
+  </header>
+
+  <section class="hero container">
+    <h1>Design. Build. Ship.</h1>
+    <p>I'm a multidisciplinary creator who turns ideas into polished digital products — from brand identity to fully functional web apps.</p>
+    <div class="hero-actions">
+      <a href="#projects" class="btn">View work</a>
+      <a href="#contact" class="btn-outline">Get in touch</a>
+    </div>
+  </section>
+
+  <section id="projects" class="section container">
+    <h2>Selected work</h2>
+    <div class="grid projects">
+      <div class="card">
+        <div class="card-thumb">A</div>
+        <div class="card-body">
+          <h3>Alpha Finance Dashboard</h3>
+          <p>A dark-mode SaaS dashboard with real-time analytics, customer management and payment tracking.</p>
+          <div class="tags"><span class="tag">React</span><span class="tag">Tailwind</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-thumb" style="background:linear-gradient(135deg,#312e81,#4c1d95)">B</div>
+        <div class="card-body">
+          <h3>Luna E-commerce</h3>
+          <p>Conversion-focused online store with cart, checkout and order management for a fashion brand.</p>
+          <div class="tags"><span class="tag">Shop</span><span class="tag">Payments</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-thumb" style="background:linear-gradient(135deg,#064e3b,#065f46)">C</div>
+        <div class="card-body">
+          <h3>EcoTrack Mobile App</h3>
+          <p>Carbon-footprint tracker with habit scoring, charts and social sharing.</p>
+          <div class="tags"><span class="tag">Mobile</span><span class="tag">Data</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="skills" class="section container">
+    <h2>Skills & tools</h2>
+    <div class="skills">
+      <span class="skill">React / Next.js</span><span class="skill">TypeScript</span><span class="skill">Tailwind CSS</span><span class="skill">Node.js</span><span class="skill">Figma</span><span class="skill">PostgreSQL</span><span class="skill">Supabase</span><span class="skill">UI/UX Design</span>
+    </div>
+  </section>
+
+  <section id="contact" class="section container">
+    <h2>Let's work together</h2>
+    <form class="contact" onsubmit="event.preventDefault(); this.querySelector('.success').style.display='block'; this.reset();">
+      <div class="success">Message sent. I'll get back to you within 24 hours.</div>
+      <label for="name">Name</label>
+      <input id="name" required placeholder="Your name" />
+      <label for="email">Email</label>
+      <input id="email" type="email" required placeholder="you@example.com" />
+      <label for="message">Message</label>
+      <textarea id="message" required placeholder="Tell me about your project..."></textarea>
+      <button type="submit" class="btn">Send message</button>
+    </form>
+  </section>
+
+  <footer>
+    <div class="container">Built with AlphaTekX — portfolio template</div>
+  </footer>
+</body>
+</html>

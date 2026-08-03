@@ -5,7 +5,7 @@ import ReactMarkdown from 'react-markdown'
 import { getAgents, setCache, useAgents } from '../lib/agents/agentStore'
 import type { Agent } from '../lib/agents/types'
 import { useAuth } from '../lib/auth'
-import { getIntegrationStatus, type IntegrationStatus } from '../lib/integrations'
+import { getIntegrationStatus, startLinkedInAuth, type IntegrationStatus } from '../lib/integrations'
 import { getConnectedApps } from '../lib/connectors/connectorApi'
 import { postJson } from '../lib/apiClient'
 
@@ -52,7 +52,7 @@ export default function Agents() {
   const { user, session } = useAuth()
   const agents = useAgents()
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [input, setInput] = useState(() => sessionStorage.getItem(PROMPT_KEY) || '')
   const [conversation, setConversation] = useState<AlphaConversation | null>(() => readStored(CONVERSATION_KEY))
   const [pendingAgent, setPendingAgent] = useState<Agent | null>(() => readStored(PENDING_KEY))
@@ -128,6 +128,15 @@ export default function Agents() {
   }, [success])
   useEffect(() => { sessionStorage.setItem(PROMPT_KEY, input) }, [input])
   useEffect(() => { messageEnd.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }) }, [conversation?.messages?.length, creating])
+  useEffect(() => {
+    if (searchParams.get('linkedin') === 'connected') {
+      setNotice('LinkedIn connected')
+      const next = new URLSearchParams(searchParams)
+      next.delete('linkedin')
+      setSearchParams(next, { replace: true })
+    }
+  }, [searchParams, setSearchParams])
+
   useEffect(() => {
     const prompt = searchParams.get('prompt')
     const automationId = searchParams.get('id')
@@ -232,7 +241,7 @@ export default function Agents() {
                     <p className="text-sm font-black text-white">LinkedIn <span className="ml-1 text-[10px] font-black uppercase tracking-[0.18em] text-white/70">Native</span></p>
                     <p className={`mt-0.5 text-xs font-medium ${linkedInReady ? 'text-[#1CE783]' : 'text-[#F5C518]'}`}>{linkedInReady ? 'Connected · Publishing ready' : linkedIn?.connected ? 'Reconnect required for publishing access' : 'Not connected yet'}</p>
                   </div>
-                  {linkedInReady ? <CheckCircle2 className="shrink-0 text-[#1CE783]" size={19}/> : <Link to="/connected-apps?service=linkedin" className="flex min-h-10 shrink-0 items-center gap-1 rounded-xl border border-white/10 px-3 text-xs font-semibold text-white">Connect <ExternalLink size={13}/></Link>}
+                  {linkedInReady ? <CheckCircle2 className="shrink-0 text-[#1CE783]" size={19}/> : <button onClick={() => void startLinkedInAuth(session?.access_token, '/dashboard?linkedin=connected').catch(error => setNotice(error instanceof Error ? error.message : 'LinkedIn connection failed'))} className="flex min-h-10 shrink-0 items-center gap-1 rounded-xl border border-white/10 px-3 text-xs font-semibold text-white">Connect <ExternalLink size={13}/></button>}
                 </div>
               </div>
 

@@ -83,6 +83,7 @@ export async function initiatePaystackPack(pack: PaymentPack) {
   if (!reference || !amount) throw new Error('Payment initialization returned invalid data. Please retry.')
 
   savePendingPayment(reference, email, pack)
+  try { localStorage.setItem('lastRef', reference) } catch {}
 
   if (!authorizationUrl) throw new Error('Paystack checkout is unavailable. Please try again later.')
 

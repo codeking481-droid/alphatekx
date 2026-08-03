@@ -172,7 +172,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }
 
   const signOut = async () => {
-    try { await supabase?.auth.signOut() } catch {}
+    try { await supabase?.auth.signOut({ scope: 'local' }) } catch {}
     clearUserArtifacts()
     localStorage.removeItem(LOCAL_USER_KEY)
     setSession(null)

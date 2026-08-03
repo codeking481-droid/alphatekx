@@ -12,6 +12,7 @@ export default function Dashboard() {
   const [searchParams, setSearchParams] = useSearchParams()
   const onboarding = useOnboarding()
   const [showCongrats, setShowCongrats] = useState(false)
+  const [showContactBanner, setShowContactBanner] = useState(false)
   const [paymentRef, setPaymentRef] = useState('')
   const [paymentCredits, setPaymentCredits] = useState<number | null>(null)
   const [insights, setInsights] = useState<{ id: string; title: string; description: string; severity: string }[]>([])
@@ -19,33 +20,10 @@ export default function Dashboard() {
   useEffect(() => { void getJson<{ predictions: { id: string; title: string; description: string; severity: string }[] }>('/api/brain/predictions').then(d => setInsights(d.predictions || [])).catch(() => {}) }, [])
 
   useEffect(() => {
-    const payment = searchParams.get('payment')
-    const ref = searchParams.get('reference') || searchParams.get('ref') || ''
-    if (payment === 'success' && ref) {
-      const credits = Number(searchParams.get('credits') || '0')
-      setPaymentRef(ref)
-      setPaymentCredits(credits)
-      void fetch(`/api/paystack/verify?reference=${encodeURIComponent(ref)}`, { headers: { Accept: 'application/json' } })
-        .then(async response => {
-          const data = await response.json().catch(() => ({} as Record<string, unknown>))
-          if (response.ok && data.verified) {
-            const credited = Number(data.credits || credits || 0)
-            setPaymentCredits(credited)
-            setShowCongrats(true)
-            try { localStorage.removeItem('alphatekx:pending-payment') } catch {}
-            return
-          }
-          if (credits > 0) {
-            setShowCongrats(true)
-          }
-        })
-        .catch(() => {
-          if (credits > 0) setShowCongrats(true)
-        })
-      return
-    }
-
-    if (payment === 'success' && !ref) {
+    const ref = searchParams.get('reference') || searchParams.get('trxref') || searchParams.get('ref') || (() => {
+      try { return localStorage.getItem('lastRef') || '' } catch { return '' }
+    })()
+    if (!ref) {
       const pending = (() => {
         try { return JSON.parse(localStorage.getItem('alphatekx:pending-payment') || 'null') } catch { return null }
       })()
@@ -54,8 +32,30 @@ export default function Dashboard() {
         setPaymentCredits(Number(pending.credits || 0))
         setShowCongrats(true)
       }
+      return
     }
-  }, [searchParams])
+
+    setPaymentRef(ref)
+    setShowContactBanner(false)
+    void fetch(`/api/paystack/verify?reference=${encodeURIComponent(ref)}`, { headers: { Accept: 'application/json' } })
+      .then(async response => {
+        const data = await response.json().catch(() => ({} as Record<string, unknown>))
+        if (response.ok && (data.success === true || data.verified === true)) {
+          const credited = Number(data.credits || searchParams.get('credits') || 0)
+          setPaymentCredits(credited)
+          setShowCongrats(true)
+          try { localStorage.removeItem('alphatekx:pending-payment'); localStorage.removeItem('lastRef') } catch {}
+          const next = new URLSearchParams(searchParams)
+          next.delete('payment'); next.delete('reference'); next.delete('trxref'); next.delete('ref'); next.delete('credits')
+          setSearchParams(next, { replace: true })
+          return
+        }
+        setShowContactBanner(true)
+      })
+      .catch(() => {
+        setShowContactBanner(true)
+      })
+  }, [searchParams, setSearchParams])
 
   const creations = getCreations().slice(0, 6)
   const emailFirstName = user?.email ? user.email.split('@')[0].split('.')[0].replace(/^./, c => c.toUpperCase()) : 'Builder'
@@ -75,7 +75,7 @@ export default function Dashboard() {
         <h1 className="text-2xl font-bold md:text-3xl">What do you want to do today?</h1>
         <p className="mt-1 text-sm text-white/55">Pick one. Alpha handles the rest.</p>
 
-        {(paymentRef || searchParams.get('payment') === 'success') && (
+        {(paymentRef || searchParams.get('payment') === 'success' || showContactBanner) && (
           <div className="mt-5 rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4 text-sm text-amber-100">
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -137,14 +137,14 @@ export default function Dashboard() {
       </div>
       <OnboardingModal open={onboarding.open} onComplete={onboarding.finish} onClose={onboarding.close} />
       {showCongrats && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-          <div className="mx-auto w-full max-w-lg rounded-2xl bg-[#0A0A0A] p-6 text-center border border-white/5">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/85 px-4">
+          <div className="mx-auto w-full max-w-lg rounded-[24px] border border-[#24242A] bg-[#151519] p-8 text-center shadow-2xl">
             <div className="text-4xl">🎉🎉🎉🎉</div>
-            <h2 className="mt-4 text-2xl font-bold">Congratulations</h2>
-            <p className="mt-2 text-sm text-white/70">Payment successful! NGN {paymentCredits ? (paymentCredits).toLocaleString() : '0.00'} received. {paymentCredits ? paymentCredits : 0} credits added to your account!</p>
-            <p className="mt-2 text-xs text-white/40">Ref: {paymentRef}</p>
+            <h2 className="mt-4 text-2xl font-bold text-white">Congratulations</h2>
+            <p className="mt-2 text-sm text-white/75">Payment successful! {paymentCredits ? `${paymentCredits.toLocaleString()} credits` : 'Credits'} were added to your account.</p>
+            <p className="mt-2 text-xs text-white/40">Ref: {paymentRef || 'pending verification'}</p>
             <div className="mt-6 flex justify-center gap-3">
-              <button onClick={() => { setShowCongrats(false); setSearchParams({}) }} className="rounded-full bg-[#FFD700] px-4 py-2 font-semibold text-black">Continue to Dashboard</button>
+              <button onClick={() => { setShowCongrats(false); setShowContactBanner(false); navigate('/dashboard', { replace: true }) }} className="rounded-full bg-[#FFD700] px-4 py-2 font-semibold text-black">Continue</button>
             </div>
           </div>
         </div>
