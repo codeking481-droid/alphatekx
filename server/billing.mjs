@@ -465,21 +465,21 @@ export function resolvePaystackCharge(item) {
   if (!Number.isInteger(amount) || amount <= 0) throw new Error('Payment amount is invalid')
 
   const packCurrency = String(item?.currency || '').trim().toUpperCase()
-  const requestedCurrency = packCurrency || String(process.env.PAYSTACK_CHECKOUT_CURRENCY || 'NGN').trim().toUpperCase()
+  const configuredCurrency = String(process.env.PAYSTACK_CHECKOUT_CURRENCY || 'NGN').trim().toUpperCase()
+  const merchantAllowsUsd = configuredCurrency === 'USD' || String(process.env.PAYSTACK_ALLOW_USD || '').trim().toLowerCase() === 'true'
+  const requestedCurrency = merchantAllowsUsd ? configuredCurrency : 'NGN'
   const supported = new Set(['NGN', 'USD'])
-  if (!supported.has(requestedCurrency)) throw new Error('PAYSTACK_CHECKOUT_CURRENCY must be NGN or USD')
+  if (!supported.has(configuredCurrency) && configuredCurrency !== '') throw new Error('PAYSTACK_CHECKOUT_CURRENCY must be NGN or USD')
+
+  const nairaPerUsd = Number(process.env.PAYSTACK_NGN_PER_USD || 1600)
+  if (!Number.isFinite(nairaPerUsd) || nairaPerUsd <= 0) throw new Error('PAYSTACK_NGN_PER_USD must be a positive number')
 
   if (requestedCurrency === 'USD') {
     if (amount >= 200) {
       return { amount, currency: 'USD', listPriceUsdCents: amount }
     }
-    const nairaPerUsd = Number(process.env.PAYSTACK_NGN_PER_USD || 1600)
-    if (!Number.isFinite(nairaPerUsd) || nairaPerUsd <= 0) throw new Error('PAYSTACK_NGN_PER_USD must be a positive number')
     return { amount: Math.max(10000, Math.round(amount * nairaPerUsd)), currency: 'NGN', listPriceUsdCents: amount }
   }
-
-  const nairaPerUsd = Number(process.env.PAYSTACK_NGN_PER_USD || 1600)
-  if (!Number.isFinite(nairaPerUsd) || nairaPerUsd <= 0) throw new Error('PAYSTACK_NGN_PER_USD must be a positive number')
 
   if (packCurrency === 'NGN') {
     return { amount: Math.max(10000, amount), currency: 'NGN', listPriceUsdCents: amount }
