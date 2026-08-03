@@ -60,8 +60,14 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
   const { show, dismiss } = useShowOnboarding()
   const isAdmin = isAdminUser(user)
 
-  useEffect(() => subscribeCredits(() => setCredits(getCredits())), [])
-  useEffect(() => subscribeAgents(() => setRunning(runningAgentsCount())), [])
+  useEffect(() => {
+    const unsubscribeCredits = subscribeCredits(() => setCredits(getCredits()))
+    const unsubscribeAgents = subscribeAgents(() => setRunning(runningAgentsCount()))
+    return () => {
+      unsubscribeCredits()
+      unsubscribeAgents()
+    }
+  }, [])
   useEffect(() => { void hydrateCredits() }, [user?.id])
   useEffect(() => { if (profile) { setCredits(profile.credits); setPlan(profile.plan || 'free') } }, [profile])
   useEffect(() => {

@@ -1,4 +1,0 @@
-User-agent: *
-Allow: /
-
-Sitemap: https://alphatekx.name.ng/sitemap.xml

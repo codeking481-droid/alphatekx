@@ -135,7 +135,7 @@ export function getCreationForMission(missionId: string) {
   return getCreations().find((creation) => creation.missionId === missionId) ?? null
 }
 
-export function saveCreation(input: { missionId: string; title: string; code: string; type?: string; files?: CreationFile[]; description?: string; dependencies?: string[]; previewUrl?: string; previewLogs?: string }): Creation {
+export function saveCreation(input: { missionId: string; title: string; code: string; type?: string; files?: CreationFile[]; description?: string; dependencies?: string[]; previewUrl?: string; previewLogs?: string; previewSteps?: { stage: string; ok: boolean; ms: number; summary?: string }[] }): Creation {
   const current = getCreationForMission(input.missionId)
   const creation: Creation = {
     id: current?.id ?? crypto.randomUUID(),
@@ -154,6 +154,7 @@ export function saveCreation(input: { missionId: string; title: string; code: st
     customDomain: current?.customDomain,
     previewUrl: input.previewUrl ?? current?.previewUrl,
     previewLogs: input.previewLogs ?? current?.previewLogs,
+    previewSteps: input.previewSteps ?? current?.previewSteps,
     versions: [...(current?.versions??[]),{id:crypto.randomUUID(),label:`Version ${(current?.versions?.length??0)+1}.0`,code:input.code,files:input.files??[{path:'src/App.tsx',code:input.code}],createdAt:new Date().toISOString(),status:'ready'}],
     versionIndex: (current?.versions?.length ?? 0),
   }

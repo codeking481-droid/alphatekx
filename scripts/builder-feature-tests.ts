@@ -10,11 +10,13 @@ import { contextualFallbackBuilderCode, SLUG_PATTERN, saveGeneratedProject, tran
 import { builderSrcDoc, normalizeBuilderRuntimeCode } from '../src/lib/eliteBuilder.ts'
 
 globalThis.localStorage = {
-  getItem: () => null,
-  setItem: () => {},
-  removeItem: () => {},
+  length: 0,
   clear: () => {},
-}
+  getItem: () => null,
+  key: () => null,
+  removeItem: () => {},
+  setItem: () => {},
+} as Storage
 ;(globalThis as { window?: unknown }).window = {
   localStorage: globalThis.localStorage,
   dispatchEvent: () => true,
@@ -22,13 +24,17 @@ globalThis.localStorage = {
   removeEventListener: () => {},
   setTimeout: (cb: (...args: unknown[]) => void) => setTimeout(cb, 0),
 }
-globalThis.CustomEvent = class CustomEvent extends Event {
-  detail: unknown
-  constructor(type: string, init?: { detail?: unknown }) {
-    super(type)
-    this.detail = init?.detail
+globalThis.CustomEvent = class CustomEvent<T = unknown> extends Event {
+  declare detail: T
+  constructor(type: string, init?: CustomEventInit<T>) {
+    super(type, init)
+    this.detail = (init?.detail as T) ?? (undefined as T)
   }
-}
+  initCustomEvent(type: string, bubbles?: boolean, cancelable?: boolean, detail?: T) {
+    this.initEvent(type, bubbles ?? false, cancelable ?? false)
+    this.detail = detail as T
+  }
+} as typeof CustomEvent
 
 type TestResult = { name: string; passed: boolean; reason?: string }
 const results: TestResult[] = []

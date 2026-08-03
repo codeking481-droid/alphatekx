@@ -1,0 +1,14 @@
+﻿server/composioConnectorService.mjs:1171:        if (pid === 'instagram' && actionId === 'publish_post') {
+server/composioConnectorService.mjs:1172:          const createSlug = ACTION_TOOL_MAP['instagram.create_media']
+server/composioConnectorService.mjs:1181:        } else if (pid === 'facebook' && actionId === 'create_page_post') {
+server/composioConnectorService.mjs:1185:            const pagesResult = await executeTool(ACTION_TOOL_MAP['facebook.list_managed_pages'], { limit: 100 })
+server/composioConnectorService.mjs:1193:            result = await executeTool(ACTION_TOOL_MAP['facebook.create_photo_post'], {
+server/composioConnectorService.mjs:1200:        } else if (pid === 'twitter' && actionArguments.image_url) {
+server/composioConnectorService.mjs:1204:            toolSlug: ACTION_TOOL_MAP['twitter.upload_media'],
+server/composioConnectorService.mjs:1205:            toolkitSlug: 'twitter',
+server/composioConnectorService.mjs:1210:          const uploadResult = await executeTool(ACTION_TOOL_MAP['twitter.upload_media'], {
+server/composioConnectorService.mjs:669:  const keys = provider === 'twitter'
+server/composioConnectorService.mjs:671:    : provider === 'facebook'
+server/composioConnectorService.mjs:673:      : provider === 'instagram'
+server/composioConnectorService.mjs:814:    completedUrl.searchParams.set('connected', pid === 'twitter' ? 'x' : pid)
+server/composioConnectorService.mjs:815:    completedUrl.searchParams.set('provider', pid === 'twitter' ? 'x' : pid)

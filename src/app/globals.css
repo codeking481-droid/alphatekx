@@ -1,24 +1,28 @@
+@import url("https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;600;700&family=Instrument+Serif:ital@0;1&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
   color-scheme: dark;
-  --font-geist-sans: 'Inter', 'Segoe UI', sans-serif;
+  --font-headline: "Instrument Serif", Georgia, serif;
+  --font-body: "Geist", "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", monospace;
 }
 
 html {
   scroll-behavior: smooth;
-  background: #0A0A0F;
+  background: #08080A;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
   overflow-x: hidden;
-  background: #0A0A0F;
-  color: #ffffff;
-  font-family: var(--font-geist-sans), sans-serif;
+  background: #08080A;
+  color: #FAFAF9;
+  font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -33,8 +37,8 @@ img {
 }
 
 ::selection {
-  background: rgba(59, 130, 246, 0.35);
-  color: #fff;
+  background: rgba(10, 132, 255, 0.35);
+  color: #FAFAF9;
 }
 
 ::-webkit-scrollbar {
@@ -46,6 +50,18 @@ img {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #3B82F6, #8B5CF6);
+  background: linear-gradient(180deg, #0A84FF, #7C3AED);
   border-radius: 999px;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.3);
+    opacity: 0.55;
+  }
 }

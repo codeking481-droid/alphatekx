@@ -98,14 +98,21 @@ export default function VisionPanel() {
 
       {error && <div className="mt-4 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-200">{error}</div>}
 
-      {result && (
-        <div className="mt-4 rounded-xl border border-violet-400/20 bg-[#0A0F1E]/55 p-4 text-sm">
-          <p className="font-medium text-indigo-300">Document type: {String(result.documentType || result.document_type || 'unknown')}</p>
-          <p className="mt-2 whitespace-pre-wrap text-white/80">{String(result.extractedText || result.extracted_text || result.answer || result.suggestedAction || result.suggested_action || '')}</p>
-          {result.suggestedAction && <p className="mt-3 text-xs text-white/60">Suggested action: {String(result.suggestedAction)}</p>}
-          {result.error && <p className="mt-2 text-rose-300">Error: {String(result.error)}</p>}
-        </div>
-      )}
+      {result && (() => {
+        const suggestedAction = typeof result.suggestedAction === 'string'
+          ? result.suggestedAction
+          : typeof result.suggestedAction === 'number'
+            ? String(result.suggestedAction)
+            : ''
+        return (
+          <div className="mt-4 rounded-xl border border-violet-400/20 bg-[#0A0F1E]/55 p-4 text-sm">
+            <p className="font-medium text-indigo-300">Document type: {String(result.documentType || result.document_type || 'unknown')}</p>
+            <p className="mt-2 whitespace-pre-wrap text-white/80">{String(result.extractedText || result.extracted_text || result.answer || suggestedAction || result.suggested_action || '')}</p>
+            {suggestedAction && <p className="mt-3 text-xs text-white/60">Suggested action: {suggestedAction}</p>}
+            {result.error ? <p className="mt-2 text-rose-300">Error: {String(result.error)}</p> : null}
+          </div>
+        )
+      })()}
     </section>
   )
 }

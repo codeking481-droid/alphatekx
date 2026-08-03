@@ -43,10 +43,22 @@ const website = {
   author: founderProfile,
 }
 
-export default function SEO() {
-  return <>{[organization, application, website].map((value, index) => (
-    <script key={index} type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(value) }} />
-  ))}</>
+export default function SEO({
+  title = 'AlphaTekX',
+  description = 'AlphaTekX is an AI agentic automation platform for creating, publishing, and growing digital presence with approval-based AI workflows.',
+}: {
+  title?: string
+  description?: string
+}) {
+  return (
+    <>
+      <title>{title}</title>
+      <meta name="description" content={description} />
+      {[organization, application, website].map((value, index) => (
+        <script key={index} type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(value) }} />
+      ))}
+    </>
+  )
 }
 
 export { contactEmail, founder }

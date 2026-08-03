@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { createBackgroundGenerationOutcome } from '../../../../src/lib/automation/backgroundGeneration.ts'
+import { createBackgroundGenerationOutcome } from '../../../../src/lib/automation/backgroundGeneration'
 import { generateSchedule } from '../../../../src/lib/scheduling/nextPostCalculator'
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''
