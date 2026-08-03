@@ -207,7 +207,7 @@ export default function Settings() {
 
           <div className="mt-6">
             <h3 className="flex items-center gap-2 font-black text-white"><Wallet size={16} className="text-cyan-300"/> Buy credits</h3>
-            <p className="text-sm font-semibold text-slate-300">Purchased credits never expire. Prices are shown in the pack currency. The ₦50 test purchase uses NGN.</p>
+            <p className="text-sm font-semibold text-slate-300">Purchased credits never expire. Prices are shown in the pack currency. The ₦100 test purchase uses NGN.</p>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               {CREDIT_PACKS.map((pack) => {
                 const active = selectedPack?.id === pack.id

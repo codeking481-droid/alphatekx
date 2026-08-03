@@ -64,7 +64,7 @@ export const PLANS = {
 }
 
 export const CREDIT_PACKS = [
-  { id: 'test_50', credits: 1, amountKobo: 5000, currency: 'NGN', label: 'Test purchase', description: 'Test payment for ₦50' },
+  { id: 'test_50', credits: 1, amountKobo: 10000, currency: 'NGN', label: 'Test purchase', description: 'Test payment for ₦100' },
   { id: 'spark_5', credits: 5, amountKobo: 100, currency: 'USD', label: 'Spark', description: '5 credits for $1' },
   { id: 'creator_20', credits: 20, amountKobo: 300, currency: 'USD', label: 'Creator', description: '20 credits for $3' },
   { id: 'builder_40', credits: 40, amountKobo: 500, currency: 'USD', label: 'Builder', description: '40 credits for $5' },
@@ -475,22 +475,22 @@ export function resolvePaystackCharge(item) {
     }
     const nairaPerUsd = Number(process.env.PAYSTACK_NGN_PER_USD || 1600)
     if (!Number.isFinite(nairaPerUsd) || nairaPerUsd <= 0) throw new Error('PAYSTACK_NGN_PER_USD must be a positive number')
-    return { amount: Math.max(5000, Math.round(amount * nairaPerUsd)), currency: 'NGN', listPriceUsdCents: amount }
+    return { amount: Math.max(10000, Math.round(amount * nairaPerUsd)), currency: 'NGN', listPriceUsdCents: amount }
   }
 
   const nairaPerUsd = Number(process.env.PAYSTACK_NGN_PER_USD || 1600)
   if (!Number.isFinite(nairaPerUsd) || nairaPerUsd <= 0) throw new Error('PAYSTACK_NGN_PER_USD must be a positive number')
 
   if (packCurrency === 'NGN') {
-    return { amount, currency: 'NGN', listPriceUsdCents: amount }
+    return { amount: Math.max(10000, amount), currency: 'NGN', listPriceUsdCents: amount }
   }
 
   if (packCurrency === 'USD') {
-    return { amount: Math.max(5000, Math.round(amount * nairaPerUsd)), currency: 'NGN', listPriceUsdCents: amount }
+    return { amount: Math.max(10000, Math.round(amount * nairaPerUsd)), currency: 'NGN', listPriceUsdCents: amount }
   }
 
   return {
-    amount: Math.max(5000, Math.round(amount * nairaPerUsd)),
+    amount: Math.max(10000, Math.round(amount * nairaPerUsd)),
     currency: 'NGN',
     listPriceUsdCents: amount,
   }
@@ -528,7 +528,23 @@ async function initializePaystack(user, item, config) {
   const response = await fetch('https://api.paystack.co/transaction/initialize', {
     method: 'POST',
     headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, amount, currency, reference, callback_url: callback, metadata: { user_id: user.id, credits, source, currency, list_price_usd_cents: listPriceUsdCents, plan: isSubscription ? plan.id : undefined, pack: !isSubscription ? pack.id : undefined } })
+    body: JSON.stringify({
+      email,
+      amount,
+      currency,
+      reference,
+      callback_url: callback,
+      channels: ['card', 'bank', 'bank_transfer', 'ussd', 'mobile_money', 'opay'],
+      metadata: {
+        user_id: user.id,
+        credits,
+        source,
+        currency,
+        list_price_usd_cents: listPriceUsdCents,
+        plan: isSubscription ? plan.id : undefined,
+        pack: !isSubscription ? pack.id : undefined,
+      },
+    })
   })
   const data = await parsePaystackResponse(response, 'checkout initialization')
   if (!response.ok) throw new Error(data.message || 'Paystack initialization failed')
