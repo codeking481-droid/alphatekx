@@ -52,6 +52,8 @@ export async function initiatePaystackPack(pack: PaymentPack) {
   try {
     const session = (await supabase?.auth.getSession())?.data.session
     email = session?.user?.email || getUserEmail() || ''
+    // persist pending payment user so session can be restored after redirect
+    try { if (session?.user?.id) localStorage.setItem('pendingPaymentUser', String(session.user.id)) } catch {}
   } catch { email = getUserEmail() || '' }
 
   if (!email) {
@@ -91,13 +93,20 @@ export async function initiatePaystackPack(pack: PaymentPack) {
       ref: reference,
       onClose: () => reject(new Error('Payment cancelled. No charge was made.')),
       callback: (response: { reference?: string; status?: string; message?: string }) => {
-        if (response?.status !== 'success') {
-          reject(new Error(response?.message || 'Payment was not completed.'))
+        // Redirect to server-side verify endpoint which will complete the purchase and then redirect to the dashboard
+        const ref = response?.reference || reference
+        if (!ref) {
+          reject(new Error(response?.message || 'Payment did not return a reference.'))
           return
         }
-        void verifyPaystack(response.reference || reference, pack)
-          .then(() => resolve({ success: true as const, plan: (pack.plan || pack.id) as PlanValue, reference: response.reference || reference }))
-          .catch(reject)
+        try {
+          window.location.href = `/api/paystack/verify?reference=${encodeURIComponent(ref)}`
+        } catch (err) {
+          // Fallback: attempt client-side verification
+          void verifyPaystack(ref, pack)
+            .then(() => resolve({ success: true as const, plan: (pack.plan || pack.id) as PlanValue, reference: ref }))
+            .catch(reject)
+        }
       },
     })
     if (!handler) {
