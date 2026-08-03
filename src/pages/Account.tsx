@@ -5,15 +5,16 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { clearAllHistory } from '../lib/missionStore'
 import { getCredits, hydrateCredits, subscribeCredits } from '../lib/creditStore'
-import { getCurrentPlan, initiatePaystackPack, PACKS, type PaymentPack } from '../lib/paystack'
+import { getCurrentPlan, initiatePaystackPack, type PlanValue } from '../lib/paystack'
+import { CREDIT_PACKS, formatAmount, type CreditPack } from '../lib/billing'
 
 export default function Account() {
   const { user, profile, signOut } = useAuth()
   const navigate = useNavigate()
   const isAdmin = isAdminUser(user)
   const [credits, setCredits] = useState(getCredits())
-  const [plan, setPlan] = useState(getCurrentPlan())
-  const [selectedPack, setSelectedPack] = useState<PaymentPack | null>(null)
+  const [plan, setPlan] = useState<PlanValue>(getCurrentPlan())
+  const [selectedPack, setSelectedPack] = useState<CreditPack | null>(null)
   const [notice, setNotice] = useState('')
   const [pending, setPending] = useState(false)
 
@@ -67,15 +68,14 @@ export default function Account() {
       <p className="mt-1 text-sm text-white/55">Select a pack and pay securely with Paystack.</p>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
-        {PACKS.map(pack => {
+        {CREDIT_PACKS.map(pack => {
           const active = selectedPack?.id === pack.id
-          const naira = `₦${(pack.amountKobo / 100).toLocaleString()}`
-          const isBooster = pack.id === 'credits'
+          const displayPrice = formatAmount(pack.amountKobo, pack.currency)
           return <button key={pack.id} onClick={() => setSelectedPack(pack)} className={`relative rounded-2xl border p-4 text-left transition-all ${active ? 'border-indigo-500 bg-indigo-500/10' : 'border-violet-400/20 bg-violet-500/10 hover:border-violet-400/20'}`}>
             {active && <span className="absolute right-3 top-3 grid size-5 place-items-center rounded-full bg-gradient-to-r from-indigo-500 to-pink-500 text-white"><Check size={12}/></span>}
-            <span className="flex items-center gap-2 font-semibold">{isBooster ? <Zap size={16}/> : <WalletCards size={16}/>}{pack.label}</span>
-            <p className="mt-2 text-2xl font-semibold">{naira}</p>
-            <p className="mt-1 text-xs text-white/55">{isBooster ? `${pack.credits} credits` : pack.id === 'pro' ? 'Unlimited generations' : `${pack.credits} credits`}</p>
+            <span className="flex items-center gap-2 font-semibold"><WalletCards size={16}/>{pack.label}</span>
+            <p className="mt-2 text-2xl font-semibold">{displayPrice}</p>
+            <p className="mt-1 text-xs text-white/55">{pack.description}</p>
           </button>
         })}
       </div>
@@ -83,7 +83,7 @@ export default function Account() {
       {notice && <p role="status" className="mt-5 rounded-lg border border-violet-400/20 bg-violet-500/10 p-3 text-sm">{notice}</p>}
 
       <button onClick={() => void buy()} disabled={pending || !selectedPack} className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl btn-alpha px-4 text-sm font-medium text-white transition-all disabled:opacity-50">
-        {pending ? <LoaderCircle className="animate-spin" size={16}/> : <WalletCards size={16}/>} {selectedPack ? `Pay ${`₦${(selectedPack.amountKobo / 100).toLocaleString()}`} for ${selectedPack.label}` : 'Select a pack to pay'}
+        {pending ? <LoaderCircle className="animate-spin" size={16}/> : <WalletCards size={16}/>} {selectedPack ? `Pay ${formatAmount(selectedPack.amountKobo, selectedPack.currency)} for ${selectedPack.label}` : 'Select a pack to pay'}
       </button>
 
       <button onClick={() => void signOut()} className="mt-6 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-violet-400/20 px-4 text-sm transition-all hover:border-indigo-500 hover:bg-violet-500/10"><LogOut size={16}/>Sign out</button>

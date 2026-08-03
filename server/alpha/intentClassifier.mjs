@@ -36,7 +36,7 @@ const CONVERSATION_PATTERNS = [
 ]
 
 const ACTION_PATTERN = /\b(?:automate|automation|post|publish|schedule|send|email|mail|remind|notify|reply|respond|save|copy|move|upload|monitor|summarize|generate|create|append|share)\b/i
-const AUTOMATION_SIGNAL_PATTERN = /\b(?:linkedin|gmail|email|calendar|telegram|facebook|instagram|whatsapp|slack|discord|google\s+drive|google\s+sheets|every|daily|weekly|monthly|morning|afternoon|evening|monday|tuesday|wednesday|thursday|friday|saturday|sunday|automatically|automation|at\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\b/i
+const AUTOMATION_SIGNAL_PATTERN = /\b(?:linkedin|gmail|email|calendar|telegram|whatsapp|slack|discord|google\s+drive|google\s+sheets|every|daily|weekly|monthly|morning|afternoon|evening|monday|tuesday|wednesday|thursday|friday|saturday|sunday|automatically|automation|at\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\b/i
 const INCOMPLETE_ACTION_PATTERNS = [
   /^(?:please\s+)?post\s+(?:for\s+me|something|it)?[.!]*$/i,
   /^(?:please\s+)?send\s+(?:it|something|a\s+message)?[.!]*$/i,
@@ -45,7 +45,7 @@ const INCOMPLETE_ACTION_PATTERNS = [
   /^(?:please\s+)?schedule\s+(?:it|this)?[.!]*$/i,
 ]
 
-const FOLLOW_UP_PATTERN = /^(?:yes|no|approve|approved|continue|cancel|regenerate|rewrite|shorter|longer|linkedin|facebook|instagram|whatsapp|telegram|slack|discord|x|twitter|every\s+\w+|daily|weekly|monthly|\d{1,2}(?::\d{2})?\s*(?:am|pm)?|[\w.+-]+@[\w.-]+\.\w+)[.!]*$/i
+const FOLLOW_UP_PATTERN = /^(?:yes|no|approve|approved|continue|cancel|regenerate|rewrite|shorter|longer|linkedin|whatsapp|telegram|slack|discord|every\s+\w+|daily|weekly|monthly|\d{1,2}(?::\d{2})?\s*(?:am|pm)?|[\w.+-]+@[\w.-]+\.\w+)[.!]*$/i
 
 export function classifyIntent(message, context = {}) {
   const text = normalize(message)

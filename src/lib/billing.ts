@@ -66,6 +66,7 @@ export const PLANS: Record<PlanId, Plan> = {
 }
 
 export const CREDIT_PACKS: CreditPack[] = [
+  { id: 'test_50', label: 'Test purchase', credits: 1, amountKobo: 5000, currency: 'NGN', description: 'Test payment for ₦50' },
   { id: 'spark_5', label: 'Spark', credits: 5, amountKobo: 100, currency: 'USD', description: '5 credits for $1' },
   { id: 'creator_20', label: 'Creator', credits: 20, amountKobo: 300, currency: 'USD', description: '20 credits for $3' },
   { id: 'builder_40', label: 'Builder', credits: 40, amountKobo: 500, currency: 'USD', description: '40 credits for $5' },
@@ -82,6 +83,14 @@ export function getCreditPack(id: string): CreditPack | undefined {
 
 export function formatCurrency(minorUnits: number): string {
   return `$${(minorUnits / 100).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
+}
+
+export function formatAmount(minorUnits: number, currency = 'USD'): string {
+  const normalized = String(currency || 'USD').trim().toUpperCase()
+  if (normalized === 'NGN') {
+    return `₦${(minorUnits / 100).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
+  }
+  return formatCurrency(minorUnits)
 }
 
 export function estimateMonthlyUsage(perRun: number, durationDays = 30): number {

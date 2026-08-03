@@ -64,6 +64,7 @@ export const PLANS = {
 }
 
 export const CREDIT_PACKS = [
+  { id: 'test_50', credits: 1, amountKobo: 5000, currency: 'NGN', label: 'Test purchase', description: 'Test payment for ₦50' },
   { id: 'spark_5', credits: 5, amountKobo: 100, currency: 'USD', label: 'Spark', description: '5 credits for $1' },
   { id: 'creator_20', credits: 20, amountKobo: 300, currency: 'USD', label: 'Creator', description: '20 credits for $3' },
   { id: 'builder_40', credits: 40, amountKobo: 500, currency: 'USD', label: 'Builder', description: '40 credits for $5' },
@@ -460,24 +461,38 @@ function publicAppUrl() {
 }
 
 export function resolvePaystackCharge(item) {
-  const usdCents = Number(item?.amountKobo ?? item?.priceKobo ?? 0)
-  if (!Number.isInteger(usdCents) || usdCents <= 0) throw new Error('Payment amount is invalid')
-  const requestedCurrency = String(process.env.PAYSTACK_CHECKOUT_CURRENCY || 'NGN').trim().toUpperCase()
+  const amount = Number(item?.amountKobo ?? item?.priceKobo ?? 0)
+  if (!Number.isInteger(amount) || amount <= 0) throw new Error('Payment amount is invalid')
+
+  const packCurrency = String(item?.currency || '').trim().toUpperCase()
+  const requestedCurrency = packCurrency || String(process.env.PAYSTACK_CHECKOUT_CURRENCY || 'NGN').trim().toUpperCase()
   const supported = new Set(['NGN', 'USD'])
   if (!supported.has(requestedCurrency)) throw new Error('PAYSTACK_CHECKOUT_CURRENCY must be NGN or USD')
 
-  // Paystack's USD transaction minimum is $2. Keep the $1 Spark pack usable
-  // by falling back to its configured NGN equivalent.
-  if (requestedCurrency === 'USD' && usdCents >= 200) {
-    return { amount: usdCents, currency: 'USD', listPriceUsdCents: usdCents }
+  if (requestedCurrency === 'USD') {
+    if (amount >= 200) {
+      return { amount, currency: 'USD', listPriceUsdCents: amount }
+    }
+    const nairaPerUsd = Number(process.env.PAYSTACK_NGN_PER_USD || 1600)
+    if (!Number.isFinite(nairaPerUsd) || nairaPerUsd <= 0) throw new Error('PAYSTACK_NGN_PER_USD must be a positive number')
+    return { amount: Math.max(5000, Math.round(amount * nairaPerUsd)), currency: 'NGN', listPriceUsdCents: amount }
   }
 
   const nairaPerUsd = Number(process.env.PAYSTACK_NGN_PER_USD || 1600)
   if (!Number.isFinite(nairaPerUsd) || nairaPerUsd <= 0) throw new Error('PAYSTACK_NGN_PER_USD must be a positive number')
+
+  if (packCurrency === 'NGN') {
+    return { amount, currency: 'NGN', listPriceUsdCents: amount }
+  }
+
+  if (packCurrency === 'USD') {
+    return { amount: Math.max(5000, Math.round(amount * nairaPerUsd)), currency: 'NGN', listPriceUsdCents: amount }
+  }
+
   return {
-    amount: Math.max(5000, Math.round(usdCents * nairaPerUsd)),
+    amount: Math.max(5000, Math.round(amount * nairaPerUsd)),
     currency: 'NGN',
-    listPriceUsdCents: usdCents,
+    listPriceUsdCents: amount,
   }
 }
 
@@ -495,7 +510,7 @@ async function initializePaystack(user, item, config) {
   const plan = isSubscription ? getPlan(item.planId) : null
   if (!isSubscription && !pack) throw new Error('Invalid credit pack')
   if (isSubscription && !plan) throw new Error('Invalid plan')
-  const charge = resolvePaystackCharge(isSubscription ? { priceKobo: plan.priceKobo } : { amountKobo: pack.amountKobo })
+  const charge = resolvePaystackCharge(isSubscription ? { priceKobo: plan.priceKobo, currency: plan.currency } : { amountKobo: pack.amountKobo, currency: pack.currency })
   const { amount, currency, listPriceUsdCents } = charge
   const credits = isSubscription ? plan.monthlyCredits : pack.credits
   const source = isSubscription ? `subscription_${plan.id}` : `credits_${pack.id}`

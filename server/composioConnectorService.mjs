@@ -79,50 +79,6 @@ const PROVIDER_DEFS = {
     category: 'Communication',
     authMode: 'managed',
   },
-  facebook: {
-    id: 'facebook',
-    name: 'Facebook',
-    composioAppName: 'facebook',
-    composioAppNames: ['facebook'],
-    authConfigEnv: 'COMPOSIO_FACEBOOK_AUTH_CONFIG_ID',
-    defaultAuthConfigId: AUTH_CONFIGS.FACEBOOK,
-    enabled: false,
-    stage: 'beta',
-    actions: ['create_post', 'create_page_post', 'publish'],
-    isNative: false,
-    category: 'Social Media',
-    authMode: 'managed',
-  },
-  instagram: {
-    id: 'instagram',
-    name: 'Instagram',
-    composioAppName: 'instagram',
-    composioAppNames: ['instagram'],
-    authConfigEnv: 'COMPOSIO_INSTAGRAM_AUTH_CONFIG_ID',
-    defaultAuthConfigId: AUTH_CONFIGS.INSTAGRAM,
-    enabled: false,
-    stage: 'beta',
-    actions: ['create_media', 'create_post', 'create_media_post', 'publish_post', 'publish_reel', 'publish_story'],
-    isNative: false,
-    category: 'Social Media',
-    authMode: 'managed',
-  },
-  twitter: {
-    id: 'twitter',
-    name: 'X (Twitter)',
-    composioAppName: 'twitter',
-    composioAppNames: ['twitter'],
-    authConfigEnv: 'COMPOSIO_TWITTER_AUTH_CONFIG_ID',
-    defaultAuthConfigId: AUTH_CONFIGS.TWITTER,
-    enabled: false,
-    stage: 'live',
-    actions: ['create_post', 'create_tweet', 'create_thread', 'create_media_tweet'],
-    isNative: false,
-    category: 'Social Media',
-    // The AlphaTekx Twitter Auth Config stores its client credentials inside
-    // Composio. Nothing from the X developer app belongs on Render.
-    authMode: 'custom',
-  },
   youtube: {
     id: 'youtube',
     name: 'YouTube',
@@ -146,9 +102,6 @@ const AUTH_CONFIG_ALIASES = {
   googlesheets: ['COMPOSIO_GOOGLESHEETS_AUTH_CONFIG_ID', 'COMPOSIO_GOOGLE_SHEETS_AUTH_CONFIG_ID'],
   discord: ['COMPOSIO_DISCORD_AUTH_CONFIG_ID'],
   whatsapp: ['WHATSAPP_AUTH_CONFIG_ID', 'COMPOSIO_WHATSAPP_BUSINESS_AUTH_CONFIG_ID'],
-  facebook: ['FACEBOOK_AUTH_CONFIG_ID'],
-  instagram: ['INSTAGRAM_AUTH_CONFIG_ID', 'COMPOSIO_META_INSTAGRAM_AUTH_CONFIG_ID'],
-  twitter: ['COMPOSIO_X_AUTH_CONFIG_ID', 'TWITTER_AUTH_CONFIG_ID', 'X_AUTH_CONFIG_ID'],
   youtube: ['YOUTUBE_AUTH_CONFIG_ID'],
 }
 
@@ -157,10 +110,8 @@ const AUTH_CONFIG_ALIASES = {
 // ---------------------------------------------------------------------------
 
 const ALIASES = {
-  x: 'twitter',
   google_docs: 'googledocs',
   google_sheets: 'googlesheets',
-  'x (twitter)': 'twitter',
   linkedin: 'linkedin', // native, not composio
   gmail: 'gmail', // Composio managed auth
   telegram: 'telegram', // native
@@ -197,22 +148,6 @@ const ACTION_TOOL_MAP = {
   'discord.send_message': process.env.COMPOSIO_DISCORD_SEND_MESSAGE_TOOL || 'DISCORD_SEND_MESSAGE',
   'whatsapp.send_message': process.env.COMPOSIO_WHATSAPP_SEND_MESSAGE_TOOL || 'WHATSAPP_SEND_MESSAGE',
   'whatsapp.send_template': process.env.COMPOSIO_WHATSAPP_SEND_TEMPLATE_TOOL || 'WHATSAPP_SEND_TEMPLATE_MESSAGE',
-  'facebook.create_post': process.env.COMPOSIO_FACEBOOK_CREATE_POST_TOOL || 'FACEBOOK_CREATE_POST',
-  'facebook.create_page_post': process.env.COMPOSIO_FACEBOOK_CREATE_PAGE_POST_TOOL || 'FACEBOOK_CREATE_POST',
-  'facebook.publish': process.env.COMPOSIO_FACEBOOK_PUBLISH_TOOL || 'FACEBOOK_CREATE_POST',
-  'facebook.create_photo_post': process.env.COMPOSIO_FACEBOOK_CREATE_PHOTO_POST_TOOL || 'FACEBOOK_CREATE_PHOTO_POST',
-  'facebook.list_managed_pages': process.env.COMPOSIO_FACEBOOK_LIST_MANAGED_PAGES_TOOL || 'FACEBOOK_LIST_MANAGED_PAGES',
-  'instagram.create_media': process.env.COMPOSIO_INSTAGRAM_CREATE_MEDIA_TOOL || 'INSTAGRAM_POST_IG_USER_MEDIA',
-  'instagram.create_post': process.env.COMPOSIO_INSTAGRAM_CREATE_POST_TOOL || 'INSTAGRAM_CREATE_POST',
-  'instagram.create_media_post': process.env.COMPOSIO_INSTAGRAM_CREATE_MEDIA_POST_TOOL || 'INSTAGRAM_CREATE_POST',
-  'instagram.publish_post': process.env.COMPOSIO_INSTAGRAM_PUBLISH_POST_TOOL || 'INSTAGRAM_POST_IG_USER_MEDIA_PUBLISH',
-  'instagram.publish_reel': process.env.COMPOSIO_INSTAGRAM_PUBLISH_REEL_TOOL || 'INSTAGRAM_POST_IG_USER_MEDIA_PUBLISH',
-  'instagram.publish_story': process.env.COMPOSIO_INSTAGRAM_PUBLISH_STORY_TOOL || 'INSTAGRAM_POST_IG_USER_MEDIA_PUBLISH',
-  'twitter.create_post': process.env.COMPOSIO_TWITTER_CREATE_POST_TOOL || 'TWITTER_CREATION_OF_A_POST',
-  'twitter.create_tweet': process.env.COMPOSIO_TWITTER_CREATE_TWEET_TOOL || 'TWITTER_CREATION_OF_A_POST',
-  'twitter.create_thread': process.env.COMPOSIO_TWITTER_CREATE_THREAD_TOOL || 'TWITTER_CREATION_OF_A_POST',
-  'twitter.create_media_tweet': process.env.COMPOSIO_TWITTER_CREATE_MEDIA_TWEET_TOOL || 'TWITTER_CREATION_OF_A_POST',
-  'twitter.upload_media': process.env.COMPOSIO_TWITTER_UPLOAD_MEDIA_TOOL || 'TWITTER_UPLOAD_MEDIA',
   'youtube.upload_video': process.env.COMPOSIO_YOUTUBE_UPLOAD_VIDEO_TOOL || 'YOUTUBE_UPLOAD_VIDEO',
   'youtube.create_short': process.env.COMPOSIO_YOUTUBE_CREATE_SHORT_TOOL || 'YOUTUBE_UPLOAD_VIDEO',
   'youtube.update_video': process.env.COMPOSIO_YOUTUBE_UPDATE_VIDEO_TOOL || 'YOUTUBE_UPDATE_VIDEO',
@@ -225,9 +160,6 @@ const TOOLKIT_VERSIONS = {
   googlesheets: '',
   discord: '',
   whatsapp: '20260721_00',
-  facebook: '20260721_00',
-  instagram: '20260721_00',
-  twitter: '20260724_00',
   youtube: '20260721_00',
 }
 

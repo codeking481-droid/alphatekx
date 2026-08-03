@@ -48,6 +48,11 @@ await test('Paystack USD mode falls back to NGN below the two-dollar minimum', (
   else process.env.PAYSTACK_CHECKOUT_CURRENCY = previousCurrency
 })
 
+await test('Paystack preserves explicit NGN pack currency for the ₦50 test purchase', () => {
+  const charge = resolvePaystackCharge({ amountKobo: 5000, currency: 'NGN' })
+  assert.deepEqual(charge, { amount: 5000, currency: 'NGN', listPriceUsdCents: 5000 })
+})
+
 await test('Alpha conversation reload uses an owner-scoped durable lookup', async () => {
   let lookup = null
   const record = { id: 'conversation-1', userId: 'owner-1', messages: [], knownFields: {}, missingFields: [], askedFields: [] }

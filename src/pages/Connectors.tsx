@@ -14,9 +14,10 @@ function connectedCacheKey(userId?: string) {
   return `alphatekx:connected-platforms:${userId || 'anonymous'}`
 }
 
-const composioOAuthProviders = new Set(['gmail', 'github', 'googledocs', 'googlesheets', 'discord'])
+const approvedPlatforms = ['linkedin', 'gmail', 'github', 'googledocs', 'googlesheets', 'discord'] as const
+const composioOAuthProviders = new Set(approvedPlatforms.filter(id => id !== 'linkedin'))
 const serverManagedProviders = new Set<string>()
-const releasedPlatforms = ['linkedin', 'gmail', ...composioOAuthProviders]
+const releasedPlatforms = [...approvedPlatforms]
 const publicConnectorIds = new Set(releasedPlatforms)
 
 const PLATFORM_LIST = [

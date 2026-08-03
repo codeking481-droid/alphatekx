@@ -1519,7 +1519,7 @@ async function integrationsStatus(req, res) {
   status.google_sheets = status.sheets
   status.google_calendar = status.calendar
   status.google_drive = status.drive
-  const providers = ['github', 'linkedin', 'x', 'facebook', 'whatsapp', 'tiktok', 'snapchat', 'paystack', 'supabase', 'notion', 'slack', 'discord', 'telegram', 'email']
+  const providers = ['github', 'linkedin', 'whatsapp', 'paystack', 'supabase', 'notion', 'slack', 'discord', 'telegram', 'email']
   for (const provider of providers) {
     const integration = await getUserIntegration(user.id, provider, config).catch(() => null)
     const token = integration?.tokens || {}
