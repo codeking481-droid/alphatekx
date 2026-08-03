@@ -3,6 +3,7 @@ import { CheckCircle2, Chrome, LoaderCircle, ShieldCheck, Sparkles } from 'lucid
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { getDeviceFingerprint } from '../lib/fingerprint'
+import { startPayment } from '../lib/paystack'
 import { supabase } from '../lib/supabase'
 
 const SITE_URL_HELP = 'Auth is blocked by the Supabase Site URL setting. Set Supabase Site URL to https://alphatekx.name.ng and add https://alphatekx.name.ng/auth as an allowed redirect URL.'
@@ -80,10 +81,24 @@ export default function Auth() {
   }, [location.pathname, location.search, navigate])
 
   useEffect(() => {
-    if (user && (location.pathname === '/auth' || location.pathname === '/login' || location.pathname === '/signup')) {
-      navigate('/dashboard', { replace: true })
+    if (!user || !(location.pathname === '/auth' || location.pathname === '/login' || location.pathname === '/signup')) return
+
+    const params = new URLSearchParams(location.search)
+    const pendingPlan = params.get('plan') || localStorage.getItem('selectedPlan')
+    if (pendingPlan) {
+      const pendingAmount = Number(localStorage.getItem('selectedAmount') || '19')
+      const timer = window.setTimeout(() => {
+        localStorage.removeItem('selectedPlan')
+        localStorage.removeItem('selectedAmount')
+        void startPayment(pendingAmount, pendingPlan).catch((error) => {
+          console.error('Early founder checkout failed', error)
+        })
+      }, 1000)
+      return () => window.clearTimeout(timer)
     }
-  }, [location.pathname, navigate, user])
+
+    navigate('/dashboard', { replace: true })
+  }, [location.pathname, location.search, navigate, user])
 
   useEffect(() => {
     if (!user || !session?.access_token || welcomeCreditStarted.current) return
