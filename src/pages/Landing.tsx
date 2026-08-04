@@ -22,8 +22,7 @@ import {
   Zap,
 } from 'lucide-react'
 import SEO from '../components/SEO'
-import { useAuth } from '../lib/auth'
-import { startPayment } from '../lib/paystack'
+import { instantGoogleSignup, useAuth } from '../lib/auth'
 
 const GOLD = '#FFD700'
 const PURPLE = '#6B21A8'
@@ -81,12 +80,22 @@ function Header() {
         </nav>
 
         <div className="hidden md:block">
-          <Link
-            to={user ? '/dashboard' : '/auth'}
-            className="inline-flex h-10 items-center rounded-full bg-[#FFD700] px-5 text-sm font-black text-black transition hover:brightness-110"
-          >
-            {user ? 'Open dashboard' : 'Start free'}
-          </Link>
+          {user ? (
+            <Link
+              to="/dashboard"
+              className="inline-flex h-10 items-center rounded-full bg-[#FFD700] px-5 text-sm font-black text-black transition hover:brightness-110"
+            >
+              Open dashboard
+            </Link>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void instantGoogleSignup()}
+              className="inline-flex h-10 items-center rounded-full bg-[#FFD700] px-5 text-sm font-black text-black transition hover:brightness-110"
+            >
+              Start free
+            </button>
+          )}
         </div>
 
         <button
@@ -114,12 +123,22 @@ function Header() {
               {label}
             </a>
           ))}
-          <Link
-            to={user ? '/dashboard' : '/auth'}
-            className="mt-2 rounded-xl bg-[#FFD700] px-4 py-3 text-center font-black text-black"
-          >
-            Launch My Second You
-          </Link>
+          {user ? (
+            <Link
+              to="/dashboard"
+              className="mt-2 rounded-xl bg-[#FFD700] px-4 py-3 text-center font-black text-black"
+            >
+              Launch My Second You
+            </Link>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void instantGoogleSignup()}
+              className="mt-2 rounded-xl bg-[#FFD700] px-4 py-3 text-center font-black text-black"
+            >
+              Launch My Second You
+            </button>
+          )}
         </motion.nav>
       )}
     </header>
@@ -318,13 +337,24 @@ function Hero() {
             transition={{ delay: 0.9 }}
             className="mt-9 flex flex-col items-center gap-4 sm:flex-row lg:items-start"
           >
-            <Link
-              to={user ? '/dashboard' : '/auth'}
-              className="group inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-full bg-[#FFD700] px-7 font-black text-black shadow-[0_0_42px_rgba(107,33,168,.55)] transition hover:-translate-y-1 hover:shadow-[0_0_55px_rgba(255,215,0,.28)] sm:w-auto"
-            >
-              Launch My Second You — Start Free
-              <ArrowRight className="transition group-hover:translate-x-1" size={19} />
-            </Link>
+            {user ? (
+              <Link
+                to="/dashboard"
+                className="group inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-full bg-[#FFD700] px-7 font-black text-black shadow-[0_0_42px_rgba(107,33,168,.55)] transition hover:-translate-y-1 hover:shadow-[0_0_55px_rgba(255,215,0,.28)] sm:w-auto"
+              >
+                Launch My Second You — Start Free
+                <ArrowRight className="transition group-hover:translate-x-1" size={19} />
+              </Link>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void instantGoogleSignup()}
+                className="group inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-full bg-[#FFD700] px-7 font-black text-black shadow-[0_0_42px_rgba(107,33,168,.55)] transition hover:-translate-y-1 hover:shadow-[0_0_55px_rgba(255,215,0,.28)] sm:w-auto"
+              >
+                Launch My Second You — Start Free
+                <ArrowRight className="transition group-hover:translate-x-1" size={19} />
+              </button>
+            )}
             <span className="text-xs font-semibold text-white/35 sm:pt-5">Start free · Approval stays yours</span>
           </motion.div>
           <Link to="/founders-legacy" className="mt-4 inline-flex items-center gap-2 text-sm font-black uppercase tracking-[0.24em] text-[#FFD700] transition hover:text-[#FFE66D]">
@@ -694,7 +724,7 @@ function Pricing() {
   ]
 
   const handleEarlyFounderDeal = () => {
-    window.location.href = '/auth?plan=early_founder_19'
+    void instantGoogleSignup('early_founder_19')
   }
 
   return (
@@ -772,7 +802,7 @@ function Pricing() {
 
               <button
                 type="button"
-                onClick={() => void (plan.featured ? handleEarlyFounderDeal() : (window.location.assign('/auth')))}
+                onClick={() => void instantGoogleSignup(plan.featured ? 'early_founder_19' : undefined)}
                 className={`mt-8 inline-flex min-h-[48px] w-full items-center justify-center rounded-full px-4 font-black ${
                   plan.featured ? 'bg-[#FFD700] text-black' : 'border border-white/15 text-white'
                 }`}
@@ -791,7 +821,7 @@ function FinalCTA() {
   const { user } = useAuth()
 
   const handleEarlyFounderDeal = () => {
-    window.location.href = '/auth?plan=early_founder_19'
+    void instantGoogleSignup('early_founder_19')
   }
 
   return (
@@ -809,7 +839,7 @@ function FinalCTA() {
         <p className="mt-6 text-lg text-white/45">Your second you is ready.</p>
         <button
           type="button"
-          onClick={() => void handleEarlyFounderDeal()}
+          onClick={() => void instantGoogleSignup('early_founder_19')}
           style={{ background: '#FFFFFF', color: '#000000', height: '48px', borderRadius: '12px', fontWeight: 600 }}
           className="mt-9 inline-flex min-h-14 items-center justify-center gap-2 rounded-full bg-[#FFD700] px-8 font-black text-black shadow-[0_0_50px_rgba(107,33,168,.5)]"
         >
@@ -857,9 +887,7 @@ function MobileCTA() {
     <div className="fixed inset-x-0 bottom-4 z-50 mx-4 md:hidden">
       <button
         type="button"
-        onClick={() => {
-          window.location.href = '/auth?plan=early_founder_19'
-        }}
+        onClick={() => void instantGoogleSignup('early_founder_19')}
         className="flex h-[56px] max-h-[56px] items-center justify-center gap-2 rounded-full bg-[#FFD700] px-5 text-sm font-black text-black shadow-[0_18px_40px_rgba(0,0,0,.25)]"
       >
         Claim New Deal $19 →

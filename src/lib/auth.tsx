@@ -4,6 +4,7 @@ import { isSupabaseConfigured, supabase } from './supabase'
 import { hydrateCredits } from './creditStore'
 import { userEmail } from './adminAccess'
 import { clearAgentCache } from './agents/agentStore'
+import { startPayment } from './paystack'
 
 type LocalUser = { id: string; email: string; name?: string }
 type AuthUser = User | LocalUser
@@ -43,6 +44,88 @@ function clearUserArtifacts() {
     }
   } catch {}
   clearAgentCache()
+}
+
+const DEVICE_ID_KEY = 'deviceId'
+const GOOGLE_SIGNUP_PENDING_KEY = 'alphatekx:pending-google-signup'
+const GOOGLE_SIGNUP_PLAN_KEY = 'alphatekx:pending-google-signup-plan'
+
+function getOrCreateDeviceId() {
+  const existing = localStorage.getItem(DEVICE_ID_KEY)
+  if (existing) return existing
+  const generated = btoa(`${navigator.userAgent}${screen.width}x${screen.height}${Date.now()}`)
+  localStorage.setItem(DEVICE_ID_KEY, generated)
+  return generated
+}
+
+export async function instantGoogleSignup(plan?: string) {
+  if (!supabase) throw new Error('Google signup is not available.')
+  const redirectTo = `${window.location.origin}/`
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo,
+      skipBrowserRedirect: true,
+      queryParams: { prompt: 'select_account' },
+    },
+  })
+  if (error) throw error
+  if (!data?.url) throw new Error('Google did not return a sign-in URL.')
+
+  try {
+    localStorage.setItem(GOOGLE_SIGNUP_PENDING_KEY, '1')
+    if (plan) localStorage.setItem(GOOGLE_SIGNUP_PLAN_KEY, plan)
+  } catch {
+    // ignore localStorage failures
+  }
+
+  const popup = window.open(data.url, '_blank', 'width=600,height=700,noopener,noreferrer')
+  if (popup) {
+    popup.focus()
+    return
+  }
+
+  window.location.assign(data.url)
+}
+
+export async function completeInstantGoogleSignup(session: Session | null) {
+  if (!supabase || !session?.access_token || !session.user) return
+  const pending = localStorage.getItem(GOOGLE_SIGNUP_PENDING_KEY)
+  if (!pending) return
+
+  try {
+    const deviceId = getOrCreateDeviceId()
+    const fingerprint = `${navigator.userAgent}${screen.width}x${screen.height}${Intl.DateTimeFormat().resolvedOptions().timeZone}`
+    const response = await fetch('/api/verify-bonus', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({
+        email: session.user.email || '',
+        uid: session.user.id,
+        deviceId,
+        fingerprint,
+      }),
+    })
+
+    const body = await response.json().catch(() => ({})) as Record<string, unknown>
+    if (!response.ok) {
+      throw new Error(String(body.error || 'Google signup verification failed.'))
+    }
+
+    const plan = localStorage.getItem(GOOGLE_SIGNUP_PLAN_KEY)
+    if (plan === 'early_founder_19') {
+      await startPayment(19, 'early_founder_19')
+      return
+    }
+
+    window.location.assign('/dashboard')
+  } finally {
+    localStorage.removeItem(GOOGLE_SIGNUP_PENDING_KEY)
+    localStorage.removeItem(GOOGLE_SIGNUP_PLAN_KEY)
+  }
 }
 
 function readLocalUser(): LocalUser | null {
@@ -181,6 +264,14 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }
 
   const value = useMemo<AuthValue>(() => ({ session, user, profile, loading, configured: isSupabaseConfigured, refreshProfile, signOut, localSignIn }), [session, user, profile, loading, refreshProfile])
+
+  useEffect(() => {
+    if (!supabase || !session?.user) return
+    void completeInstantGoogleSignup(session).catch(() => {
+      // Ignore pending Google signup flow failures here; the UI can still continue.
+    })
+  }, [session])
+
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 

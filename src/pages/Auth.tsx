@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CheckCircle2, Chrome, LoaderCircle, Mail, ShieldCheck, Sparkles, User, Lock } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { useAuth } from '../lib/auth'
+import { instantGoogleSignup, useAuth } from '../lib/auth'
 import { getDeviceFingerprint } from '../lib/fingerprint'
 import { startPayment } from '../lib/paystack'
 import { supabase } from '../lib/supabase'
@@ -20,21 +20,6 @@ type VerificationResult = {
   isAdmin?: boolean
 }
 
-function authRedirectUrl() {
-  const configured = String(import.meta.env.VITE_PUBLIC_APP_URL || '').trim().replace(/\/+$/, '')
-  const origin = configured || window.location.origin
-  try {
-    const url = new URL(origin)
-    if (url.protocol !== 'https:' && url.hostname !== 'localhost' && url.hostname !== '127.0.0.1') url.protocol = 'https:'
-    url.pathname = '/auth'
-    url.search = ''
-    url.hash = ''
-    return url.toString()
-  } catch {
-    return 'https://alphatekx.name.ng/auth'
-  }
-}
-
 function authMessage(message: string) {
   const text = String(message || '')
   return /site url|redirect/i.test(text) ? SITE_URL_HELP : text || 'Authentication failed. Please try again.'
@@ -50,7 +35,6 @@ export default function Auth() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const welcomeCreditStarted = useRef(false)
-  const oauthStartInFlight = useRef(false)
   const location = useLocation()
   const navigate = useNavigate()
 
@@ -81,6 +65,16 @@ export default function Auth() {
 
     navigate('/dashboard', { replace: true })
   }, [location.pathname, location.search, navigate, user])
+
+  useEffect(() => {
+    if (user || pending) return
+    const query = new URLSearchParams(location.search)
+    const auto = query.get('auto') || 'google'
+    if (auto !== 'google' && location.pathname !== '/auth' && location.pathname !== '/login' && location.pathname !== '/signup') return
+    void instantGoogleSignup().catch((error) => {
+      setNotice(error instanceof Error ? error.message : 'Google signup could not start. Please try again.')
+    })
+  }, [user, pending, location.pathname, location.search])
 
   useEffect(() => {
     if (!user || !session?.access_token || welcomeCreditStarted.current) return
@@ -158,41 +152,6 @@ export default function Auth() {
     void verifyHuman()
   }, [session?.access_token, user, verifyHuman, verifying, welcomeSettled])
 
-  const google = async () => {
-    if (!supabase || oauthStartInFlight.current) return
-    oauthStartInFlight.current = true
-    setPending(true)
-    setNotice('')
-    let redirectStarted = false
-    try {
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: authRedirectUrl(),
-          skipBrowserRedirect: true,
-          queryParams: { prompt: 'select_account' },
-        },
-      })
-      if (error) {
-        setNotice(authMessage(error.message))
-      }
-      else if (!data.url) {
-        setNotice('Google did not return a fresh sign-in URL. Please try again.')
-      }
-      else {
-        redirectStarted = true
-        window.location.replace(data.url)
-      }
-    } catch (error) {
-      setNotice(authMessage(error instanceof Error ? error.message : 'Google sign-in failed.'))
-    } finally {
-      if (!redirectStarted) {
-        oauthStartInFlight.current = false
-        setPending(false)
-      }
-    }
-  }
-
   const emailSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!email || !password || pending || !supabase) return
@@ -245,7 +204,7 @@ export default function Auth() {
 
           <div className="mt-7 space-y-4">
             <button
-              onClick={() => void google()}
+              onClick={() => void instantGoogleSignup()}
               disabled={blocked}
               className="flex min-h-[48px] w-full items-center justify-center gap-3 rounded-xl border-2 border-violet-400/20 bg-violet-500/10 px-4 font-black text-white shadow-[0_10px_25px_rgba(15,23,42,.07)] transition hover:border-violet-300 hover:bg-violet-500/10 disabled:cursor-not-allowed disabled:opacity-50"
             >
