@@ -66,7 +66,7 @@ export default function Auth() {
   }, [location.pathname, location.search, navigate, user, pending, googleSignupPending])
 
   const startGoogleSignup = async () => {
-    if (pending || googleSignupPending) return
+    if (pending || googleSignupPending || isGoogleSignupPending()) return
     setPending(true)
     setGoogleSignupPending(true)
     setNotice('')
