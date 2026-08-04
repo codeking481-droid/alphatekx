@@ -195,7 +195,7 @@ export default function Auth() {
 
   const emailSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!email || !password || pending) return
+    if (!email || !password || pending || !supabase) return
     setPending(true)
     setNotice('')
     try {
