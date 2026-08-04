@@ -224,7 +224,7 @@ export default function Agents() {
           <button onClick={startNew} className="min-h-12 rounded-xl border border-white/10 px-5 text-sm font-semibold text-white">Create another</button>
           <Link to="/connected-apps" className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-white/10 px-5 text-sm font-semibold text-white"><Plug size={16}/>Connected Apps</Link>
         </div>
-      </section> : <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-none border-0 bg-[#111214] sm:rounded-[2rem] sm:border sm:border-white/10">
+      </section> : <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-none bg-[#111214] sm:rounded-[2rem]">
         <div className="absolute right-3 top-3 z-20 sm:right-6">{conversation && <button onClick={startNew} className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-xs font-semibold text-[#8A8A93] hover:text-white">New chat</button>}</div>
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-6 sm:py-6" aria-live="polite">
           {!conversation ? (
@@ -278,11 +278,33 @@ export default function Agents() {
         </div>
         {needsConnection && <div className="mx-4 mb-3 rounded-xl border border-[#F5C518]/30 bg-[#F5C518]/[0.04] p-4 text-sm sm:mx-6"><p className="text-white">{needsConnection} needs to be connected before Alpha can publish.</p><Link to={`/connected-apps?platform=${encodeURIComponent(needsConnection)}&returnTo=${encodeURIComponent(`/automations?resume=${conversation?.id || ''}`)}`} className="mt-3 inline-flex min-h-10 items-center rounded-lg bg-white px-4 text-xs font-semibold text-[#0B0B0C]">Connect {needsConnection}</Link></div>}
         {notice && <div role="alert" className="mx-4 mb-3 flex items-start justify-between gap-3 rounded-xl border border-red-500/30 bg-red-500/[0.04] p-3 text-sm text-red-200 sm:mx-6"><span>{notice}</span><button onClick={() => setNotice('')} aria-label="Dismiss error"><X size={16}/></button></div>}
-        <div className="shrink-0 border-t border-white/10 bg-[#111214] px-3 pb-3 pt-3 sm:px-6 sm:pb-5">
+        <div className="shrink-0 border-t border-white/5 bg-[#111214] px-3 pb-3 pt-3 sm:px-6 sm:pb-5">
           <label htmlFor="automation-request" className="sr-only">{conversation ? 'Answer Alpha' : 'Message Alpha'}</label>
-          <div className="mx-auto flex max-w-3xl items-end gap-2 rounded-[1.35rem] border border-white/10 bg-[#17171B] p-2 focus-within:border-white/30">
-            <textarea id="automation-request" ref={composer} value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} rows={1} maxLength={10000} placeholder="Message Alpha…" className="max-h-36 min-h-11 flex-1 resize-none bg-transparent px-3 py-2.5 text-base leading-6 text-white outline-none placeholder:text-[#8A8A93]"/>
-            <button onClick={() => void send()} disabled={!input.trim() || creating} className="grid size-11 shrink-0 place-items-center rounded-full bg-white text-[#0B0B0C] transition hover:bg-[#F0F0F0] disabled:bg-white/10 disabled:text-[#8A8A93]" aria-label="Send request">{creating ? <LoaderCircle className="animate-spin" size={18}/> : <Send size={18}/>}</button>
+          <div className="mx-auto flex max-w-3xl items-center gap-2 rounded-[1.8rem] bg-[#16171C] p-3 shadow-[0_10px_30px_rgba(0,0,0,0.4)]">
+            <textarea
+              id="automation-request"
+              ref={composer}
+              value={input}
+              onChange={event => setInput(event.target.value)}
+              onKeyDown={event => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault()
+                  void send()
+                }
+              }}
+              rows={1}
+              maxLength={10000}
+              placeholder="Message Alpha…"
+              className="min-h-[48px] w-full resize-none rounded-2xl border-none bg-transparent px-3 py-3 text-base leading-6 text-white outline-none placeholder:text-[#8A8A93] focus:ring-0"
+            />
+            <button
+              onClick={() => void send()}
+              disabled={!input.trim() || creating}
+              className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-white text-[#0B0B0C] transition hover:bg-[#F0F0F0] disabled:bg-white/10 disabled:text-[#8A8A93]"
+              aria-label="Send request"
+            >
+              {creating ? <LoaderCircle className="animate-spin" size={18}/> : <Send size={18}/>}            
+            </button>
           </div>
           <p className="mx-auto mt-2 max-w-3xl text-center text-[10px] font-semibold text-[#8A8A93]">Review every plan before approval.</p>
         </div>
