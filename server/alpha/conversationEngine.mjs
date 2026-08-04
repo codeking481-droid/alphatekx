@@ -1965,6 +1965,42 @@ Return JSON: { "text": "..." }`
     return conversation
   }
 
+  async function startFromConversation(conversation, prompt) {
+    conversation.type = 'conversation'
+    conversation.userId = conversation.userId || conversation.userId
+    conversation.userEmail = conversation.userEmail || conversation.userEmail
+    conversation.name = `Conversation: ${prompt.slice(0, 40)}`
+    conversation.description = prompt
+    conversation.originalRequest = prompt
+    conversation.currentGoal = prompt
+    conversation.intent = 'unknown'
+    conversation.confidence = 0
+    conversation.knownFields = {}
+    conversation.missingFields = []
+    conversation.askedFields = []
+    conversation.generatedContent = []
+    conversation.selectedCapabilities = []
+    conversation.requiredIntegrations = []
+    conversation.pendingConnections = []
+    conversation.approvalRequired = false
+    conversation.conversationStage = 'understanding'
+    conversation.automationDraft = null
+    conversation.lastQuestion = ''
+    conversation.messages = conversation.messages || []
+    conversation.credits = { estimated: 0, spent: 0 }
+    conversation.status = 'draft'
+    conversation.updatedAt = nowIso()
+    conversation.executionHistory = conversation.executionHistory || []
+    conversation.successRate = 0
+    conversation.actions = conversation.actions || []
+    conversation.trigger = conversation.trigger || { type: 'schedule', cron: '0 0 8 * *' }
+    conversation.permissions = conversation.permissions || []
+    addMessage(conversation, 'user', prompt)
+    await understandRequest(conversation)
+    await saveConversation(conversation)
+    return conversation
+  }
+
   async function continueConversation(id, user, text) {
     const conversation = await loadConversation(id, user)
     addMessage(conversation, 'user', text)
@@ -2076,6 +2112,7 @@ Return JSON: { "text": "..." }`
 
   return {
     start,
+    startFromConversation,
     continue: continueConversation,
     get: getConversation,
     approveAndCreate,
