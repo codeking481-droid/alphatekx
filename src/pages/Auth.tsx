@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { CheckCircle2, Chrome, LoaderCircle, Mail, ShieldCheck, Sparkles, User, Lock } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { instantGoogleSignup, useAuth } from '../lib/auth'
@@ -31,10 +31,8 @@ export default function Auth() {
   const [verifying, setVerifying] = useState(false)
   const [notice, setNotice] = useState('')
   const [result, setResult] = useState<VerificationResult | null>(null)
-  const [welcomeSettled, setWelcomeSettled] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const welcomeCreditStarted = useRef(false)
   const location = useLocation()
   const navigate = useNavigate()
 
@@ -77,80 +75,20 @@ export default function Auth() {
   }, [user, pending, location.pathname, location.search])
 
   useEffect(() => {
-    if (!user || !session?.access_token || welcomeCreditStarted.current) return
-    welcomeCreditStarted.current = true
+    if (!user || !session?.access_token) return
+    setVerifying(true)
     setPending(true)
     setNotice('')
-
-    void (async () => {
-      try {
-        const welcomeResponse = await fetch('/api/auth/welcome-credit/google', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${session.access_token}` },
+    const timer = window.setTimeout(() => {
+      void refreshProfile()
+        .finally(() => {
+          setPending(false)
+          setVerifying(false)
+          navigate('/dashboard', { replace: true })
         })
-        const welcomeBody = await welcomeResponse.json().catch(() => ({})) as VerificationResult
-        if (!welcomeResponse.ok) throw new Error(welcomeBody.error || 'Your Google signup credit could not be activated.')
-        setResult({ ...welcomeBody, success: false, reason: welcomeBody.isAdmin ? 'supervisor_bypass' : 'google_credit_ready' })
-        await refreshProfile()
-      } catch (error) {
-        setNotice(error instanceof Error ? error.message : 'Your Google signup credit could not be activated.')
-      } finally {
-        setPending(false)
-        setWelcomeSettled(true)
-      }
-    })()
-  }, [refreshProfile, session?.access_token, user])
-
-  const captureDeviceInfo = useCallback(async () => {
-    const fingerprint = await getDeviceFingerprint()
-    const deviceInfo = {
-      fingerprintHash: fingerprint,
-      userAgent: navigator.userAgent,
-      screen: `${screen.width}x${screen.height}`,
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      deviceId: localStorage.getItem('alphatekx:device-id') || undefined,
-    }
-    
-    if (!deviceInfo.deviceId) {
-      deviceInfo.deviceId = `device_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
-      localStorage.setItem('alphatekx:device-id', deviceInfo.deviceId)
-    }
-    
-    return deviceInfo
-  }, [])
-
-  const verifyHuman = useCallback(async () => {
-    if (!user || !session?.access_token || verifying) return
-    setVerifying(true)
-    setNotice('')
-    try {
-      const deviceInfo = await captureDeviceInfo()
-      const response = await fetch('/api/verify-bonus', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify(deviceInfo),
-      })
-      const body = await response.json().catch(() => ({})) as VerificationResult
-      if (!response.ok) throw new Error(body.error || 'Human verification could not be completed.')
-      setResult(body)
-      await refreshProfile()
-      if (body.success) {
-        setTimeout(() => navigate('/onboarding', { replace: true }), 1350)
-      }
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'Human verification could not be completed.')
-    } finally {
-      setVerifying(false)
-    }
-  }, [navigate, refreshProfile, session?.access_token, user, verifying, captureDeviceInfo])
-
-  useEffect(() => {
-    if (!user || !session?.access_token || !welcomeSettled || verifying) return
-    void verifyHuman()
-  }, [session?.access_token, user, verifyHuman, verifying, welcomeSettled])
+    }, 800)
+    return () => window.clearTimeout(timer)
+  }, [navigate, refreshProfile, session?.access_token, user])
 
   const emailSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -175,13 +113,13 @@ export default function Auth() {
   const blocked = !configured || pending || Boolean(user)
   const bonusMessage = result?.isAdmin
     ? 'Administrator access is active.'
-    : result?.reason === 'google_credit_ready'
-    ? 'Google sign-in complete. Your 1 credit is ready.'
-    : result?.claimed
-      ? 'Human verified! 10 credits unlocked.'
-      : result?.reason === 'device_already_claimed' || result?.reason === 'already_claimed'
-        ? 'This device already claimed the 10-credit bonus. One bonus per human.'
-        : 'This Google account already claimed the bonus. You have 1 credit.'
+    : result?.reason === 'bonus_unlocked' || result?.reason === 'google_credit_ready'
+      ? 'Welcome! Your 10 free credits are ready.'
+      : result?.claimed
+        ? 'Welcome! 10 free credits unlocked.'
+        : result?.reason === 'device_already_claimed' || result?.reason === 'already_claimed'
+          ? 'This device already claimed the 10-credit bonus. One bonus per human.'
+          : 'Your signup is being finalized.'
 
   return (
     <main className="relative grid min-h-[100dvh] place-items-center overflow-hidden bg-[#0A0A0F] px-3 py-5 text-white sm:px-6 sm:py-7">
@@ -198,7 +136,7 @@ export default function Auth() {
           <div className="mt-6 space-y-3 text-center">
             <h1 className="text-3xl font-black tracking-[-.05em] text-white sm:text-4xl">Welcome to your command centre</h1>
             <p className="mx-auto max-w-md text-sm font-semibold leading-6 text-slate-300 sm:text-base">
-              Sign in with Google or email to get started with 1 credit. Verify once to unlock 10 credits.
+              Sign in with Google or email to get started with 10 free credits.
             </p>
           </div>
 
@@ -208,7 +146,7 @@ export default function Auth() {
               disabled={blocked}
               className="flex min-h-[48px] w-full items-center justify-center gap-3 rounded-xl border-2 border-violet-400/20 bg-violet-500/10 px-4 font-black text-white shadow-[0_10px_25px_rgba(15,23,42,.07)] transition hover:border-violet-300 hover:bg-violet-500/10 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {pending ? <LoaderCircle className="animate-spin" size={18}/> : <><Chrome size={19} className="text-violet-300"/> Sign in with Google <span className="text-xs text-slate-400">— 1 credit</span></>}
+              {pending ? <LoaderCircle className="animate-spin" size={18}/> : <><Chrome size={19} className="text-violet-300"/> Sign in with Google <span className="text-xs text-slate-400">— 10 free credits</span></>}
             </button>
 
             <div className="relative">
@@ -261,12 +199,12 @@ export default function Auth() {
               {verifying ? <LoaderCircle className="mx-auto animate-spin text-violet-300" size={28}/> : <CheckCircle2 className="mx-auto text-emerald-600" size={30}/>}
               <p className="mt-3 font-black text-white">{verifying ? "Verifying you're human…" : bonusMessage}</p>
               {result && <p className="mt-1 text-xs font-bold text-slate-400">Balance: {result.credits ?? 1} credits{result.success ? ' · Opening your Command Centre…' : ''}</p>}
-              {result && !result.success && <button onClick={() => navigate('/onboarding', { replace: true })} className="mt-4 min-h-11 rounded-xl bg-[#6D28D9] px-5 text-sm font-black text-white shadow-[0_10px_24px_rgba(109,40,217,.22)]">Continue with 1 credit</button>}
+              {result && !result.success && <button onClick={() => navigate('/dashboard', { replace: true })} className="mt-4 min-h-11 rounded-xl bg-[#6D28D9] px-5 text-sm font-black text-white shadow-[0_10px_24px_rgba(109,40,217,.22)]">Continue to dashboard</button>}
             </div>
           )}
 
           <p className="mt-7 text-center text-[11px] font-semibold leading-5 text-slate-400">
-            One 10-credit human-verification bonus per device or Google identity.
+            One 10-credit signup bonus per device or Google identity.
           </p>
         </div>
       </div>

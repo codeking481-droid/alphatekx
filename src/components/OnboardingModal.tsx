@@ -13,10 +13,10 @@ const steps = [
   },
   {
     icon: Rocket,
-    title: 'Create your first project',
-    body: 'Go to the Builder and type what you want — a calculator, a shop, a course platform or a portfolio.',
-    cta: 'Start building',
-    link: '/builder',
+    title: 'Create your first automation',
+    body: 'Describe the workflow you want and let Alpha launch it for you.',
+    cta: 'Start automating',
+    link: '/automations',
   },
   {
     icon: Plug,

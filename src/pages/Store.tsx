@@ -81,8 +81,8 @@ export default function Store() {
       else params.set('prompt', item.title + '\n' + item.content)
       const prompt = params.get('prompt') || ''
       await navigator.clipboard.writeText(prompt)
-      setNotice('Copied to clipboard and added to Builder prompt!')
-      navigate(`/builder?${params.toString()}`)
+      setNotice('Copied to clipboard and added to your automation prompt!')
+      navigate(`/automations?${params.toString()}`)
     } catch (error) { setNotice(error instanceof Error ? error.message : 'Could not use in builder') }
   }
 
@@ -113,7 +113,7 @@ export default function Store() {
       <div className="mx-auto max-w-6xl">
         <header>
           <h1 className="text-2xl font-bold md:text-3xl">Your second brain</h1>
-          <p className="text-sm text-white/55">Dump anything — snippets, prompts, ideas, links — and use it inside Builder.</p>
+          <p className="text-sm text-white/55">Dump anything — snippets, prompts, ideas, links — and use it inside your automations.</p>
         </header>
 
         <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-6">
