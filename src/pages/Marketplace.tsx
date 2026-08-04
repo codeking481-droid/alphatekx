@@ -176,9 +176,9 @@ export default function Marketplace() {
           <div className="mt-16 grid min-h-72 place-items-center rounded-2xl border border-dashed border-violet-400/20 liquid-glass text-center p-8">
             <div>
               <h2 className="text-xl font-semibold">Nothing here yet</h2>
-              <p className="mt-3 text-sm text-white/55">Build an app in the AlphaTekX Builder, then list it here and earn 70% on every sale.</p>
+              <p className="mt-3 text-sm text-white/55">Create an automation in AlphaTekX, then list it here and earn 70% on every sale.</p>
               <div className="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
-                <Link to="/builder" className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-pink-500 px-5 text-sm font-semibold text-white shadow-lg transition-transform hover:scale-[1.02]">Build something</Link>
+                <Link to="/automations" className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-pink-500 px-5 text-sm font-semibold text-white shadow-lg transition-transform hover:scale-[1.02]">Create an automation</Link>
                 <Link to="/marketplace/new" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-violet-400/20 px-5 text-sm font-semibold text-white">List a product</Link>
               </div>
               <p className="mt-4 text-xs text-white/40">You keep 70% — AlphaTekX keeps 30%.</p>

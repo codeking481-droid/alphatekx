@@ -66,8 +66,8 @@ export default function Dashboard() {
   const displayName = (user && ('name' in user ? user.name : (user as { user_metadata?: { name?: string } }).user_metadata?.name)) || emailFirstName
 
   const actions = [
-    { label: 'Build an app', sub: 'Website, tool, or platform', icon: Rocket, to: '/builder' },
-    { label: 'Create an automation', sub: 'Let Alpha work for you', icon: Bot, to: '/agents' },
+    { label: 'Create an automation', sub: 'Let Alpha work for you', icon: Bot, to: '/automations' },
+    { label: 'Review your history', sub: 'See what already ran', icon: TrendingUp, to: '/history' },
     { label: 'Check your brain', sub: 'Memory, goals, insights', icon: Sparkles, to: '/brain' },
     { label: 'Sell something', sub: 'Marketplace or your store', icon: ShoppingBag, to: '/marketplace' },
   ]
@@ -133,9 +133,9 @@ export default function Dashboard() {
         {creations.length === 0 && (
           <div className="mt-8 rounded-2xl border border-dashed border-violet-400/20 p-8 text-center">
             <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-violet-500/10"><Plus size={22} className="text-zinc-400" /></div>
-            <h3 className="mt-3 text-base font-semibold">No projects yet</h3>
-            <p className="mt-1 text-sm text-zinc-400">Tap “Build an app” and describe your idea. Alpha will build it.</p>
-            <button onClick={() => navigate('/builder')} className="mt-4 inline-flex items-center gap-2 rounded-full bg-indigo-600 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-500"><Plus size={16} /> Start building</button>
+            <h3 className="mt-3 text-base font-semibold">No automations yet</h3>
+            <p className="mt-1 text-sm text-zinc-400">Create your first automation and let Alpha handle it for you.</p>
+            <button onClick={() => navigate('/automations')} className="mt-4 inline-flex items-center gap-2 rounded-full bg-indigo-600 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-500"><Plus size={16} /> Start automating</button>
           </div>
         )}
       </div>

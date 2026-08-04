@@ -1,4 +1,4 @@
-export type PlanId = 'free' | 'creator_monthly' | 'builder_monthly' | 'scale_monthly'
+export type PlanId = 'free' | 'starter' | 'growth' | 'scale' | 'early_founder' | 'creator_monthly' | 'builder_monthly' | 'scale_monthly'
 
 export type Plan = {
   id: PlanId
@@ -49,7 +49,23 @@ export type BillingSummary = {
 export const PLANS: Record<PlanId, Plan> = {
   free: {
     id: 'free', name: 'Free', priceKobo: 0, monthlyCredits: 0, maxActiveAutomations: 1,
-    features: ['1 Google credit or 10 human-verified credits', '1 active automation', '1 post per hour', 'Schedule up to 7 days ahead'],
+    features: ['10 free signup credits', '1 active automation', 'Basic automations', 'Execution history'],
+  },
+  starter: {
+    id: 'starter', name: 'Starter', priceKobo: 1500, currency: 'USD', monthlyCredits: 150, maxActiveAutomations: 2,
+    features: ['150 credits every month', 'Up to 2 active automations', 'Scheduled automations', 'Basic support'],
+  },
+  growth: {
+    id: 'growth', name: 'Growth', priceKobo: 2900, currency: 'USD', monthlyCredits: 400, maxActiveAutomations: 10,
+    features: ['400 credits every month', 'Up to 10 active automations', 'Priority scheduling', 'Priority support'], badge: 'Most Popular',
+  },
+  scale: {
+    id: 'scale', name: 'Scale', priceKobo: 7900, currency: 'USD', monthlyCredits: 1200, maxActiveAutomations: 1000000,
+    features: ['1,200 credits every month', 'Unlimited active automations', 'Dedicated success', 'API access'],
+  },
+  early_founder: {
+    id: 'early_founder', name: 'Early Founder', priceKobo: 1900, currency: 'USD', monthlyCredits: 400, maxActiveAutomations: 10,
+    features: ['400 credits every month', 'Up to 10 active automations', 'Priority scheduling', 'Early founder pricing'],
   },
   creator_monthly: {
     id: 'creator_monthly', name: 'Starter', priceKobo: 1500, currency: 'USD', monthlyCredits: 150, maxActiveAutomations: 2,
