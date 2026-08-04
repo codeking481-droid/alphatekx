@@ -28,7 +28,8 @@ async function authToken(): Promise<string | undefined> {
 async function requestJson<T>(url: string, init: RequestInit, options: { token?: string; timeoutMs?: number; signal?: AbortSignal } = {}): Promise<T> {
   const controller = new AbortController()
   if (options.signal) { options.signal.addEventListener('abort', () => controller.abort(), { once: true }) }
-  const timeout = globalThis.setTimeout(() => controller.abort(), options.timeoutMs ?? 90_000)
+  const timeoutMs = options.timeoutMs ?? (url.startsWith('/api/alpha/') ? 300_000 : 90_000)
+  const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs)
   try {
     let token = options.token || await authToken()
     const makeRequest = () => fetch(url, {
