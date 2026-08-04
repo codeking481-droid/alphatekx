@@ -132,6 +132,7 @@ export default function ActiveAutomations() {
   const planLabel = profile?.plan === 'creator_monthly' ? 'Starter' : profile?.plan === 'builder_monthly' ? 'Growth' : profile?.plan === 'scale_monthly' ? 'Scale' : 'Free'
   const activeAutomationLimit = profile?.plan === 'creator_monthly' ? 2 : profile?.plan === 'builder_monthly' ? 10 : profile?.plan === 'scale_monthly' ? 1000000 : 1
   const creditBalance = !isAdminUser(user) && profile ? profile.credits : null
+  const nextRefillLabel = profile?.subscription_renews_at ? new Date(profile.subscription_renews_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : 'No active subscription'
   const visible = useMemo(() => agents.filter(agent => {
     const approved = Boolean(agent.approved || agent.campaign?.approved)
     // An execution failure changes the lifecycle status, but it must never make
@@ -309,6 +310,15 @@ export default function ActiveAutomations() {
         <p className="mt-1 text-sm text-slate-400">{visible.filter(agent => ['running','active','warning','needs_attention'].includes(agent.status)).length} currently active</p>
       </div>
     </section>
+    <div className="mt-5 rounded-[1.5rem] border border-violet-400/20 bg-gradient-to-r from-violet-500/10 via-blue-500/10 to-emerald-500/10 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8A8A93]">Credit health</p>
+          <p className="mt-2 text-sm font-semibold text-white">{creditBalance == null ? 'Unlimited plan coverage' : `${creditBalance.toLocaleString()} credits available for fresh runs`}</p>
+        </div>
+        <div className="rounded-full border border-violet-400/20 bg-[#0D1322]/70 px-3 py-1 text-xs font-bold text-violet-200">Next refill · {nextRefillLabel}</div>
+      </div>
+    </div>
     {visible.some(agent => displayStatus(agent) === 'Needs Attention' && /credit/i.test(agent.campaign?.posts?.find(post => post.lastError)?.lastError || '')) && (
       <div className="mt-5 rounded-2xl border border-[#F5C518]/30 bg-[#F5C518]/[0.04] p-4 text-sm font-bold text-white">
         Out of credits - Buy $3 for 20 credits to keep your AI employee working. <Link to="/settings?section=billing" className="ml-1 underline">Buy credits</Link>

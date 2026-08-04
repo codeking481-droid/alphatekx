@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { canCreateAgent, setPlan, spendCredits } from '../server/billing.mjs'
+import { canCreateAgent, getUserCredits, setPlan, spendCredits } from '../server/billing.mjs'
 
 const config = { url: '', service: '' }
 
@@ -23,4 +23,10 @@ test('limits active automation creation based on plan and budget', async () => {
   const spend = await spendCredits(user, 1, config, { reason: 'activation' })
   assert.equal(spend.ok, true)
   assert.equal(spend.remaining, 149)
+})
+
+test('new free users receive a welcome credit grant on signup', async () => {
+  const user = makeUser('billing-v1-welcome-user')
+  const credits = await getUserCredits(user, config)
+  assert.equal(credits, 10)
 })
