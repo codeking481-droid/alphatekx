@@ -1146,7 +1146,7 @@ async function runUserWorker(worker, apiKey, prompt) {
 }
 
 const adminEmail = 'iamdan4live@gmail.com'
-const DEFAULT_CREDITS = 0
+const DEFAULT_CREDITS = 10
 const supabaseConfig = () => ({
   url: process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '',
   anon: process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '',
@@ -2860,7 +2860,7 @@ export async function runDueAgents(req, res) {
     const results = []
     for (const agent of agents) {
       try {
-        const execution = await runAgent(agent, 'schedule')
+        const execution = await runAgentWithQueue(agent, 'schedule')
         results.push({ agentId: agent.id, status: execution.status })
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Scheduled execution failed'
@@ -3588,6 +3588,36 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
   execution = completedExecution
   await saveServerExecution(execution)
   return execution
+}
+
+const agentExecutionQueue = new Map()
+
+async function runAgentWithQueue(agent, trigger = 'schedule', authenticatedOwner = null) {
+  const agentKey = `${agent?.id || 'unknown'}:${trigger}`
+  if (agentExecutionQueue.has(agentKey)) {
+    const triggerType = trigger === 'manual' ? 'manual' : (agent?.trigger?.type || 'schedule')
+    return {
+      id: `queued_${randomUUID()}`,
+      agentId: agent?.id || 'unknown',
+      at: new Date().toISOString(),
+      status: 'skipped',
+      duration: 0,
+      output: null,
+      error_code: 'CONCURRENT',
+      credits_used: 0,
+      log: 'Automation is already running. This run was skipped so the queue stays stable.',
+      trigger: triggerType,
+    }
+  }
+  const runPromise = (async () => {
+    try {
+      return await runAgent(agent, trigger, authenticatedOwner)
+    } finally {
+      agentExecutionQueue.delete(agentKey)
+    }
+  })()
+  agentExecutionQueue.set(agentKey, runPromise)
+  return runPromise
 }
 
 async function runAgent(agent, trigger = 'schedule', authenticatedOwner = null) {
@@ -8310,7 +8340,7 @@ const server = http.createServer(async (req, res) => {
       const agent = await getServerAgent(String(body.agentId || ''))
       if (!agent) return json(res, 404, { error: 'Agent not found' })
       if (agent.userId && agent.userId !== user.id) return json(res, 403, { error: 'Not authorized' })
-    const execution = await runAgent(agent, 'manual', user)
+    const execution = await runAgentWithQueue(agent, 'manual', user)
       return json(res, 200, { executed: true, execution })
     } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Test run failed' }) }
   }
@@ -8395,7 +8425,7 @@ const server = http.createServer(async (req, res) => {
             charged: false,
           })
         }
-        const execution = await runAgent(existingAgent, 'manual', user)
+        const execution = await runAgentWithQueue(existingAgent, 'manual', user)
         const ok = execution.status === 'success' || execution.status === 'partial'
         const idempotentNoop = execution.error_code === 'NO_DUE_POSTS' || execution.error_code === 'DUPLICATE'
         const statusCode = execution.status === 'partial' ? 207 : ok || idempotentNoop ? 200 : execution.error_code === 'INSUFFICIENT_CREDITS' ? 402 : execution.error_code === 'APPROVAL_REQUIRED' ? 409 : 502
@@ -8470,7 +8500,7 @@ const server = http.createServer(async (req, res) => {
         saveWebhookEvent(agentId, body)
         const agent = await getServerAgent(agentId)
         if (agent && agent.status === 'running') {
-          const execution = await runAgent(agent, 'webhook')
+          const execution = await runAgentWithQueue(agent, 'webhook')
           return json(res, 200, { received: true, executed: true, agentId, execution })
         }
         return json(res, 200, { received: true, executed: false, agentId, reason: agent ? 'Agent not running' : 'Agent not found' })
@@ -8719,7 +8749,7 @@ if (!process.env.VERCEL) {
       const due = agents.filter(a => ['running', 'active', 'warning', 'needs_attention'].includes(a.status) && (a.trigger?.type === 'schedule' || a.trigger?.type === 'monitor' || a.trigger?.type === 'campaign') && a.trigger?.nextRun && new Date(a.trigger.nextRun) <= now)
       process.stdout.write(`[AGENT SCHEDULER] Running ${due.length} active agent(s) at ${started.toISOString()}\n`)
       for (const agent of due) {
-        try { await runAgent(agent, 'schedule') } catch (err) { process.stdout.write(`[cron] agent ${agent.id} run error: ${err instanceof Error ? err.message : err}\n`) }
+        try { await runAgentWithQueue(agent, 'schedule') } catch (err) { process.stdout.write(`[cron] agent ${agent.id} run error: ${err instanceof Error ? err.message : err}\n`) }
       }
       const mediaRuns = await mediaLibrary.runDueMedia(supabaseConfig(), alphaConnector.executeProviderAction, now).catch(err => {
         process.stdout.write(`[cron] media queue error: ${err instanceof Error ? err.message : err}\n`)

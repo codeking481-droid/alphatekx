@@ -4,7 +4,7 @@ import { createHmac, randomUUID } from 'node:crypto'
 import { supabaseServiceHeaders } from './supabaseHeaders.mjs'
 
 const adminEmail = 'iamdan4live@gmail.com'
-const DEFAULT_CREDITS = 0
+const DEFAULT_CREDITS = 10
 const dataDir = path.resolve('data')
 const billingDir = path.resolve(dataDir, 'billing')
 const transactionsFile = path.resolve(billingDir, 'transactions.json')
@@ -209,8 +209,8 @@ async function readProfile(user, config) {
   const totalSpent = Number(profile.total_credits_spent ?? balance.total_credits_spent) || 0
   // If split columns are missing, treat all credits as purchased so spending works
   const normalizedPurchased = (monthly === 0 && purchased === 0 && total > 0) ? total : purchased
-  // Reset the erroneous 100-credit welcome default back to 30 for new free users who have not purchased or spent anything.
-  if (!isAdmin(user) && String(profile.plan || 'free') === 'free' && monthly === 0 && purchased === 0 && totalSpent === 0 && total === 100) {
+  // Normalize the welcome grant so new free users start with the standard 10-credit onboarding balance.
+  if (!isAdmin(user) && String(profile.plan || 'free') === 'free' && monthly === 0 && purchased === 0 && totalSpent === 0 && total < DEFAULT_CREDITS) {
     await writeProfile(user, config, { credits: DEFAULT_CREDITS })
     return {
       ...profile,
