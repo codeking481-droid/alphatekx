@@ -179,7 +179,7 @@ export default function Agents() {
     try {
       const endpoint = conversation?.id ? `/api/alpha/conversation/${encodeURIComponent(conversation.id)}` : '/api/alpha/conversation'
       const body = conversation?.id ? { message } : { prompt: message }
-      const data = await postJson<Record<string, unknown>>(endpoint, body, { timeoutMs: 90_000 })
+      const data = await postJson<Record<string, unknown>>(endpoint, body, { timeoutMs: 300_000 })
       const next = (data.conversation || data) as AlphaConversation
       if (next.conversationStage === 'created' && next.automationDraft) {
         const agent = next.automationDraft
@@ -190,7 +190,9 @@ export default function Agents() {
       }
     } catch (error) {
       setInput(message)
-      setNotice(error instanceof DOMException && error.name === 'AbortError' ? 'Alpha took too long to respond. Your message is saved—please retry.' : error instanceof Error ? error.message : 'Could not reach Alpha.')
+      setNotice(error instanceof DOMException && error.name === 'AbortError'
+        ? 'Alpha took too long to respond. Complex automation planning can take several minutes. Your message is saved—please retry.'
+        : error instanceof Error ? error.message : 'Could not reach Alpha.')
     } finally { setCreating(false) }
   }
 
@@ -268,8 +270,10 @@ export default function Agents() {
                 <p className="mt-2 text-sm font-bold text-white">{pendingAgent.name || 'Your automation'}</p>
                 <p className="mt-1 text-xs leading-5 text-[#8A8A93]">Review Alpha's messages above. One approval publishes an immediate post or activates the confirmed schedule.</p>
                 <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                  <button type="button" onClick={() => void send('approve')} disabled={creating} className="min-h-11 rounded-xl btn-primary px-5 text-sm disabled:opacity-50">{pendingAgent.campaign?.meta?.publishingMode === 'once_now' ? 'Approve & publish now' : 'Approve & activate'}</button>
-                  {conversation.conversationStage === 'awaiting_content_review' && <button type="button" onClick={() => void send('regenerate')} disabled={creating} className="min-h-11 rounded-xl border border-white/10 px-5 text-sm font-semibold text-white disabled:opacity-50">Regenerate in chat</button>}
+                  <button type="button" onClick={() => void send('approve')} disabled={creating} className="min-h-11 inline-flex items-center justify-center gap-2 rounded-xl btn-primary px-5 text-sm disabled:opacity-50">
+                    {creating ? <><LoaderCircle className="animate-spin" size={16}/> Working…</> : (pendingAgent.campaign?.meta?.publishingMode === 'once_now' ? 'Approve & publish now' : 'Approve & activate')}
+                  </button>
+                  {conversation.conversationStage === 'awaiting_content_review' && <button type="button" onClick={() => void send('regenerate')} disabled={creating} className="min-h-11 inline-flex items-center justify-center rounded-xl border border-white/10 px-5 text-sm font-semibold text-white disabled:opacity-50">{creating ? <><LoaderCircle className="animate-spin" size={16}/> Working…</> : 'Regenerate in chat'}</button>}
                 </div>
               </div>}
               <div ref={messageEnd}/>

@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { AlertCircle, Bot, CalendarClock, CheckCircle2, Link2, PlugZap, Wallet, Webhook, X, Zap } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { AlertCircle, Bot, CalendarClock, CheckCircle2, Link2, LoaderCircle, PlugZap, Wallet, Webhook, X, Zap } from 'lucide-react'
 import { getAllowedConnector } from '../../lib/agents/connectorRegistry'
 import { ConnectorIcon } from './ConnectorIcon'
 import type { Agent, MissingField } from '../../lib/agents/types'
@@ -95,6 +95,18 @@ export default function WorkflowPlan({ agent, integrationStatus, credits, isAdmi
     })
     return map
   })
+  const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    setMissingInputs(prev => {
+      const next: Record<string, string> = {}
+      combinedMissing.forEach(m => {
+        const key = m.index !== undefined ? `${m.index}:${m.field}` : m.field
+        next[key] = prev[key] ?? ''
+      })
+      return next
+    })
+  }, [combinedMissing])
 
   const requiredConnectors = useMemo(() => Array.from(new Set(draft.actions.map(a => a.connector))), [draft.actions])
   const missingConnectors = requiredConnectors.filter(id => !connectorStatus(id, integrationStatus).connected && !connectorStatus(id, integrationStatus).ready)
@@ -122,13 +134,15 @@ export default function WorkflowPlan({ agent, integrationStatus, credits, isAdmi
   const approveDisabled = isUnsupported || missingConnectors.length > 0 || stillMissing.length > 0 || !canAfford
 
   const handleApprove = () => {
-    let next = {
-      ...draft,
-      status: 'active' as const,
-      approved: true,
-      updatedAt: new Date().toISOString(),
-      campaign: draft.campaign ? { ...draft.campaign, status: 'active', approved: true } : undefined,
-    }
+    setSubmitting(true)
+    try {
+      let next = {
+        ...draft,
+        status: 'active' as const,
+        approved: true,
+        updatedAt: new Date().toISOString(),
+        campaign: draft.campaign ? { ...draft.campaign, status: 'active', approved: true } : undefined,
+      }
     Object.entries(missingInputs).forEach(([key, value]) => {
       if (!value.trim()) return
       if (key.includes(':')) {
@@ -157,6 +171,9 @@ export default function WorkflowPlan({ agent, integrationStatus, credits, isAdmi
       }
     })
     onApprove(next)
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   if (isUnsupported) {
@@ -326,7 +343,9 @@ export default function WorkflowPlan({ agent, integrationStatus, credits, isAdmi
 
       <div className="mt-6 flex justify-end gap-3">
         <button onClick={onClose} className="rounded-xl border border-violet-400/20 bg-violet-500/10 px-5 py-2.5 text-sm font-medium text-white hover:bg-violet-500/10">Cancel</button>
-        <button onClick={handleApprove} disabled={approveDisabled} className="btn-alpha rounded-xl px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50">Approve & Activate</button>
+        <button onClick={handleApprove} disabled={approveDisabled || submitting} className="btn-alpha inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50">
+          {submitting ? <><LoaderCircle className="animate-spin" size={16}/> Working…</> : 'Approve & Activate'}
+        </button>
       </div>
     </div>
   </div>
