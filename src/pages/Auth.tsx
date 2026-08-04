@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { CheckCircle2, Chrome, LoaderCircle, Mail, ShieldCheck, Sparkles, User, Lock } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { instantGoogleSignup, useAuth } from '../lib/auth'
+import { clearGoogleSignupPending, instantGoogleSignup, isGoogleSignupPending, useAuth } from '../lib/auth'
 import { getDeviceFingerprint } from '../lib/fingerprint'
 import { startPayment } from '../lib/paystack'
 import { supabase } from '../lib/supabase'
@@ -28,6 +28,7 @@ function authMessage(message: string) {
 export default function Auth() {
   const { user, session, configured, refreshProfile } = useAuth()
   const [pending, setPending] = useState(false)
+  const [googleSignupPending, setGoogleSignupPending] = useState(() => isGoogleSignupPending())
   const [verifying, setVerifying] = useState(false)
   const [notice, setNotice] = useState('')
   const [result, setResult] = useState<VerificationResult | null>(null)
@@ -47,7 +48,7 @@ export default function Auth() {
   }, [location.pathname, location.search, navigate])
 
   useEffect(() => {
-    if (!user || !(location.pathname === '/auth' || location.pathname === '/login' || location.pathname === '/signup')) return
+    if (!user || pending || googleSignupPending || !(location.pathname === '/auth' || location.pathname === '/login' || location.pathname === '/signup')) return
 
     const params = new URLSearchParams(location.search)
     const pendingPlan = params.get('plan')
@@ -62,20 +63,38 @@ export default function Auth() {
     }
 
     navigate('/dashboard', { replace: true })
-  }, [location.pathname, location.search, navigate, user])
+  }, [location.pathname, location.search, navigate, user, pending, googleSignupPending])
 
-  useEffect(() => {
-    if (user || pending) return
-    const query = new URLSearchParams(location.search)
-    const auto = query.get('auto') || 'google'
-    if (auto !== 'google' && location.pathname !== '/auth' && location.pathname !== '/login' && location.pathname !== '/signup') return
-    void instantGoogleSignup().catch((error) => {
+  const startGoogleSignup = async () => {
+    if (pending || googleSignupPending) return
+    setPending(true)
+    setGoogleSignupPending(true)
+    setNotice('')
+    try {
+      await instantGoogleSignup()
+    } catch (error) {
+      clearGoogleSignupPending()
       setNotice(error instanceof Error ? error.message : 'Google signup could not start. Please try again.')
-    })
-  }, [user, pending, location.pathname, location.search])
+      setPending(false)
+      setGoogleSignupPending(false)
+    }
+  }
 
   useEffect(() => {
-    if (!user || !session?.access_token) return
+    setGoogleSignupPending(isGoogleSignupPending())
+  }, [])
+
+  useEffect(() => {
+    if (!user || pending || googleSignupPending) return
+    const query = new URLSearchParams(location.search)
+    const auto = query.get('auto')
+    if (auto !== 'google') return
+    if (location.pathname !== '/auth' && location.pathname !== '/login' && location.pathname !== '/signup') return
+    void startGoogleSignup()
+  }, [user, pending, googleSignupPending, location.pathname, location.search])
+
+  useEffect(() => {
+    if (!user || pending || googleSignupPending || !session?.access_token) return
     setVerifying(true)
     setPending(true)
     setNotice('')
@@ -88,7 +107,7 @@ export default function Auth() {
         })
     }, 800)
     return () => window.clearTimeout(timer)
-  }, [navigate, refreshProfile, session?.access_token, user])
+  }, [navigate, refreshProfile, session?.access_token, user, pending, googleSignupPending])
 
   const emailSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -110,7 +129,7 @@ export default function Auth() {
     }
   }
 
-  const blocked = !configured || pending || Boolean(user)
+  const blocked = !configured || pending || googleSignupPending || Boolean(user)
   const bonusMessage = result?.isAdmin
     ? 'Administrator access is active.'
     : result?.reason === 'bonus_unlocked' || result?.reason === 'google_credit_ready'
@@ -122,7 +141,7 @@ export default function Auth() {
           : 'Your signup is being finalized.'
 
   return (
-    <main className="relative grid min-h-[100dvh] place-items-center overflow-hidden bg-[#0A0A0F] px-3 py-5 text-white sm:px-6 sm:py-7">
+    <main className="relative grid min-h-[100dvh] place-items-center overflow-auto bg-[#0A0A0F] px-3 py-7 text-white sm:px-6 sm:py-10">
       <div aria-hidden className="pointer-events-none absolute -right-32 -top-32 size-[30rem] rounded-full bg-[#FFD700]/[.055] blur-3xl"/>
       <div aria-hidden className="pointer-events-none absolute -bottom-48 -left-40 size-[34rem] rounded-full bg-[#6C5CE7]/10 blur-3xl"/>
 
@@ -142,7 +161,7 @@ export default function Auth() {
 
           <div className="mt-7 space-y-4">
             <button
-              onClick={() => void instantGoogleSignup()}
+              onClick={() => void startGoogleSignup()}
               disabled={blocked}
               className="flex min-h-[48px] w-full items-center justify-center gap-3 rounded-xl border-2 border-violet-400/20 bg-violet-500/10 px-4 font-black text-white shadow-[0_10px_25px_rgba(15,23,42,.07)] transition hover:border-violet-300 hover:bg-violet-500/10 disabled:cursor-not-allowed disabled:opacity-50"
             >

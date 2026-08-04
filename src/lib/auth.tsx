@@ -50,6 +50,21 @@ const DEVICE_ID_KEY = 'deviceId'
 const GOOGLE_SIGNUP_PENDING_KEY = 'alphatekx:pending-google-signup'
 const GOOGLE_SIGNUP_PLAN_KEY = 'alphatekx:pending-google-signup-plan'
 
+export function isGoogleSignupPending() {
+  try {
+    return localStorage.getItem(GOOGLE_SIGNUP_PENDING_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+export function clearGoogleSignupPending() {
+  try {
+    localStorage.removeItem(GOOGLE_SIGNUP_PENDING_KEY)
+    localStorage.removeItem(GOOGLE_SIGNUP_PLAN_KEY)
+  } catch {}
+}
+
 function getOrCreateDeviceId() {
   const existing = localStorage.getItem(DEVICE_ID_KEY)
   if (existing) return existing
@@ -123,8 +138,7 @@ export async function completeInstantGoogleSignup(session: Session | null) {
 
     window.location.assign('/dashboard')
   } finally {
-    localStorage.removeItem(GOOGLE_SIGNUP_PENDING_KEY)
-    localStorage.removeItem(GOOGLE_SIGNUP_PLAN_KEY)
+    clearGoogleSignupPending()
   }
 }
 
