@@ -17,6 +17,8 @@ import { createContentMemoryRecord } from './server/automation/contentMemory.mjs
 import { buildSocialPublishingAction, providerPostIds } from './server/automation/socialPublishing.mjs'
 import { validateFreeCampaign } from './server/automation/freePlanPolicy.mjs'
 import { createConversationEngine } from './server/alpha/conversationEngine.mjs'
+import { createAlphaJobQueue, enqueueAlphaJob, getAlphaJob } from './server/alpha/alphaJobQueue.mjs'
+import { setConversationEngine } from './server/alpha/alphaEngineSingleton.mjs'
 import { normalizeAutomationLifecycle } from './server/automation/lifecycle.mjs'
 import { prepareCampaignPostsForActivation } from './server/automation/campaignActivation.mjs'
 import { ALPHATEKX_BRAIN } from './server/alpha/brainKnowledge.mjs'
@@ -4005,8 +4007,34 @@ function getConversationEngine() {
       return { connected: true, ready: !expired && provider === 'linkedin' ? personalProfile && scopes.includes('w_member_social') : !expired, expired, scopes, identifier: tokens.author_urn || integration.identifier || '' }
     },
   })
+  setConversationEngine(conversationEngine)
   return conversationEngine
 }
+
+const alphaJobQueue = createAlphaJobQueue({
+  processJob: async (payload) => {
+    const { action, prompt, message, conversationId, userId, userEmail } = payload
+    const user = { id: userId, email: userEmail }
+    const engine = getConversationEngine()
+    try {
+      if (action === 'continue') {
+        if (!conversationId) throw new Error('Conversation id is required for continue jobs')
+        const conversation = await engine.continue(conversationId, user, String(message || ''))
+        return { conversation, agent: conversation.automationDraft }
+      }
+      const conversation = await engine.start(user, String(prompt || ''))
+      return { conversation, agent: conversation.automationDraft }
+    } catch (error) {
+      if (user && isProviderOrConfigError(error)) {
+        const promptOrMessage = action === 'continue' ? String(message || '') : String(prompt || '')
+        const conversation = fallbackConversationResponse(user, promptOrMessage, error)
+        await saveServerAgent(conversation)
+        return { conversation, agent: null, warning: alphaConfigurationMessage(error) }
+      }
+      throw error
+    }
+  },
+})
 
 async function addUserCredits(user, creditsToAdd, reference, type = 'purchase', metadata = {}) {
   const config = supabaseConfig()
@@ -8209,6 +8237,89 @@ const server = http.createServer(async (req, res) => {
         return json(res, 200, { conversation, agent: conversation.automationDraft })
       }
     } catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : 'Action failed' }) }
+  }
+  if (req.method === 'POST' && req.url === '/api/alpha/jobs') {
+    try {
+      const config = supabaseConfig()
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      if (!user) return json(res, 401, { error: 'Authentication required' })
+      const body = await readBody(req)
+      const action = body.action === 'continue' ? 'continue' : 'start'
+      const prompt = String(body.prompt || '')
+      const message = String(body.message || '')
+      const conversationId = String(body.conversationId || '')
+      if (action === 'start' && !prompt) return json(res, 400, { error: 'Prompt is required' })
+      if (action === 'continue' && !conversationId) return json(res, 400, { error: 'Conversation ID is required' })
+      const jobPayload = {
+        jobId: randomUUID(),
+        userId: user.id,
+        userEmail: user.email,
+        action,
+        prompt,
+        message,
+        conversationId,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }
+      const job = await enqueueAlphaJob(jobPayload)
+      return json(res, 200, { job })
+    } catch (error) {
+      return json(res, error instanceof Error && error.message.includes('No AI provider') ? 503 : 400, { error: error instanceof Error ? error.message : 'Job creation failed' })
+    }
+  }
+  const jobGetMatch = req.url?.match(/^\/api\/alpha\/jobs\/([^/]+)$/)
+  if (jobGetMatch && req.method === 'GET') {
+    try {
+      const config = supabaseConfig()
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      if (!user) return json(res, 401, { error: 'Authentication required' })
+      const job = getAlphaJob(jobGetMatch[1])
+      if (!job || job.userId !== user.id) return json(res, 404, { error: 'Job not found' })
+      return json(res, 200, { job })
+    } catch (error) {
+      return json(res, 500, { error: error instanceof Error ? error.message : 'Could not load job' })
+    }
+  }
+  const jobApproveMatch = req.url?.match(/^\/api\/alpha\/jobs\/([^/]+)\/approve$/)
+  if (jobApproveMatch && req.method === 'POST') {
+    try {
+      const config = supabaseConfig()
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      if (!user) return json(res, 401, { error: 'Authentication required' })
+      const job = getAlphaJob(jobApproveMatch[1])
+      if (!job || job.userId !== user.id) return json(res, 404, { error: 'Job not found' })
+      const body = await readBody(req)
+      const message = String(body.message || 'approve')
+      const conversationId = job.conversationId || job.result?.conversation?.id
+      if (!conversationId) return json(res, 400, { error: 'Job has no conversation to approve' })
+      const jobPayload = {
+        jobId: randomUUID(),
+        parentJobId: job.jobId || job.id,
+        userId: user.id,
+        userEmail: user.email,
+        action: 'continue',
+        prompt: '',
+        message,
+        conversationId,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }
+      const nextJob = await enqueueAlphaJob(jobPayload)
+      return json(res, 200, { job: nextJob })
+    } catch (error) {
+      return json(res, 500, { error: error instanceof Error ? error.message : 'Could not resume job' })
+    }
+  }
+  const jobListMatch = req.url === '/api/alpha/jobs' && req.method === 'GET'
+  if (jobListMatch) {
+    try {
+      const config = supabaseConfig()
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      if (!user) return json(res, 401, { error: 'Authentication required' })
+      return json(res, 200, { jobs: listAlphaJobsForUser(user.id) })
+    } catch (error) {
+      return json(res, 500, { error: error instanceof Error ? error.message : 'Could not load jobs' })
+    }
   }
   if (req.method === 'POST' && req.url === '/api/agents/parse') {
     try {

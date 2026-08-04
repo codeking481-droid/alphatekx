@@ -7,7 +7,7 @@ import type { Agent } from '../lib/agents/types'
 import { useAuth } from '../lib/auth'
 import { getIntegrationStatus, startLinkedInAuth, type IntegrationStatus } from '../lib/integrations'
 import { getConnectedApps } from '../lib/connectors/connectorApi'
-import { postJson } from '../lib/apiClient'
+import { getJson, postJson } from '../lib/apiClient'
 
 type ConversationMessage = { role: 'user' | 'alpha' | 'system'; text: string; ts: string; generatedCount?: number; totalCredits?: number }
 type AlphaConversation = {
@@ -59,6 +59,7 @@ export default function Agents() {
   const [success, setSuccess] = useState<CreationSuccess | null>(() => readStored(SUCCESS_KEY))
   const [integrationStatus, setIntegrationStatus] = useState<IntegrationStatus>({} as IntegrationStatus)
   const [creating, setCreating] = useState(false)
+  const [jobId, setJobId] = useState<string | null>(() => sessionStorage.getItem('alphatekx:planning-job'))
   const [notice, setNotice] = useState('')
   const composer = useRef<HTMLTextAreaElement>(null)
   const messageEnd = useRef<HTMLDivElement>(null)
@@ -123,6 +124,10 @@ export default function Agents() {
     else sessionStorage.removeItem(PENDING_KEY)
   }, [pendingAgent])
   useEffect(() => {
+    if (jobId) sessionStorage.setItem('alphatekx:planning-job', jobId)
+    else sessionStorage.removeItem('alphatekx:planning-job')
+  }, [jobId])
+  useEffect(() => {
     if (success) sessionStorage.setItem(SUCCESS_KEY, JSON.stringify(success))
     else sessionStorage.removeItem(SUCCESS_KEY)
   }, [success])
@@ -152,9 +157,11 @@ export default function Agents() {
     setConversation(null)
     setPendingAgent(null)
     setInput('')
+    setJobId(null)
     sessionStorage.removeItem(CONVERSATION_KEY)
     sessionStorage.removeItem(PENDING_KEY)
     sessionStorage.removeItem(PROMPT_KEY)
+    sessionStorage.removeItem('alphatekx:planning-job')
   }
 
   const startNew = () => {
@@ -170,30 +177,31 @@ export default function Agents() {
     setPendingAgent((next.automationDraft || data.agent || null) as Agent | null)
   }
 
+
   const send = async (overrideMessage?: string) => {
     const message = String(overrideMessage ?? input).trim()
     if (!message || creating) return
     setCreating(true)
-    setNotice('')
+    setNotice('Queued Alpha planning. This can take a minute.')
     setInput('')
     try {
-      const endpoint = conversation?.id ? `/api/alpha/conversation/${encodeURIComponent(conversation.id)}` : '/api/alpha/conversation'
-      const body = conversation?.id ? { message } : { prompt: message }
-      const data = await postJson<Record<string, unknown>>(endpoint, body, { timeoutMs: 300_000 })
-      const next = (data.conversation || data) as AlphaConversation
-      if (next.conversationStage === 'created' && next.automationDraft) {
-        const agent = next.automationDraft
-        setCache([agent, ...getAgents().filter(item => item.id !== agent.id)])
-        created(agent)
-      } else {
-        acceptConversation(data)
+      const action = conversation?.id ? 'continue' : 'start'
+      const body = {
+        action,
+        prompt: conversation?.id ? undefined : message,
+        message: conversation?.id ? message : undefined,
+        conversationId: conversation?.id,
+      }
+      const data = await postJson<Record<string, unknown>>('/api/alpha/jobs', body)
+      const job = data.job as { jobId: string }
+      if (job?.jobId) {
+        setJobId(job.jobId)
       }
     } catch (error) {
       setInput(message)
-      setNotice(error instanceof DOMException && error.name === 'AbortError'
-        ? 'Alpha took too long to respond. Complex automation planning can take several minutes. Your message is saved—please retry.'
-        : error instanceof Error ? error.message : 'Could not reach Alpha.')
-    } finally { setCreating(false) }
+      setNotice(error instanceof Error ? error.message : 'Could not reach Alpha.')
+      setCreating(false)
+    }
   }
 
   const created = (agent: Agent) => {
@@ -202,6 +210,46 @@ export default function Agents() {
     setSuccess(result)
     setNotice('')
   }
+
+  useEffect(() => {
+    if (!jobId) return
+    let active = true
+    const interval = window.setInterval(async () => {
+      try {
+        const data = await getJson<Record<string, unknown>>(`/api/alpha/jobs/${encodeURIComponent(jobId)}`)
+        const job = data.job as { status: string; result?: Record<string, unknown>; error?: string; warning?: string }
+        if (!active || !job) return
+        setNotice(job.warning || (job.status === 'running' ? 'Alpha is processing your request…' : job.status === 'queued' ? 'Alpha has queued your request.' : ''))
+        if (job.status === 'completed' || job.status === 'failed') {
+          window.clearInterval(interval)
+          setJobId(null)
+          setCreating(false)
+          if (job.status === 'failed') {
+            setNotice(job.error || 'Alpha planning failed. Please try again.')
+            return
+          }
+          const result = job.result || {}
+          const next = (result.conversation || result) as AlphaConversation
+          if (next?.conversationStage === 'created' && next.automationDraft) {
+            const agent = next.automationDraft
+            setCache([agent, ...getAgents().filter(item => item.id !== agent.id)])
+            created(agent)
+          } else {
+            acceptConversation(result)
+          }
+        }
+      } catch (error) {
+        window.clearInterval(interval)
+        setJobId(null)
+        setCreating(false)
+        setNotice(error instanceof Error ? error.message : 'Could not poll Alpha job status.')
+      }
+    }, 2000)
+    return () => {
+      active = false
+      window.clearInterval(interval)
+    }
+  }, [jobId])
 
   const needsConnection = conversation?.pendingConnections?.[0] || pendingAgent?.missing?.find(item => item.field === 'connection')?.connector
   const guidedPlatform = searchParams.get('platform')

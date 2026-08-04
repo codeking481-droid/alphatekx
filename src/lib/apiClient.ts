@@ -28,8 +28,8 @@ async function authToken(): Promise<string | undefined> {
 async function requestJson<T>(url: string, init: RequestInit, options: { token?: string; timeoutMs?: number; signal?: AbortSignal } = {}): Promise<T> {
   const controller = new AbortController()
   if (options.signal) { options.signal.addEventListener('abort', () => controller.abort(), { once: true }) }
-  const timeoutMs = options.timeoutMs ?? (url.startsWith('/api/alpha/') ? 300_000 : 90_000)
-  const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs)
+  const timeoutMs = options.timeoutMs ?? (url.startsWith('/api/alpha/') ? undefined : 90_000)
+  const timeout = timeoutMs ? globalThis.setTimeout(() => controller.abort(), timeoutMs) : undefined
   try {
     let token = options.token || await authToken()
     const makeRequest = () => fetch(url, {
@@ -73,7 +73,7 @@ async function requestJson<T>(url: string, init: RequestInit, options: { token?:
     if (error instanceof TypeError) throw new Error('Could not reach Alpha. Confirm the Render service is running with `npm start`.')
     throw error
   } finally {
-    globalThis.clearTimeout(timeout)
+    if (timeout !== undefined) globalThis.clearTimeout(timeout)
   }
 }
 
