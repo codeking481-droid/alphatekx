@@ -49,6 +49,7 @@ function clearUserArtifacts() {
 const DEVICE_ID_KEY = 'deviceId'
 const GOOGLE_SIGNUP_PENDING_KEY = 'alphatekx:pending-google-signup'
 const GOOGLE_SIGNUP_PLAN_KEY = 'alphatekx:pending-google-signup-plan'
+let googleSignupLaunchInFlight = false
 
 export function isGoogleSignupPending() {
   try {
@@ -63,6 +64,7 @@ export function clearGoogleSignupPending() {
     localStorage.removeItem(GOOGLE_SIGNUP_PENDING_KEY)
     localStorage.removeItem(GOOGLE_SIGNUP_PLAN_KEY)
   } catch {}
+  googleSignupLaunchInFlight = false
 }
 
 function getOrCreateDeviceId() {
@@ -75,6 +77,9 @@ function getOrCreateDeviceId() {
 
 export async function instantGoogleSignup(plan?: string) {
   if (!supabase) throw new Error('Google signup is not available.')
+  if (googleSignupLaunchInFlight) throw new Error('Google signup is already in progress.')
+  googleSignupLaunchInFlight = true
+
   try {
     localStorage.setItem(GOOGLE_SIGNUP_PENDING_KEY, '1')
     if (plan) localStorage.setItem(GOOGLE_SIGNUP_PLAN_KEY, plan)
