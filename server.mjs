@@ -66,7 +66,7 @@ try { fs.mkdirSync(deploymentsDir, { recursive: true }) } catch {}
 try { fs.mkdirSync(previewsDir, { recursive: true }) } catch {}
 try { fs.mkdirSync(dataDir, { recursive: true }) } catch {}
 
-const schedulerState = { lastRun: null, nextRun: null, activeAgents: 0, startedAt: new Date().toISOString(), uptime: () => Math.floor((Date.now() - new Date(schedulerState.startedAt).getTime()) / 1000) }
+const schedulerState = { lastRun: null, nextRun: null, activeAgents: 0, startedAt: new Date().toISOString(), isRunning: false, uptime: () => Math.floor((Date.now() - new Date(schedulerState.startedAt).getTime()) / 1000) }
 const allowedOrigins = new Set(['https://alphatekx.name.ng', 'https://www.alphatekx.name.ng', 'http://localhost:5173', `http://localhost:${port}`])
 function isAllowedOrigin(origin) {
   if (!origin) return false
@@ -2671,6 +2671,9 @@ async function activateCampaignHandler(req, res) {
       return json(res, 409, { error: message, code: 'ACTIVE_AUTOMATION_LIMIT', limit: billingSummary.maxActiveAutomations })
     }
   }
+  if (!admin && Number(billingSummary.credits || 0) < total) {
+    return json(res, 402, { error: `You need ${total} credit${total === 1 ? '' : 's'} to activate this automation. Add credits to continue.`, code: 'INSUFFICIENT_CREDITS', required: total, available: Number(billingSummary.credits || 0) })
+  }
   if (!admin && billingSummary.plan === 'free') {
     agent.campaign.posts = (agent.campaign.posts || []).slice(0, 7)
     if (agent.campaign.meta) {
@@ -2836,6 +2839,10 @@ async function campaignReportHandler(req, res) {
 }
 
 export async function runDueAgents(req, res) {
+  if (schedulerState.isRunning) {
+    return json(res, 200, { ok: true, executed: 0, skipped: true, reason: 'Scheduler already running' })
+  }
+  schedulerState.isRunning = true
   try {
     const now = new Date()
     const config = supabaseConfig()
@@ -2866,6 +2873,8 @@ export async function runDueAgents(req, res) {
     const message = error instanceof Error ? error.message : 'Scheduler check failed'
     process.stdout.write(`[cron] scheduler check error: ${message}\n`)
     return json(res, 200, { ok: false, executed: 0, results: [], error: message })
+  } finally {
+    schedulerState.isRunning = false
   }
 }
 
@@ -3584,14 +3593,24 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
 async function runAgent(agent, trigger = 'schedule', authenticatedOwner = null) {
   const startTime = Date.now()
   const now = new Date()
-  const existing = await getServerAgent(agent.id) || agent
-  const user = existing.userId ? await resolveExecutionUser(existing.userId, existing.userEmail || '', authenticatedOwner) : null
-  const userId = user?.id || existing.userId || ''
-  const userEmail = user?.email || existing.userEmail || ''
-  const timezone = user?.timezone || existing.userTimezone || 'UTC'
-  const triggerType = trigger === 'manual' ? 'manual' : (existing.trigger?.type || 'schedule')
-  const executionId = generateExecutionId(existing, trigger, now)
-  const admin = isAdminUser(user)
+  let existing = agent
+  let executionRecord = null
+  let user = null
+  let userId = ''
+  let userEmail = ''
+  let timezone = 'UTC'
+  let triggerType = trigger === 'manual' ? 'manual' : (agent.trigger?.type || 'schedule')
+  let executionId = generateExecutionId(agent, trigger, now)
+  let admin = false
+  try {
+    existing = await getServerAgent(agent.id) || agent
+    user = existing.userId ? await resolveExecutionUser(existing.userId, existing.userEmail || '', authenticatedOwner) : null
+    userId = user?.id || existing.userId || ''
+    userEmail = user?.email || existing.userEmail || ''
+    timezone = user?.timezone || existing.userTimezone || 'UTC'
+    triggerType = trigger === 'manual' ? 'manual' : (existing.trigger?.type || 'schedule')
+    executionId = generateExecutionId(existing, trigger, now)
+    admin = isAdminUser(user)
 
   // 1. IDEMPOTENCY: refuse completed or in-progress duplicates
   const existingExec = await getServerExecution(executionId).catch(() => null)
@@ -3652,9 +3671,9 @@ async function runAgent(agent, trigger = 'schedule', authenticatedOwner = null) 
   }
 
   // 6. Create in-progress execution record
-  let execution = { id: executionId, agentId: existing.id, at: now.toISOString(), status: 'in_progress', duration: 0, output: null, error_code: null, credits_used: 0, log: 'Execution in progress', trigger: triggerType, steps: [] }
-  const claimed = await claimServerExecution(execution)
-  if (!claimed) return { ...execution, status: 'skipped', error_code: 'CONCURRENT', log: 'Execution lock already exists; duplicate execution prevented.' }
+  executionRecord = { id: executionId, agentId: existing.id, at: now.toISOString(), status: 'in_progress', duration: 0, output: null, error_code: null, credits_used: 0, log: 'Execution in progress', trigger: triggerType, steps: [] }
+  const claimed = await claimServerExecution(executionRecord)
+  if (!claimed) return { ...executionRecord, status: 'skipped', error_code: 'CONCURRENT', log: 'Execution lock already exists; duplicate execution prevented.' }
 
   let monitorResult = null
   if (existing.trigger?.type === 'monitor' && existing.trigger?.url) {
@@ -3780,8 +3799,8 @@ async function runAgent(agent, trigger = 'schedule', authenticatedOwner = null) 
   const totalCreditsUsed = results.reduce((s, r) => s + (r.credits_used || 0), 0)
   const output = successCount > 0 ? results.filter(r => r.status === 'success').map(r => ({ step: r.step, output: r.output })) : null
 
-  execution = { ...execution, status: finalStatus, duration: Date.now() - startTime, output, error_code: errorCode, credits_used: totalCreditsUsed, log, steps: results }
-  await saveServerExecution(execution)
+  executionRecord = { ...executionRecord, status: finalStatus, duration: Date.now() - startTime, output, error_code: errorCode, credits_used: totalCreditsUsed, log, steps: results }
+  await saveServerExecution(executionRecord)
 
   const executionsDone = allSkipped ? (existing.executionsDone || 0) : (existing.executionsDone || 0) + 1
   let nextRetryCount = 0
@@ -3802,24 +3821,24 @@ async function runAgent(agent, trigger = 'schedule', authenticatedOwner = null) 
 
   if (existing.endDate && nextRun && new Date(nextRun) > new Date(existing.endDate)) {
     status = 'completed'
-    execution.log += ` Reached end date (${existing.endDate}) and stopped.`
+    executionRecord.log += ` Reached end date (${existing.endDate}) and stopped.`
     nextRun = undefined
   }
 
   if (existing.executionsTotal && executionsDone >= existing.executionsTotal && !allSkipped) {
     status = 'paused'
-    execution.log += ` Reached ${existing.executionsTotal} execution limit and paused.`
+    executionRecord.log += ` Reached ${existing.executionsTotal} execution limit and paused.`
   }
 
-  const newHistory = [execution, ...(existing.executionHistory || [])].slice(0, 100)
+  const newHistory = [executionRecord, ...(existing.executionHistory || [])].slice(0, 100)
   const successes = newHistory.filter(e => e.status === 'success').length
   const successRate = newHistory.length ? Math.round((successes / newHistory.length) * 100) : 0
 
   const record = {
     ...existing,
     executionHistory: newHistory,
-    lastRun: execution.at,
-    lastRunAt: execution.at,
+    lastRun: executionRecord.at,
+    lastRunAt: executionRecord.at,
     status,
     updated_at: now.toISOString(),
     executionsDone,
@@ -3829,7 +3848,38 @@ async function runAgent(agent, trigger = 'schedule', authenticatedOwner = null) 
   }
   if (existing.trigger?.type === 'schedule' || existing.trigger?.type === 'monitor') record.trigger = { ...existing.trigger, nextRun }
   await saveServerAgent(record)
-  return execution
+  return executionRecord
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Automation execution failed'
+    const fallbackExecution = {
+      id: executionRecord?.id || executionId,
+      agentId: existing?.id || agent.id,
+      at: now.toISOString(),
+      status: 'error',
+      duration: Date.now() - startTime,
+      output: null,
+      error_code: 'EXECUTION_ERROR',
+      credits_used: 0,
+      log: message,
+      trigger: triggerType,
+      steps: [],
+    }
+    try { await saveServerExecution(fallbackExecution) } catch {}
+    try {
+      const fallbackRecord = {
+        ...existing,
+        executionHistory: [fallbackExecution, ...(existing?.executionHistory || [])].slice(0, 100),
+        lastRun: fallbackExecution.at,
+        lastRunAt: fallbackExecution.at,
+        status: 'warning',
+        updated_at: now.toISOString(),
+        successRate: 0,
+      }
+      if (existing?.trigger?.type === 'schedule' || existing?.trigger?.type === 'monitor') fallbackRecord.trigger = { ...existing.trigger }
+      await saveServerAgent(fallbackRecord)
+    } catch {}
+    return fallbackExecution
+  }
 }
 
 async function sendGmail(req, res) {
@@ -8216,7 +8266,12 @@ const server = http.createServer(async (req, res) => {
         const allAgents = await listServerAgentsForUser(user.id)
         const activeCount = allAgents.filter(a => (a.status === 'running' || a.status === 'active') && a.id !== agentId).length
         const canCreate = await billing.canCreateAgent(user, config, activeCount)
-        if (!canCreate.ok) return json(res, 402, { error: canCreate.reason, plan: canCreate.plan, code: 'PLAN_LIMIT' })
+        if (!canCreate.ok) return json(res, 402, { error: canCreate.reason, plan: canCreate.plan, code: 'PLAN_LIMIT', limit: canCreate.limit })
+        const estimatedCredits = Math.max(1, computeEstimatedCredits(merged))
+        const billingSummary = await billing.getUserBilling(user, config)
+        if (!isAdminAuthUser(user) && Number(billingSummary.credits || 0) < estimatedCredits) {
+          return json(res, 402, { error: `You need ${estimatedCredits} credit${estimatedCredits === 1 ? '' : 's'} to activate this automation. Add credits to continue.`, code: 'INSUFFICIENT_CREDITS', required: estimatedCredits, available: Number(billingSummary.credits || 0) })
+        }
       }
       const trigger = merged.trigger || {}
       const timezone = merged.timezone || merged.schedule?.timezone || existing.timezone || 'UTC'
@@ -8652,6 +8707,8 @@ const server = http.createServer(async (req, res) => {
 if (!process.env.VERCEL) {
   server.listen(port, () => process.stdout.write(`[AlphaTekX] listening on ${port}\n`))
   schedule('* * * * *', async () => {
+    if (schedulerState.isRunning) return
+    schedulerState.isRunning = true
     const started = new Date()
     schedulerState.lastRun = started.toISOString()
     schedulerState.nextRun = new Date(started.getTime() + 60_000).toISOString()
@@ -8670,6 +8727,7 @@ if (!process.env.VERCEL) {
       })
       if (mediaRuns.length) process.stdout.write(`[MEDIA SCHEDULER] Processed ${mediaRuns.length} due item(s)\n`)
     } catch (err) { process.stdout.write(`[cron] error: ${err instanceof Error ? err.message : err}\n`) }
+    finally { schedulerState.isRunning = false }
   })
 
   schedule('0 9 * * *', async () => {

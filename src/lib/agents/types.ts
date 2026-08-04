@@ -12,6 +12,9 @@ export type AgentStatus =
   | 'error'
   | 'warning'
   | 'pending'
+  | 'needs_attention'
+  | 'waiting_credits'
+  | 'preparing'
   | 'deleted'
 
 export type AgentTrigger = {

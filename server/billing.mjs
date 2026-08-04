@@ -427,11 +427,18 @@ export async function setPlan(user, planId, config, { reference } = {}) {
 export async function canCreateAgent(user, config, activeCount) {
   if (isAdmin(user)) return { ok: true }
   const billing = await getUserBilling(user, config)
-  void activeCount
+  const currentActiveCount = Math.max(0, Number(activeCount) || 0)
+  const maxActiveAutomations = Number(billing.maxActiveAutomations) || 1
+  if (currentActiveCount >= maxActiveAutomations) {
+    const detail = maxActiveAutomations === 1
+      ? 'Pause your current automation or upgrade to continue.'
+      : `Pause one automation or upgrade to ${billing.planName} to continue.`
+    return { ok: false, reason: `This plan supports ${maxActiveAutomations} active automation${maxActiveAutomations === 1 ? '' : 's'}. ${detail}`, plan: billing.plan, limit: maxActiveAutomations }
+  }
   if (Number(billing.credits) < 1) {
     return { ok: false, reason: 'You need at least 1 credit to create an automation.', plan: billing.plan }
   }
-  return { ok: true }
+  return { ok: true, limit: maxActiveAutomations }
 }
 
 export async function resetMonthlyCredits(config) {

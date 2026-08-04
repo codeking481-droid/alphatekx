@@ -15,7 +15,6 @@ const primary = [
   ['Running Automations', '/active-automations', ListChecks],
   ['History', '/history', History],
   ['Media Library', '/media-library', FolderOpen],
-  ['Builder', '/builder', Code2],
   ['Connected Apps', '/connected-apps', Plug],
 ] as const
 

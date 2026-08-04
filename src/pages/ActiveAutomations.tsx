@@ -12,11 +12,12 @@ const filters = ['All', 'Running', 'Waiting', 'Paused', 'Needs Attention', 'Comp
 type Filter = typeof filters[number]
 
 function displayStatus(agent: Agent) {
+  const status = agent.status as string
   const isApproved = Boolean(agent.approved || agent.campaign?.approved)
-  if (agent.status === 'running' || agent.status === 'active' || (isApproved && (agent.status === 'awaiting_approval' || agent.status === 'pending' || agent.status === 'draft'))) return 'Running'
-  if (agent.status === 'needs_attention' || agent.status === 'warning' || agent.status === 'failed' || agent.status === 'error') return 'Needs Attention'
-  if (agent.status === 'paused') return 'Paused'
-  if (agent.status === 'completed') return 'Completed'
+  if (status === 'running' || status === 'active' || (isApproved && ['awaiting_approval', 'pending', 'draft'].includes(status))) return 'Running'
+  if (['needs_attention', 'warning', 'failed', 'error'].includes(status)) return 'Needs Attention'
+  if (status === 'paused') return 'Paused'
+  if (status === 'completed') return 'Completed'
   return 'Scheduled'
 }
 
@@ -50,7 +51,8 @@ function progressPercent(agent: Agent) {
 function matchesFilter(agent: Agent, filter: Filter) {
   if (filter === 'All') return true
   const status = displayStatus(agent)
-  if (filter === 'Waiting') return status === 'Awaiting Approval' || status === 'Scheduled'
+  const lifecycleStatus = agent.status as string
+  if (filter === 'Waiting') return status === 'Scheduled' || ['awaiting_information', 'awaiting_connection', 'awaiting_approval', 'pending', 'draft', 'waiting_credits', 'preparing'].includes(lifecycleStatus)
   return status === filter
 }
 
@@ -127,6 +129,9 @@ export default function ActiveAutomations() {
   const [runningNow, setRunningNow] = useState(false)
   const [now, setNow] = useState(Date.now())
   const selected = id ? agents.find(agent => agent.id === id) : null
+  const planLabel = profile?.plan === 'creator_monthly' ? 'Starter' : profile?.plan === 'builder_monthly' ? 'Growth' : profile?.plan === 'scale_monthly' ? 'Scale' : 'Free'
+  const activeAutomationLimit = profile?.plan === 'creator_monthly' ? 2 : profile?.plan === 'builder_monthly' ? 10 : profile?.plan === 'scale_monthly' ? 1000000 : 1
+  const creditBalance = !isAdminUser(user) && profile ? profile.credits : null
   const visible = useMemo(() => agents.filter(agent => {
     const approved = Boolean(agent.approved || agent.campaign?.approved)
     // An execution failure changes the lifecycle status, but it must never make
@@ -287,12 +292,28 @@ export default function ActiveAutomations() {
       <Link to="/automations" className="primary-button"><Plus size={17}/>New automation</Link>
     </header>
     {notice && <Notice>{notice}</Notice>}
+    <section className="mt-5 grid gap-3 rounded-[2rem] border border-white/8 bg-[#0D1322]/70 p-4 shadow-[0_24px_70px_rgba(2,6,23,0.22)] sm:grid-cols-3 sm:p-5">
+      <div>
+        <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#8A8A93]">Plan</p>
+        <p className="mt-2 text-lg font-black text-white">{planLabel}</p>
+        <p className="mt-1 text-sm text-slate-400">{activeAutomationLimit === 1000000 ? 'Unlimited active automations' : `Up to ${activeAutomationLimit} active automation${activeAutomationLimit === 1 ? '' : 's'}`}</p>
+      </div>
+      <div>
+        <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#8A8A93]">Credits</p>
+        <p className="mt-2 text-lg font-black text-white">{creditBalance == null ? 'Unlimited' : `${creditBalance.toLocaleString()} left`}</p>
+        <p className="mt-1 text-sm text-slate-400">Available for fresh runs and approvals</p>
+      </div>
+      <div>
+        <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#8A8A93]">Live status</p>
+        <p className="mt-2 text-lg font-black text-white">{visible.length} shown</p>
+        <p className="mt-1 text-sm text-slate-400">{visible.filter(agent => ['running','active','warning','needs_attention'].includes(agent.status)).length} currently active</p>
+      </div>
+    </section>
     {visible.some(agent => displayStatus(agent) === 'Needs Attention' && /credit/i.test(agent.campaign?.posts?.find(post => post.lastError)?.lastError || '')) && (
       <div className="mt-5 rounded-2xl border border-[#F5C518]/30 bg-[#F5C518]/[0.04] p-4 text-sm font-bold text-white">
         Out of credits - Buy $3 for 20 credits to keep your AI employee working. <Link to="/settings?section=billing" className="ml-1 underline">Buy credits</Link>
       </div>
     )}
-    {!isAdminUser(user) && profile && <p className="mt-4 text-sm font-bold text-[#8A8A93]">Credits left: {profile.credits.toLocaleString()}</p>}
     <div className="mt-7 flex flex-wrap items-center justify-between gap-3">
       <div className="flex gap-2 overflow-x-auto pb-2" aria-label="Automation filters">{filters.map(item => <button key={item} onClick={() => setFilter(item)} className={`whitespace-nowrap rounded-full px-3 py-2 text-[11px] font-black ${filter === item ? 'bg-white text-[#0B0B0C]' : 'border border-white/10 bg-white/[.02] text-[#8A8A93]'}`}>{item}</button>)}</div>
       <div className="flex rounded-xl border border-white/10 bg-white/[.02] p-1">
