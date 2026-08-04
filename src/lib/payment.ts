@@ -33,10 +33,10 @@ async function authHeaders(): Promise<Record<string, string>> {
 }
 
 export async function initializeCheckout(provider: PaymentProvider, item: PaymentItem): Promise<{ authorization_url: string; reference: string; credits: number; amount: number; source: string; provider: string }> {
-  const res = await fetch('/api/paystack/initialize', {
+  const res = await fetch('/api/payment/create-checkout-session', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...await authHeaders() },
-    body: JSON.stringify(item),
+    body: JSON.stringify({ provider, ...item }),
   })
   const data = await responsePayload(res)
   if (!res.ok) throw new Error(String(data.error || `Payment start failed (${res.status})`))
@@ -57,10 +57,10 @@ function localUserHeaders(): Record<string, string> {
 }
 
 export async function verifyCheckout(provider: PaymentProvider, reference: string): Promise<{ verified: boolean; credits?: number; plan?: string; amount?: number; reference?: string; mock?: boolean }> {
-  const res = await fetch('/api/verify-paystack', {
+  const res = await fetch('/api/payment/verify-session', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...await authHeaders() },
-    body: JSON.stringify({ reference }),
+    body: JSON.stringify({ provider, reference }),
   })
   const data = await responsePayload(res)
   if (!res.ok) throw new Error(String(data.error || `Payment verification failed (${res.status})`))

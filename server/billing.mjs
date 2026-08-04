@@ -529,7 +529,7 @@ function publicAppUrl() {
   return process.env.PUBLIC_APP_URL || process.env.VITE_PUBLIC_APP_URL || process.env.RENDER_EXTERNAL_URL || `http://localhost:${process.env.PORT || 3001}`
 }
 
-export function resolvePaystackCallbackUrl(item, fallback = 'https://alphatekx.name.ng/dashboard') {
+export function resolvePaystackCallbackUrl(item, fallback = `${publicAppUrl()}/settings?tab=billing`) {
   const explicit = typeof item?.callbackUrl === 'string' ? item.callbackUrl : typeof item?.callback_url === 'string' ? item.callback_url : ''
   if (explicit && explicit.trim()) return explicit.trim()
   return String(process.env.PAYSTACK_CALLBACK_URL || fallback).trim()

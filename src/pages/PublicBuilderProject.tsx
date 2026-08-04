@@ -28,7 +28,7 @@ export default function PublicBuilderProject() {
     description.content = `Explore ${project.title}, built and deployed with AlphaTekX Builder.`
   }, [project])
 
-  if (error) return <main className="grid min-h-screen place-items-center bg-[#0A0A0F] p-6 text-center text-white"><div><h1 className="text-2xl font-black">App not found</h1><p className="mt-3 text-sm font-semibold text-white/45">{error}</p><Link to="/builder" className="mt-6 inline-flex rounded-xl bg-violet-600 px-5 py-3 font-black">Go to Builder</Link></div></main>
+  if (error) return <main className="grid min-h-screen place-items-center bg-[#0A0A0F] p-6 text-center text-white"><div><h1 className="text-2xl font-black">App not found</h1><p className="mt-3 text-sm font-semibold text-white/45">{error}</p><Link to="/active-automations" className="mt-6 inline-flex rounded-xl bg-violet-600 px-5 py-3 font-black">Go to Active Automations</Link></div></main>
   if (!project) return <main className="grid min-h-screen place-items-center bg-[#0A0A0F] text-white"><div className="text-center"><span className="mx-auto block size-8 animate-spin rounded-full border-2 border-violet-500 border-t-transparent"/><p className="mt-4 text-sm font-semibold text-white/55">Loading {slug}…</p></div></main>
 
   return <main className="fixed inset-0 flex min-h-0 flex-col bg-[#0A0A0F]">

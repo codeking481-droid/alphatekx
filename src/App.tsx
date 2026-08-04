@@ -63,8 +63,8 @@ export default function App() {
       <Route path="/connectors" element={protectedPage(<Connectors />)} />
       <Route path="/apps" element={protectedPage(<Connectors />)} />
       <Route path="/media-library" element={protectedPage(<MediaLibrary />)} />
-      <Route path="/builder" element={toAutomations} />
-      <Route path="/builder/*" element={toAutomations} />
+      <Route path="/builder" element={<Navigate to="/active-automations" replace />} />
+      <Route path="/builder/*" element={<Navigate to="/active-automations" replace />} />
       <Route path="/leads" element={toDashboard} />
       <Route path="/ceo" element={toDashboard} />
       <Route path="/settings" element={protectedPage(<Settings />)} />
