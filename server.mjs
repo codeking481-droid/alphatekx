@@ -8446,6 +8446,44 @@ const server = http.createServer(async (req, res) => {
     const missing = Object.entries(required).filter(([, value]) => !value).map(([name]) => name)
     return json(res, missing.length ? 503 : 200, { ready: missing.length === 0, missing, error: missing.length ? `Paystack needs these Render variables: ${missing.join(', ')}` : undefined })
   }
+  if (req.method === 'POST' && req.url === '/api/payment/create-checkout-session') {
+    try {
+      const body = await readBody(req)
+      const provider = String(body.provider || 'paystack')
+      const item = { ...body }
+      delete item.provider
+      if (!provider) return json(res, 400, { error: 'Payment provider is required.' })
+      if (provider !== 'paystack') return json(res, 400, { error: 'Unsupported payment provider.' })
+      const config = supabaseConfig()
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      if (!user) return json(res, 401, { error: 'Authentication required' })
+      const result = await billing.initializePayment(provider, user, item, config)
+      return json(res, 200, result)
+    } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Payment initialization failed' }) }
+  }
+  if (req.url?.startsWith('/api/payment/verify-session')) {
+    try {
+      const url = new URL(req.url || '/', 'http://localhost')
+      let provider = String(req.method === 'GET' ? url.searchParams.get('provider') : '') || 'paystack'
+      let reference = String(req.method === 'GET' ? url.searchParams.get('reference') : '') || ''
+      if (req.method === 'POST') {
+        const body = await readBody(req)
+        if (!reference) reference = String(body.reference || '')
+        if (!provider) provider = String(body.provider || 'paystack')
+      }
+      if (!reference) return json(res, 400, { error: 'Missing payment reference.' })
+      if (provider !== 'paystack') return json(res, 400, { error: 'Unsupported payment provider.' })
+      const config = supabaseConfig()
+      const result = await billing.verifyPayment(provider, reference, config)
+      if (!result.ok) return json(res, 400, { error: result.message || 'Verification failed', verified: false })
+      return json(res, 200, { verified: true, credits: result.balance, plan: result.plan || 'free', amount: result.amount || 0, reference: result.reference || reference })
+    } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Verification failed.' }) }
+  }
+  if (req.method === 'POST' && req.url === '/api/payment/webhook') {
+    try {
+      return await paystackWebhookHandler(req, res)
+    } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Webhook failed' }) }
+  }
   if (req.method === 'POST' && req.url === '/api/paystack/initialize') {
     try { return await initializePaystackPayment(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Payment initialization failed' }) }
   }
