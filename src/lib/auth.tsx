@@ -75,23 +75,34 @@ function getOrCreateDeviceId() {
 
 export async function instantGoogleSignup(plan?: string) {
   if (!supabase) throw new Error('Google signup is not available.')
-  const redirectTo = `${window.location.origin}/`
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: 'google',
-    options: {
-      redirectTo,
-      skipBrowserRedirect: true,
-      queryParams: { prompt: 'select_account' },
-    },
-  })
-  if (error) throw error
-  if (!data?.url) throw new Error('Google did not return a sign-in URL.')
-
   try {
     localStorage.setItem(GOOGLE_SIGNUP_PENDING_KEY, '1')
     if (plan) localStorage.setItem(GOOGLE_SIGNUP_PLAN_KEY, plan)
   } catch {
     // ignore localStorage failures
+  }
+
+  const redirectTo = `${window.location.origin}/`
+  let data
+  try {
+    const result = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo,
+        skipBrowserRedirect: true,
+        queryParams: { prompt: 'select_account' },
+      },
+    })
+    if (result.error) throw result.error
+    data = result.data
+  } catch (error) {
+    clearGoogleSignupPending()
+    throw error
+  }
+
+  if (!data?.url) {
+    clearGoogleSignupPending()
+    throw new Error('Google did not return a sign-in URL.')
   }
 
   const popup = window.open(data.url, '_blank', 'width=600,height=700,noopener,noreferrer')
