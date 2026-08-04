@@ -4013,23 +4013,25 @@ async function initializePaystackPayment(req, res) {
   const user = await currentOrLocalUser(req, config.url, config.anon)
   if (!user) return json(res, 401, { error: 'Authentication required' })
   const body = await readBody(req)
+  const callbackUrl = String(body.callback_url || body.callbackUrl || 'https://alphatekx.name.ng/dashboard').trim()
+  const email = String(body.email || user.email || '').trim()
   let item
   const requestedPlan = String(body.plan || '').trim().toLowerCase()
   const requestedAmount = Number(body.amount || 0)
   if (body.planId) {
-    item = { type: 'subscription', planId: String(body.planId) }
+    item = { type: 'subscription', planId: String(body.planId), callbackUrl }
   } else if (body.packId) {
-    item = { type: 'credits', packId: String(body.packId) }
+    item = { type: 'credits', packId: String(body.packId), callbackUrl }
   } else if (requestedPlan === 'early_founder_19' || requestedAmount === 19) {
-    item = { type: 'credits', packId: 'early_founder_19', amountUsd: requestedAmount || 19, plan: requestedPlan || 'early_founder_19', credits: 500 }
+    item = { type: 'credits', packId: 'early_founder_19', amountUsd: requestedAmount || 19, plan: requestedPlan || 'early_founder_19', credits: 500, callbackUrl }
   } else {
     // Backwards-compatible fallback: derive pack from credits amount
     const credits = Number(body.credits || 0)
     const pack = billing.CREDIT_PACKS.find(p => p.credits === credits) || billing.CREDIT_PACKS[0]
-    item = { type: 'credits', packId: pack.id }
+    item = { type: 'credits', packId: pack.id, callbackUrl }
   }
   try {
-    const result = await billing.initializePayment('paystack', user, item, config)
+    const result = await billing.initializePayment('paystack', { ...user, email }, item, config)
     return json(res, 200, result)
   } catch (error) { return json(res, 502, { error: error instanceof Error ? error.message : 'Payment start failed' }) }
 }
@@ -4413,27 +4415,16 @@ function resolvePlanFromBody(body) {
 export async function verifyPaystack(req, res) {
   applyCors(req, res)
   const config = supabaseConfig()
-  const acceptsJson = String(req.headers.accept || '').includes('application/json') || String(req.headers['x-requested-with'] || '').includes('XMLHttpRequest')
   if ((req.method || '').toUpperCase() === 'GET') {
     try {
       const requestUrl = new URL(req.url || '/', publicAppUrl())
       const reference = String(requestUrl.searchParams.get('reference') || requestUrl.searchParams.get('ref') || '')
-      if (!reference) return acceptsJson ? json(res, 400, { error: 'Missing payment reference.' }) : json(res, 400, { error: 'Missing payment reference.' })
+      if (!reference) return json(res, 400, { error: 'Missing payment reference.' })
       const result = await billing.verifyPayment('paystack', reference, config)
-      if (!result.ok) {
-        if (acceptsJson) return json(res, 400, { error: result.message || 'Verification failed', reference })
-        return json(res, 400, { error: result.message || 'Verification failed' })
-      }
-      if (acceptsJson) return json(res, 200, { success: true, verified: true, credits: result.balance, plan: result.plan || 'free', amount: result.amount || 0, reference: result.reference || reference })
-      const destination = new URL('/dashboard', publicAppUrl())
-      destination.searchParams.set('payment', 'success')
-      destination.searchParams.set('reference', reference)
-      destination.searchParams.set('ref', reference)
-      destination.searchParams.set('credits', String(result.credits || result.balance || 0))
-      res.writeHead(302, { Location: destination.toString(), 'Cache-Control': 'no-store' })
-      return res.end()
+      if (!result.ok) return json(res, 400, { error: result.message || 'Verification failed', reference, success: false })
+      return json(res, 200, { success: true, verified: true, credits: result.balance, plan: result.plan || 'free', amount: result.amount || 0, reference: result.reference || reference })
     } catch (err) {
-      return acceptsJson ? json(res, 500, { error: err instanceof Error ? err.message : String(err) }) : json(res, 500, { error: err instanceof Error ? err.message : String(err) })
+      return json(res, 500, { error: err instanceof Error ? err.message : String(err), success: false })
     }
   }
   try {

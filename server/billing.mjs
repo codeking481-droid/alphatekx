@@ -485,6 +485,12 @@ function publicAppUrl() {
   return process.env.PUBLIC_APP_URL || process.env.VITE_PUBLIC_APP_URL || process.env.RENDER_EXTERNAL_URL || `http://localhost:${process.env.PORT || 3001}`
 }
 
+export function resolvePaystackCallbackUrl(item, fallback = 'https://alphatekx.name.ng/dashboard') {
+  const explicit = typeof item?.callbackUrl === 'string' ? item.callbackUrl : typeof item?.callback_url === 'string' ? item.callback_url : ''
+  if (explicit && explicit.trim()) return explicit.trim()
+  return String(process.env.PAYSTACK_CALLBACK_URL || fallback).trim()
+}
+
 export function resolvePaystackCharge(item) {
   const amount = Number(item?.amountKobo ?? item?.priceKobo ?? 0)
   if (!Number.isInteger(amount) || amount <= 0) throw new Error('Payment amount is invalid')
@@ -567,7 +573,7 @@ async function initializePaystack(user, item, config) {
   const pending = readJsonFile(path.resolve(dataDir, 'pending-transactions.json'), {})
   pending[reference] = { userId: user.id, email, credits, amount, currency, listPriceUsdCents, source, status: 'pending', createdAt: nowIso(), item }
   writeJsonFile(path.resolve(dataDir, 'pending-transactions.json'), pending)
-  const callback = String(process.env.PAYSTACK_CALLBACK_URL || `${process.env.PUBLIC_APP_URL || process.env.VITE_PUBLIC_APP_URL || 'https://alphatekx.name.ng'}/dashboard?payment=success`)
+  const callback = resolvePaystackCallbackUrl(item, 'https://alphatekx.name.ng/dashboard')
   if (!secret) {
     if (process.env.NODE_ENV === 'production') throw new Error('Paystack secret key is not configured')
     // Dev mode: immediately redirect back with the reference for simulated verification

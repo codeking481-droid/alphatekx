@@ -693,19 +693,8 @@ function Pricing() {
     { name: 'Scale', price: 79, credits: '1,200 credits', naira: '~₦124,100' },
   ]
 
-  const handleEarlyFounderDeal = async () => {
-    if (!user) {
-      localStorage.setItem('selectedPlan', 'early_founder_19')
-      localStorage.setItem('selectedAmount', '19')
-      window.location.assign('/auth?plan=early_founder_19')
-      return
-    }
-    try {
-      await startPayment(19, 'early_founder_19')
-    } catch (error) {
-      console.error('Early founder checkout failed', error)
-      window.location.assign('/auth?plan=early_founder_19')
-    }
+  const handleEarlyFounderDeal = () => {
+    window.location.href = '/auth?plan=early_founder_19'
   }
 
   return (
@@ -801,19 +790,8 @@ function Pricing() {
 function FinalCTA() {
   const { user } = useAuth()
 
-  const handleEarlyFounderDeal = async () => {
-    if (!user) {
-      localStorage.setItem('selectedPlan', 'early_founder_19')
-      localStorage.setItem('selectedAmount', '19')
-      window.location.assign('/auth?plan=early_founder_19')
-      return
-    }
-    try {
-      await startPayment(19, 'early_founder_19')
-    } catch (error) {
-      console.error('Early founder checkout failed', error)
-      window.location.assign('/auth?plan=early_founder_19')
-    }
+  const handleEarlyFounderDeal = () => {
+    window.location.href = '/auth?plan=early_founder_19'
   }
 
   return (
@@ -880,16 +858,7 @@ function MobileCTA() {
       <button
         type="button"
         onClick={() => {
-          if (!user) {
-            localStorage.setItem('selectedPlan', 'early_founder_19')
-            localStorage.setItem('selectedAmount', '19')
-            window.location.assign('/auth?plan=early_founder_19')
-            return
-          }
-          void startPayment(19, 'early_founder_19').catch((error) => {
-            console.error('Early founder checkout failed', error)
-            window.location.assign('/auth?plan=early_founder_19')
-          })
+          window.location.href = '/auth?plan=early_founder_19'
         }}
         className="flex h-[56px] max-h-[56px] items-center justify-center gap-2 rounded-full bg-[#FFD700] px-5 text-sm font-black text-black shadow-[0_18px_40px_rgba(0,0,0,.25)]"
       >
