@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { CheckCircle2, Chrome, LoaderCircle, ShieldCheck, Sparkles } from 'lucide-react'
+import { CheckCircle2, Chrome, LoaderCircle, Mail, ShieldCheck, Sparkles, User, Lock } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { getDeviceFingerprint } from '../lib/fingerprint'
@@ -8,8 +8,6 @@ import { supabase } from '../lib/supabase'
 
 const SITE_URL_HELP = 'Auth is blocked by the Supabase Site URL setting. Set Supabase Site URL to https://alphatekx.name.ng and add https://alphatekx.name.ng/auth as an allowed redirect URL.'
 const OAUTH_STATE_HELP = 'That Google sign-in attempt expired. Continue with Google again to start a fresh secure sign-in.'
-const SIGNUP_CHOICE_KEY = 'alphatekx:signup-choice'
-const HUMAN_VERIFICATION_CHOICE = 'human-verification'
 
 type VerificationResult = {
   ok?: boolean
@@ -42,21 +40,6 @@ function authMessage(message: string) {
   return /site url|redirect/i.test(text) ? SITE_URL_HELP : text || 'Authentication failed. Please try again.'
 }
 
-function rememberSignupChoice(choice: string | null) {
-  try {
-    if (choice) sessionStorage.setItem(SIGNUP_CHOICE_KEY, choice)
-    else sessionStorage.removeItem(SIGNUP_CHOICE_KEY)
-  } catch {}
-}
-
-function pendingSignupChoice() {
-  try {
-    return sessionStorage.getItem(SIGNUP_CHOICE_KEY)
-  } catch {
-    return null
-  }
-}
-
 export default function Auth() {
   const { user, session, configured, refreshProfile } = useAuth()
   const [pending, setPending] = useState(false)
@@ -64,6 +47,8 @@ export default function Auth() {
   const [notice, setNotice] = useState('')
   const [result, setResult] = useState<VerificationResult | null>(null)
   const [welcomeSettled, setWelcomeSettled] = useState(false)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const welcomeCreditStarted = useRef(false)
   const oauthStartInFlight = useRef(false)
   const location = useLocation()
@@ -75,7 +60,6 @@ export default function Auth() {
     const description = query.get('error_description') || query.get('error') || ''
     if (!code && !description) return
     const text = `${code} ${description}`
-    rememberSignupChoice(null)
     setNotice(/bad_oauth_state|state.*expired|state.*not.*found/i.test(text) ? OAUTH_STATE_HELP : authMessage(description || code))
     navigate(location.pathname, { replace: true })
   }, [location.pathname, location.search, navigate])
@@ -84,16 +68,14 @@ export default function Auth() {
     if (!user || !(location.pathname === '/auth' || location.pathname === '/login' || location.pathname === '/signup')) return
 
     const params = new URLSearchParams(location.search)
-    const pendingPlan = params.get('plan') || localStorage.getItem('selectedPlan')
+    const pendingPlan = params.get('plan')
     if (pendingPlan) {
-      const pendingAmount = Number(localStorage.getItem('selectedAmount') || '19')
+      const pendingAmount = Number(params.get('amount') || '19')
       const timer = window.setTimeout(() => {
-        localStorage.removeItem('selectedPlan')
-        localStorage.removeItem('selectedAmount')
         void startPayment(pendingAmount, pendingPlan).catch((error) => {
-          console.error('Early founder checkout failed', error)
+          console.error('Payment failed', error)
         })
-      }, 1000)
+      }, 1500)
       return () => window.clearTimeout(timer)
     }
 
@@ -125,44 +107,60 @@ export default function Auth() {
     })()
   }, [refreshProfile, session?.access_token, user])
 
+  const captureDeviceInfo = useCallback(async () => {
+    const fingerprint = await getDeviceFingerprint()
+    const deviceInfo = {
+      fingerprintHash: fingerprint,
+      userAgent: navigator.userAgent,
+      screen: `${screen.width}x${screen.height}`,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      deviceId: localStorage.getItem('alphatekx:device-id') || undefined,
+    }
+    
+    if (!deviceInfo.deviceId) {
+      deviceInfo.deviceId = `device_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+      localStorage.setItem('alphatekx:device-id', deviceInfo.deviceId)
+    }
+    
+    return deviceInfo
+  }, [])
+
   const verifyHuman = useCallback(async () => {
     if (!user || !session?.access_token || verifying) return
     setVerifying(true)
     setNotice('')
     try {
-      const fingerprint = await getDeviceFingerprint()
+      const deviceInfo = await captureDeviceInfo()
       const response = await fetch('/api/verify-bonus', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({ fingerprintHash: fingerprint }),
+        body: JSON.stringify(deviceInfo),
       })
       const body = await response.json().catch(() => ({})) as VerificationResult
       if (!response.ok) throw new Error(body.error || 'Human verification could not be completed.')
       setResult(body)
       await refreshProfile()
-      if (body.success) window.setTimeout(() => navigate('/onboarding', { replace: true }), 1_350)
+      if (body.success) {
+        setTimeout(() => navigate('/onboarding', { replace: true }), 1350)
+      }
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Human verification could not be completed.')
     } finally {
       setVerifying(false)
     }
-  }, [navigate, refreshProfile, session?.access_token, user, verifying])
+  }, [navigate, refreshProfile, session?.access_token, user, verifying, captureDeviceInfo])
 
   useEffect(() => {
     if (!user || !session?.access_token || !welcomeSettled || verifying) return
-    if (pendingSignupChoice() !== HUMAN_VERIFICATION_CHOICE) return
-    // Consume before starting so React Strict Mode or a refresh cannot submit twice.
-    rememberSignupChoice(null)
     void verifyHuman()
   }, [session?.access_token, user, verifyHuman, verifying, welcomeSettled])
 
-  const google = async (verifyAfterSignIn = false) => {
+  const google = async () => {
     if (!supabase || oauthStartInFlight.current) return
     oauthStartInFlight.current = true
-    rememberSignupChoice(verifyAfterSignIn ? HUMAN_VERIFICATION_CHOICE : null)
     setPending(true)
     setNotice('')
     let redirectStarted = false
@@ -176,11 +174,9 @@ export default function Auth() {
         },
       })
       if (error) {
-        rememberSignupChoice(null)
         setNotice(authMessage(error.message))
       }
       else if (!data.url) {
-        rememberSignupChoice(null)
         setNotice('Google did not return a fresh sign-in URL. Please try again.')
       }
       else {
@@ -188,13 +184,32 @@ export default function Auth() {
         window.location.replace(data.url)
       }
     } catch (error) {
-      rememberSignupChoice(null)
       setNotice(authMessage(error instanceof Error ? error.message : 'Google sign-in failed.'))
     } finally {
       if (!redirectStarted) {
         oauthStartInFlight.current = false
         setPending(false)
       }
+    }
+  }
+
+  const emailSignIn = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!email || !password || pending) return
+    setPending(true)
+    setNotice('')
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
+      if (error) {
+        setNotice(authMessage(error.message))
+        setPending(false)
+      }
+    } catch (error) {
+      setNotice(authMessage(error instanceof Error ? error.message : 'Email sign-in failed.'))
+      setPending(false)
     }
   }
 
@@ -205,16 +220,16 @@ export default function Auth() {
     ? 'Google sign-in complete. Your 1 credit is ready.'
     : result?.claimed
       ? 'Human verified! 10 credits unlocked.'
-    : result?.reason === 'device_already_claimed' || result?.reason === 'already_claimed'
-      ? 'This device already claimed the 10-credit bonus. One bonus per human.'
-      : 'This Google account already claimed the bonus. You have 1 credit.'
+      : result?.reason === 'device_already_claimed' || result?.reason === 'already_claimed'
+        ? 'This device already claimed the 10-credit bonus. One bonus per human.'
+        : 'This Google account already claimed the bonus. You have 1 credit.'
 
   return (
     <main className="relative grid min-h-[100dvh] place-items-center overflow-hidden bg-[#0A0A0F] px-3 py-5 text-white sm:px-6 sm:py-7">
       <div aria-hidden className="pointer-events-none absolute -right-32 -top-32 size-[30rem] rounded-full bg-[#FFD700]/[.055] blur-3xl"/>
       <div aria-hidden className="pointer-events-none absolute -bottom-48 -left-40 size-[34rem] rounded-full bg-[#6C5CE7]/10 blur-3xl"/>
 
-      <div className="luxury-card relative w-full max-w-2xl overflow-hidden p-4 sm:p-7 lg:p-8">
+      <div className="relative w-full max-w-2xl overflow-hidden p-4 sm:p-7 lg:p-8">
         <div className="rounded-[1.5rem] border border-white/8 bg-[#0D1020]/75 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,.04)] sm:p-6">
           <Link to="/" className="flex items-center justify-center gap-2 text-sm font-black tracking-[.14em] text-white">
             <span className="grid size-9 place-items-center rounded-xl bg-gradient-to-br from-[#FFD700] to-[#6C5CE7] text-[#0A0A0F] shadow-[0_8px_24px_rgba(255,215,0,.18)]"><Sparkles size={17}/></span>
@@ -224,29 +239,59 @@ export default function Auth() {
           <div className="mt-6 space-y-3 text-center">
             <h1 className="text-3xl font-black tracking-[-.05em] text-white sm:text-4xl">Welcome to your command centre</h1>
             <p className="mx-auto max-w-md text-sm font-semibold leading-6 text-slate-300 sm:text-base">
-              Start with a Google sign-in or unlock a full onboarding boost with one human verification pass.
+              Sign in with Google or email to get started with 1 credit. Verify once to unlock 10 credits.
             </p>
           </div>
 
           <div className="mt-7 space-y-4">
-            <section className="rounded-2xl border border-white/10 bg-white/[.035] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,.05)] sm:p-5">
-              <h2 className="font-black text-white">Google signup · 1 credit</h2>
-              <p className="mt-1 text-sm font-semibold leading-6 text-slate-400">Quick access to your workspace and 1 credit to run your first automation.</p>
-              <button onClick={() => void google(false)} disabled={blocked} className="mt-4 flex min-h-14 w-full items-center justify-center gap-3 rounded-xl border-2 border-violet-400/20 bg-violet-500/10 px-4 font-black text-white shadow-[0_10px_25px_rgba(15,23,42,.07)] transition hover:border-violet-300 hover:bg-violet-500/10 disabled:cursor-not-allowed disabled:opacity-50">
-                {pending ? <LoaderCircle className="animate-spin" size={18}/> : <><Chrome size={19} className="text-violet-300"/> Sign in with Google <span className="text-xs text-slate-400">— 1 credit</span></>}
-              </button>
-            </section>
+            <button
+              onClick={() => void google()}
+              disabled={blocked}
+              className="flex min-h-[48px] w-full items-center justify-center gap-3 rounded-xl border-2 border-violet-400/20 bg-violet-500/10 px-4 font-black text-white shadow-[0_10px_25px_rgba(15,23,42,.07)] transition hover:border-violet-300 hover:bg-violet-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {pending ? <LoaderCircle className="animate-spin" size={18}/> : <><Chrome size={19} className="text-violet-300"/> Sign in with Google <span className="text-xs text-slate-400">— 1 credit</span></>}
+            </button>
 
-            <section className="relative rounded-2xl border border-[#FFD700]/20 bg-gradient-to-br from-[#FFD700]/[.065] to-[#6C5CE7]/10 p-4 shadow-2xl sm:p-5">
-              <h2 className="font-black text-white">Human verification · 10 credits</h2>
-              <p className="mt-1 text-sm font-semibold leading-6 text-slate-400">After Google sign-in, verify once to unlock a stronger welcome bonus and better momentum.</p>
-              <button onClick={() => user ? void verifyHuman() : void google(true)} disabled={!configured || pending || verifying} className="solar-action relative mt-4 flex min-h-16 w-full items-center justify-center gap-3 rounded-xl px-4 disabled:cursor-not-allowed disabled:opacity-60">
-                {verifying ? <LoaderCircle className="animate-spin" size={20}/> : <ShieldCheck size={20}/>}
-                {verifying ? "Verifying you're human…" : user ? 'Verify human & unlock 10 credits' : 'Sign in & verify human — 10 credits'}
-                <span className="absolute -right-2 -top-2 rounded-full border border-[#FFD700]/20 bg-[#15151F] px-2.5 py-1 text-[9px] font-black tracking-wide text-[#FFD700]">RECOMMENDED</span>
+            <div className="relative">
+              <div className="absolute inset-x-0 top-1/2 h-px bg-white/10"></div>
+              <div className="relative flex justify-center">
+                <span className="bg-[#0D1020] px-4 text-xs font-bold text-slate-400">or continue with email</span>
+              </div>
+            </div>
+
+            <form onSubmit={emailSignIn} className="space-y-3">
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18}/>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="your@email.com"
+                  required
+                  disabled={blocked}
+                  className="w-full rounded-xl border border-white/10 bg-white/5 px-10 py-3 text-sm font-semibold text-white placeholder:text-slate-400 disabled:cursor-not-allowed disabled:opacity-50"
+                />
+              </div>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18}/>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                  disabled={blocked}
+                  className="w-full rounded-xl border border-white/10 bg-white/5 px-10 py-3 text-sm font-semibold text-white placeholder:text-slate-400 disabled:cursor-not-allowed disabled:opacity-50"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={blocked || !email || !password}
+                className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-[#FFD700] px-4 font-black text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {pending ? <LoaderCircle className="animate-spin" size={18}/> : 'Continue'}
               </button>
-              {!user && <p className="mt-3 text-center text-xs font-bold text-slate-400">Sign in with Google first. Human verification starts only when you click this button.</p>}
-            </section>
+            </form>
           </div>
 
           {!configured && <p className="mt-5 rounded-xl border border-amber-200 bg-amber-500/10 p-3 text-center text-xs font-bold text-amber-300">Authentication needs the public Supabase values configured.</p>}

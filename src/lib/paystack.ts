@@ -18,6 +18,8 @@ export const PACKS: PaymentPack[] = [
   { id: 'credits', label: 'Credit Booster', amountKobo: 200_000, credits: 100 },
 ]
 
+const PAYSTACK_CALLBACK_URL = 'https://alphatekx.name.ng/dashboard'
+
 function getUserEmail(): string | null {
   try {
     const local = localStorage.getItem('alphatekx:local-user')
@@ -39,10 +41,11 @@ export async function startPayment(amount: number, plan: string) {
     throw new Error('Invalid payment selection.')
   }
 
+  const email = getUserEmail() || ''
   const initRes = await fetch('/api/paystack/initialize', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
-    body: JSON.stringify({ amount: normalizedAmount, plan: normalizedPlan, source: 'landing' }),
+    body: JSON.stringify({ email, amount: normalizedAmount, plan: normalizedPlan, callback_url: PAYSTACK_CALLBACK_URL, source: 'landing' }),
   })
 
   const initText = await initRes.text()
@@ -58,7 +61,6 @@ export async function startPayment(amount: number, plan: string) {
   const authorizationUrl = String(initData.authorization_url || '')
   if (!reference || !amountValue || !authorizationUrl) throw new Error('Payment initialization returned invalid data. Please retry.')
 
-  const email = getUserEmail() || ''
   savePendingPayment(reference, email, {
     id: normalizedPlan,
     label: normalizedPlan === 'early_founder_19' ? 'Early Founder Deal' : normalizedPlan,
@@ -66,15 +68,7 @@ export async function startPayment(amount: number, plan: string) {
     credits: Number(initData.credits || 0),
   })
 
-  const destination = new URL('/dashboard', window.location.origin)
-  destination.searchParams.set('payment', 'success')
-  destination.searchParams.set('reference', reference)
-  destination.searchParams.set('ref', reference)
-  destination.searchParams.set('plan', normalizedPlan)
-  destination.searchParams.set('credits', String(initData.credits || 0))
-
-  const redirectTarget = authorizationUrl.includes('?') ? `${authorizationUrl}&redirect_to=${encodeURIComponent(`${destination.pathname}${destination.search}`)}` : `${authorizationUrl}?redirect_to=${encodeURIComponent(`${destination.pathname}${destination.search}`)}`
-  window.location.assign(redirectTarget)
+  window.location.assign(authorizationUrl)
   return { success: true as const, plan: normalizedPlan, reference }
 }
 
@@ -114,7 +108,7 @@ export async function initiatePaystackPack(pack: PaymentPack) {
   const initRes = await fetch('/api/paystack/initialize', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
-    body: JSON.stringify({ type: 'credits', packId: pack.id }),
+    body: JSON.stringify({ email, type: 'credits', packId: pack.id, callback_url: PAYSTACK_CALLBACK_URL }),
   })
   const initText = await initRes.text()
   let initData: Record<string, unknown> = {}
@@ -133,14 +127,7 @@ export async function initiatePaystackPack(pack: PaymentPack) {
 
   if (!authorizationUrl) throw new Error('Paystack checkout is unavailable. Please try again later.')
 
-  const destination = new URL('/dashboard', window.location.origin)
-  destination.searchParams.set('payment', 'success')
-  destination.searchParams.set('reference', reference)
-  destination.searchParams.set('ref', reference)
-  destination.searchParams.set('credits', String(pack.credits || 0))
-
-  const redirectTarget = authorizationUrl.includes('?') ? `${authorizationUrl}&redirect_to=${encodeURIComponent(`${destination.pathname}${destination.search}`)}` : `${authorizationUrl}?redirect_to=${encodeURIComponent(`${destination.pathname}${destination.search}`)}`
-  window.location.href = redirectTarget
+  window.location.assign(authorizationUrl)
   return { success: true as const, plan: (pack.plan || pack.id) as PlanValue, reference }
 }
 
@@ -173,7 +160,7 @@ export async function verifyPaystack(reference: string, packOrPlan: PaymentPack 
   const pack = typeof packOrPlan === 'string' ? PACKS.find(p => p.id === packOrPlan) : packOrPlan
   if (!pack) throw new Error('Invalid payment pack.')
 
-  const res = await fetch('/api/verify-paystack', {
+  const res = await fetch('/api/paystack/verify', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: JSON.stringify({ reference, plan: pack.id, amount: pack.amountKobo, credits: pack.credits }),

@@ -22,20 +22,14 @@ export default function Dashboard() {
   useEffect(() => { void getJson<{ predictions: { id: string; title: string; description: string; severity: string }[] }>('/api/brain/predictions').then(d => setInsights(d.predictions || [])).catch(() => {}) }, [])
 
   useEffect(() => {
-    const ref = searchParams.get('reference') || searchParams.get('trxref') || searchParams.get('ref') || (() => {
+    const pending = (() => {
+      try { return JSON.parse(localStorage.getItem('alphatekx:pending-payment') || 'null') } catch { return null }
+    })()
+    const ref = searchParams.get('reference') || searchParams.get('trxref') || searchParams.get('ref') || pending?.reference || (() => {
       try { return localStorage.getItem('lastRef') || '' } catch { return '' }
     })()
-    if (!ref) {
-      const pending = (() => {
-        try { return JSON.parse(localStorage.getItem('alphatekx:pending-payment') || 'null') } catch { return null }
-      })()
-      if (pending?.reference) {
-        setPaymentRef(pending.reference)
-        setPaymentCredits(Number(pending.credits || 0))
-        setShowCongrats(true)
-      }
-      return
-    }
+
+    if (!ref) return
 
     setPaymentRef(ref)
     setShowContactBanner(false)
@@ -43,8 +37,8 @@ export default function Dashboard() {
       .then(async response => {
         const data = await response.json().catch(() => ({} as Record<string, unknown>))
         if (response.ok && (data.success === true || data.verified === true)) {
-          const credited = Number(data.credits || searchParams.get('credits') || 0)
-          const plan = String(data.plan || searchParams.get('plan') || '')
+          const credited = Number(data.credits || searchParams.get('credits') || pending?.credits || 0)
+          const plan = String(data.plan || searchParams.get('plan') || pending?.plan || '')
           setPaymentCredits(credited)
           if (plan === 'early_founder_19') {
             setCelebrationTitle('Early Founder Deal Activated')
@@ -56,7 +50,7 @@ export default function Dashboard() {
           setShowCongrats(true)
           try { localStorage.removeItem('alphatekx:pending-payment'); localStorage.removeItem('lastRef') } catch {}
           const next = new URLSearchParams(searchParams)
-          next.delete('payment'); next.delete('reference'); next.delete('trxref'); next.delete('ref'); next.delete('credits')
+          next.delete('payment'); next.delete('reference'); next.delete('trxref'); next.delete('ref'); next.delete('credits'); next.delete('plan')
           setSearchParams(next, { replace: true })
           return
         }
