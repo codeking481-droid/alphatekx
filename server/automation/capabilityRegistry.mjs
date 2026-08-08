@@ -11,6 +11,17 @@ const CAPABILITIES = [
     ],
   },
   {
+    id: 'github-issue',
+    name: 'Create GitHub Issue',
+    description: 'Create a reviewed issue in a connected GitHub repository. No code is merged.',
+    supported: true,
+    requiredConnectors: ['github'],
+    patterns: [
+      /(?:create|open|file|add).*(?:github\s+)?issue/i,
+      /(?:github|repository|repo).*(?:create|open|file).*(?:issue|ticket)|(?:issue|ticket).*(?:github|repository|repo)/i,
+    ],
+  },
+  {
     id: 'linkedin-post',
     name: 'Publish LinkedIn Post',
     description: 'Generate, review, schedule, and publish a text post to a connected LinkedIn personal profile.',
@@ -76,6 +87,28 @@ const CAPABILITIES = [
       /email\s+me/i,
       /send\s+me\s+(?:an?\s+)?(?:email|mail)/i,
       /welcome\s+email/i,
+    ],
+  },
+  {
+    id: 'google-doc',
+    name: 'Create Google Document',
+    description: 'Create a reviewed document in the connected Google Docs account.',
+    supported: true,
+    requiredConnectors: ['googledocs'],
+    patterns: [
+      /(?:create|write|draft|make).*(?:google\s+)?doc(?:ument)?/i,
+      /(?:google\s+)?docs?.*(?:create|write|draft|make|proposal|brief)/i,
+    ],
+  },
+  {
+    id: 'discord-message',
+    name: 'Send Discord Message',
+    description: 'Send one reviewed message to a connected Discord destination.',
+    supported: true,
+    requiredConnectors: ['discord'],
+    patterns: [
+      /(?:send|post|publish).*(?:message|update|alert|notification).*(?:to\s+)?discord/i,
+      /discord.*(?:send|post|publish).*(?:message|update|alert|notification)/i,
     ],
   },
   {
@@ -187,6 +220,7 @@ function capabilityScore(text, capability) {
   for (const pattern of capability.patterns) {
     if (pattern.test(text)) score += 1
   }
+  if (capability.id === 'github-issue' && /\b(?:issue|ticket)\b/i.test(text)) score += 2
   return score
 }
 
@@ -512,6 +546,83 @@ function buildLinkedInPlan(prompt, user, extracted) {
   }
 }
 
+function buildGitHubIssuePlan(prompt) {
+  const repo = String(prompt).match(/(?:github\.com\/)?([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)/i)?.[1] || ''
+  const titleMatch = String(prompt).match(/(?:issue|ticket)(?:\s+(?:called|titled))?\s*[":-]?\s*([^\n.]+)/i)
+  const title = titleMatch?.[1]?.trim() || ''
+  const missing = []
+  if (!repo) missing.push({ field: 'repo', step: 'Repository', connector: 'github', reason: 'Which GitHub repository should receive the issue? Use owner/repo.' })
+  if (!title) missing.push({ field: 'title', step: 'Issue', connector: 'github', reason: 'What should the issue be called?' })
+  return {
+    id: null,
+    title: 'Create GitHub Issue',
+    name: 'Create GitHub Issue',
+    description: `Create a reviewed GitHub issue${repo ? ` in ${repo}` : ''}${title ? ` titled “${title}”` : ''}.`,
+    originalRequest: prompt,
+    interpretedGoal: 'Create one confirmed GitHub issue without changing or merging code.',
+    trigger: { type: 'manual', cron: '', nextRun: null },
+    actions: [{ connector: 'github', action: 'create_issue', label: 'Create reviewed GitHub issue', requiresApproval: true, approvalStatus: 'pending', params: { repo, title, body: prompt } }],
+    status: missing.length ? 'awaiting_information' : 'awaiting_approval',
+    approved: false,
+    missing,
+    creditsNeeded: 1,
+    creditsPerRun: 1,
+    creditsPerStep: [{ step: 'Create GitHub issue', cost: 1, reason: 'Charge only after GitHub confirms an issue URL or ID' }],
+    approvalPolicy: 'explicit',
+  }
+}
+
+function buildGoogleDocPlan(prompt) {
+  const titleMatch = String(prompt).match(/(?:doc(?:ument)?|proposal|brief)(?:\s+(?:called|titled|named))?\s*[":-]?\s*([^\n.]+)/i)
+  const title = titleMatch?.[1]?.trim() || ''
+  const missing = []
+  if (!title) missing.push({ field: 'title', step: 'Document', connector: 'googledocs', reason: 'What should the document be called?' })
+  return {
+    id: null,
+    title: 'Create Google Document',
+    name: 'Create Google Document',
+    description: `Create a reviewed Google document${title ? ` titled “${title}”` : ''}.`,
+    originalRequest: prompt,
+    interpretedGoal: 'Create one document in the connected Google Docs account.',
+    trigger: { type: 'manual', cron: '', nextRun: null },
+    actions: [{ connector: 'googledocs', action: 'create_document', label: 'Create reviewed Google document', requiresApproval: true, approvalStatus: 'pending', params: { title, content: prompt, generate: true } }],
+    status: missing.length ? 'awaiting_information' : 'awaiting_approval',
+    approved: false,
+    missing,
+    creditsNeeded: 1,
+    creditsPerRun: 1,
+    creditsPerStep: [{ step: 'Create Google document', cost: 1, reason: 'Charge only after Google returns a document ID' }],
+    approvalPolicy: 'explicit',
+  }
+}
+
+function buildDiscordPlan(prompt, extracted) {
+  const channel = extracted.channel || String(prompt).match(/(?:channel|in)\s+(#[A-Za-z0-9_-]+)/i)?.[1] || ''
+  const message = String(prompt)
+    .replace(/(?:send|post|publish)\s+(?:a\s+)?(?:message|update|alert|notification)?\s*(?:to\s+)?discord/i, '')
+    .trim()
+  const missing = []
+  if (!channel) missing.push({ field: 'channel', step: 'Destination', connector: 'discord', reason: 'Which Discord channel should receive it?' })
+  if (!message) missing.push({ field: 'message', step: 'Message', connector: 'discord', reason: 'What should the Discord message say?' })
+  return {
+    id: null,
+    title: 'Send Discord Message',
+    name: 'Send Discord Message',
+    description: `Send one reviewed Discord message${channel ? ` to ${channel}` : ''}.`,
+    originalRequest: prompt,
+    interpretedGoal: 'Send one approved message to Discord.',
+    trigger: { type: 'manual', cron: '', nextRun: null },
+    actions: [{ connector: 'discord', action: 'send_message', label: 'Send reviewed Discord message', requiresApproval: true, approvalStatus: 'pending', params: { channel, message, generate: !message } }],
+    status: missing.length ? 'awaiting_information' : 'awaiting_approval',
+    approved: false,
+    missing,
+    creditsNeeded: 1,
+    creditsPerRun: 1,
+    creditsPerStep: [{ step: 'Send Discord message', cost: 1, reason: 'Charge only after Discord confirms delivery' }],
+    approvalPolicy: 'explicit',
+  }
+}
+
 function buildGmailAttachmentsToDrivePlan(prompt) {
   const invoiceOnly = /\binvoices?\b/i.test(prompt)
   const receiptOnly = /\breceipts?\b/i.test(prompt)
@@ -553,7 +664,7 @@ function buildGmailAttachmentsToDrivePlan(prompt) {
       params: { q: query, maxMessages: 20 },
     }],
     status: 'awaiting_approval',
-    approved: true,
+    approved: false,
     missing: [],
     creditsNeeded: 1,
     creditsPerRun: 1,
@@ -562,6 +673,7 @@ function buildGmailAttachmentsToDrivePlan(prompt) {
     ],
     notificationSettings: { onSuccess: true, onFailure: true, onRetry: true, channels: ['email'] },
     executionPolicy: 'run_until_end',
+    approvalPolicy: 'explicit',
     retryPolicy: { maxRetries: 2, backoffMinutes: [1, 5] },
   }
 }
@@ -641,12 +753,15 @@ export function buildCapabilityPlan(prompt, user = null, options = {}) {
   if (!capability.supported) return unsupportedResponse(capability, prompt)
   switch (capability.id) {
     case 'github-pull-request': return buildGitHubPullRequestPlan(prompt)
+    case 'github-issue': return buildGitHubIssuePlan(prompt)
     case 'linkedin-post': return buildLinkedInPlan(prompt, user, extracted)
     case 'facebook-post': return buildFacebookPlan(prompt, user, extracted)
     case 'calendar-to-email': return buildCalendarToEmailPlan(prompt, user, extracted)
     case 'gmail-to-telegram': return buildGmailToTelegramPlan(prompt, user, extracted)
     case 'gmail-attachments-to-drive': return buildGmailAttachmentsToDrivePlan(prompt)
     case 'send-email': return buildSendEmailPlan(prompt, user, extracted)
+    case 'google-doc': return buildGoogleDocPlan(prompt)
+    case 'discord-message': return buildDiscordPlan(prompt, extracted)
     case 'whatsapp-first-message': return buildWhatsAppFirstMessagePlan(prompt)
     case 'post-telegram': return buildTelegramPlan(prompt, user, extracted)
     case 'post-slack': return buildSlackPlan(prompt, user, extracted)
@@ -687,6 +802,7 @@ export const SUPPORTED_CONNECTOR_ACTIONS = {
   calendar: ['create_event', 'read_events', 'email_summary'],
   google_drive: ['upload_file'],
   github: ['create_issue', 'summarize_commits', 'create_pull_request'],
+  googledocs: ['create_document', 'get_document', 'update_document'],
   telegram: ['send_message', 'send_gmail_summary'],
   slack: ['send_message'],
   discord: ['send_message'],

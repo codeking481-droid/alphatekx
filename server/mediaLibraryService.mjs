@@ -285,25 +285,16 @@ function keywordsFor(content, objective = '', platform = '') {
   return base.map((word, index) => index === 0 ? `${word} premium real-world scene` : index === 1 ? `${word} professional commercial setting` : `${word} authentic ${context} campaign`)
 }
 
-const PREMIUM_IMAGE_STYLES = [
-  'dark mode SaaS, neon blue glow, premium',
-  'light mode, clean white, subtle gradient, professional',
-  'abstract 3D, isometric, modern tech, vibrant',
-]
-
 const NEGATIVE_IMAGE_PHRASE = 'no stock photo, no blurry, no watermark, no text, no words, no low quality, no cartoon, no old design'
 
 function randomPollinationsSeed() {
   return Math.floor(Math.random() * 9999999)
 }
 
-function pickPremiumStyle() {
-  return PREMIUM_IMAGE_STYLES[Math.floor(Math.random() * PREMIUM_IMAGE_STYLES.length)]
-}
-
-async function enhanceImagePrompt(topic) {
+async function enhanceImagePrompt(topic, platform = 'linkedin') {
   const cleanTopic = String(topic || '').replace(/\s+/g, ' ').trim().slice(0, 500)
-  const system = 'You are a premium LinkedIn visual designer for SaaS founders. Convert a topic into a premium image prompt. Must include: ultra detailed, 4k, cinematic lighting, modern SaaS gradient background (dark blue to electric blue), minimalist, professional, no text, no faces unless needed, abstract tech, 2026 design trend.'
+  const cleanPlatform = String(platform || 'linkedin').toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 30) || 'linkedin'
+  const system = `You are a premium commercial visual director. Convert a topic into one precise ${cleanPlatform} campaign image prompt. Describe a single clear subject, environment, composition, camera angle, lighting, materials, and restrained brand palette. Require photorealistic editorial quality, sharp focus, natural anatomy, and clean negative space. Never request typography, logos, watermarks, UI screenshots, or duplicated subjects.`
   const user = `topic = "${cleanTopic}"`
   const key = String(process.env.GROQ_API_KEY || process.env.GROQ_API_KEY_1 || '')
   const model = String(process.env.GROQ_MODEL || 'llama-3.3-70b-versatile').trim()
@@ -336,7 +327,7 @@ async function enhanceImagePrompt(topic) {
     }
   }
 
-  return `Premium LinkedIn SaaS visual for ${cleanTopic}. Ultra detailed 4k cinematic lighting, modern SaaS gradient background (dark blue to electric blue), minimalist professional style, abstract tech elements, 2026 design trend, no text, no watermark, no faces unless needed.`
+  return `Premium ${cleanPlatform} campaign visual for ${cleanTopic}. One unmistakable focal subject, photorealistic editorial composition, sharp natural detail, cinematic but credible lighting, restrained deep-indigo and warm-gold accents, uncluttered background with useful negative space, no text, no logo, no watermark, no duplicated subjects.`
 }
 
 export function generateAdvancedImagePrompt(content, objective = '', platform = '') {
@@ -350,10 +341,9 @@ export function generateAdvancedImagePrompt(content, objective = '', platform = 
   }
 }
 
-async function buildPremiumPollinationsPrompt(topic) {
-  const prompt = await enhanceImagePrompt(topic)
-  const style = pickPremiumStyle()
-  return `${prompt}, ${style}, ${NEGATIVE_IMAGE_PHRASE}`
+async function buildPremiumPollinationsPrompt(topic, platform = 'linkedin') {
+  const prompt = await enhanceImagePrompt(topic, platform)
+  return `${prompt}, premium commercial photography, ${NEGATIVE_IMAGE_PHRASE}`
 }
 
 export function pollinationsImageUrl(advancedPrompt, negativePrompt, seed = randomPollinationsSeed(), options = {}) {
@@ -510,7 +500,7 @@ export async function findSmartImage(config, user, content, objective = '', plat
   await ensureBucket(config)
   const { keywords, advancedPrompt, negativePrompt } = generateAdvancedImagePrompt(content, objective, platform)
   const promptTopic = String(objective || content || platform || 'premium LinkedIn SaaS visual').trim()
-  const premiumPrompt = await buildPremiumPollinationsPrompt(promptTopic)
+  const premiumPrompt = await buildPremiumPollinationsPrompt(promptTopic, platform)
   const query = keywords.join(' ')
   const uniqueNonce = options.forceUnique === true ? String(options.uniqueNonce || `${Date.now()}-${Math.random()}`) : ''
   const queryHash = createHash('sha256').update(`${platform}:${query}:${uniqueNonce}`).digest('hex')
