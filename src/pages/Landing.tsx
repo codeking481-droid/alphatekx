@@ -13,11 +13,22 @@ import {
   ArrowRight,
   BarChart3,
   BrainCircuit,
+  CalendarClock,
   Check,
   ChevronRight,
+  CircleCheckBig,
+  FileText,
+  Globe2,
+  Instagram,
+  Linkedin,
+  LockKeyhole,
+  Mail,
   Menu,
+  MessageCircle,
   Rocket,
+  ShieldCheck,
   Sparkles,
+  Twitter,
   X,
   Zap,
 } from 'lucide-react'
@@ -300,7 +311,7 @@ function Hero() {
             Your AI employee is ready
           </motion.div>
 
-          <h1 className="mt-7 font-['Space_Grotesk',Inter,sans-serif] text-[44px] font-black leading-[.96] tracking-[-.055em] text-white sm:text-6xl lg:text-[76px]">
+          <h1 className="mt-7 font-['Space_Grotesk',Inter,sans-serif] text-[52px] font-black leading-[.94] tracking-[-.06em] text-white sm:text-7xl lg:text-[88px] xl:text-[96px]">
             <WordReveal text="Your Second You" />
             <br />
             <span className="bg-gradient-to-r from-[#FFD700] via-[#FFC300] to-[#8B3FC7] bg-clip-text text-transparent">
@@ -312,7 +323,7 @@ function Hero() {
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.75 }}
-            className="mx-auto mt-7 max-w-xl text-base font-medium leading-7 text-white/55 sm:text-lg lg:mx-0"
+            className="mx-auto mt-7 max-w-2xl text-lg font-medium leading-8 text-white/60 sm:text-xl lg:mx-0"
           >
             AI creates, posts, and grows your socials — while you live your real life.
           </motion.p>
@@ -370,9 +381,9 @@ function Hero() {
 
 function Problem() {
   const cards = [
-    ['Burnout', 'Your attention was not designed to be a publishing queue.'],
-    ['Inconsistency', 'Growth dies when life interrupts the content calendar.'],
-    ['Zero Growth', 'Manual posting keeps you busy, not compounding.'],
+    ['Too much busywork', 'Your attention was not designed to become a publishing queue.'],
+    ['Broken consistency', 'Growth stalls whenever client work, life, or a full calendar interrupts posting.'],
+    ['No operating system', 'Separate writing, scheduling, publishing, and reporting tools create more work—not leverage.'],
   ]
 
   return (
@@ -384,7 +395,7 @@ function Problem() {
           viewport={{ once: true }}
           className="mx-auto max-w-4xl text-center font-['Space_Grotesk',Inter,sans-serif] text-4xl font-black tracking-[-.045em] text-white sm:text-6xl"
         >
-          Posting manually every day is <span className="text-[#FFD700]">modern slavery.</span>
+          Your business should not depend on you <span className="text-[#FFD700]">remembering every task.</span>
         </motion.h2>
 
         <div className="mt-16 grid gap-4 md:grid-cols-3">
@@ -714,6 +725,220 @@ function ScrollDemo() {
   )
 }
 
+const connectedTools = [
+  { name: 'LinkedIn', detail: 'Native publishing', icon: Linkedin },
+  { name: 'Instagram', detail: 'Content distribution', icon: Instagram },
+  { name: 'Facebook', detail: 'Page publishing', icon: Globe2 },
+  { name: 'X', detail: 'Posts and threads', icon: Twitter },
+  { name: 'Gmail', detail: 'Inbox workflows', icon: Mail },
+  { name: 'Google Docs', detail: 'Documents and briefs', icon: FileText },
+  { name: 'WhatsApp', detail: 'Customer messaging', icon: MessageCircle },
+  { name: 'Calendar', detail: 'Time-based execution', icon: CalendarClock },
+]
+
+function IntegrationsStrip() {
+  return (
+    <section className="border-y border-white/10 bg-[#070709] px-4 py-20 sm:px-6">
+      <div className="mx-auto max-w-7xl">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[.22em] text-[#FFD700]">One command centre</p>
+            <h2 className="mt-4 max-w-3xl text-4xl font-black tracking-[-.045em] text-white sm:text-6xl">
+              Your tools finally work like one team.
+            </h2>
+          </div>
+          <p className="max-w-md text-base leading-7 text-white/50">
+            Connect the services you already use. Alpha plans the work, waits for approval, executes through the connected provider, and records what happened.
+          </p>
+        </div>
+
+        <div className="mt-12 grid grid-cols-2 gap-3 md:grid-cols-4">
+          {connectedTools.map(({ name, detail, icon: Icon }, index) => (
+            <motion.article
+              key={name}
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: index * 0.05 }}
+              className="group min-h-36 rounded-2xl border border-white/10 bg-white/[.025] p-5 transition hover:-translate-y-1 hover:border-[#FFD700]/35 hover:bg-white/[.045]"
+            >
+              <Icon className="text-[#FFD700]" size={23} strokeWidth={1.7} />
+              <h3 className="mt-6 text-base font-black text-white sm:text-lg">{name}</h3>
+              <p className="mt-1 text-xs leading-5 text-white/40">{detail}</p>
+            </motion.article>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function UseCases() {
+  const cases = [
+    {
+      eyebrow: 'For founders',
+      title: 'Turn one business goal into a complete content operation.',
+      copy: 'Describe the outcome once. Alpha gathers only the missing details, prepares the campaign, calculates the work, and keeps every post visible before approval.',
+      metric: 'Plan → review → publish',
+    },
+    {
+      eyebrow: 'For creators',
+      title: 'Stay present without living inside every platform.',
+      copy: 'Generate platform-aware content, match media, schedule at the right time, and retain a history of what was actually published.',
+      metric: 'One workspace',
+    },
+    {
+      eyebrow: 'For small teams',
+      title: 'Give repeatable work an owner that never forgets.',
+      copy: 'Connect communication and productivity tools so recurring jobs move from request to confirmed execution without another spreadsheet of reminders.',
+      metric: 'Always accountable',
+    },
+  ]
+
+  return (
+    <section className="bg-black px-4 py-24 sm:px-6 lg:py-36">
+      <div className="mx-auto max-w-7xl">
+        <div className="max-w-4xl">
+          <p className="text-xs font-black uppercase tracking-[.22em] text-[#FFD700]">Built around outcomes</p>
+          <h2 className="mt-5 text-4xl font-black tracking-[-.05em] text-white sm:text-6xl lg:text-7xl">
+            Less software to operate. More work completed.
+          </h2>
+        </div>
+
+        <div className="mt-14 grid gap-5 lg:grid-cols-3">
+          {cases.map((item, index) => (
+            <motion.article
+              key={item.eyebrow}
+              initial={{ opacity: 0, y: 28 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: index * 0.1, duration: 0.65, ease }}
+              className="flex min-h-[410px] flex-col rounded-[30px] border border-white/10 bg-gradient-to-b from-white/[.055] to-white/[.018] p-7 sm:p-8"
+            >
+              <p className="text-xs font-black uppercase tracking-[.18em] text-[#FFD700]">{item.eyebrow}</p>
+              <h3 className="mt-8 text-3xl font-black leading-tight tracking-[-.035em] text-white">{item.title}</h3>
+              <p className="mt-5 leading-7 text-white/45">{item.copy}</p>
+              <div className="mt-auto border-t border-white/10 pt-6 text-sm font-black text-white">{item.metric}</div>
+            </motion.article>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function TrustSection() {
+  const safeguards = [
+    ['You approve the work', 'Alpha prepares and previews the final output before a publish action runs.', ShieldCheck],
+    ['Success must be confirmed', 'A provider response and post identifier—not a loading spinner—determine success.', CircleCheckBig],
+    ['Failures are not charged', 'Credits are deducted only after the connected platform confirms execution.', LockKeyhole],
+  ]
+
+  return (
+    <section className="relative overflow-hidden bg-[#070709] px-4 py-24 sm:px-6 lg:py-36">
+      <div className="pointer-events-none absolute left-1/2 top-1/2 size-[700px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#6B21A8]/15 blur-[150px]" />
+      <div className="relative mx-auto grid max-w-7xl gap-12 lg:grid-cols-[.8fr_1.2fr] lg:items-center">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[.22em] text-[#FFD700]">Control is the feature</p>
+          <h2 className="mt-5 text-4xl font-black tracking-[-.05em] text-white sm:text-6xl">
+            Automation you can trust with your name.
+          </h2>
+          <p className="mt-6 max-w-xl text-lg leading-8 text-white/50">
+            AlphaTekx is designed around review, explicit approval, durable execution history, and honest provider confirmation.
+          </p>
+        </div>
+
+        <div className="space-y-4">
+          {safeguards.map(([title, copy, Icon], index) => (
+            <motion.article
+              key={title as string}
+              initial={{ opacity: 0, x: 24 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: index * 0.1 }}
+              className="flex gap-5 rounded-3xl border border-white/10 bg-black/60 p-6 sm:p-7"
+            >
+              <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-[#FFD700]/10 text-[#FFD700]">
+                <Icon size={22} />
+              </span>
+              <div>
+                <h3 className="text-xl font-black text-white">{title as string}</h3>
+                <p className="mt-2 leading-7 text-white/45">{copy as string}</p>
+              </div>
+            </motion.article>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function Comparison() {
+  const rows = [
+    ['Describe the outcome in natural language', true, false],
+    ['Ask only for missing information', true, false],
+    ['Review before execution', true, true],
+    ['Confirmed execution history', true, false],
+    ['One accountable AI workspace', true, false],
+  ]
+
+  return (
+    <section className="bg-black px-4 py-24 sm:px-6 lg:py-36">
+      <div className="mx-auto max-w-6xl">
+        <div className="text-center">
+          <p className="text-xs font-black uppercase tracking-[.22em] text-[#FFD700]">A different operating model</p>
+          <h2 className="mt-5 text-4xl font-black tracking-[-.05em] text-white sm:text-6xl">Not another scheduler with AI added.</h2>
+          <p className="mx-auto mt-5 max-w-2xl leading-7 text-white/45">Traditional tools give you more workflows to configure. Alpha begins with the result you want.</p>
+        </div>
+
+        <div className="mt-12 overflow-hidden rounded-[28px] border border-white/10 bg-[#09090C]">
+          <div className="grid grid-cols-[1fr_90px_90px] border-b border-white/10 px-4 py-4 text-[10px] font-black uppercase tracking-wider text-white/40 sm:grid-cols-[1fr_160px_160px] sm:px-7">
+            <span>Capability</span><span className="text-center text-[#FFD700]">AlphaTekx</span><span className="text-center">Typical tool</span>
+          </div>
+          {rows.map(([label, alpha, typical]) => (
+            <div key={label as string} className="grid min-h-16 grid-cols-[1fr_90px_90px] items-center border-b border-white/[.06] px-4 last:border-0 sm:grid-cols-[1fr_160px_160px] sm:px-7">
+              <span className="pr-3 text-sm font-semibold text-white/70 sm:text-base">{label as string}</span>
+              <span className="mx-auto grid size-7 place-items-center rounded-full bg-emerald-400/10 text-emerald-300"><Check size={15} /></span>
+              <span className="mx-auto text-sm text-white/30">{typical ? 'Available' : 'Manual'}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function FAQ() {
+  const items = [
+    ['What is an AI employee?', 'An AI employee is software that can understand an outcome, gather missing details, prepare work, use connected tools, and report the result—not merely answer a question.'],
+    ['Does Alpha publish without permission?', 'No. Publishing workflows are designed to show the prepared work and require explicit approval before execution.'],
+    ['What happens if a platform fails?', 'The run records an honest failure. Alpha does not mark the job successful or charge execution credits without provider confirmation.'],
+    ['Can I connect the tools I already use?', 'Yes. AlphaTekx supports native and securely managed connections across social, communication, and productivity tools, subject to each provider’s permissions.'],
+    ['Do I need to build complicated workflows?', 'No. Start with the result you want. Alpha asks for the missing decisions and turns them into a reviewable plan.'],
+  ]
+
+  return (
+    <section className="bg-[#070709] px-4 py-24 sm:px-6 lg:py-36">
+      <div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-[.7fr_1.3fr]">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[.22em] text-[#FFD700]">Questions, answered</p>
+          <h2 className="mt-5 text-4xl font-black tracking-[-.05em] text-white sm:text-6xl">Know what happens before Alpha works.</h2>
+        </div>
+        <div className="divide-y divide-white/10 border-y border-white/10">
+          {items.map(([question, answer]) => (
+            <details key={question} className="group py-6">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-5 text-lg font-black text-white sm:text-xl">
+                {question}<span className="grid size-8 shrink-0 place-items-center rounded-full border border-white/10 text-[#FFD700] transition group-open:rotate-45">+</span>
+              </summary>
+              <p className="max-w-2xl pt-4 leading-7 text-white/45">{answer}</p>
+            </details>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function Pricing() {
   const { user } = useAuth()
   const [yearly, setYearly] = useState(true)
@@ -908,10 +1133,15 @@ export default function Landing() {
       <Header />
       <main className="overflow-hidden">
         <Hero />
+        <IntegrationsStrip />
         <Problem />
+        <UseCases />
         <HowItWorks />
         <ScrollDemo />
+        <TrustSection />
+        <Comparison />
         <Pricing />
+        <FAQ />
         <FinalCTA />
       </main>
       <Footer />
