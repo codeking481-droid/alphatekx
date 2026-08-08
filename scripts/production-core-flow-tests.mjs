@@ -11,6 +11,20 @@ async function test(name, fn) {
 }
 const read = path => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 
+await test('Verified Paystack purchases use durable atomic settlement instead of ephemeral pending state', () => {
+  const billing = read('server/billing.mjs')
+  assert.match(billing, /rpc\/complete_credit_purchase/)
+  assert.match(billing, /Payment amount or currency does not match the selected AlphaTekx product/)
+  assert.doesNotMatch(billing, /if \(!pendingRecord\) return \{ ok: false, reference, message: 'Payment reference was not initialized by AlphaTekx'/)
+})
+
+await test('Alpha queued state is presented as a friendly green progress notification', () => {
+  const agents = read('src/pages/Agents.tsx')
+  assert.match(agents, /noticeClasses/)
+  assert.match(agents, /bg-emerald-400/)
+  assert.match(agents, /aria-live="polite"/)
+})
+
 await test('Paystack empty response reports the operation without JSON parser leakage', async () => {
   await assert.rejects(() => parsePaystackResponse(new Response('', { status: 502 }), 'checkout initialization'), /empty response during checkout initialization/i)
 })

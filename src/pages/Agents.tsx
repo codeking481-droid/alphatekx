@@ -44,6 +44,13 @@ const socialConnections = [
   { id: 'googlesheets', name: 'Google Sheets', icon: 'sheets' },
 ] as const
 
+function noticeClasses(notice: string) {
+  const isProgress = /\b(queued|reviewing|continuing|processing|thinking|working|preparing)\b/i.test(notice)
+  return isProgress
+    ? 'border-emerald-400/30 bg-emerald-400/[0.08] text-emerald-100 shadow-[0_10px_30px_rgba(16,185,129,0.08)]'
+    : 'border-red-500/30 bg-red-500/[0.04] text-red-200'
+}
+
 function readStored<T>(key: string): T | null {
   try { const value = sessionStorage.getItem(key); return value ? JSON.parse(value) as T : null } catch { return null }
 }
@@ -335,7 +342,7 @@ export default function Agents() {
           )}
         </div>
         {needsConnection && <div className="mx-4 mb-3 rounded-xl border border-[#F5C518]/30 bg-[#F5C518]/[0.04] p-4 text-sm sm:mx-6"><p className="text-white">{needsConnection} needs to be connected before Alpha can publish.</p><Link to={`/connected-apps?platform=${encodeURIComponent(needsConnection)}&returnTo=${encodeURIComponent(`/automations?resume=${conversation?.id || ''}`)}`} className="mt-3 inline-flex min-h-10 items-center rounded-lg bg-white px-4 text-xs font-semibold text-[#0B0B0C]">Connect {needsConnection}</Link></div>}
-        {notice && <div role="alert" className="mx-4 mb-3 flex items-start justify-between gap-3 rounded-xl border border-red-500/30 bg-red-500/[0.04] p-3 text-sm text-red-200 sm:mx-6"><span>{notice}</span><button onClick={() => setNotice('')} aria-label="Dismiss error"><X size={16}/></button></div>}
+        {notice && <div role="status" aria-live="polite" className={`mx-4 mb-3 flex items-center justify-between gap-3 rounded-xl border p-3 text-sm font-semibold sm:mx-6 ${noticeClasses(notice)}`}><span className="flex items-center gap-2">{/\b(queued|reviewing|continuing|processing|thinking|working|preparing)\b/i.test(notice) && <span className="size-2 shrink-0 animate-pulse rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,.9)]"/>}{notice}</span><button onClick={() => setNotice('')} aria-label="Dismiss notification"><X size={16}/></button></div>}
         <div className="shrink-0 border-t border-white/5 bg-[#111214] px-3 pb-3 pt-3 sm:px-6 sm:pb-5">
           <label htmlFor="automation-request" className="sr-only">{conversation ? 'Answer Alpha' : 'Message Alpha'}</label>
           <div className="mx-auto flex max-w-3xl items-center gap-2 rounded-[1.8rem] bg-[#16171C] p-3 shadow-[0_10px_30px_rgba(0,0,0,0.4)]">
@@ -456,7 +463,7 @@ function GuidedCommandCentre({ platform, creating, notice, onComplete, onBack }:
               </div>
               <div><p className="text-xs font-black uppercase tracking-[.16em] text-violet-300">Two sample directions</p><div className="mt-3 space-y-3">{sampleCaptions.map((caption, index) => <div key={caption} className="rounded-xl border border-violet-400/20 bg-violet-500/10 p-4 shadow-sm"><p className="text-xs font-black text-violet-400">SAMPLE {index + 1}</p><p className="mt-2 text-sm font-semibold leading-6 text-slate-400">{caption}</p></div>)}</div><p className="mt-3 text-xs font-bold text-slate-400">Alpha checks the last 10 posts before generating each live caption.</p></div>
             </div>
-            {notice && <p className="mx-6 mb-4 rounded-xl border border-rose-200 bg-rose-500/10 p-3 text-sm font-bold text-rose-300 sm:mx-9">{notice}</p>}
+            {notice && <p role="status" aria-live="polite" className={`mx-6 mb-4 rounded-xl border p-3 text-sm font-bold sm:mx-9 ${noticeClasses(notice)}`}>{notice}</p>}
             <div className="flex flex-col gap-3 border-t border-violet-400/20 bg-blue-500/10 p-6 sm:flex-row sm:justify-end sm:p-7"><button onClick={() => { setStep(0); setEditing(!editing) }} className="inline-flex min-h-13 items-center justify-center gap-2 rounded-xl border-2 border-violet-400/20 bg-violet-500/10 px-6 font-black text-white"><Edit3 size={17}/>Edit</button><button onClick={approve} disabled={creating} className="inline-flex min-h-13 items-center justify-center gap-2 rounded-xl bg-[#6D28D9] px-7 font-black text-white shadow-[0_14px_32px_rgba(109,40,217,.28)] disabled:opacity-50">{creating ? <LoaderCircle className="animate-spin" size={18}/> : <><CalendarDays size={18}/>Approve & Schedule</>}</button></div>
           </section>
         )}
