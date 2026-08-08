@@ -13,11 +13,26 @@ import {
   ArrowRight,
   BarChart3,
   BrainCircuit,
+  CalendarClock,
   Check,
   ChevronRight,
+  CircleCheckBig,
+  FileText,
+  Gauge,
+  Globe2,
+  History,
+  Instagram,
+  Linkedin,
+  LockKeyhole,
+  Mail,
   Menu,
+  MessageCircle,
+  Play,
   Rocket,
+  ShieldCheck,
   Sparkles,
+  Twitter,
+  WandSparkles,
   X,
   Zap,
 } from 'lucide-react'
@@ -56,9 +71,11 @@ function Header() {
   const { user } = useAuth()
   const [open, setOpen] = useState(false)
   const links = [
+    ['Product', '#product'],
     ['How it works', '#how-it-works'],
-    ['Demo', '#demo'],
+    ['Use cases', '#use-cases'],
     ['Pricing', '#pricing'],
+    ['FAQ', '#faq'],
   ]
 
   return (
@@ -300,7 +317,7 @@ function Hero() {
             Your AI employee is ready
           </motion.div>
 
-          <h1 className="mt-7 font-['Space_Grotesk',Inter,sans-serif] text-[44px] font-black leading-[.96] tracking-[-.055em] text-white sm:text-6xl lg:text-[76px]">
+          <h1 className="mt-7 font-['Space_Grotesk',Inter,sans-serif] text-[52px] font-black leading-[.94] tracking-[-.06em] text-white sm:text-7xl lg:text-[88px] xl:text-[96px]">
             <WordReveal text="Your Second You" />
             <br />
             <span className="bg-gradient-to-r from-[#FFD700] via-[#FFC300] to-[#8B3FC7] bg-clip-text text-transparent">
@@ -312,7 +329,7 @@ function Hero() {
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.75 }}
-            className="mx-auto mt-7 max-w-xl text-base font-medium leading-7 text-white/55 sm:text-lg lg:mx-0"
+            className="mx-auto mt-7 max-w-2xl text-lg font-medium leading-8 text-white/60 sm:text-xl lg:mx-0"
           >
             AI creates, posts, and grows your socials — while you live your real life.
           </motion.p>
@@ -370,9 +387,9 @@ function Hero() {
 
 function Problem() {
   const cards = [
-    ['Burnout', 'Your attention was not designed to be a publishing queue.'],
-    ['Inconsistency', 'Growth dies when life interrupts the content calendar.'],
-    ['Zero Growth', 'Manual posting keeps you busy, not compounding.'],
+    ['Too much busywork', 'Your attention was not designed to become a publishing queue.'],
+    ['Broken consistency', 'Growth stalls whenever client work, life, or a full calendar interrupts posting.'],
+    ['No operating system', 'Separate writing, scheduling, publishing, and reporting tools create more work—not leverage.'],
   ]
 
   return (
@@ -384,7 +401,7 @@ function Problem() {
           viewport={{ once: true }}
           className="mx-auto max-w-4xl text-center font-['Space_Grotesk',Inter,sans-serif] text-4xl font-black tracking-[-.045em] text-white sm:text-6xl"
         >
-          Posting manually every day is <span className="text-[#FFD700]">modern slavery.</span>
+          Your business should not depend on you <span className="text-[#FFD700]">remembering every task.</span>
         </motion.h2>
 
         <div className="mt-16 grid gap-4 md:grid-cols-3">
@@ -714,6 +731,365 @@ function ScrollDemo() {
   )
 }
 
+const connectedTools = [
+  { name: 'LinkedIn', detail: 'Native publishing', icon: Linkedin },
+  { name: 'Instagram', detail: 'Content distribution', icon: Instagram },
+  { name: 'Facebook', detail: 'Page publishing', icon: Globe2 },
+  { name: 'X', detail: 'Posts and threads', icon: Twitter },
+  { name: 'Gmail', detail: 'Inbox workflows', icon: Mail },
+  { name: 'Google Docs', detail: 'Documents and briefs', icon: FileText },
+  { name: 'WhatsApp', detail: 'Customer messaging', icon: MessageCircle },
+  { name: 'Calendar', detail: 'Time-based execution', icon: CalendarClock },
+]
+
+const outcomeExamples = [
+  {
+    label: 'Launch a campaign',
+    prompt: 'Create a one-week launch campaign for my new service across LinkedIn, Facebook and Instagram.',
+    result: '21 tailored posts · 7-day calendar · review required',
+  },
+  {
+    label: 'Run my inbox',
+    prompt: 'Every morning, summarize urgent customer emails and prepare replies for my approval.',
+    result: 'Daily inbox brief · priority routing · replies in draft',
+  },
+  {
+    label: 'Organize operations',
+    prompt: 'Record new orders in Google Sheets and send my team a clear daily update.',
+    result: 'Order capture · sheet update · team notification',
+  },
+]
+
+function InteractiveOutcomeDemo() {
+  const [active, setActive] = useState(0)
+  const example = outcomeExamples[active]
+  const steps = [
+    ['Understands', 'The outcome, audience, platforms, and missing decisions'],
+    ['Prepares', 'The work, schedule, media, and exact credit cost'],
+    ['Waits', 'Nothing executes until the final plan is approved'],
+    ['Confirms', 'Provider IDs and history prove what actually happened'],
+  ]
+
+  return (
+    <section id="product" className="relative overflow-hidden bg-black px-4 py-24 sm:px-6 lg:py-36">
+      <div className="pointer-events-none absolute right-0 top-1/3 size-[520px] rounded-full bg-[#6B21A8]/20 blur-[140px]" />
+      <div className="relative mx-auto max-w-7xl">
+        <div className="mx-auto max-w-4xl text-center">
+          <p className="text-xs font-black uppercase tracking-[.22em] text-[#FFD700]">Try the thinking model</p>
+          <h2 className="mt-5 text-4xl font-black tracking-[-.05em] text-white sm:text-6xl lg:text-7xl">
+            Start with a result, not a workflow diagram.
+          </h2>
+          <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-white/50">
+            Alpha translates everyday language into controlled, reviewable work across your connected tools.
+          </p>
+        </div>
+
+        <div className="mt-12 grid overflow-hidden rounded-[32px] border border-white/10 bg-[#09090C] shadow-[0_40px_120px_rgba(107,33,168,.18)] lg:grid-cols-[.9fr_1.1fr]">
+          <div className="border-b border-white/10 p-5 sm:p-8 lg:border-b-0 lg:border-r">
+            <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[.18em] text-white/35">
+              <WandSparkles size={15} className="text-[#FFD700]" /> Tell Alpha what success looks like
+            </div>
+            <div className="mt-5 min-h-44 rounded-2xl border border-white/10 bg-black p-5 text-lg font-semibold leading-8 text-white sm:text-xl">
+              {example.prompt}
+              <span className="ml-1 inline-block h-5 w-0.5 animate-pulse bg-[#FFD700] align-middle" />
+            </div>
+            <div className="mt-4 flex snap-x gap-2 overflow-x-auto pb-2">
+              {outcomeExamples.map((item, index) => (
+                <button
+                  key={item.label}
+                  type="button"
+                  onClick={() => setActive(index)}
+                  className={`min-h-11 shrink-0 snap-start rounded-full px-4 text-xs font-black transition ${index === active ? 'bg-[#FFD700] text-black' : 'border border-white/10 bg-white/[.035] text-white/55 hover:text-white'}`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            <div className="mt-4 flex items-center justify-between gap-4 rounded-2xl border border-[#FFD700]/20 bg-[#FFD700]/[.055] p-4">
+              <div><p className="text-[10px] font-black uppercase tracking-wider text-[#FFD700]">Prepared outcome</p><p className="mt-1 text-sm font-bold text-white/70">{example.result}</p></div>
+              <Play size={20} className="shrink-0 text-[#FFD700]" fill="currentColor" />
+            </div>
+          </div>
+
+          <div className="p-5 sm:p-8">
+            <p className="text-[10px] font-black uppercase tracking-[.18em] text-white/35">What happens next</p>
+            <div className="mt-5 space-y-3">
+              {steps.map(([title, copy], index) => (
+                <motion.div
+                  key={title}
+                  initial={{ opacity: 0, x: 14 }}
+                  whileInView={{ opacity: 1, x: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: index * 0.08 }}
+                  className="flex gap-4 rounded-2xl border border-white/[.07] bg-white/[.025] p-4 sm:p-5"
+                >
+                  <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#6B21A8]/25 text-xs font-black text-[#FFD700]">0{index + 1}</span>
+                  <div><h3 className="font-black text-white">{title}</h3><p className="mt-1 text-sm leading-6 text-white/40">{copy}</p></div>
+                </motion.div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function IntegrationsStrip() {
+  return (
+    <section className="border-y border-white/10 bg-[#070709] px-4 py-20 sm:px-6">
+      <div className="mx-auto max-w-7xl">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[.22em] text-[#FFD700]">One command centre</p>
+            <h2 className="mt-4 max-w-3xl text-4xl font-black tracking-[-.045em] text-white sm:text-6xl">
+              Your tools finally work like one team.
+            </h2>
+          </div>
+          <p className="max-w-md text-base leading-7 text-white/50">
+            Connect the services you already use. Alpha plans the work, waits for approval, executes through the connected provider, and records what happened.
+          </p>
+        </div>
+
+        <div className="mt-12 grid grid-cols-2 gap-3 md:grid-cols-4">
+          {connectedTools.map(({ name, detail, icon: Icon }, index) => (
+            <motion.article
+              key={name}
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: index * 0.05 }}
+              className="group min-h-36 rounded-2xl border border-white/10 bg-white/[.025] p-5 transition hover:-translate-y-1 hover:border-[#FFD700]/35 hover:bg-white/[.045]"
+            >
+              <Icon className="text-[#FFD700]" size={23} strokeWidth={1.7} />
+              <h3 className="mt-6 text-base font-black text-white sm:text-lg">{name}</h3>
+              <p className="mt-1 text-xs leading-5 text-white/40">{detail}</p>
+            </motion.article>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function UseCases() {
+  const cases = [
+    {
+      eyebrow: 'For founders',
+      title: 'Turn one business goal into a complete content operation.',
+      copy: 'Describe the outcome once. Alpha gathers only the missing details, prepares the campaign, calculates the work, and keeps every post visible before approval.',
+      metric: 'Plan → review → publish',
+    },
+    {
+      eyebrow: 'For creators',
+      title: 'Stay present without living inside every platform.',
+      copy: 'Generate platform-aware content, match media, schedule at the right time, and retain a history of what was actually published.',
+      metric: 'One workspace',
+    },
+    {
+      eyebrow: 'For small teams',
+      title: 'Give repeatable work an owner that never forgets.',
+      copy: 'Connect communication and productivity tools so recurring jobs move from request to confirmed execution without another spreadsheet of reminders.',
+      metric: 'Always accountable',
+    },
+  ]
+
+  return (
+    <section id="use-cases" className="bg-black px-4 py-24 sm:px-6 lg:py-36">
+      <div className="mx-auto max-w-7xl">
+        <div className="max-w-4xl">
+          <p className="text-xs font-black uppercase tracking-[.22em] text-[#FFD700]">Built around outcomes</p>
+          <h2 className="mt-5 text-4xl font-black tracking-[-.05em] text-white sm:text-6xl lg:text-7xl">
+            Less software to operate. More work completed.
+          </h2>
+        </div>
+
+        <div className="mt-14 grid gap-5 lg:grid-cols-3">
+          {cases.map((item, index) => (
+            <motion.article
+              key={item.eyebrow}
+              initial={{ opacity: 0, y: 28 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: index * 0.1, duration: 0.65, ease }}
+              className="flex min-h-[410px] flex-col rounded-[30px] border border-white/10 bg-gradient-to-b from-white/[.055] to-white/[.018] p-7 sm:p-8"
+            >
+              <p className="text-xs font-black uppercase tracking-[.18em] text-[#FFD700]">{item.eyebrow}</p>
+              <h3 className="mt-8 text-3xl font-black leading-tight tracking-[-.035em] text-white">{item.title}</h3>
+              <p className="mt-5 leading-7 text-white/45">{item.copy}</p>
+              <div className="mt-auto border-t border-white/10 pt-6 text-sm font-black text-white">{item.metric}</div>
+            </motion.article>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function TrustSection() {
+  const safeguards = [
+    ['You approve the work', 'Alpha prepares and previews the final output before a publish action runs.', ShieldCheck],
+    ['Success must be confirmed', 'A provider response and post identifier—not a loading spinner—determine success.', CircleCheckBig],
+    ['Failures are not charged', 'Credits are deducted only after the connected platform confirms execution.', LockKeyhole],
+  ]
+
+  return (
+    <section className="relative overflow-hidden bg-[#070709] px-4 py-24 sm:px-6 lg:py-36">
+      <div className="pointer-events-none absolute left-1/2 top-1/2 size-[700px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#6B21A8]/15 blur-[150px]" />
+      <div className="relative mx-auto grid max-w-7xl gap-12 lg:grid-cols-[.8fr_1.2fr] lg:items-center">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[.22em] text-[#FFD700]">Control is the feature</p>
+          <h2 className="mt-5 text-4xl font-black tracking-[-.05em] text-white sm:text-6xl">
+            Automation you can trust with your name.
+          </h2>
+          <p className="mt-6 max-w-xl text-lg leading-8 text-white/50">
+            AlphaTekx is designed around review, explicit approval, durable execution history, and honest provider confirmation.
+          </p>
+        </div>
+
+        <div className="space-y-4">
+          {safeguards.map(([title, copy, Icon], index) => (
+            <motion.article
+              key={title as string}
+              initial={{ opacity: 0, x: 24 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: index * 0.1 }}
+              className="flex gap-5 rounded-3xl border border-white/10 bg-black/60 p-6 sm:p-7"
+            >
+              <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-[#FFD700]/10 text-[#FFD700]">
+                <Icon size={22} />
+              </span>
+              <div>
+                <h3 className="text-xl font-black text-white">{title as string}</h3>
+                <p className="mt-2 leading-7 text-white/45">{copy as string}</p>
+              </div>
+            </motion.article>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function ExecutionProof() {
+  const proof = [
+    { icon: Gauge, title: 'Live progress', copy: 'See what is waiting, running, confirmed, or needs attention without guessing.' },
+    { icon: History, title: 'Durable history', copy: 'Every completed action keeps its platform, timestamp, content, result, and provider reference.' },
+    { icon: ShieldCheck, title: 'Exactly-once charging', copy: 'Idempotency protects duplicate execution and credits follow confirmed outcomes.' },
+  ]
+
+  return (
+    <section className="border-y border-white/10 bg-black px-4 py-24 sm:px-6 lg:py-36">
+      <div className="mx-auto max-w-7xl">
+        <div className="grid gap-12 lg:grid-cols-2 lg:items-center">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[.22em] text-[#FFD700]">Proof, not promises</p>
+            <h2 className="mt-5 text-4xl font-black tracking-[-.05em] text-white sm:text-6xl">Watch the work move from request to result.</h2>
+            <p className="mt-6 max-w-xl text-lg leading-8 text-white/50">A serious AI employee needs an audit trail. Alpha keeps execution visible instead of hiding it behind a cheerful success message.</p>
+            <div className="mt-9 space-y-3">
+              {proof.map(({ icon: Icon, title, copy }) => (
+                <div key={title} className="flex gap-4 rounded-2xl border border-white/[.07] p-5">
+                  <Icon className="mt-0.5 shrink-0 text-[#FFD700]" size={21} />
+                  <div><h3 className="font-black text-white">{title}</h3><p className="mt-1 text-sm leading-6 text-white/40">{copy}</p></div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-[30px] border border-white/10 bg-[#09090C] p-4 shadow-[0_35px_100px_rgba(255,215,0,.07)] sm:p-6">
+            <div className="flex items-center justify-between border-b border-white/10 pb-4">
+              <div><p className="text-sm font-black text-white">Campaign execution</p><p className="text-xs text-white/35">AlphaTekx launch · today</p></div>
+              <span className="flex items-center gap-2 rounded-full bg-emerald-400/10 px-3 py-1.5 text-[10px] font-black text-emerald-300"><i className="size-2 animate-pulse rounded-full bg-emerald-400" /> LIVE</span>
+            </div>
+            <div className="mt-5 space-y-3">
+              {[
+                ['Content prepared', 'Reviewed', '09:02'],
+                ['Approval received', 'Confirmed', '09:06'],
+                ['LinkedIn publication', 'Post ID saved', '09:07'],
+                ['Execution history', 'Written', '09:07'],
+              ].map(([title, status, time], index) => (
+                <div key={title} className="grid grid-cols-[36px_1fr_auto] items-center gap-3 rounded-2xl bg-white/[.03] p-4">
+                  <span className="grid size-9 place-items-center rounded-full bg-emerald-400/10 text-emerald-300"><Check size={16} /></span>
+                  <div><p className="text-sm font-black text-white">{title}</p><p className="text-xs text-white/35">{status}</p></div>
+                  <span className="font-mono text-[10px] text-white/30">{time}</span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 rounded-2xl border border-[#FFD700]/20 bg-[#FFD700]/[.05] p-4 text-sm font-bold text-white/70">1 confirmed result · 1 credit charged · 0 duplicates</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function Comparison() {
+  const rows = [
+    ['Describe the outcome in natural language', true, false],
+    ['Ask only for missing information', true, false],
+    ['Review before execution', true, true],
+    ['Confirmed execution history', true, false],
+    ['One accountable AI workspace', true, false],
+  ]
+
+  return (
+    <section className="bg-black px-4 py-24 sm:px-6 lg:py-36">
+      <div className="mx-auto max-w-6xl">
+        <div className="text-center">
+          <p className="text-xs font-black uppercase tracking-[.22em] text-[#FFD700]">A different operating model</p>
+          <h2 className="mt-5 text-4xl font-black tracking-[-.05em] text-white sm:text-6xl">Not another scheduler with AI added.</h2>
+          <p className="mx-auto mt-5 max-w-2xl leading-7 text-white/45">Traditional tools give you more workflows to configure. Alpha begins with the result you want.</p>
+        </div>
+
+        <div className="mt-12 overflow-hidden rounded-[28px] border border-white/10 bg-[#09090C]">
+          <div className="grid grid-cols-[1fr_90px_90px] border-b border-white/10 px-4 py-4 text-[10px] font-black uppercase tracking-wider text-white/40 sm:grid-cols-[1fr_160px_160px] sm:px-7">
+            <span>Capability</span><span className="text-center text-[#FFD700]">AlphaTekx</span><span className="text-center">Typical tool</span>
+          </div>
+          {rows.map(([label, alpha, typical]) => (
+            <div key={label as string} className="grid min-h-16 grid-cols-[1fr_90px_90px] items-center border-b border-white/[.06] px-4 last:border-0 sm:grid-cols-[1fr_160px_160px] sm:px-7">
+              <span className="pr-3 text-sm font-semibold text-white/70 sm:text-base">{label as string}</span>
+              <span className="mx-auto grid size-7 place-items-center rounded-full bg-emerald-400/10 text-emerald-300"><Check size={15} /></span>
+              <span className="mx-auto text-sm text-white/30">{typical ? 'Available' : 'Manual'}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function FAQ() {
+  const items = [
+    ['What is an AI employee?', 'An AI employee is software that can understand an outcome, gather missing details, prepare work, use connected tools, and report the result—not merely answer a question.'],
+    ['Does Alpha publish without permission?', 'No. Publishing workflows are designed to show the prepared work and require explicit approval before execution.'],
+    ['What happens if a platform fails?', 'The run records an honest failure. Alpha does not mark the job successful or charge execution credits without provider confirmation.'],
+    ['Can I connect the tools I already use?', 'Yes. AlphaTekx supports native and securely managed connections across social, communication, and productivity tools, subject to each provider’s permissions.'],
+    ['Do I need to build complicated workflows?', 'No. Start with the result you want. Alpha asks for the missing decisions and turns them into a reviewable plan.'],
+  ]
+
+  return (
+    <section id="faq" className="bg-[#070709] px-4 py-24 sm:px-6 lg:py-36">
+      <div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-[.7fr_1.3fr]">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[.22em] text-[#FFD700]">Questions, answered</p>
+          <h2 className="mt-5 text-4xl font-black tracking-[-.05em] text-white sm:text-6xl">Know what happens before Alpha works.</h2>
+        </div>
+        <div className="divide-y divide-white/10 border-y border-white/10">
+          {items.map(([question, answer]) => (
+            <details key={question} className="group py-6">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-5 text-lg font-black text-white sm:text-xl">
+                {question}<span className="grid size-8 shrink-0 place-items-center rounded-full border border-white/10 text-[#FFD700] transition group-open:rotate-45">+</span>
+              </summary>
+              <p className="max-w-2xl pt-4 leading-7 text-white/45">{answer}</p>
+            </details>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function Pricing() {
   const { user } = useAuth()
   const [yearly, setYearly] = useState(true)
@@ -908,10 +1284,17 @@ export default function Landing() {
       <Header />
       <main className="overflow-hidden">
         <Hero />
+        <IntegrationsStrip />
+        <InteractiveOutcomeDemo />
         <Problem />
+        <UseCases />
         <HowItWorks />
         <ScrollDemo />
+        <TrustSection />
+        <ExecutionProof />
+        <Comparison />
         <Pricing />
+        <FAQ />
         <FinalCTA />
       </main>
       <Footer />
