@@ -7978,7 +7978,8 @@ const server = http.createServer(async (req, res) => {
       if (!user) return json(res, 401, { error: 'Authentication required' })
       const result = await alphaConnector.getConnectedApps(user)
       const linkedin = await linkedInConnectedAppStatus(user, config)
-      result.providers = [...(result.providers || []).filter(provider => provider.provider !== 'linkedin'), linkedin]
+      const publicProviders = new Set(['gmail', 'github', 'googledocs', 'googlesheets', 'discord'])
+      result.providers = [linkedin, ...(result.providers || []).filter(provider => publicProviders.has(provider.provider))]
       return json(res, 200, result)
     } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Failed to list connected apps' }) }
   }
@@ -7988,7 +7989,10 @@ const server = http.createServer(async (req, res) => {
       const user = await currentOrLocalUser(req, config.url, config.anon)
       if (!user) return json(res, 401, { error: 'Authentication required' })
       const result = await alphaConnector.getConnectedApps(user)
-      return json(res, 200, { toolkits: result.providers.map(({ provider, name, category, enabled, connected, connectionCount, authMode, status }) => ({ id: provider, name, category, enabled, connected, connectionCount, authMode, status })) })
+      const publicProviders = new Set(['gmail', 'github', 'googledocs', 'googlesheets', 'discord'])
+      return json(res, 200, { toolkits: result.providers
+        .filter(({ provider }) => publicProviders.has(provider))
+        .map(({ provider, name, category, enabled, connected, connectionCount, authMode, status }) => ({ id: provider, name, category, enabled, connected, connectionCount, authMode, status })) })
     } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Could not list toolkits' }) }
   }
   if (req.method === 'POST' && /^\/api\/(tiktok|snapchat)\/auth$/.test(req.url || '')) {
@@ -8006,6 +8010,8 @@ const server = http.createServer(async (req, res) => {
       try { return await startLinkedInConnection(req, res) }
       catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'LinkedIn auth failed' }) }
     }
+    const publicManagedProviders = new Set(['gmail', 'github', 'googledocs', 'googlesheets', 'discord'])
+    if (!publicManagedProviders.has(toolkit)) return json(res, 404, { error: 'This connection is not available.' })
     try {
       const config = supabaseConfig()
       const user = await currentOrLocalUser(req, config.url, config.anon)
@@ -8759,7 +8765,8 @@ const server = http.createServer(async (req, res) => {
   if (req.url === '/api/billing' || req.url === '/api/billing/upgrade') {
     try { return await billingHandler(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Billing failed' }) }
   }
-  if (req.method === 'POST' && (req.url === '/api/paystack/verify' || req.url === '/api/verify-paystack')) return verifyPaystack(req, res)
+  const paymentVerifyPath = new URL(req.url || '/', 'http://localhost').pathname
+  if (['GET', 'POST'].includes(req.method || '') && (paymentVerifyPath === '/api/paystack/verify' || paymentVerifyPath === '/api/verify-paystack')) return verifyPaystack(req, res)
   if (req.method === 'POST' && req.url === '/api/marketplace/purchase') return purchaseMarketplace(req, res)
   if (req.method === 'POST' && req.url === '/api/missions/build') return buildMissionFiles(req, res)
   if (req.method === 'GET' && req.url?.startsWith('/api/projects/check-availability')) {

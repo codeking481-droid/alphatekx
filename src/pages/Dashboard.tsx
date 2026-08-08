@@ -7,7 +7,7 @@ import { getCreations } from '../lib/missionStore'
 import { getJson } from '../lib/apiClient'
 
 export default function Dashboard() {
-  const { user } = useAuth()
+  const { user, session, refreshProfile } = useAuth()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const onboarding = useOnboarding()
@@ -33,7 +33,15 @@ export default function Dashboard() {
 
     setPaymentRef(ref)
     setShowContactBanner(false)
-    void fetch(`/api/paystack/verify?reference=${encodeURIComponent(ref)}`, { headers: { Accept: 'application/json' } })
+    void fetch('/api/paystack/verify', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      },
+      body: JSON.stringify({ reference: ref }),
+    })
       .then(async response => {
         const data = await response.json().catch(() => ({} as Record<string, unknown>))
         if (response.ok && (data.success === true || data.verified === true)) {
@@ -48,6 +56,7 @@ export default function Dashboard() {
             setCelebrationMessage(`Payment successful! ${credited ? `${credited.toLocaleString()} credits` : 'Credits'} were added to your account.`)
           }
           setShowCongrats(true)
+          await refreshProfile()
           try { localStorage.removeItem('alphatekx:pending-payment'); localStorage.removeItem('lastRef') } catch {}
           const next = new URLSearchParams(searchParams)
           next.delete('payment'); next.delete('reference'); next.delete('trxref'); next.delete('ref'); next.delete('credits'); next.delete('plan')
@@ -59,7 +68,7 @@ export default function Dashboard() {
       .catch(() => {
         setShowContactBanner(true)
       })
-  }, [searchParams, setSearchParams])
+  }, [refreshProfile, searchParams, session?.access_token, setSearchParams])
 
   const creations = getCreations().slice(0, 6)
   const emailFirstName = user?.email ? user.email.split('@')[0].split('.')[0].replace(/^./, c => c.toUpperCase()) : 'Builder'

@@ -49,11 +49,19 @@ function clearUserArtifacts() {
 const DEVICE_ID_KEY = 'deviceId'
 const GOOGLE_SIGNUP_PENDING_KEY = 'alphatekx:pending-google-signup'
 const GOOGLE_SIGNUP_PLAN_KEY = 'alphatekx:pending-google-signup-plan'
+const GOOGLE_SIGNUP_PENDING_TTL_MS = 10 * 60 * 1000
 let googleSignupLaunchInFlight = false
 
 export function isGoogleSignupPending() {
   try {
-    return localStorage.getItem(GOOGLE_SIGNUP_PENDING_KEY) === '1'
+    const value = localStorage.getItem(GOOGLE_SIGNUP_PENDING_KEY)
+    if (!value) return false
+    const startedAt = Number(value)
+    if (!Number.isFinite(startedAt) || Date.now() - startedAt > GOOGLE_SIGNUP_PENDING_TTL_MS) {
+      clearGoogleSignupPending()
+      return false
+    }
+    return true
   } catch {
     return false
   }
@@ -81,7 +89,7 @@ export async function instantGoogleSignup(plan?: string) {
   googleSignupLaunchInFlight = true
 
   try {
-    localStorage.setItem(GOOGLE_SIGNUP_PENDING_KEY, '1')
+    localStorage.setItem(GOOGLE_SIGNUP_PENDING_KEY, String(Date.now()))
     if (plan) localStorage.setItem(GOOGLE_SIGNUP_PLAN_KEY, plan)
   } catch {
     // ignore localStorage failures
@@ -110,12 +118,8 @@ export async function instantGoogleSignup(plan?: string) {
     throw new Error('Google did not return a sign-in URL.')
   }
 
-  const popup = window.open(data.url, '_blank', 'width=600,height=700,noopener,noreferrer')
-  if (popup) {
-    popup.focus()
-    return
-  }
-
+  // Complete PKCE in the same tab that created the verifier. A separate tab
+  // can lose that verifier and return "OAuth state not found or expired".
   window.location.assign(data.url)
 }
 

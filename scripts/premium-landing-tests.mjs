@@ -26,9 +26,13 @@ test('landing page provides a complete conversion narrative', () => {
   }
 })
 
-test('integration story covers social and productivity work', () => {
-  for (const tool of ['LinkedIn', 'Instagram', 'Facebook', "name: 'X'", 'Gmail', 'Google Docs', 'WhatsApp', 'Calendar']) {
+test('integration story matches the six public tools', () => {
+  for (const tool of ['LinkedIn', 'Gmail', 'GitHub', 'Google Docs', 'Google Sheets', 'Discord']) {
     assert.ok(landing.includes(tool), `${tool} is missing`)
+  }
+  const integrations = landing.slice(landing.indexOf('const connectedTools'), landing.indexOf('const outcomeExamples'))
+  for (const unavailable of ['Facebook', 'Instagram', 'WhatsApp', "name: 'X'", 'TikTok']) {
+    assert.ok(!integrations.includes(unavailable), `${unavailable} must not be advertised as a public connection`)
   }
 })
 

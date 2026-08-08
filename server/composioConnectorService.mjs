@@ -895,7 +895,8 @@ export async function getConnectionStatus(user, providerId) {
     const accounts = await listUserAccounts(user, config)
 
     if (accounts.items && accounts.items.length > 0) {
-      const account = accounts.items[0]
+      // Reconnects can leave an older inactive account first in the response.
+      const account = accounts.items.find(item => item.status === 'ACTIVE' || item.status === 'CONNECTED') || accounts.items[0]
       const connected = account.status === 'ACTIVE' || account.status === 'CONNECTED'
       return {
         connected,

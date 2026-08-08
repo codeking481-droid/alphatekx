@@ -14,7 +14,8 @@ const tests = [
     assert.doesNotMatch(connectors, /id: 'gmail'[\s\S]{0,180}native: true/)
     assert.match(connectors, /platformId === 'linkedin'/)
     assert.match(server, /linkedInConnectedAppStatus/)
-    assert.match(server, /result\.providers = \[\.\.\.\(result\.providers \|\| \[\]\)\.filter\(provider => provider\.provider !== 'linkedin'\), linkedin\]/)
+    assert.match(server, /const publicProviders = new Set\(\['gmail', 'github', 'googledocs', 'googlesheets', 'discord'\]\)/)
+    assert.match(server, /result\.providers = \[linkedin, \.\.\.\(result\.providers \|\| \[\]\)\.filter\(provider => publicProviders\.has\(provider\.provider\)\)\]/)
     assert.doesNotMatch(connectors, /Promise\.allSettled/)
   }],
   ['Gmail connection and test execution use Composio', () => {
@@ -59,6 +60,7 @@ const tests = [
     assert.match(connectors, /verifiedOAuthDestination/)
     assert.match(connectors, /window\.location\.href = '\/dashboard'/)
     assert.doesNotMatch(connectors, /connectedCacheKey|alphatekx:connected-platforms/)
+    assert.match(server, /const publicManagedProviders = new Set\(\['gmail', 'github', 'googledocs', 'googlesheets', 'discord'\]\)/)
   }],
   ['active Composio account wins over stale disconnected history', () => {
     assert.match(service, /accounts\.items\.find\(item => \['ACTIVE', 'CONNECTED'\]/)
