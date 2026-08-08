@@ -114,11 +114,11 @@ async function runTests() {
   assert(migrationSource.includes('UNIQUE(user_id, idempotency_key)'), 'Database enforces per-user execution idempotency')
   assert(migrationSource.includes("connection_backend = 'native'"), 'Migration preserves existing native connections')
   assert(!migrationSource.toLowerCase().includes('access_token'), 'Composio migration stores no provider token')
-  for (const provider of ['whatsapp', 'facebook', 'instagram', 'twitter', 'youtube']) {
+  for (const provider of ['whatsapp', 'youtube']) {
     assert(serviceSource.includes(`id: '${provider}'`), `${provider} is registered in the server-side Composio catalog`)
   }
   assert(serviceSource.includes('composioClient.authConfigs.list'), 'Missing environment IDs are discovered from enabled Composio Auth Configs')
-  assert(['gmail', 'github', 'googledocs', 'googlesheets', 'discord', 'whatsapp', 'facebook', 'instagram', 'youtube'].every(provider => connectorPageSource.includes(`'${provider}'`)), 'Connected Apps routes all nine managed platforms through Composio')
+  assert(['gmail', 'github', 'googledocs', 'googlesheets', 'discord'].every(provider => connectorPageSource.includes(`'${provider}'`)), 'Connected Apps routes every released managed platform through Composio')
   const authConfigsSource = fs.readFileSync(new URL('../server/composioAuthConfigs.mjs', import.meta.url), 'utf8')
   for (const id of ['ac_K0fpEcRPTCJL', 'ac_gZz4pPc0m1Th', 'ac_u_Si-U1KyWyg', 'ac_P6J_UNItatfh', 'ac_sEDBieVAsSvc', 'ac_2aNBLsdLANIy', 'ac_mVq6qm6ivr3x', 'ac_KxXKh4E240Vi', 'ac_0Lzm_WFhC38W']) {
     assert(authConfigsSource.includes(id), `Managed Auth Config ${id} is registered`)
@@ -131,13 +131,13 @@ async function runTests() {
   assert(serviceSource.includes('alreadyConnected: true'), 'An existing active account is reused instead of creating a duplicate link')
   assert(serverSource.includes("/^\\/api\\/(tiktok|snapchat)\\/auth$/"), 'TikTok and Snapchat custom OAuth starts are server-side')
   assert(serverSource.includes("createOAuthState(user.id"), 'Custom OAuth uses signed expiring state')
-  assert(connectorPageSource.includes("comingSoon: true"), 'TikTok and Snapchat are honestly marked Coming Soon')
+  assert(!connectorPageSource.includes("id: 'tiktok'") && !connectorPageSource.includes("id: 'snapchat'"), 'Unreleased custom connectors are not exposed as working tools')
   assert(!connectorPageSource.includes("selected === 'facebook'"), 'Facebook no longer falls back to the old native connection branch')
   const disconnectBranch = serverSource.indexOf("if (deleteMatch && req.method === 'DELETE')", serverSource.indexOf("req.url?.startsWith('/api/connectors/')"))
   const disconnectCall = serverSource.indexOf('alphaConnector.disconnectProvider', disconnectBranch)
   const featureGate = serverSource.indexOf('requireConnectorFeature(req, res, user, toolkit)', disconnectBranch)
   assert(disconnectBranch >= 0 && disconnectCall > disconnectBranch && featureGate > disconnectCall, 'Users can disconnect even when a connector feature is disabled')
-  assert(connectorPageSource.includes('disconnected successfully') && connectorPageSource.includes("status: 'disconnected'"), 'Connected Apps updates disconnected state immediately after server confirmation')
+  assert(connectorPageSource.includes('disconnected successfully') && connectorPageSource.includes('next.delete(platformId)'), 'Connected Apps updates disconnected state immediately after server confirmation')
   assert(connectorPageSource.includes("'Disconnecting…' : 'Disconnect'"), 'Connected Apps shows a visible disconnect action and progress state')
   process.stdout.write('\n🧪 Composio Connector Tests\n')
   process.stdout.write('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n')

@@ -182,7 +182,7 @@ export default function Agents() {
     const message = String(overrideMessage ?? input).trim()
     if (!message || creating) return
     setCreating(true)
-    setNotice('Queued Alpha planning. This can take a minute.')
+    setNotice(conversation?.id ? 'Alpha is continuing your plan…' : 'Alpha is reviewing your request…')
     setInput('')
     try {
       const action = conversation?.id ? 'continue' : 'start'
@@ -193,6 +193,12 @@ export default function Agents() {
         conversationId: conversation?.id,
       }
       const data = await postJson<Record<string, unknown>>('/api/alpha/jobs', body)
+      if (data.immediate === true || data.conversation) {
+        acceptConversation(data)
+        setCreating(false)
+        setNotice('')
+        return
+      }
       const job = data.job as { jobId: string }
       if (job?.jobId) {
         setJobId(job.jobId)
