@@ -24,6 +24,8 @@
 * { box-sizing: border-box; }
 html {
   scroll-behavior: smooth;
+  overflow-y: auto;
+  overscroll-behavior-y: none;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -38,6 +40,8 @@ html, body, #root {
 }
 body {
   margin: 0;
+  min-height: 100dvh;
+  overflow-y: auto;
   font-family: var(--font-body);
   background: var(--bg);
   color: var(--text);
@@ -45,7 +49,6 @@ body {
   line-height: 1.6;
   font-size: 15px;
 }
-* { transform: translateZ(0); }
 button, input, textarea, select, a { -webkit-tap-highlight-color: transparent; }
 button { cursor: pointer; }
 img { max-width: 100%; display: block; }

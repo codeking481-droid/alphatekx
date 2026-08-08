@@ -1278,7 +1278,7 @@ export default function Landing() {
       <SEO title="AlphaTekX — Your Second You That Never Sleeps" description="AI creates, posts, and grows your socials while you live your real life." />
       <motion.div style={{ scaleX }} className="fixed inset-x-0 top-0 z-[60] h-0.5 origin-left bg-gradient-to-r from-[#6B21A8] to-[#FFD700]" />
       <Header />
-      <main className="overflow-hidden">
+      <main className="overflow-x-clip overflow-y-visible">
         <Hero />
         <IntegrationsStrip />
         <InteractiveOutcomeDemo />
