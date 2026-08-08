@@ -440,6 +440,28 @@ export async function addCredits(user, amount, config, { reference, type = 'purc
   return { ok: true, remaining: total }
 }
 
+async function completeVerifiedPurchase(user, reference, amount, credits, plan, config) {
+  if (!config?.url || !config?.service) throw new Error('Durable payment storage is not configured')
+  const response = await fetch(`${config.url}/rest/v1/rpc/complete_credit_purchase`, {
+    method: 'POST',
+    headers: serviceHeaders(config.service),
+    body: JSON.stringify({
+      p_user_id: user.id,
+      p_reference: reference,
+      p_amount: amount,
+      p_credits: credits,
+      p_plan: plan,
+    }),
+  })
+  if (response.ok) return { ok: true, remaining: Number(await response.json()) || 0 }
+
+  const raw = await response.text()
+  if (/already processed|duplicate key|unique constraint/i.test(raw)) {
+    return { ok: true, remaining: await getUserCredits(user, config), duplicate: true }
+  }
+  throw new Error(`Could not save verified credits durably (${response.status})`)
+}
+
 export async function setPlan(user, planId, config, { reference } = {}) {
   const plan = getPlan(planId)
   if (reference && transactionExists(user.id, reference)) return { ok: true, remaining: await getUserCredits(user, config), plan: plan.id }
@@ -680,10 +702,6 @@ async function verifyPaystack(reference, config) {
   if (!response.ok || data.data?.status !== 'success') return { ok: false, reference, message: data.message || 'Payment not successful' }
   const pending = readJsonFile(path.resolve(dataDir, 'pending-transactions.json'), {})
   const pendingRecord = pending[reference]
-  if (!pendingRecord) return { ok: false, reference, message: 'Payment reference was not initialized by AlphaTekx' }
-  if (String(data.data?.currency || '').toUpperCase() !== String(pendingRecord.currency || '').toUpperCase() || Number(data.data?.amount) !== Number(pendingRecord.amount)) {
-    return { ok: false, reference, message: 'Payment amount or currency does not match the initialized checkout' }
-  }
   const meta = data.data?.metadata || pendingRecord?.item || {}
   const customerEmail = String(data.data?.customer?.email || pendingRecord?.email || '').trim().toLowerCase()
   const userId = data.data?.metadata?.user_id || pendingRecord?.userId
@@ -698,21 +716,28 @@ async function verifyPaystack(reference, config) {
     if (matched?.id) user = { id: matched.id, email: matched.email || customerEmail }
   }
   if (!user.id || !credits) return { ok: false, reference, message: 'Missing payment metadata or user record' }
+
+  const expectedItem = planId
+    ? getPlan(planId)
+    : (isEarlyFounder ? getCreditPack('early_founder_19') : getCreditPack(packId))
+  if (!expectedItem) return { ok: false, reference, message: 'Payment product is not recognized by AlphaTekx' }
+  const expectedCharge = isEarlyFounder
+    ? { amount: 3_040_000, currency: 'NGN' }
+    : resolvePaystackCharge(planId
+      ? { priceKobo: expectedItem.priceKobo, currency: expectedItem.currency }
+      : { amountKobo: expectedItem.amountKobo, currency: expectedItem.currency })
+  if (String(data.data?.currency || '').toUpperCase() !== expectedCharge.currency || Number(data.data?.amount) !== Number(expectedCharge.amount)) {
+    return { ok: false, reference, message: 'Payment amount or currency does not match the selected AlphaTekx product' }
+  }
+  const expectedCredits = Number(planId ? expectedItem.monthlyCredits : expectedItem.credits)
+  if (credits !== expectedCredits) return { ok: false, reference, message: 'Payment credit metadata does not match the selected AlphaTekx product' }
   if (pendingRecord) {
     pendingRecord.userId = user.id
     pendingRecord.email = user.email || pendingRecord.email || customerEmail
     writeJsonFile(path.resolve(dataDir, 'pending-transactions.json'), pending)
   }
-  let result
-  if (planId) {
-    result = await setPlan(user, planId, config, { reference })
-  } else if (packId || isEarlyFounder) {
-    const pack = getCreditPack(packId)
-    const creditsToAdd = Number(credits || (isEarlyFounder ? 500 : 0))
-    result = await addCredits(user, creditsToAdd, config, { reference, type: 'purchase', reason: isEarlyFounder ? 'Early Founder Deal' : `Credit pack: ${pack?.label || packId}`, metadata: { packId: packId || 'early_founder_19', provider: 'paystack', plan: isEarlyFounder ? 'early_founder_19' : undefined } })
-  } else {
-    result = await addCredits(user, credits, config, { reference, type: 'purchase', metadata: { source, provider: 'paystack' } })
-  }
+  const durablePlan = planId || (isEarlyFounder ? 'early_founder_19' : 'credits')
+  const result = await completeVerifiedPurchase(user, reference, Number(data.data?.amount), expectedCredits, durablePlan, config)
   if (pendingRecord) { pendingRecord.status = 'completed'; writeJsonFile(path.resolve(dataDir, 'pending-transactions.json'), pending) }
   try {
     await writeProfile(user, config, { last_payment_at: nowIso() })
