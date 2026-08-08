@@ -10,10 +10,6 @@ function normalizeProviderId(provider: string) {
   return provider
 }
 
-function connectedCacheKey(userId?: string) {
-  return `alphatekx:connected-platforms:${userId || 'anonymous'}`
-}
-
 const approvedPlatforms = ['linkedin', 'gmail', 'github', 'googledocs', 'googlesheets', 'discord'] as const
 const composioOAuthProviders = new Set(approvedPlatforms.filter(id => id !== 'linkedin'))
 const serverManagedProviders = new Set<string>()
@@ -29,32 +25,31 @@ const PLATFORM_LIST = [
   { id: 'discord', name: 'Discord', icon: FaDiscord, color: '#5865F2', description: 'Server alerts and channels', native: false },
 ]
 
+function verifiedOAuthDestination(value: string) {
+  const destination = new URL(value, window.location.origin)
+  const localHttp = destination.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(destination.hostname)
+  if (destination.protocol !== 'https:' && !localHttp) throw new Error('The provider returned an unsafe OAuth link. Please retry.')
+  return destination.toString()
+}
+
 export default function Connectors() {
   const { session } = useAuth()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const [connected, setConnected] = useState<Set<string>>(() => {
-    try {
-      const cached = localStorage.getItem(connectedCacheKey(session?.user?.id))
-      if (cached) return new Set(JSON.parse(cached))
-    } catch {}
-    return new Set()
-  })
+  const [connected, setConnected] = useState<Set<string>>(new Set())
   const [connecting, setConnecting] = useState<string | null>(null)
   const [disconnecting, setDisconnecting] = useState<string | null>(null)
   const [notice, setNotice] = useState('')
   const [noticeKind, setNoticeKind] = useState<'success' | 'error'>('error')
   const platformParam = searchParams.get('platform') || searchParams.get('service')
-  const requestedReturnTo = searchParams.get('returnTo') || '/automations'
-  const returnTo = requestedReturnTo.startsWith('/') && !requestedReturnTo.startsWith('//') ? requestedReturnTo : '/automations'
+  const requestedReturnTo = searchParams.get('returnTo') || '/dashboard'
+  const returnTo = requestedReturnTo.startsWith('/') && !requestedReturnTo.startsWith('//') ? requestedReturnTo : '/dashboard'
   const service = (id: string) => ({ connected: connected.has(id), ready: connected.has(id) })
   void serverManagedProviders
 
   useEffect(() => {
-    const userId = session?.user?.id || 'anonymous'
     if (!session?.access_token) {
       setConnected(new Set())
-      try { localStorage.removeItem(connectedCacheKey(userId)) } catch {}
       return
     }
     setConnected(new Set())
@@ -70,14 +65,12 @@ export default function Connectors() {
         if (!cancelled) {
           const merged = new Set([...ready])
           setConnected(merged)
-          try { localStorage.setItem(connectedCacheKey(userId), JSON.stringify([...merged])) } catch {}
         }
-      } catch {
+      } catch (error) {
         if (!cancelled) {
-          const cached = localStorage.getItem(connectedCacheKey(userId))
-          if (cached) {
-            try { setConnected(new Set(JSON.parse(cached))) } catch {}
-          }
+          setConnected(new Set())
+          setNoticeKind('error')
+          setNotice(error instanceof Error ? error.message : 'Could not load connected apps. Please retry.')
         }
       }
     }
@@ -100,7 +93,7 @@ export default function Connectors() {
           if (cancelled) return
           setConnected(prev => new Set([...prev, returnedProvider]))
           setNoticeKind('success')
-          setNotice(`${returnedProvider} connected successfully. Returning to your automation…`)
+          setNotice(`${returnedProvider} connected successfully. Returning to Alpha…`)
           window.setTimeout(() => { if (!cancelled) navigate(returnTo) }, 900)
           return
         }
@@ -133,12 +126,11 @@ export default function Connectors() {
       // Composio connections
       const result = await connectProvider(platformId, session.access_token, returnTo)
       if (result.authUrl) {
-        window.location.href = result.authUrl
+        window.location.assign(verifiedOAuthDestination(result.authUrl))
       } else {
         setConnected(prev => {
           const next = new Set(prev)
           next.add(platformId)
-          try { localStorage.setItem(connectedCacheKey(session?.user?.id), JSON.stringify([...next])) } catch {}
           return next
         })
         setNoticeKind('success')
@@ -162,10 +154,10 @@ export default function Connectors() {
         setConnected(prev => {
           const next = new Set(prev)
           next.delete(platformId)
-          try { localStorage.setItem(connectedCacheKey(session?.user?.id), JSON.stringify([...next])) } catch {}
           return next
         })
-        setNotice(`disconnected successfully — status: 'disconnected'`)
+        setNoticeKind('success')
+        setNotice(`${platformId} disconnected successfully.`)
       } else {
         setNotice('Disconnect failed. Please try again.')
       }
@@ -177,13 +169,13 @@ export default function Connectors() {
   }
 
   return (
-    <main className="min-h-screen bg-[#0A0A0B] px-4 py-8 sm:px-6">
-      <div className="mx-auto max-w-5xl">
-        <button onClick={() => navigate(returnTo)} className="mb-6 flex items-center gap-2 text-sm font-semibold text-zinc-400 hover:text-zinc-200 transition-colors">
+    <main className="min-h-screen bg-[#0A0A0B] px-3 py-4 sm:px-5 sm:py-6">
+      <div className="mx-auto max-w-6xl">
+        <button onClick={() => navigate(returnTo)} className="mb-4 flex items-center gap-2 text-sm font-semibold text-zinc-400 transition-colors hover:text-zinc-200">
           <ArrowLeft size={16} /> Back
         </button>
 
-        <div className="rounded-2xl border border-zinc-800 bg-[#0F0F0F] p-6 sm:p-8 shadow-xl">
+        <div className="rounded-2xl border border-zinc-800 bg-[#0F0F0F] p-4 shadow-xl sm:p-6">
           <div className="flex items-center gap-3 mb-1">
             <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-pink-500 text-white shadow-lg">
               <ExternalLink size={18} />
@@ -197,8 +189,8 @@ export default function Connectors() {
           {/* Trust Banner */}
           <div className="mt-5 rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
             <p className="text-xs text-zinc-400">
-              <span className="font-semibold text-indigo-400">🔒 Secured by AlphaTekX × Composio</span>
-              <br />Enterprise-grade SOC2 Certified · 256-bit Encrypted · 100k+ businesses trust us
+              <span className="font-semibold text-indigo-400">Secured by AlphaTekx and Composio</span>
+              <br />OAuth credentials stay server-side. Alpha shows Connected only after the provider confirms the account.
             </p>
           </div>
 
@@ -229,7 +221,7 @@ export default function Connectors() {
               return (
                 <div
                   key={pl.id}
-                  className={`flex items-center gap-4 rounded-xl border p-4 transition-all ${
+                  className={`flex min-h-28 flex-col items-stretch gap-3 rounded-xl border p-4 transition-all sm:flex-row sm:items-center ${
                     isHighlighted ? 'border-indigo-500/50 bg-indigo-500/10' : isConnected ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-zinc-800 bg-zinc-900/30 hover:border-zinc-700'
                   }`}
                 >
@@ -242,7 +234,7 @@ export default function Connectors() {
                     {isComingSoon && <p className="mt-1 text-[11px] font-medium text-amber-400">Coming soon</p>}
                   </div>
                   {isConnected ? (
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center justify-between gap-2 sm:shrink-0">
                       <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
                         <CheckCircle2 size={14} /> Connected
                       </span>
@@ -270,12 +262,12 @@ export default function Connectors() {
           </div>
 
           <div className="mt-6 flex flex-col gap-2 border-t border-white/5 pt-5 sm:flex-row sm:justify-center">
-            <button onClick={() => navigate(returnTo)} className="min-h-11 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-5 text-sm font-black text-white shadow-lg shadow-violet-950/30">Return to Alpha</button>
+            <button onClick={() => { window.location.href = '/dashboard' }} className="min-h-11 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-5 text-sm font-black text-white shadow-lg shadow-violet-950/30">Return to Alpha</button>
             <button onClick={() => navigate('/active-automations')} className="min-h-11 rounded-xl border border-white/10 px-5 text-sm font-bold text-zinc-200">View running automations</button>
           </div>
 
           <p className="mt-5 text-xs text-zinc-500 text-center">
-            <span className="font-semibold text-indigo-400">AlphaTekX</span> × <span className="font-semibold text-indigo-400">Composio</span> — Enterprise security
+            <span className="font-semibold text-indigo-400">AlphaTekx</span> × <span className="font-semibold text-indigo-400">Composio</span> — secure managed connections
           </p>
         </div>
       </div>

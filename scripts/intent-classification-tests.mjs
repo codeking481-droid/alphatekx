@@ -63,7 +63,7 @@ assert.match(missingPlatform.messages.at(-1).text, /Which platforms/i)
 
 const untilPaused = await engine.start(
   { id: 'until-paused', email: 'iamdan4live@gmail.com' },
-  'Post about my thrift store on X and Instagram every Monday at 9AM Africa/Lagos until paused'
+  'Post about my thrift store on LinkedIn every Monday at 9AM Africa/Lagos until paused'
 )
 assert.equal(untilPaused.conversationStage, 'gathering_information')
 assert.equal(untilPaused.lastQuestion, 'untilPausedConfirmation')
@@ -87,8 +87,18 @@ assert.match(agentStoreSource, /localStorage\.removeItem\(STORAGE_KEY\)/)
 assert.match(agentStoreSource, /supabase\?\.auth\.refreshSession\(\)/)
 
 const workspaceSource = fs.readFileSync(new URL('../src/pages/Agents.tsx', import.meta.url), 'utf8')
+const serverSource = fs.readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
+const queueSource = fs.readFileSync(new URL('../server/alpha/alphaJobQueue.mjs', import.meta.url), 'utf8')
 assert.match(workspaceSource, /PLANNING_OWNER_KEY/)
-assert.match(workspaceSource, /\/api\/alpha\/conversation\/\$\{encodeURIComponent\(conversation\.id\)\}\/create/)
+assert.match(workspaceSource, /postJson<Record<string, unknown>>\('\/api\/alpha\/jobs'/)
 assert.doesNotMatch(workspaceSource, /await saveAgent\(agent\)/)
+assert.match(serverSource, /immediateCategories\.has\(intent\.category\)/)
+assert.match(serverSource, /immediate: true/)
+assert.match(workspaceSource, /data\.immediate === true \|\| data\.conversation/)
+assert.doesNotMatch(workspaceSource, /Queued Alpha planning\. This can take a minute\./)
+assert.match(queueSource, /return redisUrl \? \{ connection: redisUrl \} : null/)
+assert.match(queueSource, /if \(!connection\) \{[\s\S]*useFallback = true/)
+assert.match(queueSource, /export async function enqueueAlphaJob\(payload\) \{[\s\S]*ensureQueue\(\)/)
+assert.doesNotMatch(queueSource, /ensureQueue\(\(\) => \{\}\)/)
 
 console.log('INTENT_CLASSIFICATION_TESTS_OK')

@@ -745,7 +745,7 @@ export async function getConnectedApps(user) {
       try {
         const accounts = await listUserAccounts(user, config)
         if (accounts.items && accounts.items.length > 0) {
-          const account = accounts.items[0]
+          const account = accounts.items.find(item => ['ACTIVE', 'CONNECTED'].includes(String(item?.status || '').toUpperCase())) || accounts.items[0]
           connected = account.status === 'ACTIVE' || account.status === 'CONNECTED'
           connectionId = account.id
           status = connected ? 'connected' : account.status?.toLowerCase() || 'disconnected'

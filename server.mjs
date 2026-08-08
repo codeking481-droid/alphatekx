@@ -17,6 +17,7 @@ import { createContentMemoryRecord } from './server/automation/contentMemory.mjs
 import { buildSocialPublishingAction, providerPostIds } from './server/automation/socialPublishing.mjs'
 import { validateFreeCampaign } from './server/automation/freePlanPolicy.mjs'
 import { createConversationEngine } from './server/alpha/conversationEngine.mjs'
+import { classifyIntent, INTENT_CATEGORIES } from './server/alpha/intentClassifier.mjs'
 import { createAlphaJobQueue, enqueueAlphaJob, getAlphaJob } from './server/alpha/alphaJobQueue.mjs'
 import { setConversationEngine } from './server/alpha/alphaEngineSingleton.mjs'
 import { normalizeAutomationLifecycle } from './server/automation/lifecycle.mjs'
@@ -1942,7 +1943,7 @@ async function startLinkedInConnection(req, res) {
   const clientSecret = process.env.MASTER_LINKEDIN_CLIENT_SECRET || process.env.LINKEDIN_CLIENT_SECRET || ''
   if (!clientId || !clientSecret) return json(res, 503, { error: 'LinkedIn client credentials not configured' })
   const redirectUri = linkedinRedirectUri()
-  const requestedRedirect = String(body?.redirect || '/connected-apps')
+  const requestedRedirect = String(body?.returnTo || body?.redirect || '/dashboard')
   const safeRedirect = requestedRedirect.startsWith('/') && !requestedRedirect.startsWith('//') ? requestedRedirect : '/connected-apps'
   const state = createOAuthState(user.id, config, user.email, safeRedirect)
   const authUrl = linkedinOAuthUrl(clientId, redirectUri, state)
@@ -7996,6 +7997,34 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && /^\/api\/(tiktok|snapchat)\/callback(?:\?|$)/.test(req.url || '')) {
     return customOAuthCallback(req, res, String(req.url).split('/')[2])
   }
+  const platformAuthMatch = req.method === 'POST'
+    ? new URL(req.url || '/', 'http://localhost').pathname.match(/^\/api\/auth\/([^/]+)\/?$/)
+    : null
+  if (platformAuthMatch) {
+    const toolkit = platformAuthMatch[1].toLowerCase()
+    if (toolkit === 'linkedin') {
+      try { return await startLinkedInConnection(req, res) }
+      catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'LinkedIn auth failed' }) }
+    }
+    try {
+      const config = supabaseConfig()
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      if (!user) return json(res, 401, { error: 'Authentication required' })
+      if (!requireConnectorFeature(req, res, user, toolkit)) return
+      const body = await readBody(req)
+      const requestedReturnTo = String(body.returnTo || '').trim()
+      const safeReturnTo = requestedReturnTo.startsWith('/') && !requestedReturnTo.startsWith('//')
+        ? requestedReturnTo
+        : '/dashboard'
+      const callbackUrl = new URL('/connected-apps', publicAppUrl())
+      callbackUrl.searchParams.set('provider', toolkit)
+      callbackUrl.searchParams.set('connected', 'checking')
+      callbackUrl.searchParams.set('returnTo', safeReturnTo)
+      return json(res, 200, await alphaConnector.startConnection(user, toolkit, callbackUrl.toString()))
+    } catch (error) {
+      return json(res, 502, { error: error instanceof Error ? error.message : 'Connection failed' })
+    }
+  }
   if (req.url?.startsWith('/api/connectors/')) {
     const url = new URL(req.url, 'http://localhost')
     const match = url.pathname.match(/^\/api\/connectors\/([^/]+)\/(connect|status|callback|test)\/?$/)
@@ -8250,6 +8279,28 @@ const server = http.createServer(async (req, res) => {
       const conversationId = String(body.conversationId || '')
       if (action === 'start' && !prompt) return json(res, 400, { error: 'Prompt is required' })
       if (action === 'continue' && !conversationId) return json(res, 400, { error: 'Conversation ID is required' })
+      const incomingMessage = action === 'continue' ? message : prompt
+      const intent = classifyIntent(incomingMessage, { hasPlanningContext: action === 'continue' })
+      const immediateCategories = new Set([
+        INTENT_CATEGORIES.conversation,
+        INTENT_CATEGORIES.help,
+        INTENT_CATEGORIES.unknown,
+        INTENT_CATEGORIES.clarification,
+      ])
+      // Greetings, help, and ordinary conversation must feel like chat. They do
+      // not need a provider call and must never wait behind automation jobs.
+      if (immediateCategories.has(intent.category)) {
+        const engine = getConversationEngine()
+        const conversation = action === 'continue'
+          ? await engine.continue(conversationId, user, incomingMessage)
+          : await engine.start(user, incomingMessage)
+        return json(res, 200, {
+          immediate: true,
+          intent: intent.category,
+          conversation,
+          agent: conversation.automationDraft,
+        })
+      }
       const jobPayload = {
         jobId: randomUUID(),
         userId: user.id,

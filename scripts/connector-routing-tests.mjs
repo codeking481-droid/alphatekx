@@ -6,6 +6,7 @@ const creations = fs.readFileSync(new URL('../src/pages/Creations.tsx', import.m
 const service = fs.readFileSync(new URL('../server/composioConnectorService.mjs', import.meta.url), 'utf8')
 const server = fs.readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
 const agents = fs.readFileSync(new URL('../src/pages/Agents.tsx', import.meta.url), 'utf8')
+const connectorApi = fs.readFileSync(new URL('../src/lib/connectors/connectorApi.ts', import.meta.url), 'utf8')
 
 const tests = [
   ['LinkedIn remains the only native connection on Connected Apps', () => {
@@ -29,7 +30,8 @@ const tests = [
     assert.match(server, /executeProviderAction\(user, 'gmail', action\.action/)
   }],
   ['social publishing keeps Composio platforms separate from native LinkedIn', () => {
-    assert.match(server, /composioPublishingPlatforms = new Set\(\['youtube', 'instagram', 'facebook', 'whatsapp', 'x', 'twitter'\]\)/)
+    assert.match(server, /composioPublishingPlatforms = new Set\([^\n]*'facebook'/)
+    assert.match(server, /composioPublishingPlatforms = new Set\([^\n]*'twitter'/)
     assert.doesNotMatch(server, /composioPublishingPlatforms = new Set\([^\n]*'linkedin'/)
     assert.match(server, /case 'linkedin': result = await postToLinkedIn/)
   }],
@@ -41,15 +43,25 @@ const tests = [
   ['planner uses the same authoritative connection status as Connected Apps', () => {
     assert.match(agents, /getConnectedApps/)
     assert.match(agents, /Promise\.allSettled/)
-    assert.match(agents, /provider\.provider === 'twitter' \? 'x'/)
+    assert.match(agents, /const id = provider\.provider/)
     assert.match(agents, /provider\.ready === true \|\| provider\.status === 'connected'/)
   }],
   ['OAuth connection returns to the interrupted automation after confirmed status', () => {
     assert.match(connectors, /const returnTo = requestedReturnTo\.startsWith/)
     assert.match(connectors, /connectProvider\(platformId, session\.access_token, returnTo\)/)
-    assert.match(connectors, /connected successfully\. Returning to your automation/)
+    assert.match(connectors, /connected successfully\. Returning to Alpha/)
     assert.match(connectors, /navigate\(returnTo\)/)
     assert.match(server, /callbackUrl\.searchParams\.set\('returnTo', safeReturnTo\)/)
+  }],
+  ['connection entry points are authenticated, validated, and return to Alpha', () => {
+    assert.match(connectorApi, /`\/api\/auth\/\$\{providerId\}`/)
+    assert.match(server, /\^\\\/api\\\/auth\\\/\(\[\^\/\]\+\)/)
+    assert.match(connectors, /verifiedOAuthDestination/)
+    assert.match(connectors, /window\.location\.href = '\/dashboard'/)
+    assert.doesNotMatch(connectors, /connectedCacheKey|alphatekx:connected-platforms/)
+  }],
+  ['active Composio account wins over stale disconnected history', () => {
+    assert.match(service, /accounts\.items\.find\(item => \['ACTIVE', 'CONNECTED'\]/)
   }],
 ]
 

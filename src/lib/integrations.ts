@@ -139,7 +139,10 @@ export const initializePostsPayment = (credits: number, token?: string) =>
   request<{ authorization_url: string; reference: string; credits: number; amount: number; source: string }>('/api/paystack/initialize', token, { method: 'POST', body: JSON.stringify({ credits, source: 'posts' }) })
 
 export async function startLinkedInAuth(token?: string, redirect = '/connectors') {
-  const data = await request<{ url: string }>('/api/connectors/linkedin/start', token, { method: 'POST', body: JSON.stringify({ redirect }) })
+  const data = await request<{ url: string }>('/api/auth/linkedin', token, { method: 'POST', body: JSON.stringify({ returnTo: redirect }) })
   if (!data.url) throw new Error('LinkedIn OAuth URL was not returned')
-  window.location.assign(data.url)
+  const destination = new URL(data.url, window.location.origin)
+  const localHttp = destination.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(destination.hostname)
+  if (destination.protocol !== 'https:' && !localHttp) throw new Error('LinkedIn returned an unsafe OAuth URL')
+  window.location.assign(destination.toString())
 }

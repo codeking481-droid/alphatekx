@@ -1,7 +1,6 @@
 import { Queue, Worker, QueueScheduler } from 'bullmq'
 import { randomUUID } from 'node:crypto'
 import { saveAlphaJob, getAlphaJob, listAlphaJobsForUser } from './alphaJobStorage.mjs'
-import { getConversationEngine } from './alphaEngineSingleton.mjs'
 
 const QUEUE_NAME = 'alpha-jobs'
 let queue = null
@@ -14,7 +13,7 @@ let processJobFn = null
 
 function getRedisConnection() {
   const redisUrl = String(process.env.REDIS_URL || process.env.REDIS_URI || process.env.BULLMQ_REDIS_URL || '')
-  return redisUrl ? { connection: redisUrl } : { connection: { host: '127.0.0.1', port: 6379 } }
+  return redisUrl ? { connection: redisUrl } : null
 }
 
 function startFallbackProcessing() {
@@ -54,9 +53,13 @@ function startFallbackProcessing() {
 }
 
 function ensureQueue(processJob) {
-  processJobFn = processJob
-  if (queue && worker && scheduler) return
+  if (typeof processJob === 'function') processJobFn = processJob
+  if (useFallback || (queue && worker && scheduler)) return
   const connection = getRedisConnection()
+  if (!connection) {
+    useFallback = true
+    return
+  }
   try {
     queue = new Queue(QUEUE_NAME, connection)
     scheduler = new QueueScheduler(QUEUE_NAME, connection)
@@ -65,30 +68,8 @@ function ensureQueue(processJob) {
       const jobRecord = getAlphaJob(job.id)
       try {
         saveAlphaJob({ ...jobRecord, status: 'running', startedAt: new Date().toISOString(), updatedAt: new Date().toISOString() })
-        const engine = getConversationEngine()
-        const user = { id: payload.userId, email: payload.userEmail }
-        let result
-        try {
-          if (payload.action === 'continue') {
-            if (!payload.conversationId) throw new Error('Conversation id is required for continue jobs')
-            const conversation = await engine.continue(payload.conversationId, user, String(payload.message || ''))
-            result = { conversation, agent: conversation.automationDraft }
-          } else {
-            const conversation = await engine.start(user, String(payload.prompt || ''))
-            result = { conversation, agent: conversation.automationDraft }
-          }
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error)
-          const failed = {
-            ...jobRecord,
-            status: 'failed',
-            error: errorMessage,
-            updatedAt: new Date().toISOString(),
-            failedAt: new Date().toISOString(),
-          }
-          saveAlphaJob(failed)
-          throw error
-        }
+        if (!processJobFn) throw new Error('Alpha job processor is unavailable')
+        const result = await processJobFn(payload)
         const completed = {
           ...jobRecord,
           status: 'completed',
@@ -126,7 +107,7 @@ export function createAlphaJobQueue({ processJob }) {
 }
 
 export async function enqueueAlphaJob(payload) {
-  ensureQueue(() => {})
+  ensureQueue()
   const jobId = String(payload.jobId || randomUUID())
   const record = {
     ...payload,
