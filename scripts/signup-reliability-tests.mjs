@@ -25,15 +25,16 @@ const tests = [
     for (const email of ['iamdan4live@gmail.com', 'coderking555@gmail.com', 'codeking481@gmail.com', 'alphatekxcompany@gmail.com']) assert.ok(server.includes(email))
     assert.match(server, /\.\.\.productAdminEmails/)
   }],
-  ['Google and human verification remain separate choices', () => {
-    assert.match(signup, /google\(false\)/)
-    assert.match(signup, /google\(true\)/)
-    assert.match(signup, /Human verification starts only when you click this button/)
+  ['Google signup uses one-tab OAuth and recovers from stale callbacks', () => {
+    assert.match(auth, /window\.location\.assign\(data\.url\)/)
+    assert.doesNotMatch(auth, /window\.open\(data\.url/)
+    assert.match(auth, /GOOGLE_SIGNUP_PENDING_TTL_MS/)
+    assert.match(signup, /clearGoogleSignupPending\(\)[\s\S]*setGoogleSignupPending\(false\)/)
   }],
   ['signup uses the responsive premium surface', () => {
     assert.match(signup, /min-h-\[100dvh\]/)
-    assert.match(signup, /luxury-card/)
-    assert.match(signup, /solar-action/)
+    assert.match(signup, /w-full max-w-2xl/)
+    assert.match(signup, /min-h-\[48px\] w-full/)
   }],
 ]
 

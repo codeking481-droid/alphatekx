@@ -43,6 +43,9 @@ export default function Auth() {
     const description = query.get('error_description') || query.get('error') || ''
     if (!code && !description) return
     const text = `${code} ${description}`
+    clearGoogleSignupPending()
+    setGoogleSignupPending(false)
+    setPending(false)
     setNotice(/bad_oauth_state|state.*expired|state.*not.*found/i.test(text) ? OAUTH_STATE_HELP : authMessage(description || code))
     navigate(location.pathname, { replace: true })
   }, [location.pathname, location.search, navigate])
