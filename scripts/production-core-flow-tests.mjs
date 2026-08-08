@@ -14,6 +14,8 @@ const read = path => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'ut
 await test('Verified Paystack purchases use durable atomic settlement instead of ephemeral pending state', () => {
   const billing = read('server/billing.mjs')
   assert.match(billing, /rpc\/complete_credit_purchase/)
+  assert.match(billing, /completeVerifiedPurchaseWithoutRpc/)
+  assert.match(billing, /rest\/v1\/credit_purchases/)
   assert.match(billing, /Payment amount or currency does not match the selected AlphaTekx product/)
   assert.doesNotMatch(billing, /if \(!pendingRecord\) return \{ ok: false, reference, message: 'Payment reference was not initialized by AlphaTekx'/)
 })
@@ -23,6 +25,25 @@ await test('Alpha queued state is presented as a friendly green progress notific
   assert.match(agents, /noticeClasses/)
   assert.match(agents, /bg-emerald-400/)
   assert.match(agents, /aria-live="polite"/)
+})
+
+await test('Paystack callback retries transient settlement failures safely', () => {
+  const payment = read('src/lib/payment.ts')
+  assert.match(payment, /for \(let attempt = 0; attempt < 4; attempt \+= 1\)/)
+  assert.match(payment, /still being credited\|temporar\|try again\|processing/)
+})
+
+await test('Google OAuth returns to Auth and opens the workspace automatically', () => {
+  const auth = read('src/lib/auth.tsx')
+  assert.match(auth, /\/auth\?oauth=google/)
+  assert.match(auth, /window\.location\.assign\('\/dashboard'\)/)
+})
+
+await test('Alpha mobile chat uses available workspace height and a safe-area composer', () => {
+  const agents = read('src/pages/Agents.tsx')
+  assert.match(agents, /h-full min-h-0/)
+  assert.match(agents, /safe-area-inset-bottom/)
+  assert.match(agents, /Math\.min\(event\.currentTarget\.scrollHeight, 160\)/)
 })
 
 await test('Paystack empty response reports the operation without JSON parser leakage', async () => {

@@ -57,12 +57,21 @@ function localUserHeaders(): Record<string, string> {
 }
 
 export async function verifyCheckout(provider: PaymentProvider, reference: string): Promise<{ verified: boolean; credits?: number; plan?: string; amount?: number; reference?: string; mock?: boolean }> {
-  const res = await fetch('/api/payment/verify-session', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...await authHeaders() },
-    body: JSON.stringify({ provider, reference }),
-  })
-  const data = await responsePayload(res)
-  if (!res.ok) throw new Error(String(data.error || `Payment verification failed (${res.status})`))
-  return data as { verified: boolean; credits?: number; plan?: string; amount?: number; reference?: string; mock?: boolean }
+  let lastError = 'Payment verification failed.'
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const res = await fetch('/api/payment/verify-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...await authHeaders() },
+      body: JSON.stringify({ provider, reference }),
+    })
+    const data = await responsePayload(res)
+    if (res.ok && data.verified === true) {
+      return data as { verified: boolean; credits?: number; plan?: string; amount?: number; reference?: string; mock?: boolean }
+    }
+    lastError = String(data.error || `Payment verification failed (${res.status})`)
+    const retryable = res.status >= 500 || res.status === 409 || /still being credited|temporar|try again|processing/i.test(lastError)
+    if (!retryable || attempt === 3) break
+    await new Promise(resolve => window.setTimeout(resolve, 700 * (attempt + 1)))
+  }
+  throw new Error(lastError)
 }

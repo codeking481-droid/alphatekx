@@ -95,7 +95,7 @@ export async function instantGoogleSignup(plan?: string) {
     // ignore localStorage failures
   }
 
-  const redirectTo = `${window.location.origin}/`
+  const redirectTo = `${window.location.origin}/auth?oauth=google`
   let data
   try {
     const result = await supabase.auth.signInWithOAuth({

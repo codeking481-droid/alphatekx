@@ -459,7 +459,88 @@ async function completeVerifiedPurchase(user, reference, amount, credits, plan, 
   if (/already processed|duplicate key|unique constraint/i.test(raw)) {
     return { ok: true, remaining: await getUserCredits(user, config), duplicate: true }
   }
-  throw new Error(`Could not save verified credits durably (${response.status})`)
+  if (response.status !== 404 && !/PGRST202|schema cache|function.*not found/i.test(raw)) {
+    throw new Error(`Could not save verified credits durably (${response.status})`)
+  }
+  return completeVerifiedPurchaseWithoutRpc(user, reference, amount, credits, plan, config)
+}
+
+async function durablePurchaseBalance(user, reference, config) {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const transactionResponse = await fetch(`${config.url}/rest/v1/credit_transactions?user_id=eq.${encodeURIComponent(user.id)}&reference=eq.${encodeURIComponent(reference)}&select=balance_after&limit=1`, { headers: serviceHeaders(config.service) })
+    if (transactionResponse.ok) {
+      const rows = await transactionResponse.json()
+      if (rows?.[0]) return Number(rows[0].balance_after) || 0
+    }
+    if (attempt < 3) await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)))
+  }
+  return null
+}
+
+async function completeVerifiedPurchaseWithoutRpc(user, reference, amount, credits, plan, config) {
+  const purchase = {
+    reference,
+    user_id: user.id,
+    amount,
+    credits,
+    plan,
+  }
+  const claimResponse = await fetch(`${config.url}/rest/v1/credit_purchases`, {
+    method: 'POST',
+    headers: serviceHeaders(config.service, { Prefer: 'return=minimal' }),
+    body: JSON.stringify(purchase),
+  })
+  if (!claimResponse.ok) {
+    const raw = await claimResponse.text()
+    if (claimResponse.status === 409 || /duplicate key|unique constraint/i.test(raw)) {
+      const existingBalance = await durablePurchaseBalance(user, reference, config)
+      if (existingBalance != null) return { ok: true, remaining: existingBalance, duplicate: true }
+      throw new Error('This verified payment is still being credited. Please refresh in a moment.')
+    }
+    throw new Error(`Could not record the verified payment durably (${claimResponse.status})`)
+  }
+
+  const profileResponse = await fetch(`${config.url}/rest/v1/profiles?id=eq.${encodeURIComponent(user.id)}&select=id,credits,plan,monthly_credits,purchased_credits&limit=1`, { headers: serviceHeaders(config.service) })
+  if (!profileResponse.ok) throw new Error(`Could not read the credit account (${profileResponse.status})`)
+  const profile = (await profileResponse.json())?.[0]
+  if (!profile) throw new Error('The paid account profile could not be found')
+
+  const isSubscription = plan !== 'credits'
+  const monthlyCredits = Number(profile.monthly_credits) || 0
+  const purchasedCredits = Number(profile.purchased_credits) || 0
+  const nextMonthly = isSubscription ? monthlyCredits + credits : monthlyCredits
+  const nextPurchased = isSubscription ? purchasedCredits : purchasedCredits + credits
+  const nextBalance = nextMonthly + nextPurchased
+  const profilePatch = {
+    credits: nextBalance,
+    monthly_credits: nextMonthly,
+    purchased_credits: nextPurchased,
+    ...(isSubscription ? { plan } : {}),
+    updated_at: nowIso(),
+  }
+  const updateResponse = await fetch(`${config.url}/rest/v1/profiles?id=eq.${encodeURIComponent(user.id)}`, {
+    method: 'PATCH',
+    headers: serviceHeaders(config.service, { Prefer: 'return=minimal' }),
+    body: JSON.stringify(profilePatch),
+  })
+  if (!updateResponse.ok) throw new Error(`Could not update the paid credit balance (${updateResponse.status})`)
+
+  const historyResponse = await fetch(`${config.url}/rest/v1/credit_transactions`, {
+    method: 'POST',
+    headers: serviceHeaders(config.service, { Prefer: 'return=minimal' }),
+    body: JSON.stringify({
+      user_id: user.id,
+      type: isSubscription ? 'subscription' : 'purchase',
+      credits_added: credits,
+      credits_removed: 0,
+      balance_after: nextBalance,
+      reference,
+      reason: isSubscription ? `Subscription: ${plan}` : 'Credit purchase',
+      metadata: { plan, amount, provider: 'paystack', settlement: 'rest_fallback' },
+    }),
+  })
+  if (!historyResponse.ok) throw new Error(`Credits were updated but payment history could not be saved (${historyResponse.status})`)
+  return { ok: true, remaining: nextBalance }
 }
 
 export async function setPlan(user, planId, config, { reference } = {}) {

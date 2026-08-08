@@ -5,9 +5,10 @@ import OnboardingModal, { useOnboarding } from '../components/OnboardingModal'
 import { useAuth } from '../lib/auth'
 import { getCreations } from '../lib/missionStore'
 import { getJson } from '../lib/apiClient'
+import { verifyCheckout } from '../lib/payment'
 
 export default function Dashboard() {
-  const { user, session, refreshProfile } = useAuth()
+  const { user, refreshProfile } = useAuth()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const onboarding = useOnboarding()
@@ -33,18 +34,9 @@ export default function Dashboard() {
 
     setPaymentRef(ref)
     setShowContactBanner(false)
-    void fetch('/api/paystack/verify', {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
-      },
-      body: JSON.stringify({ reference: ref }),
-    })
-      .then(async response => {
-        const data = await response.json().catch(() => ({} as Record<string, unknown>))
-        if (response.ok && (data.success === true || data.verified === true)) {
+    void verifyCheckout('paystack', ref)
+      .then(async data => {
+        if (data.verified === true) {
           const credited = Number(data.credits || searchParams.get('credits') || pending?.credits || 0)
           const plan = String(data.plan || searchParams.get('plan') || pending?.plan || '')
           setPaymentCredits(credited)
@@ -68,7 +60,7 @@ export default function Dashboard() {
       .catch(() => {
         setShowContactBanner(true)
       })
-  }, [refreshProfile, searchParams, session?.access_token, setSearchParams])
+  }, [refreshProfile, searchParams, setSearchParams])
 
   const creations = getCreations().slice(0, 6)
   const emailFirstName = user?.email ? user.email.split('@')[0].split('.')[0].replace(/^./, c => c.toUpperCase()) : 'Builder'

@@ -164,6 +164,7 @@ export default function Agents() {
     setConversation(null)
     setPendingAgent(null)
     setInput('')
+    if (composer.current) composer.current.style.height = 'auto'
     setJobId(null)
     sessionStorage.removeItem(CONVERSATION_KEY)
     sessionStorage.removeItem(PENDING_KEY)
@@ -191,6 +192,7 @@ export default function Agents() {
     setCreating(true)
     setNotice(conversation?.id ? 'Alpha is continuing your plan…' : 'Alpha is reviewing your request…')
     setInput('')
+    if (composer.current) composer.current.style.height = 'auto'
     try {
       const action = conversation?.id ? 'continue' : 'start'
       const body = {
@@ -271,15 +273,15 @@ export default function Agents() {
     return <GuidedCommandCentre platform={guidedPlatform} creating={creating} notice={notice} onComplete={message => void send(message)} onBack={() => navigate('/dashboard')} />
   }
 
-  return <main className="flex h-[100dvh] w-full flex-1 flex-col overflow-hidden bg-[#0A0A0B]">
-    <div className="mx-auto flex h-full w-full max-w-none flex-1 flex-col px-0 pb-0 pt-0 sm:max-w-7xl sm:px-6 sm:pb-4 sm:pt-4 lg:px-8">
+  return <main className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden bg-[radial-gradient(circle_at_50%_-20%,rgba(109,40,217,.10),transparent_38%),#0A0A0B]">
+    <div className="mx-auto flex h-full min-h-0 w-full max-w-none flex-1 flex-col px-0 sm:max-w-6xl sm:px-4 sm:py-3 lg:px-6">
       <header className="hidden">
         <p className="text-xs font-medium uppercase tracking-[.24em] text-white/60">Run your automations 24/7</p>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-5xl">Turn Your Ideas Into Reality</h1>
         <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-[#8A8A93] sm:text-base">Tell Alpha what you want done. It will plan an automation that keeps working even when you are offline.</p>
       </header>
 
-      {success && !conversation ? <section className="my-auto rounded-none border-0 bg-[#111214] p-6 text-center shadow-none sm:rounded-[2rem] sm:border sm:border-white/10 sm:p-10 sm:shadow-[0_30px_90px_rgba(0,0,0,0.35)]" aria-live="polite">
+      {success && !conversation ? <section className="my-auto rounded-none border-0 bg-[#111214] p-6 text-center shadow-none sm:rounded-[1.75rem] sm:border sm:border-white/10 sm:p-10 sm:shadow-[0_30px_90px_rgba(0,0,0,0.35)]" aria-live="polite">
         <CheckCircle2 className="mx-auto text-[#1CE783]" size={34}/>
         <h2 className="mt-4 text-xl font-semibold text-white">{success.message || 'Automation created successfully.'}</h2>
         <div className="mx-auto mt-6 flex max-w-xl flex-col justify-center gap-2 sm:flex-row">
@@ -287,9 +289,9 @@ export default function Agents() {
           <button onClick={startNew} className="min-h-12 rounded-xl border border-white/10 px-5 text-sm font-semibold text-white">Create another</button>
           <Link to="/connected-apps" className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-white/10 px-5 text-sm font-semibold text-white"><Plug size={16}/>Connected Apps</Link>
         </div>
-      </section> : <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-none bg-[#111214] sm:rounded-[2rem]">
+      </section> : <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-none bg-[#0D0E11]/95 sm:rounded-[1.75rem] sm:border sm:border-white/[0.07] sm:shadow-[0_24px_80px_rgba(0,0,0,.30)]">
         <div className="absolute right-3 top-3 z-20 sm:right-6">{conversation && <button onClick={startNew} className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-xs font-semibold text-[#8A8A93] hover:text-white">New chat</button>}</div>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-6 sm:py-6" aria-live="polite">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain scroll-smooth px-3 py-3 [scrollbar-gutter:stable] sm:px-6 sm:py-6" aria-live="polite">
           {!conversation ? (
             <div className="mx-auto flex h-full max-w-4xl flex-col items-center justify-center px-2 py-6 text-center">
               <span className="grid size-12 place-items-center rounded-2xl border border-white/10 bg-white/[0.02] text-white"><Sparkles size={22}/></span>
@@ -308,9 +310,9 @@ export default function Agents() {
                 </div>
               </div>
 
-              <div className="mt-5 flex w-full max-w-3xl flex-wrap justify-center gap-2" aria-label="Suggested prompts">
+              <div className="mt-5 flex w-full max-w-3xl snap-x gap-2 overflow-x-auto px-1 pb-2 sm:flex-wrap sm:justify-center sm:overflow-visible" aria-label="Suggested prompts">
                 {examples.slice(0, 3).map(example => (
-                  <button key={example.title} onClick={() => { setInput(example.prompt); window.setTimeout(() => composer.current?.focus(), 0) }} className="group inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.02] px-3 py-2 text-xs font-semibold text-white transition hover:bg-white/[0.04]">
+                  <button key={example.title} onClick={() => { setInput(example.prompt); window.setTimeout(() => composer.current?.focus(), 0) }} className="group inline-flex shrink-0 snap-start items-center gap-2 rounded-full border border-white/10 bg-white/[0.025] px-3.5 py-2.5 text-xs font-semibold text-white transition hover:bg-white/[0.05]">
                     {example.title.includes('image') ? <Image size={14} className="text-white"/> : <Sparkles size={14} className="text-white"/>}
                     {example.title}
                   </button>
@@ -318,7 +320,7 @@ export default function Agents() {
               </div>
             </div>
           ) : (
-            <div className="mx-auto w-full max-w-3xl space-y-6">
+            <div className="mx-auto w-full max-w-3xl space-y-7 px-1 pb-4 sm:px-2">
               {conversation.messages?.map((message, index) => <div key={`${message.ts}-${index}`} className={message.role === 'user' ? 'ml-auto max-w-[88%] sm:max-w-[75%]' : 'max-w-full'}>
                 <div className={message.role === 'user' ? 'rounded-3xl rounded-br-lg bg-white px-4 py-3 text-sm leading-6 text-[#0B0B0C] sm:px-5' : 'text-sm leading-7 text-white'}>
                   {message.role === 'alpha' && <p className="mb-1.5 text-xs font-black uppercase tracking-[.12em] text-[#8A8A93]">Alpha</p>}
@@ -343,14 +345,18 @@ export default function Agents() {
         </div>
         {needsConnection && <div className="mx-4 mb-3 rounded-xl border border-[#F5C518]/30 bg-[#F5C518]/[0.04] p-4 text-sm sm:mx-6"><p className="text-white">{needsConnection} needs to be connected before Alpha can publish.</p><Link to={`/connected-apps?platform=${encodeURIComponent(needsConnection)}&returnTo=${encodeURIComponent(`/automations?resume=${conversation?.id || ''}`)}`} className="mt-3 inline-flex min-h-10 items-center rounded-lg bg-white px-4 text-xs font-semibold text-[#0B0B0C]">Connect {needsConnection}</Link></div>}
         {notice && <div role="status" aria-live="polite" className={`mx-4 mb-3 flex items-center justify-between gap-3 rounded-xl border p-3 text-sm font-semibold sm:mx-6 ${noticeClasses(notice)}`}><span className="flex items-center gap-2">{/\b(queued|reviewing|continuing|processing|thinking|working|preparing)\b/i.test(notice) && <span className="size-2 shrink-0 animate-pulse rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,.9)]"/>}{notice}</span><button onClick={() => setNotice('')} aria-label="Dismiss notification"><X size={16}/></button></div>}
-        <div className="shrink-0 border-t border-white/5 bg-[#111214] px-3 pb-3 pt-3 sm:px-6 sm:pb-5">
+        <div className="shrink-0 border-t border-white/[0.06] bg-[#0D0E11]/95 px-3 pb-[max(.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-2xl sm:px-6 sm:pb-5">
           <label htmlFor="automation-request" className="sr-only">{conversation ? 'Answer Alpha' : 'Message Alpha'}</label>
-          <div className="mx-auto flex max-w-3xl items-center gap-2 rounded-[1.8rem] bg-[#16171C] p-3 shadow-[0_10px_30px_rgba(0,0,0,0.4)]">
+          <div className="mx-auto flex max-w-3xl items-end gap-2 rounded-[1.65rem] border border-white/[0.08] bg-[#18191E] p-2.5 shadow-[0_14px_40px_rgba(0,0,0,0.38)] focus-within:border-white/15">
             <textarea
               id="automation-request"
               ref={composer}
               value={input}
-              onChange={event => setInput(event.target.value)}
+              onChange={event => {
+                setInput(event.target.value)
+                event.currentTarget.style.height = 'auto'
+                event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 160)}px`
+              }}
               onKeyDown={event => {
                 if (event.key === 'Enter' && !event.shiftKey) {
                   event.preventDefault()
@@ -360,7 +366,7 @@ export default function Agents() {
               rows={1}
               maxLength={10000}
               placeholder="Message Alpha…"
-              className="min-h-[48px] w-full resize-none rounded-2xl border-none bg-transparent px-3 py-3 text-base leading-6 text-white outline-none placeholder:text-[#8A8A93] focus:ring-0"
+              className="max-h-40 min-h-[48px] w-full resize-none overflow-y-auto rounded-2xl border-none bg-transparent px-3 py-3 text-base leading-6 text-white outline-none placeholder:text-[#8A8A93] focus:ring-0"
             />
             <button
               onClick={() => void send()}
