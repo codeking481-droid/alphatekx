@@ -2987,6 +2987,11 @@ function validateActionParams(action, creds = {}) {
       }
       break
     }
+    case 'googledocs': {
+      if (action.action === 'create_document' && !String(p.title || '').trim()) return { field: 'title', reason: 'Document title is required.' }
+      if (action.action === 'update_document' && !String(p.documentId || p.document_id || '').trim()) return { field: 'documentId', reason: 'Document ID is required.' }
+      break
+    }
     case 'google_calendar':
     case 'calendar': {
       if (a === 'create_event' && !String(p.title || p.summary || '').trim()) return { field: 'title', reason: 'Event title is required.' }
@@ -6133,6 +6138,21 @@ async function executeConnectorAction(user, action) {
         if (action.action === 'read_rows') {
           const sheetResult = await googleSheetsReadRows(user.id, params)
           result = { rowCount: sheetResult.values?.length || 0, values: sheetResult.values }
+        }
+        break
+      }
+      case 'googledocs': {
+        if (['create_document', 'get_document', 'update_document'].includes(action.action)) {
+          const documentResult = await alphaConnector.executeProviderAction(user, 'googledocs', action.action, {
+            ...params,
+            approvalId: String(params.approvalId || `automation:${action.action}`),
+            idempotencyKey: String(params.idempotencyKey || `automation:${user.id}:${action.action}:${Date.now()}`),
+          }, { deferCreditSettlement: true })
+          result = {
+            id: documentResult.providerId,
+            providerId: documentResult.providerId,
+            replayed: documentResult.replayed === true,
+          }
         }
         break
       }
