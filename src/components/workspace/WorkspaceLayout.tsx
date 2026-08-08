@@ -84,7 +84,7 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
 
   const isHome = location.pathname === '/dashboard'
 
-  return <div className="workspace-living-bg relative flex min-h-[100dvh] flex-col overflow-hidden text-white">
+  return <div className="workspace-living-bg relative flex h-[100dvh] min-h-0 flex-col overflow-hidden text-white">
     <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center justify-between border-b border-white/10 bg-[#111214]/90 px-4 backdrop-blur-2xl">
       <button onClick={() => setOpen(true)} className="grid size-10 place-items-center rounded-xl border border-white/10 bg-white/[0.02] text-white" aria-label="Open menu"><Menu size={18}/></button>
       <NavLink to="/dashboard" className="text-sm font-black tracking-[.14em] text-white">ALPHATEKX</NavLink>
@@ -122,7 +122,7 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
       </div>
     </aside>
 
-    <main className="relative z-10 min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto pt-16">
+    <main id="workspace-scroll-root" className="relative z-10 min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain scroll-smooth pt-16 [-webkit-overflow-scrolling:touch]">
       {isHome && show && (
         <div className="mx-auto max-w-3xl px-4 pt-6">
           <div className="relative rounded-2xl border border-white/10 bg-[#111214] p-5">

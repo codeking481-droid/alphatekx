@@ -77,6 +77,12 @@ test('mobile layout remains bounded with usable actions', () => {
   assert.match(landing, /MobileCTA/)
 })
 
+test('the complete landing narrative remains vertically scrollable', () => {
+  assert.match(landing, /<main className="overflow-x-clip overflow-y-visible">/)
+  assert.doesNotMatch(landing, /<main className="overflow-hidden">/)
+  assert.ok(landing.indexOf('<FinalCTA />') > landing.indexOf('<Hero />'))
+})
+
 test('desktop content remains wide and bounded', () => {
   assert.match(landing, /max-w-7xl/)
   assert.match(landing, /lg:grid-cols/)
@@ -88,4 +94,4 @@ test('page avoids fabricated customer logo claims and testimonials', () => {
   assert.doesNotMatch(landing, /Testimonials/)
 })
 
-if (!process.exitCode) process.stdout.write(`\n${passed}/12 premium landing checks passed.\n`)
+if (!process.exitCode) process.stdout.write(`\n${passed}/13 premium landing checks passed.\n`)
