@@ -18,17 +18,21 @@ import {
   ChevronRight,
   CircleCheckBig,
   FileText,
+  Gauge,
   Globe2,
+  History,
   Instagram,
   Linkedin,
   LockKeyhole,
   Mail,
   Menu,
   MessageCircle,
+  Play,
   Rocket,
   ShieldCheck,
   Sparkles,
   Twitter,
+  WandSparkles,
   X,
   Zap,
 } from 'lucide-react'
@@ -67,9 +71,11 @@ function Header() {
   const { user } = useAuth()
   const [open, setOpen] = useState(false)
   const links = [
+    ['Product', '#product'],
     ['How it works', '#how-it-works'],
-    ['Demo', '#demo'],
+    ['Use cases', '#use-cases'],
     ['Pricing', '#pricing'],
+    ['FAQ', '#faq'],
   ]
 
   return (
@@ -736,6 +742,99 @@ const connectedTools = [
   { name: 'Calendar', detail: 'Time-based execution', icon: CalendarClock },
 ]
 
+const outcomeExamples = [
+  {
+    label: 'Launch a campaign',
+    prompt: 'Create a one-week launch campaign for my new service across LinkedIn, Facebook and Instagram.',
+    result: '21 tailored posts · 7-day calendar · review required',
+  },
+  {
+    label: 'Run my inbox',
+    prompt: 'Every morning, summarize urgent customer emails and prepare replies for my approval.',
+    result: 'Daily inbox brief · priority routing · replies in draft',
+  },
+  {
+    label: 'Organize operations',
+    prompt: 'Record new orders in Google Sheets and send my team a clear daily update.',
+    result: 'Order capture · sheet update · team notification',
+  },
+]
+
+function InteractiveOutcomeDemo() {
+  const [active, setActive] = useState(0)
+  const example = outcomeExamples[active]
+  const steps = [
+    ['Understands', 'The outcome, audience, platforms, and missing decisions'],
+    ['Prepares', 'The work, schedule, media, and exact credit cost'],
+    ['Waits', 'Nothing executes until the final plan is approved'],
+    ['Confirms', 'Provider IDs and history prove what actually happened'],
+  ]
+
+  return (
+    <section id="product" className="relative overflow-hidden bg-black px-4 py-24 sm:px-6 lg:py-36">
+      <div className="pointer-events-none absolute right-0 top-1/3 size-[520px] rounded-full bg-[#6B21A8]/20 blur-[140px]" />
+      <div className="relative mx-auto max-w-7xl">
+        <div className="mx-auto max-w-4xl text-center">
+          <p className="text-xs font-black uppercase tracking-[.22em] text-[#FFD700]">Try the thinking model</p>
+          <h2 className="mt-5 text-4xl font-black tracking-[-.05em] text-white sm:text-6xl lg:text-7xl">
+            Start with a result, not a workflow diagram.
+          </h2>
+          <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-white/50">
+            Alpha translates everyday language into controlled, reviewable work across your connected tools.
+          </p>
+        </div>
+
+        <div className="mt-12 grid overflow-hidden rounded-[32px] border border-white/10 bg-[#09090C] shadow-[0_40px_120px_rgba(107,33,168,.18)] lg:grid-cols-[.9fr_1.1fr]">
+          <div className="border-b border-white/10 p-5 sm:p-8 lg:border-b-0 lg:border-r">
+            <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[.18em] text-white/35">
+              <WandSparkles size={15} className="text-[#FFD700]" /> Tell Alpha what success looks like
+            </div>
+            <div className="mt-5 min-h-44 rounded-2xl border border-white/10 bg-black p-5 text-lg font-semibold leading-8 text-white sm:text-xl">
+              {example.prompt}
+              <span className="ml-1 inline-block h-5 w-0.5 animate-pulse bg-[#FFD700] align-middle" />
+            </div>
+            <div className="mt-4 flex snap-x gap-2 overflow-x-auto pb-2">
+              {outcomeExamples.map((item, index) => (
+                <button
+                  key={item.label}
+                  type="button"
+                  onClick={() => setActive(index)}
+                  className={`min-h-11 shrink-0 snap-start rounded-full px-4 text-xs font-black transition ${index === active ? 'bg-[#FFD700] text-black' : 'border border-white/10 bg-white/[.035] text-white/55 hover:text-white'}`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            <div className="mt-4 flex items-center justify-between gap-4 rounded-2xl border border-[#FFD700]/20 bg-[#FFD700]/[.055] p-4">
+              <div><p className="text-[10px] font-black uppercase tracking-wider text-[#FFD700]">Prepared outcome</p><p className="mt-1 text-sm font-bold text-white/70">{example.result}</p></div>
+              <Play size={20} className="shrink-0 text-[#FFD700]" fill="currentColor" />
+            </div>
+          </div>
+
+          <div className="p-5 sm:p-8">
+            <p className="text-[10px] font-black uppercase tracking-[.18em] text-white/35">What happens next</p>
+            <div className="mt-5 space-y-3">
+              {steps.map(([title, copy], index) => (
+                <motion.div
+                  key={title}
+                  initial={{ opacity: 0, x: 14 }}
+                  whileInView={{ opacity: 1, x: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: index * 0.08 }}
+                  className="flex gap-4 rounded-2xl border border-white/[.07] bg-white/[.025] p-4 sm:p-5"
+                >
+                  <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#6B21A8]/25 text-xs font-black text-[#FFD700]">0{index + 1}</span>
+                  <div><h3 className="font-black text-white">{title}</h3><p className="mt-1 text-sm leading-6 text-white/40">{copy}</p></div>
+                </motion.div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function IntegrationsStrip() {
   return (
     <section className="border-y border-white/10 bg-[#070709] px-4 py-20 sm:px-6">
@@ -796,7 +895,7 @@ function UseCases() {
   ]
 
   return (
-    <section className="bg-black px-4 py-24 sm:px-6 lg:py-36">
+    <section id="use-cases" className="bg-black px-4 py-24 sm:px-6 lg:py-36">
       <div className="mx-auto max-w-7xl">
         <div className="max-w-4xl">
           <p className="text-xs font-black uppercase tracking-[.22em] text-[#FFD700]">Built around outcomes</p>
@@ -873,6 +972,58 @@ function TrustSection() {
   )
 }
 
+function ExecutionProof() {
+  const proof = [
+    { icon: Gauge, title: 'Live progress', copy: 'See what is waiting, running, confirmed, or needs attention without guessing.' },
+    { icon: History, title: 'Durable history', copy: 'Every completed action keeps its platform, timestamp, content, result, and provider reference.' },
+    { icon: ShieldCheck, title: 'Exactly-once charging', copy: 'Idempotency protects duplicate execution and credits follow confirmed outcomes.' },
+  ]
+
+  return (
+    <section className="border-y border-white/10 bg-black px-4 py-24 sm:px-6 lg:py-36">
+      <div className="mx-auto max-w-7xl">
+        <div className="grid gap-12 lg:grid-cols-2 lg:items-center">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[.22em] text-[#FFD700]">Proof, not promises</p>
+            <h2 className="mt-5 text-4xl font-black tracking-[-.05em] text-white sm:text-6xl">Watch the work move from request to result.</h2>
+            <p className="mt-6 max-w-xl text-lg leading-8 text-white/50">A serious AI employee needs an audit trail. Alpha keeps execution visible instead of hiding it behind a cheerful success message.</p>
+            <div className="mt-9 space-y-3">
+              {proof.map(({ icon: Icon, title, copy }) => (
+                <div key={title} className="flex gap-4 rounded-2xl border border-white/[.07] p-5">
+                  <Icon className="mt-0.5 shrink-0 text-[#FFD700]" size={21} />
+                  <div><h3 className="font-black text-white">{title}</h3><p className="mt-1 text-sm leading-6 text-white/40">{copy}</p></div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-[30px] border border-white/10 bg-[#09090C] p-4 shadow-[0_35px_100px_rgba(255,215,0,.07)] sm:p-6">
+            <div className="flex items-center justify-between border-b border-white/10 pb-4">
+              <div><p className="text-sm font-black text-white">Campaign execution</p><p className="text-xs text-white/35">AlphaTekx launch · today</p></div>
+              <span className="flex items-center gap-2 rounded-full bg-emerald-400/10 px-3 py-1.5 text-[10px] font-black text-emerald-300"><i className="size-2 animate-pulse rounded-full bg-emerald-400" /> LIVE</span>
+            </div>
+            <div className="mt-5 space-y-3">
+              {[
+                ['Content prepared', 'Reviewed', '09:02'],
+                ['Approval received', 'Confirmed', '09:06'],
+                ['LinkedIn publication', 'Post ID saved', '09:07'],
+                ['Execution history', 'Written', '09:07'],
+              ].map(([title, status, time], index) => (
+                <div key={title} className="grid grid-cols-[36px_1fr_auto] items-center gap-3 rounded-2xl bg-white/[.03] p-4">
+                  <span className="grid size-9 place-items-center rounded-full bg-emerald-400/10 text-emerald-300"><Check size={16} /></span>
+                  <div><p className="text-sm font-black text-white">{title}</p><p className="text-xs text-white/35">{status}</p></div>
+                  <span className="font-mono text-[10px] text-white/30">{time}</span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 rounded-2xl border border-[#FFD700]/20 bg-[#FFD700]/[.05] p-4 text-sm font-bold text-white/70">1 confirmed result · 1 credit charged · 0 duplicates</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function Comparison() {
   const rows = [
     ['Describe the outcome in natural language', true, false],
@@ -918,7 +1069,7 @@ function FAQ() {
   ]
 
   return (
-    <section className="bg-[#070709] px-4 py-24 sm:px-6 lg:py-36">
+    <section id="faq" className="bg-[#070709] px-4 py-24 sm:px-6 lg:py-36">
       <div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-[.7fr_1.3fr]">
         <div>
           <p className="text-xs font-black uppercase tracking-[.22em] text-[#FFD700]">Questions, answered</p>
@@ -1134,11 +1285,13 @@ export default function Landing() {
       <main className="overflow-hidden">
         <Hero />
         <IntegrationsStrip />
+        <InteractiveOutcomeDemo />
         <Problem />
         <UseCases />
         <HowItWorks />
         <ScrollDemo />
         <TrustSection />
+        <ExecutionProof />
         <Comparison />
         <Pricing />
         <FAQ />

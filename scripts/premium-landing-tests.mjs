@@ -17,7 +17,7 @@ test('hero communicates the AI employee outcome at premium scale', () => {
 })
 
 test('landing page provides a complete conversion narrative', () => {
-  const sections = ['<Hero />', '<IntegrationsStrip />', '<Problem />', '<UseCases />', '<HowItWorks />', '<ScrollDemo />', '<TrustSection />', '<Comparison />', '<Pricing />', '<FAQ />', '<FinalCTA />']
+  const sections = ['<Hero />', '<IntegrationsStrip />', '<InteractiveOutcomeDemo />', '<Problem />', '<UseCases />', '<HowItWorks />', '<ScrollDemo />', '<TrustSection />', '<ExecutionProof />', '<Comparison />', '<Pricing />', '<FAQ />', '<FinalCTA />']
   let cursor = -1
   for (const section of sections) {
     const next = landing.indexOf(section)
@@ -46,6 +46,12 @@ test('comparison explains the outcome-first product difference', () => {
   assert.match(landing, /Not another scheduler with AI added/)
   assert.match(landing, /Describe the outcome in natural language/)
   assert.match(landing, /Confirmed execution history/)
+})
+
+test('interactive outcome demo and execution proof make the product tangible', () => {
+  for (const contract of ['Start with a result, not a workflow diagram', 'Launch a campaign', 'Run my inbox', 'Organize operations', 'Proof, not promises', '1 confirmed result · 1 credit charged · 0 duplicates']) {
+    assert.ok(landing.includes(contract), `${contract} is missing`)
+  }
 })
 
 test('FAQ answers purchasing and trust objections', () => {
@@ -78,4 +84,4 @@ test('page avoids fabricated customer logo claims and testimonials', () => {
   assert.doesNotMatch(landing, /Testimonials/)
 })
 
-if (!process.exitCode) process.stdout.write(`\n${passed}/11 premium landing checks passed.\n`)
+if (!process.exitCode) process.stdout.write(`\n${passed}/12 premium landing checks passed.\n`)
