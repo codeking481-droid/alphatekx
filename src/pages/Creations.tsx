@@ -27,8 +27,12 @@ export default function Creations() {
     if (callback) { const next = new URLSearchParams(searchParams); next.delete('gmail'); next.delete('connected'); next.delete('reason'); setSearchParams(next, { replace:true }) }
     void getConnectedApps(session.access_token).then(status => {
       const gmail = status.providers.find(provider => provider.provider === 'gmail')
-      setIntegration({ connected: gmail?.connected === true && (gmail.ready === true || gmail.status === 'connected' || gmail.status === 'active'), email: user?.email || null })
-      setTestEmail(user?.email || '')
+      const connected = gmail?.connected === true && (gmail.ready === true || gmail.status === 'connected' || gmail.status === 'active')
+      setIntegration({
+        connected,
+        email: connected && typeof gmail?.email === 'string' && gmail.email ? gmail.email : user?.email || null,
+      })
+      setTestEmail(connected && typeof gmail?.email === 'string' && gmail.email ? gmail.email : user?.email || '')
     }).catch(error => setIntegrationNotice(error instanceof Error ? error.message : 'Could not load Gmail status.'))
   }, [session?.access_token])
 
@@ -36,7 +40,8 @@ export default function Creations() {
     if (!session?.access_token) return
     setIntegrationBusy(true); setIntegrationNotice('Opening Google permission screen...')
     try {
-      const result = await connectProvider('gmail', session.access_token)
+      const returnTo = window.location.pathname.startsWith('/') ? window.location.pathname : '/creations'
+      const result = await connectProvider('gmail', session.access_token, returnTo)
       if (!result.authUrl) throw new Error('Composio did not return a Gmail authorization link.')
       window.location.href = result.authUrl
     }

@@ -293,7 +293,7 @@ function App() {
     // ORDER CONFIRMATION
     orderComplete && React.createElement('div', { style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 } },
       React.createElement('div', { style: { background: 'white', borderRadius: 24, padding: 40, width: 440, textAlign: 'center' } },
-        React.createElement('div', { style: { fontSize: 64, marginBottom: 16 } }, ''),
+        React.createElement('div', { style: { fontSize: 64, marginBottom: 16 } }, '🎉'),
         React.createElement('h2', { style: { fontSize: 24, fontWeight: 800, color: '#1e293b', marginBottom: 8 } }, 'Order Confirmed!'),
         React.createElement('p', { style: { color: '#64748b', fontSize: 14, marginBottom: 8 } }, 'Order #' + orderComplete.code),
         React.createElement('p', { style: { color: '#64748b', fontSize: 14, marginBottom: 20 } }, 'Thank you for your purchase of ' + orderComplete.items + ' items for $' + orderComplete.total.toFixed(2)),
@@ -304,4 +304,3 @@ function App() {
   );
 }
 ReactDOM.render(React.createElement(App), document.getElementById('root'));
-`;

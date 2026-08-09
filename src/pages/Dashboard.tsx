@@ -185,14 +185,9 @@ export default function Dashboard() {
       {showCongrats && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/85 px-4">
           <div className="mx-auto w-full max-w-lg rounded-[24px] border border-[#24242A] bg-[#151519] p-8 text-center shadow-2xl">
-            <p className="mt-2 text-sm text-white/75">Payment successful. Your credits have been added.</p>
+            <div className="text-4xl">🎉🎉🎉🎉</div>
+            <h2 className="mt-4 text-2xl font-bold text-white">{celebrationTitle}</h2>
+            <p className="mt-2 text-sm text-white/75">{celebrationMessage}</p>
             <p className="mt-2 text-xs text-white/40">Ref: {paymentRef || 'pending verification'}</p>
             <div className="mt-6 flex justify-center gap-3">
-              <button onClick={() => { setShowCongrats(false); setShowContactBanner(false); navigate('/dashboard', { replace: true }) }} className="rounded-full bg-[#FFD700] px-4 py-2 font-semibold text-black">Continue</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
+              <button onClick={() => { setShowCongrats(false); setShowContactBanner(false); navigate('/dashboard', { replace: true }) }} className="rounded-full bg-[#FFD700] px-4 py-2 font-sem
