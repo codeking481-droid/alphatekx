@@ -29,6 +29,60 @@ import { hasUsableLinkedInStorage, normalizeLinkedInScopes, publishLinkedInTextP
 import { allowedWhatsAppRecipients, applyWhatsAppStatusEvent, executeApprovedWhatsAppMessage, normalizeWhatsAppRecipient, sendWhatsAppText, verifyWhatsAppPhoneRegistration, verifyWhatsAppWebhookSignature, whatsappCredentials, whatsappWebhookEvents } from './server/whatsapp.mjs'
 import { connectorFeatureAccess, featureStatusForUser, refreshFeatureConfig, unavailableConnectorMessage, unavailablePromptConnector } from './server/featureAccess.mjs'
 import * as alphaConnector from './server/composioConnectorService.mjs'
+// Wrap low-level provider execution with a resilient wrapper so all callers
+// (including media publishing and manual posting endpoints) benefit from
+// retries, backoffs, and deferred credit settlement to avoid charging on
+// transient failures. This keeps self-healing behavior consistent across
+// direct `alphaConnector.executeProviderAction` usages.
+{
+  const originalExecute = alphaConnector.executeProviderAction && alphaConnector.executeProviderAction.bind(alphaConnector)
+  if (originalExecute) {
+    alphaConnector.executeProviderAction = async function executeProviderWithHealing(user, provider, actionName, params = {}, options = {}) {
+      const backoffs = [5000, 30000, 300000]
+      const maxAttempts = backoffs.length
+      let attempt = 0
+      // Prefer deferring credit settlement if the underlying service supports it
+      options = { ...(options || {}), deferCreditSettlement: true }
+
+      while (true) {
+        try {
+          const res = await originalExecute(user, provider, actionName, params, options)
+          return res
+        } catch (err) {
+          attempt += 1
+          const message = String(err instanceof Error ? err.message : err)
+          const isAuth = /401|403|unauthori|invalid_grant|token expired/i.test(message)
+          const isRate = /429|rate limit|too many requests/i.test(message)
+          const isServer = /5\d{2}|502|503|504/i.test(message)
+
+          // Try provider-specific quick fixes when possible
+          try {
+            if (isAuth && (provider === 'gmail' || provider === 'google' || provider === 'youtube')) {
+              // best-effort refresh Google tokens for the user if possible
+              try { await refreshGoogleTokens(await getUserIntegration(user.id, 'google', supabaseConfig()).catch(() => null), supabaseConfig()) } catch (e) { }
+            }
+          } catch (e) { }
+
+          if (!isRate && !isServer) {
+            // non-transient: rethrow immediately
+            throw err
+          }
+
+          if (attempt > maxAttempts) {
+            // exhausted retries
+            throw err
+          }
+
+          const wait = backoffs[Math.min(attempt - 1, backoffs.length - 1)] || 5000
+          // wait then retry
+          // eslint-disable-next-line no-await-in-loop
+          await new Promise((r) => setTimeout(r, wait))
+          // continue loop
+        }
+      }
+    }
+  }
+}
 import * as mediaLibrary from './server/mediaLibraryService.mjs'
 import * as moneyLoop from './server/moneyLoopService.mjs'
 import * as eliteBuilder from './server/eliteBuilderService.mjs'
