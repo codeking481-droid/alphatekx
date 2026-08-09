@@ -82,7 +82,6 @@ export const PLANS: Record<PlanId, Plan> = {
 }
 
 export const CREDIT_PACKS: CreditPack[] = [
-  { id: 'test_100', label: 'Test purchase', credits: 100, amountKobo: 10000, currency: 'NGN', description: 'Test payment for ₦100' },
   { id: 'spark_5', label: 'Spark', credits: 5, amountKobo: 100, currency: 'USD', description: '5 credits for $1' },
   { id: 'creator_20', label: 'Creator', credits: 20, amountKobo: 300, currency: 'USD', description: '20 credits for $3' },
   { id: 'builder_40', label: 'Builder', credits: 40, amountKobo: 500, currency: 'USD', description: '40 credits for $5' },
@@ -97,7 +96,7 @@ export function getCreditPack(id: string): CreditPack | undefined {
   const normalizedId = String(id || '').trim()
   const pack = CREDIT_PACKS.find(pack => pack.id === normalizedId)
   if (pack) return pack
-  if (normalizedId === 'test_50') return CREDIT_PACKS.find(pack => pack.id === 'test_100')
+  if (normalizedId === 'test_50') return undefined
   return undefined
 }
 
