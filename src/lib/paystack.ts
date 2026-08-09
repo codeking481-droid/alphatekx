@@ -16,7 +16,6 @@ export type PaymentPack = {
 export const PACKS: PaymentPack[] = [
   { id: 'starter', label: 'Starter Pack', amountKobo: 500000, credits: 500, plan: 'starter' },
   { id: 'pro', label: 'Pro Pack', amountKobo: 1_500_000, credits: 2500, plan: 'pro' },
-  { id: 'naira_20', label: '20 credits', amountKobo: 10000, credits: 20, currency: 'NGN' },
   { id: 'credits', label: 'Credit Booster', amountKobo: 200_000, credits: 100 },
 ]
 
