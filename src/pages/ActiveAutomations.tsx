@@ -194,6 +194,33 @@ export default function ActiveAutomations() {
     }
   }
 
+  const reconnectConnection = async (agent: Agent) => {
+    try {
+      const connectionId = agent.connectedAccountId || (agent.integrations && agent.integrations[0]) || ''
+      if (!connectionId) throw new Error('No connection id available to reconnect')
+      setNotice('Attempting to reconnect your connection...')
+      const accessToken = (await supabase?.auth.getSession())?.data?.session?.access_token
+      const resp = await fetch('/api/connections/reconnect', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) }, body: JSON.stringify({ connectionId }) })
+      const data = await resp.json().catch(() => ({}))
+      if (!resp.ok || !data.ok) throw new Error(data.error || `Reconnect failed (${resp.status})`)
+      setNotice('Connection reconnected. Automations resumed where applicable.')
+      await refreshAgents()
+      await refreshProfile()
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Reconnect failed')
+    }
+  }
+
+  const retryNow = async (agent: Agent) => {
+    // reuse publishDueNow behavior for manual retry
+    try {
+      setNotice('Retrying the automation now...')
+      await publishDueNow(agent)
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Retry failed')
+    }
+  }
+
   const duplicate = async (agent: Agent) => {
     const now = new Date().toISOString()
     const copy: Agent = {
@@ -244,6 +271,9 @@ export default function ActiveAutomations() {
           <div className="flex flex-wrap gap-2">
             {nextRun && new Date(nextRun).getTime() <= now && ['running', 'active', 'warning', 'needs_attention'].includes(selected.status) && <button onClick={() => void publishDueNow(selected)} disabled={runningNow} className="solar-action flex min-h-10 items-center gap-2 rounded-xl px-4 text-sm disabled:opacity-50">{runningNow ? 'Publishing & verifying...' : 'Publish due post now'}</button>}
             {selected.status === 'paused' ? <button onClick={() => void changeStatus(selected, 'running')} className="action-light"><Play size={16}/>Resume</button> : <button onClick={() => void changeStatus(selected, 'paused')} className="action-light"><Pause size={16}/>Pause</button>}
+            {/* Retry and reconnect helpers for self-healing flows */}
+            {selected.health_status === 'needs_reconnect' && <button onClick={() => void reconnectConnection(selected)} className="action-light text-amber-300">Reconnect</button>}
+            {displayStatus(selected) === 'Needs Attention' && <button onClick={() => void retryNow(selected)} className="action-light">Retry now</button>}
             <Link to={`/automations?id=${encodeURIComponent(selected.id)}`} className="action-light"><Pencil size={16}/>Edit schedule — free</Link>
             <button onClick={() => void duplicate(selected)} className="action-light"><Copy size={16}/>Duplicate</button>
           </div>
