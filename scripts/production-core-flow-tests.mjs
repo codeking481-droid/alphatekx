@@ -16,6 +16,7 @@ await test('Verified Paystack purchases use atomic idempotent settlement with a 
   const migration = read('supabase/payment-settlement-v2.sql')
   const server = read('server.mjs')
   const dashboard = read('src/pages/Dashboard.tsx')
+  const payment = read('src/lib/payment.ts')
   assert.match(billing, /settle_paystack_purchase_v2/)
   assert.match(billing, /completeVerifiedPurchaseWithoutRpc/)
   assert.match(billing, /rest\/v1\/credit_purchases/)
@@ -34,6 +35,9 @@ await test('Verified Paystack purchases use atomic idempotent settlement with a 
   assert.match(migration, /balance_after/)
   assert.match(migration, /'duplicate', true/)
   assert.match(server, /creditsAdded: result\.credits, balance: result\.balance/)
+  assert.match(billing, /callback\.searchParams\.set\('payment', 'success'\)/)
+  assert.match(payment, /alphatekx:pending-payment/)
+  assert.doesNotMatch(dashboard, /alphatekx:payment-recovery:/)
   assert.match(server, /throw new Error\(result\.message \|\| 'Paystack payment was not verified'\)/)
   assert.match(dashboard, /Your balance is now/)
 })
@@ -96,7 +100,8 @@ await test('Authenticated dashboard can recover successful Paystack payments wit
   assert.match(billing, /recoverRecentPaystackPurchases/)
   assert.match(billing, /transaction\?status=success&perPage=50/)
   assert.match(server, /\/api\/payment\/recover/)
-  assert.match(dashboard, /alphatekx:payment-recovery:/)
+  assert.match(dashboard, /fetch\('\/api\/payment\/recover'/)
+  assert.doesNotMatch(dashboard, /alphatekx:payment-recovery:/)
 })
 
 await test('Alpha mobile chat uses available workspace height and a safe-area composer', () => {

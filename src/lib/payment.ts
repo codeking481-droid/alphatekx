@@ -41,7 +41,16 @@ export async function initializeCheckout(provider: PaymentProvider, item: Paymen
   const data = await responsePayload(res)
   if (!res.ok) throw new Error(String(data.error || `Payment start failed (${res.status})`))
   if (!data.authorization_url) throw new Error('Paystack did not return a checkout link. Please retry.')
-  persistPaymentReference(String(data.reference || ''))
+  const reference = String(data.reference || '')
+  persistPaymentReference(reference)
+  try {
+    localStorage.setItem('alphatekx:pending-payment', JSON.stringify({
+      reference,
+      credits: Number(data.credits) || 0,
+      source: String(data.source || ''),
+      createdAt: new Date().toISOString(),
+    }))
+  } catch {}
   return data as { authorization_url: string; reference: string; credits: number; amount: number; source: string; provider: string }
 }
 
