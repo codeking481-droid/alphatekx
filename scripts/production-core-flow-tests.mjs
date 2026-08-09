@@ -58,10 +58,13 @@ await test('Google OAuth returns directly to Dashboard and opens the workspace a
   assert.match(auth, /alphatekx:google-signup-state/)
   assert.match(auth, /clearGoogleSignupPending\(\)[\s\S]*AbortController/)
   assert.match(auth, /12_000/)
+  assert.match(auth, /recoverOAuthSessionFromFragment/)
+  assert.match(auth, /const recovered = await recoverOAuthSessionFromFragment\(\)/)
   assert.match(authPage, /addEventListener\(googleSignupStateEvent/)
   assert.match(authPage, /window\.location\.hash\.includes\('access_token='\)/)
   assert.match(authPage, /supabase\.auth\.setSession\(\{ access_token: accessToken, refresh_token: refreshToken \}\)/)
   assert.match(authPage, /window\.location\.replace\('\/dashboard'\)/)
+  assert.doesNotMatch(authPage, /const blocked = !configured \|\| pending \|\| googleSignupPending/)
 })
 
 await test('HTML app shell cannot keep stale OAuth or payment bundles after deployment', () => {

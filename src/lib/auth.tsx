@@ -187,6 +187,19 @@ function readLocalUser(): LocalUser | null {
   } catch { return null }
 }
 
+async function recoverOAuthSessionFromFragment(): Promise<Session | null> {
+  if (!supabase || typeof window === 'undefined' || !window.location.hash.includes('access_token=')) return null
+  const fragment = new URLSearchParams(window.location.hash.slice(1))
+  const accessToken = fragment.get('access_token')
+  const refreshToken = fragment.get('refresh_token')
+  if (!accessToken || !refreshToken) return null
+
+  const { data, error } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
+  if (error) throw error
+  window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.search}`)
+  return data.session
+}
+
 async function withTimeout<T>(work: PromiseLike<T>, label: string, timeoutMs = PROFILE_TIMEOUT_MS): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
   const timeout = new Promise<never>((_, reject) => {
@@ -257,20 +270,24 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   useEffect(() => {
     if (!supabase) { setLoading(false); return }
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session?.user?.id && activeUserId.current && data.session.user.id !== activeUserId.current) {
+    const restoreSession = async () => {
+      const recovered = await recoverOAuthSessionFromFragment()
+      const restored = recovered || (await supabase.auth.getSession()).data.session
+      if (restored?.user?.id && activeUserId.current && restored.user.id !== activeUserId.current) {
         clearUserArtifacts()
       }
-      activeUserId.current = data.session?.user?.id || null
-      setSession(data.session)
+      activeUserId.current = restored?.user?.id || null
+      setSession(restored)
       setLoading(false)
-      if (data.session) {
+      if (restored) {
         localStorage.removeItem(LOCAL_USER_KEY)
         setLocalUser(null)
         void refreshProfile()
       }
-    }).catch(error => {
+    }
+    void restoreSession().catch(error => {
       console.warn('[AlphaTekx] session restore failed:', error)
+      clearGoogleSignupPending()
       setSession(null)
       setProfile(null)
       setLoading(false)
