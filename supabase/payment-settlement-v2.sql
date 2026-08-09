@@ -1,7 +1,66 @@
 -- Atomic, idempotent Paystack settlement. Apply once in Supabase SQL Editor.
--- This versioned function avoids behavior drift from legacy RPC definitions.
+-- This is deliberately self-contained: older AlphaTekx installations may not
+-- have either billing table yet.
+create table if not exists public.credit_purchases (
+  reference text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  amount integer not null check (amount > 0),
+  credits integer not null check (credits > 0),
+  plan text,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.credit_transactions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  type text not null,
+  credits_added integer not null default 0 check (credits_added >= 0),
+  credits_removed integer not null default 0 check (credits_removed >= 0),
+  balance_after integer,
+  reference text,
+  automation_id text,
+  reason text,
+  metadata jsonb not null default '{}',
+  created_at timestamptz not null default now()
+);
+
+alter table public.profiles add column if not exists monthly_credits integer not null default 0;
+alter table public.profiles add column if not exists purchased_credits integer not null default 0;
+alter table public.profiles add column if not exists updated_at timestamptz not null default now();
+
+alter table public.credit_purchases add column if not exists reference text;
+alter table public.credit_purchases add column if not exists user_id uuid references auth.users(id) on delete cascade;
+alter table public.credit_purchases add column if not exists amount integer;
+alter table public.credit_purchases add column if not exists credits integer;
+alter table public.credit_purchases add column if not exists plan text;
 alter table public.credit_purchases add column if not exists balance_after integer;
 alter table public.credit_purchases add column if not exists settled_at timestamptz;
+alter table public.credit_purchases add column if not exists created_at timestamptz not null default now();
+
+alter table public.credit_transactions add column if not exists user_id uuid references auth.users(id) on delete cascade;
+alter table public.credit_transactions add column if not exists type text;
+alter table public.credit_transactions add column if not exists credits_added integer not null default 0;
+alter table public.credit_transactions add column if not exists credits_removed integer not null default 0;
+alter table public.credit_transactions add column if not exists balance_after integer;
+alter table public.credit_transactions add column if not exists reference text;
+alter table public.credit_transactions add column if not exists automation_id text;
+alter table public.credit_transactions add column if not exists reason text;
+alter table public.credit_transactions add column if not exists metadata jsonb not null default '{}';
+alter table public.credit_transactions add column if not exists created_at timestamptz not null default now();
+
+create unique index if not exists idx_credit_purchases_reference on public.credit_purchases(reference);
+create index if not exists idx_credit_purchases_user on public.credit_purchases(user_id, created_at desc);
+create index if not exists idx_credit_transactions_user on public.credit_transactions(user_id, created_at desc);
+
+alter table public.credit_purchases enable row level security;
+alter table public.credit_transactions enable row level security;
+
+drop policy if exists "credit purchases owner read" on public.credit_purchases;
+create policy "credit purchases owner read" on public.credit_purchases
+  for select using (auth.uid() = user_id);
+drop policy if exists "credit transactions owner read" on public.credit_transactions;
+create policy "credit transactions owner read" on public.credit_transactions
+  for select using (auth.uid() = user_id);
 
 create or replace function public.settle_paystack_purchase_v2(
   p_user_id uuid,
