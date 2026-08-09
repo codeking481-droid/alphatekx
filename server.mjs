@@ -7178,7 +7178,14 @@ function serveStatic(req, res) {
   if (!fs.existsSync(file)) return json(res, 404, { error: 'Build not found. Run npm run build.' })
   const ext = path.extname(file)
   const types = { '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json', '.webp': 'image/webp', '.png': 'image/png' }
-  res.writeHead(200, { 'Content-Type': types[ext] || 'text/html; charset=utf-8', 'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=31536000, immutable' })
+  const cacheHeaders = ext === '.html'
+    ? { 'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0', Pragma: 'no-cache', Expires: '0' }
+    : { 'Cache-Control': 'public, max-age=31536000, immutable' }
+  res.writeHead(200, {
+    'Content-Type': types[ext] || 'text/html; charset=utf-8',
+    'X-Content-Type-Options': 'nosniff',
+    ...cacheHeaders,
+  })
   if (req.method === 'HEAD') return res.end()
   fs.createReadStream(file).pipe(res)
 }
