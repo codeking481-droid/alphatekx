@@ -1,16 +1,18 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { isAdminUser } from '../lib/adminAccess'
 import { Check, CreditCard, LoaderCircle, LogOut, ShieldCheck, Trash2, WalletCards, Zap } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { clearAllHistory } from '../lib/missionStore'
-import { getCredits, hydrateCredits, subscribeCredits } from '../lib/creditStore'
-import { getCurrentPlan, initiatePaystackPack, type PlanValue } from '../lib/paystack'
+import { getCredits, hydrateCredits, setCredits as saveCredits, subscribeCredits } from '../lib/creditStore'
+import { getCurrentPlan, type PlanValue } from '../lib/paystack'
+import { initializeCheckout, verifyCheckout } from '../lib/payment'
 import { CREDIT_PACKS, formatAmount, type CreditPack } from '../lib/billing'
 
 export default function Account() {
-  const { user, profile, signOut } = useAuth()
+  const { user, profile, signOut, refreshProfile } = useAuth()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const isAdmin = isAdminUser(user)
   const [credits, setCredits] = useState(getCredits())
   const [plan, setPlan] = useState<PlanValue>(getCurrentPlan())
@@ -28,19 +30,54 @@ export default function Account() {
   useEffect(() => { if (profile?.credits != null) setCredits(Number(profile.credits)) }, [profile?.credits])
   useEffect(() => { void hydrateCredits() }, [user?.id])
 
+  useEffect(() => {
+    const pendingPayment = (() => {
+      try { return JSON.parse(localStorage.getItem('alphatekx:pending-payment') || 'null') } catch { return null }
+    })()
+    const reference = searchParams.get('reference') || searchParams.get('trxref') || searchParams.get('ref') || pendingPayment?.reference || (() => {
+      try { return localStorage.getItem('lastRef') || '' } catch { return '' }
+    })()
+    if (!reference) return
+
+    setPending(true)
+    setNotice('Verifying payment...')
+
+    verifyCheckout('paystack', reference)
+      .then(async (data) => {
+        const balance = Number(data.balance ?? data.credits ?? 0)
+        saveCredits(balance)
+        await hydrateCredits()
+        setCredits(getCredits())
+        await refreshProfile()
+        setNotice(`Payment verified. Your balance is now ${balance.toLocaleString()} credits.`)
+        try { localStorage.removeItem('alphatekx:pending-payment'); localStorage.removeItem('lastRef') } catch {}
+        const next = new URLSearchParams(searchParams)
+        next.delete('payment')
+        next.delete('reference')
+        next.delete('trxref')
+        next.delete('ref')
+        setSearchParams(next, { replace: true })
+      })
+      .catch((error) => {
+        setNotice(error instanceof Error ? error.message : 'Payment verification failed')
+      })
+      .finally(() => setPending(false))
+  }, [searchParams, setSearchParams, refreshProfile])
+
   const buy = async () => {
     if (!selectedPack) return
     setPending(true)
     setNotice('Opening secure Paystack checkout...')
     try {
-      const result = await initiatePaystackPack(selectedPack)
+      const result = await initializeCheckout('paystack', { type: 'credits', packId: selectedPack.id })
       setPlan(result.plan)
-      await hydrateCredits()
-      setCredits(getCredits())
-      setNotice(`Payment verified. You bought ${selectedPack.label}.`)
+      if (result.authorization_url) {
+        window.location.assign(result.authorization_url)
+        return
+      }
+      setNotice('Checkout ready. Complete payment in the new tab.')
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Payment failed.')
-    } finally {
       setPending(false)
     }
   }

@@ -85,7 +85,12 @@ export default function Settings() {
   }, [user?.id, user?.email])
 
   useEffect(() => {
-    const reference = searchParams.get('reference')
+    const pending = (() => {
+      try { return JSON.parse(localStorage.getItem('alphatekx:pending-payment') || 'null') } catch { return null }
+    })()
+    const reference = searchParams.get('reference') || searchParams.get('trxref') || searchParams.get('ref') || pending?.reference || (() => {
+      try { return localStorage.getItem('lastRef') || '' } catch { return '' }
+    })()
     if (!reference) return
     setPending(true)
     setNotice('Verifying payment...')
@@ -97,7 +102,10 @@ export default function Settings() {
         await refreshProfile()
         await loadBilling()
         setNotice('Payment verified. Your account has been updated.')
+        searchParams.delete('payment')
         searchParams.delete('reference')
+        searchParams.delete('trxref')
+        searchParams.delete('ref')
         setSearchParams(searchParams, { replace: true })
       })
       .catch((error) => setNotice(error instanceof Error ? error.message : 'Payment verification failed'))
@@ -241,7 +249,7 @@ export default function Settings() {
 
           <div className="mt-6">
             <h3 className="flex items-center gap-2 font-black text-white"><Wallet size={16} className="text-cyan-300"/> Buy credits</h3>
-            <p className="text-sm font-semibold text-slate-300">Purchased credits never expire. Prices are shown in the pack currency. The ₦100 test purchase uses NGN.</p>
+            <p className="text-sm font-semibold text-slate-300">Purchased credits never expire. Prices are shown in the pack currency.</p>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               {CREDIT_PACKS.map((pack) => {
                 const active = selectedPack?.id === pack.id
