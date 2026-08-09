@@ -82,7 +82,6 @@ export const PLANS: Record<PlanId, Plan> = {
 }
 
 export const CREDIT_PACKS: CreditPack[] = [
-  { id: 'test_100', label: 'Test purchase', credits: 100, amountKobo: 10000, currency: 'NGN', description: 'Test payment for ₦100' },
   { id: 'spark_5', label: 'Spark', credits: 5, amountKobo: 100, currency: 'USD', description: '5 credits for $1' },
   { id: 'creator_20', label: 'Creator', credits: 20, amountKobo: 300, currency: 'USD', description: '20 credits for $3' },
   { id: 'naira_20', label: '20 credits', credits: 20, amountKobo: 10000, currency: 'NGN', description: '20 credits for ₦100' },

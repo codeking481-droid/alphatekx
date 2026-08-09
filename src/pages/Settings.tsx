@@ -121,6 +121,9 @@ export default function Settings() {
   }, [searchParams, setSearchParams, billing])
 
   const currentPlan = billing ? getPlan(billing.plan) : getPlan('free')
+  const visiblePlans = Object.values(PLANS).filter((plan, index, all) => {
+    return all.findIndex(other => other.name === plan.name && other.priceKobo === plan.priceKobo) === index
+  })
 
   const startCheckout = async () => {
     if (!selectedPack && !selectedPlan) return
@@ -231,10 +234,7 @@ export default function Settings() {
           <div className="mt-6">
             <h3 className="flex items-center gap-2 font-black text-white"><Sparkles size={16} className="text-cyan-300"/> Upgrade plan</h3>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              {Object.values(PLANS).map((plan) => {
-                const active = selectedPlan === plan.id || billing?.plan === plan.id
-                return (
-                  <button key={plan.id} onClick={() => selectPlan(plan.id)} disabled={billing?.plan === plan.id} className={`relative rounded-2xl border p-4 text-left text-white shadow-[0_12px_30px_rgba(3,7,18,.24)] transition-all ${active ? 'border-cyan-300/60 bg-blue-500/20' : 'border-violet-400/30 bg-violet-500/15 hover:border-blue-300/60 hover:bg-blue-500/15'} ${billing?.plan === plan.id ? 'opacity-80' : ''}`}>
+              {visiblePlans.map((plan) => {
                     {plan.badge && <span className="absolute right-3 top-3 rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 px-2 py-0.5 text-[10px] font-semibold text-white">{plan.badge}</span>}
                     <span className="font-black text-white">{plan.name}</span>
                     <p className="mt-2 text-3xl font-black text-[#FFD700]">{plan.priceKobo === 0 ? 'Free' : `${formatCurrency(plan.priceKobo)}/mo`}</p>
@@ -249,7 +249,7 @@ export default function Settings() {
 
           <div className="mt-6">
             <h3 className="flex items-center gap-2 font-black text-white"><Wallet size={16} className="text-cyan-300"/> Buy credits</h3>
-            <p className="text-sm font-semibold text-slate-300">Purchased credits never expire. Prices are shown in the pack currency. The ₦100 test purchase uses NGN.</p>
+            <p className="text-sm font-semibold text-slate-300">Purchased credits never expire. Prices are shown in the pack currency.</p>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               {CREDIT_PACKS.map((pack) => {
                 const active = selectedPack?.id === pack.id
