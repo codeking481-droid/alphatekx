@@ -104,6 +104,7 @@ export const CREDIT_PACKS = [
   { id: 'test_100', credits: 100, amountKobo: 10000, currency: 'NGN', label: 'Test purchase', description: 'Test payment for ₦100' },
   { id: 'spark_5', credits: 5, amountKobo: 100, currency: 'USD', label: 'Spark', description: '5 credits for $1' },
   { id: 'creator_20', credits: 20, amountKobo: 300, currency: 'USD', label: 'Creator', description: '20 credits for $3' },
+  { id: 'naira_20', credits: 20, amountKobo: 10000, currency: 'NGN', label: '20 credits', description: '20 credits for ₦100' },
   { id: 'builder_40', credits: 40, amountKobo: 500, currency: 'USD', label: 'Builder', description: '40 credits for $5' },
   { id: 'scale_100', credits: 100, amountKobo: 1000, currency: 'USD', label: 'Scale', description: '100 credits for $10' },
   { id: 'early_founder_19', credits: 500, amountKobo: 1900, currency: 'USD', label: 'Early Founder Deal', description: '500 credits for $19' },
