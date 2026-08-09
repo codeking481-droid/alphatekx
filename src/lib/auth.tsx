@@ -50,6 +50,7 @@ const DEVICE_ID_KEY = 'deviceId'
 const GOOGLE_SIGNUP_PENDING_KEY = 'alphatekx:pending-google-signup'
 const GOOGLE_SIGNUP_PLAN_KEY = 'alphatekx:pending-google-signup-plan'
 const GOOGLE_SIGNUP_PENDING_TTL_MS = 10 * 60 * 1000
+const GOOGLE_SIGNUP_STATE_EVENT = 'alphatekx:google-signup-state'
 let googleSignupLaunchInFlight = false
 
 export function isGoogleSignupPending() {
@@ -73,7 +74,10 @@ export function clearGoogleSignupPending() {
     localStorage.removeItem(GOOGLE_SIGNUP_PLAN_KEY)
   } catch {}
   googleSignupLaunchInFlight = false
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(GOOGLE_SIGNUP_STATE_EVENT))
 }
+
+export const googleSignupStateEvent = GOOGLE_SIGNUP_STATE_EVENT
 
 function getOrCreateDeviceId() {
   const existing = localStorage.getItem(DEVICE_ID_KEY)

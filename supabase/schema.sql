@@ -225,19 +225,21 @@ declare
   new_monthly integer;
   new_purchased integer;
   new_total integer;
+  legacy_unclassified integer;
   is_subscription boolean;
 begin
   if p_reference is null or char_length(p_reference) < 4 then raise exception 'Invalid payment reference'; end if;
   insert into public.credit_purchases(reference,user_id,amount,credits,plan) values(p_reference,p_user_id,p_amount,p_credits,p_plan);
   insert into public.profiles(id,email,credits,plan,monthly_credits,purchased_credits) values(p_user_id,'',0,'free',0,0) on conflict(id) do nothing;
   select * into profile_rec from public.profiles where id=p_user_id for update;
+  legacy_unclassified := greatest(0, profile_rec.credits - profile_rec.monthly_credits - profile_rec.purchased_credits);
   is_subscription := p_plan is not null and p_plan != 'free' and p_plan != 'credits';
   if is_subscription then
-    new_monthly := profile_rec.monthly_credits + p_credits;
-    new_purchased := profile_rec.purchased_credits;
+    new_monthly := p_credits;
+    new_purchased := profile_rec.purchased_credits + legacy_unclassified;
   else
     new_monthly := profile_rec.monthly_credits;
-    new_purchased := profile_rec.purchased_credits + p_credits;
+    new_purchased := profile_rec.purchased_credits + legacy_unclassified + p_credits;
   end if;
   new_total := new_monthly + new_purchased;
   update public.profiles set credits=new_total, monthly_credits=new_monthly, purchased_credits=new_purchased, plan=case when is_subscription then p_plan else profile_rec.plan end where id=p_user_id;

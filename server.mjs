@@ -8763,6 +8763,14 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { verified: true, credits: result.balance, plan: result.plan || 'free', amount: result.amount || 0, reference: result.reference || reference })
     } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Verification failed.' }) }
   }
+  if (req.method === 'POST' && req.url === '/api/payment/recover') {
+    try {
+      const config = supabaseConfig()
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      if (!user) return json(res, 401, { error: 'Authentication required' })
+      return json(res, 200, await billing.recoverRecentPaystackPurchases(user, config))
+    } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Payment recovery failed' }) }
+  }
   if (req.method === 'POST' && req.url === '/api/payment/webhook') {
     try { return await paystackWebhookHandler(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Webhook failed' }) }
   }

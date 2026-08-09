@@ -8,7 +8,7 @@ import { getJson } from '../lib/apiClient'
 import { verifyCheckout } from '../lib/payment'
 
 export default function Dashboard() {
-  const { user, refreshProfile } = useAuth()
+  const { user, session, refreshProfile } = useAuth()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const onboarding = useOnboarding()
@@ -21,6 +21,25 @@ export default function Dashboard() {
   const [insights, setInsights] = useState<{ id: string; title: string; description: string; severity: string }[]>([])
 
   useEffect(() => { void getJson<{ predictions: { id: string; title: string; description: string; severity: string }[] }>('/api/brain/predictions').then(d => setInsights(d.predictions || [])).catch(() => {}) }, [])
+
+  useEffect(() => {
+    if (!session?.access_token) return
+    const key = `alphatekx:payment-recovery:${session.user.id}`
+    try { if (sessionStorage.getItem(key)) return; sessionStorage.setItem(key, new Date().toISOString()) } catch {}
+    void fetch('/api/payment/recover', { method: 'POST', headers: { Authorization: `Bearer ${session.access_token}` } })
+      .then(async response => ({ response, data: await response.json().catch(() => ({})) }))
+      .then(async ({ response, data }) => {
+        if (!response.ok) throw new Error(data.error || 'Payment recovery failed')
+        if (Number(data.recovered) > 0) {
+          await refreshProfile()
+          setPaymentCredits(Number(data.balance) || null)
+          setCelebrationTitle('Payment recovered')
+          setCelebrationMessage(`Your successful Paystack payment is confirmed. Your balance is now ${Number(data.balance) || 0} credits.`)
+          setShowCongrats(true)
+        }
+      })
+      .catch(() => { try { sessionStorage.removeItem(key) } catch {} })
+  }, [refreshProfile, session?.access_token, session?.user.id])
 
   useEffect(() => {
     const pending = (() => {
