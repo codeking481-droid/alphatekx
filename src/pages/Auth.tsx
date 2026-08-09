@@ -112,7 +112,9 @@ export default function Auth() {
   }, [location.pathname, location.search, session?.access_token])
 
   const startGoogleSignup = async () => {
-    if (pending || googleSignupPending || isGoogleSignupPending()) return
+    if (pending) return
+    // A previous interrupted tab must never disable a fresh sign-in attempt.
+    clearGoogleSignupPending()
     setPending(true)
     setGoogleSignupPending(true)
     setNotice('')
@@ -177,7 +179,7 @@ export default function Auth() {
     }
   }
 
-  const blocked = !configured || pending || googleSignupPending || Boolean(user)
+  const blocked = !configured || pending || Boolean(user)
   const bonusMessage = result?.isAdmin
     ? 'Administrator access is active.'
     : result?.reason === 'bonus_unlocked' || result?.reason === 'google_credit_ready'
