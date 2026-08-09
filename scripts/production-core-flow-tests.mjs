@@ -30,6 +30,7 @@ await test('Verified Paystack purchases use atomic idempotent settlement with a 
   assert.match(migration, /create table if not exists public\.credit_purchases/)
   assert.match(migration, /create table if not exists public\.credit_transactions/)
   assert.match(migration, /drop function if exists public\.settle_paystack_purchase_v2\(uuid,text,integer,integer,text,text\)/)
+  assert.match(migration, /user_id,amount,type,credits_added,credits_removed,balance_after/)
   assert.match(migration, /balance_after/)
   assert.match(migration, /'duplicate', true/)
   assert.match(server, /creditsAdded: result\.credits, balance: result\.balance/)

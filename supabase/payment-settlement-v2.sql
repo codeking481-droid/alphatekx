@@ -38,6 +38,9 @@ alter table public.credit_purchases add column if not exists settled_at timestam
 alter table public.credit_purchases add column if not exists created_at timestamptz not null default now();
 
 alter table public.credit_transactions add column if not exists user_id uuid references auth.users(id) on delete cascade;
+-- Legacy AlphaTekx installations record the signed credit delta in `amount`
+-- and enforce NOT NULL. Keep writing it alongside the newer split columns.
+alter table public.credit_transactions add column if not exists amount integer not null default 0;
 alter table public.credit_transactions add column if not exists type text;
 alter table public.credit_transactions add column if not exists credits_added integer not null default 0;
 alter table public.credit_transactions add column if not exists credits_removed integer not null default 0;
@@ -144,9 +147,9 @@ begin
   where id = p_user_id;
 
   insert into public.credit_transactions(
-    user_id,type,credits_added,credits_removed,balance_after,reference,reason,metadata
+    user_id,amount,type,credits_added,credits_removed,balance_after,reference,reason,metadata
   ) values(
-    p_user_id,
+    p_user_id,p_credits,
     case when is_subscription then 'subscription' else 'purchase' end,
     p_credits,0,next_balance,p_reference,
     case when is_subscription then 'Subscription: '||p_plan else 'Credit purchase' end,
