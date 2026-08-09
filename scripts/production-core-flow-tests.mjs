@@ -49,16 +49,19 @@ await test('Paystack callback retries transient settlement failures safely', () 
   assert.match(payment, /still being credited\|temporar\|try again\|processing/)
 })
 
-await test('Google OAuth returns to Auth and opens the workspace automatically', () => {
+await test('Google OAuth returns directly to Dashboard and opens the workspace automatically', () => {
   const auth = read('src/lib/auth.tsx')
   const authPage = read('src/pages/Auth.tsx')
-  assert.match(auth, /\/auth\?oauth=google/)
+  assert.match(auth, /\/dashboard\?oauth=google/)
+  assert.doesNotMatch(auth, /redirectTo = `\$\{window\.location\.origin\}\/auth\?oauth=google`/)
   assert.match(authPage, /navigate\('\/dashboard', \{ replace: true \}\)/)
   assert.match(auth, /alphatekx:google-signup-state/)
   assert.match(auth, /clearGoogleSignupPending\(\)[\s\S]*AbortController/)
   assert.match(auth, /12_000/)
   assert.match(authPage, /addEventListener\(googleSignupStateEvent/)
   assert.match(authPage, /window\.location\.hash\.includes\('access_token='\)/)
+  assert.match(authPage, /supabase\.auth\.setSession\(\{ access_token: accessToken, refresh_token: refreshToken \}\)/)
+  assert.match(authPage, /window\.location\.replace\('\/dashboard'\)/)
 })
 
 await test('HTML app shell cannot keep stale OAuth or payment bundles after deployment', () => {

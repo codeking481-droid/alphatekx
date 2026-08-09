@@ -38,6 +38,45 @@ export default function Auth() {
   const navigate = useNavigate()
 
   useEffect(() => {
+    if (!supabase || session?.access_token || !window.location.hash.includes('access_token=')) return
+    const fragment = new URLSearchParams(window.location.hash.slice(1))
+    const accessToken = fragment.get('access_token')
+    const refreshToken = fragment.get('refresh_token')
+    if (!accessToken || !refreshToken) {
+      clearGoogleSignupPending()
+      setGoogleSignupPending(false)
+      setNotice('Google returned an incomplete session. Please try signing in again.')
+      window.history.replaceState({}, document.title, `${location.pathname}${location.search}`)
+      return
+    }
+
+    let active = true
+    setPending(true)
+    setNotice('Completing your secure Google sign-in…')
+    // Do not depend only on detectSessionInUrl. Some browsers leave the
+    // implicit-flow tokens in the fragment without completing the session.
+    void supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
+      .then(({ data, error }) => {
+        if (!active) return
+        if (error || !data.session) throw error || new Error('Google session was not created.')
+        clearGoogleSignupPending()
+        setGoogleSignupPending(false)
+        window.history.replaceState({}, document.title, `${location.pathname}${location.search}`)
+        window.location.replace('/dashboard')
+      })
+      .catch((error) => {
+        if (!active) return
+        clearGoogleSignupPending()
+        setGoogleSignupPending(false)
+        setPending(false)
+        window.history.replaceState({}, document.title, `${location.pathname}${location.search}`)
+        setNotice(authMessage(error instanceof Error ? error.message : 'Google sign-in could not be completed.'))
+      })
+
+    return () => { active = false }
+  }, [location.pathname, location.search, session?.access_token])
+
+  useEffect(() => {
     const query = new URLSearchParams(location.search)
     const code = query.get('error_code') || ''
     const description = query.get('error_description') || query.get('error') || ''
@@ -51,7 +90,7 @@ export default function Auth() {
   }, [location.pathname, location.search, navigate])
 
   useEffect(() => {
-    if (!user || pending || googleSignupPending || !(location.pathname === '/auth' || location.pathname === '/login' || location.pathname === '/signup')) return
+    if (!session?.access_token || !(location.pathname === '/auth' || location.pathname === '/login' || location.pathname === '/signup')) return
 
     const params = new URLSearchParams(location.search)
     const pendingPlan = params.get('plan')
@@ -65,8 +104,12 @@ export default function Auth() {
       return () => window.clearTimeout(timer)
     }
 
-    navigate('/dashboard', { replace: true })
-  }, [location.pathname, location.search, navigate, user, pending, googleSignupPending])
+    clearGoogleSignupPending()
+    setGoogleSignupPending(false)
+    if (window.location.hash) window.history.replaceState({}, document.title, `${location.pathname}${location.search}`)
+    const timer = window.setTimeout(() => window.location.replace('/dashboard'), 0)
+    return () => window.clearTimeout(timer)
+  }, [location.pathname, location.search, session?.access_token])
 
   const startGoogleSignup = async () => {
     if (pending || googleSignupPending || isGoogleSignupPending()) return
@@ -109,20 +152,10 @@ export default function Auth() {
   }, [user, pending, googleSignupPending, location.pathname, location.search])
 
   useEffect(() => {
-    if (!user || pending || googleSignupPending || !session?.access_token) return
+    if (!session?.access_token) return
     setVerifying(true)
-    setPending(true)
-    setNotice('')
-    const timer = window.setTimeout(() => {
-      void refreshProfile()
-        .finally(() => {
-          setPending(false)
-          setVerifying(false)
-          navigate('/dashboard', { replace: true })
-        })
-    }, 800)
-    return () => window.clearTimeout(timer)
-  }, [navigate, refreshProfile, session?.access_token, user, pending, googleSignupPending])
+    void refreshProfile().finally(() => setVerifying(false))
+  }, [refreshProfile, session?.access_token])
 
   const emailSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
