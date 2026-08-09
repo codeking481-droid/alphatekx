@@ -91,6 +91,15 @@ export default function Auth() {
   }, [])
 
   useEffect(() => {
+    if (!session?.access_token) return
+    // Supabase normally consumes the implicit-flow fragment. Remove it
+    // defensively so tokens are never left visible in the address bar.
+    if (window.location.hash.includes('access_token=')) {
+      window.history.replaceState({}, document.title, `${location.pathname}${location.search}`)
+    }
+  }, [location.pathname, location.search, session?.access_token])
+
+  useEffect(() => {
     if (!user || pending || googleSignupPending) return
     const query = new URLSearchParams(location.search)
     const auto = query.get('auto')
