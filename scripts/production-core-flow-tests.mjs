@@ -58,6 +58,14 @@ await test('Google OAuth returns to Auth and opens the workspace automatically',
   assert.match(authPage, /addEventListener\(googleSignupStateEvent/)
 })
 
+await test('HTML app shell cannot keep stale OAuth or payment bundles after deployment', () => {
+  const server = read('server.mjs')
+  assert.match(server, /no-store, no-cache, must-revalidate, max-age=0/)
+  assert.match(server, /Pragma: 'no-cache'/)
+  assert.match(server, /Expires: '0'/)
+  assert.match(server, /public, max-age=31536000, immutable/)
+})
+
 await test('Authenticated dashboard can recover successful Paystack payments without a browser reference', () => {
   const billing = read('server/billing.mjs')
   const server = read('server.mjs')
