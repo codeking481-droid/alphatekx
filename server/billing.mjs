@@ -500,10 +500,15 @@ async function completeVerifiedPurchaseWithoutRpc(user, reference, amount, credi
     throw new Error(`Could not record the verified payment durably (${claimResponse.status})`)
   }
 
+  const releaseClaim = async () => {
+    await fetch(`${config.url}/rest/v1/credit_purchases?reference=eq.${encodeURIComponent(reference)}&user_id=eq.${encodeURIComponent(user.id)}`, {
+      method: 'DELETE', headers: serviceHeaders(config.service),
+    }).catch(() => {})
+  }
   const profileResponse = await fetch(`${config.url}/rest/v1/profiles?id=eq.${encodeURIComponent(user.id)}&select=id,credits,plan,monthly_credits,purchased_credits&limit=1`, { headers: serviceHeaders(config.service) })
-  if (!profileResponse.ok) throw new Error(`Could not read the credit account (${profileResponse.status})`)
+  if (!profileResponse.ok) { await releaseClaim(); throw new Error(`Could not read the credit account (${profileResponse.status})`) }
   const profile = (await profileResponse.json())?.[0]
-  if (!profile) throw new Error('The paid account profile could not be found')
+  if (!profile) { await releaseClaim(); throw new Error('The paid account profile could not be found') }
 
   const isSubscription = plan !== 'credits'
   const monthlyCredits = Number(profile.monthly_credits) || 0
@@ -523,7 +528,7 @@ async function completeVerifiedPurchaseWithoutRpc(user, reference, amount, credi
     headers: serviceHeaders(config.service, { Prefer: 'return=minimal' }),
     body: JSON.stringify(profilePatch),
   })
-  if (!updateResponse.ok) throw new Error(`Could not update the paid credit balance (${updateResponse.status})`)
+  if (!updateResponse.ok) { await releaseClaim(); throw new Error(`Could not update the paid credit balance (${updateResponse.status})`) }
 
   const historyResponse = await fetch(`${config.url}/rest/v1/credit_transactions`, {
     method: 'POST',
@@ -539,8 +544,44 @@ async function completeVerifiedPurchaseWithoutRpc(user, reference, amount, credi
       metadata: { plan, amount, provider: 'paystack', settlement: 'rest_fallback' },
     }),
   })
-  if (!historyResponse.ok) throw new Error(`Credits were updated but payment history could not be saved (${historyResponse.status})`)
+  if (!historyResponse.ok) process.stderr.write(`[billing] payment ${reference} credited, but history insert returned ${historyResponse.status}\n`)
   return { ok: true, remaining: nextBalance }
+}
+
+export async function grantCreditsByAdmin(admin, targetEmail, amount, config, idempotencyKey) {
+  if (!isAdmin(admin)) throw new Error('Admin access required')
+  if (!config?.url || !config?.service) throw new Error('Durable credit storage is not configured')
+  const email = normalizedEmail(targetEmail)
+  const credits = Math.floor(Number(amount))
+  if (!email || !email.includes('@')) throw new Error('Enter a valid account email')
+  if (!Number.isInteger(credits) || credits < 1 || credits > 1_000_000) throw new Error('Credits must be between 1 and 1,000,000')
+  const key = String(idempotencyKey || '').trim()
+  if (!key) throw new Error('Transfer idempotency key is required')
+  const reference = `admin-transfer:${admin.id}:${key}`
+  const existingResponse = await fetch(`${config.url}/rest/v1/credit_transactions?reference=eq.${encodeURIComponent(reference)}&select=balance_after&limit=1`, { headers: serviceHeaders(config.service) })
+  if (existingResponse.ok) {
+    const existing = await existingResponse.json()
+    if (existing?.[0]) return { ok: true, email, credits, balance: Number(existing[0].balance_after) || 0, duplicate: true }
+  }
+  const target = await findUserByEmail(email, config)
+  if (!target?.id) throw new Error('No AlphaTekx account was found for that email')
+  const profileResponse = await fetch(`${config.url}/rest/v1/profiles?id=eq.${encodeURIComponent(target.id)}&select=id,email,credits,purchased_credits&limit=1`, { headers: serviceHeaders(config.service) })
+  if (!profileResponse.ok) throw new Error(`Could not read the recipient account (${profileResponse.status})`)
+  const profile = (await profileResponse.json())?.[0]
+  if (!profile) throw new Error('Recipient credit profile was not found')
+  const nextBalance = (Number(profile.credits) || 0) + credits
+  const nextPurchased = (Number(profile.purchased_credits) || 0) + credits
+  const updateResponse = await fetch(`${config.url}/rest/v1/profiles?id=eq.${encodeURIComponent(target.id)}`, {
+    method: 'PATCH', headers: serviceHeaders(config.service, { Prefer: 'return=minimal' }),
+    body: JSON.stringify({ credits: nextBalance, purchased_credits: nextPurchased, updated_at: nowIso() }),
+  })
+  if (!updateResponse.ok) throw new Error(`Could not transfer credits (${updateResponse.status})`)
+  const historyResponse = await fetch(`${config.url}/rest/v1/credit_transactions`, {
+    method: 'POST', headers: serviceHeaders(config.service, { Prefer: 'return=minimal' }),
+    body: JSON.stringify({ user_id: target.id, type: 'admin_transfer', credits_added: credits, credits_removed: 0, balance_after: nextBalance, reference, reason: 'Credits transferred by AlphaTekx admin', metadata: { admin_id: admin.id, admin_email: userEmail(admin), recipient_email: email } }),
+  })
+  if (!historyResponse.ok) process.stderr.write(`[billing] admin transfer ${reference} applied, but history insert returned ${historyResponse.status}\n`)
+  return { ok: true, email, credits, balance: nextBalance }
 }
 
 export async function setPlan(user, planId, config, { reference } = {}) {

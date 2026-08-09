@@ -4512,6 +4512,17 @@ async function adminStats(req, res) {
   }
 }
 
+async function adminCreditTransfer(req, res) {
+  const auth = await authenticatedAdmin(req)
+  if (!auth) return json(res, 403, { error: 'Admin access required' })
+  const body = await readBody(req)
+  try {
+    return json(res, 200, await billing.grantCreditsByAdmin(auth.user, body.email, body.credits, auth.config, body.idempotencyKey))
+  } catch (error) {
+    return json(res, 400, { error: error instanceof Error ? error.message : 'Credit transfer failed' })
+  }
+}
+
 const PLAN_AMOUNT = { starter: 500000, pro: 1500000, free: 200000, old_pro: 800000, posts: 100000 }
 
 function resolvePlanFromBody(body) {
@@ -8797,6 +8808,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && req.url === '/api/credits/spend') return creditSpend(req, res)
   if (req.method === 'POST' && req.url === '/api/activity/ping') return activityPing(req, res)
   if (req.method === 'GET' && req.url === '/api/admin/stats') return adminStats(req, res)
+  if (req.method === 'POST' && req.url === '/api/admin/credits/transfer') return adminCreditTransfer(req, res)
   if (req.method === 'GET' && req.url === '/api/admin/features') return adminFeaturesHandler(req, res)
   const adminFeatureMatch = req.url?.match(/^\/api\/admin\/features\/([^/]+)$/)
   if (req.method === 'PUT' && adminFeatureMatch) return updateAdminFeatureHandler(req, res, decodeURIComponent(adminFeatureMatch[1]))

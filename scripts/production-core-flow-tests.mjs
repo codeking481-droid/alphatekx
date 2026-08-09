@@ -18,6 +18,20 @@ await test('Verified Paystack purchases use durable atomic settlement instead of
   assert.match(billing, /rest\/v1\/credit_purchases/)
   assert.match(billing, /Payment amount or currency does not match the selected AlphaTekx product/)
   assert.doesNotMatch(billing, /if \(!pendingRecord\) return \{ ok: false, reference, message: 'Payment reference was not initialized by AlphaTekx'/)
+  assert.match(billing, /releaseClaim/)
+  assert.match(billing, /payment history could not be saved|history insert returned/)
+})
+
+await test('Admin credit transfers are server-authorized, durable, and idempotent', () => {
+  const billing = read('server/billing.mjs')
+  const server = read('server.mjs')
+  const admin = read('src/pages/Admin.tsx')
+  assert.match(billing, /grantCreditsByAdmin/)
+  assert.match(billing, /admin-transfer:\$\{admin\.id\}:\$\{key\}/)
+  assert.match(server, /authenticatedAdmin\(req\)/)
+  assert.match(server, /\/api\/admin\/credits\/transfer/)
+  assert.match(admin, /Transfer credits/)
+  assert.match(admin, /crypto\.randomUUID\(\)/)
 })
 
 await test('Alpha queued state is presented as a friendly green progress notification', () => {
