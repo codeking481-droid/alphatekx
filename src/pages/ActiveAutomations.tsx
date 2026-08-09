@@ -153,6 +153,29 @@ export default function ActiveAutomations() {
     return () => window.clearInterval(timer)
   }, [refreshProfile])
 
+  // Realtime subscription: refresh agents/profile when automations or workflow_runs change
+  useEffect(() => {
+    if (!supabase) return
+    let channel: any = null
+    try {
+      // Supabase v2 channel API
+      if ((supabase as any).channel) {
+        channel = (supabase as any).channel('self_healing_updates')
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'automations' }, () => { void refreshAgents(); void refreshProfile() })
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'workflow_runs' }, () => { void refreshAgents(); void refreshProfile() })
+        void channel.subscribe()
+      } else if ((supabase as any).from) {
+        // older client fallback
+        const sub1 = (supabase as any).from('automations').on('*', () => { void refreshAgents(); void refreshProfile() }).subscribe()
+        const sub2 = (supabase as any).from('workflow_runs').on('*', () => { void refreshAgents(); void refreshProfile() }).subscribe()
+        channel = { unsubscribe: () => { try { sub1.unsubscribe(); sub2.unsubscribe() } catch {} } }
+      }
+    } catch (e) {
+      // ignore subscription setup failures
+    }
+    return () => { try { if (channel?.unsubscribe) channel.unsubscribe() } catch {} }
+  }, [refreshAgents, refreshProfile])
+
   const changeStatus = async (agent: Agent, status: AgentStatus) => {
     try {
       await setAgentLifecycle(agent.id, status === 'paused' ? 'pause' : 'resume')
