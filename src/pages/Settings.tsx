@@ -231,7 +231,9 @@ export default function Settings() {
           <div className="mt-6">
             <h3 className="flex items-center gap-2 font-black text-white"><Sparkles size={16} className="text-cyan-300"/> Upgrade plan</h3>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              {Object.values(PLANS).map((plan) => {
+                {(() => {
+                  const plansToShow = Object.values(PLANS).filter((p, i, arr) => arr.findIndex(x => x.name === p.name) === i)
+                  return plansToShow.map((plan) => {
                 const active = selectedPlan === plan.id || billing?.plan === plan.id
                 return (
                   <button key={plan.id} onClick={() => selectPlan(plan.id)} disabled={billing?.plan === plan.id} className={`relative rounded-2xl border p-4 text-left text-white shadow-[0_12px_30px_rgba(3,7,18,.24)] transition-all ${active ? 'border-cyan-300/60 bg-blue-500/20' : 'border-violet-400/30 bg-violet-500/15 hover:border-blue-300/60 hover:bg-blue-500/15'} ${billing?.plan === plan.id ? 'opacity-80' : ''}`}>
@@ -243,7 +245,8 @@ export default function Settings() {
                     </ul>
                   </button>
                 )
-              })}
+                })
+              })()}
             </div>
           </div>
 
