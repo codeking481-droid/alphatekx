@@ -18,6 +18,6 @@
     "baseUrl": ".",
     "paths": { "@/*": ["./src/*"] }
   },
-  "include": ["next-env.d.ts", "src/**/*.ts", "src/**/*.tsx", "src/**/*.js", "src/**/*.jsx", "api/**/*.ts", "api/**/*.tsx", "api/**/*.js", "api/**/*.jsx", ".next/types/**/*.ts"],
+  "include": ["next-env.d.ts", "src/**/*.ts", "src/**/*.tsx", "src/**/*.js", "src/**/*.jsx", "api/**/*.ts", "api/**/*.tsx", "api/**/*.js", "api/**/*.jsx", "app/**/*.ts", "app/**/*.tsx", "app/**/*.js", "app/**/*.jsx", "lib/**/*.ts", "lib/**/*.tsx", "lib/**/*.js", "lib/**/*.jsx", ".next/types/**/*.ts"],
   "exclude": ["node_modules", "scripts", "dist"]
 }
