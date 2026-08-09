@@ -62,6 +62,11 @@ drop policy if exists "credit transactions owner read" on public.credit_transact
 create policy "credit transactions owner read" on public.credit_transactions
   for select using (auth.uid() = user_id);
 
+-- PostgreSQL does not allow CREATE OR REPLACE FUNCTION to rename input
+-- parameters. Remove any legacy definition with this exact signature first;
+-- purchase and transaction rows are unaffected.
+drop function if exists public.settle_paystack_purchase_v2(uuid,text,integer,integer,text,text);
+
 create or replace function public.settle_paystack_purchase_v2(
   p_user_id uuid,
   p_reference text,
