@@ -85,7 +85,12 @@ export default function Settings() {
   }, [user?.id, user?.email])
 
   useEffect(() => {
-    const reference = searchParams.get('reference')
+    const pending = (() => {
+      try { return JSON.parse(localStorage.getItem('alphatekx:pending-payment') || 'null') } catch { return null }
+    })()
+    const reference = searchParams.get('reference') || searchParams.get('trxref') || searchParams.get('ref') || pending?.reference || (() => {
+      try { return localStorage.getItem('lastRef') || '' } catch { return '' }
+    })()
     if (!reference) return
     setPending(true)
     setNotice('Verifying payment...')
@@ -97,7 +102,10 @@ export default function Settings() {
         await refreshProfile()
         await loadBilling()
         setNotice('Payment verified. Your account has been updated.')
+        searchParams.delete('payment')
         searchParams.delete('reference')
+        searchParams.delete('trxref')
+        searchParams.delete('ref')
         setSearchParams(searchParams, { replace: true })
       })
       .catch((error) => setNotice(error instanceof Error ? error.message : 'Payment verification failed'))
