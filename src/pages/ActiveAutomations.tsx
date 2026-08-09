@@ -236,6 +236,7 @@ export default function ActiveAutomations() {
     return <Page size="max-w-4xl">
       <button onClick={() => navigate('/active-automations')} className="text-sm font-bold text-violet-300 hover:text-violet-200">← Running Automations</button>
       {notice && <Notice>{notice}</Notice>}
+      {selected?.plain_english_error && <div className="mt-5 w-full rounded-xl border border-rose-400/20 bg-rose-500/6 p-3 text-sm font-semibold text-rose-200">{selected.plain_english_error}</div>}
       {displayStatus(selected) === 'Needs Attention' && /credit/i.test(selected.campaign?.posts?.find(post => post.lastError)?.lastError || '') && <div className="mt-5 rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4 text-sm font-bold text-amber-100">Out of credits - Buy $3 for 20 credits to keep your AI employee working. <Link to="/settings?section=billing" className="underline">Buy credits</Link></div>}
       <section className="mt-6 rounded-[2rem] border border-white/8 bg-[#0D1322]/70 p-5 shadow-[0_24px_70px_rgba(2,6,23,0.28)] sm:p-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -349,7 +350,12 @@ function AutomationCard({ agent, runningNow, onRun }: { agent: Agent; runningNow
   const isDue = Boolean(nextRun && new Date(nextRun).getTime() <= now && ['running', 'active', 'warning', 'needs_attention'].includes(agent.status))
   return <article className="luxury-card block w-full max-w-full p-5 transition-all duration-300 hover:-translate-y-1 md:p-6">
     <Link to={`/active-automations/${agent.id}`} className="block">
-    <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-[10px] font-black uppercase tracking-[.18em] text-[#FFD700]">{platformNames(agent)}</p><h2 className="mt-2 break-words text-lg font-black text-white">{agent.name}</h2></div><span className={`flex shrink-0 items-center gap-2 rounded-full px-3 py-1 text-[11px] font-black ${state === 'Running' ? 'bg-emerald-400/10 text-emerald-300' : state === 'Needs Attention' ? 'bg-[#FFD700]/10 text-[#FFD700]' : 'bg-white/[.055] text-slate-300'}`}><i className={`size-2 animate-pulse rounded-full ${state === 'Running' ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,.8)]' : 'bg-[#FFD700] shadow-[0_0_10px_rgba(255,215,0,.7)]'}`}/>{state}</span></div>
+          <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-[10px] font-black uppercase tracking-[.18em] text-[#FFD700]">{platformNames(agent)}</p><h2 className="mt-2 break-words text-lg font-black text-white">{agent.name}</h2></div>
+            <div className="flex items-center gap-2">
+              {agent.health_status && agent.health_status !== 'healthy' && <span className={`rounded-full px-2 py-1 text-[11px] font-black ${agent.health_status === 'paused_loop' ? 'bg-rose-600/10 text-rose-300' : agent.health_status === 'needs_reconnect' ? 'bg-amber-500/10 text-amber-300' : 'bg-white/[.055] text-slate-300'}`}>{agent.health_status.replace(/_/g, ' ')}</span>}
+              <span className={`flex shrink-0 items-center gap-2 rounded-full px-3 py-1 text-[11px] font-black ${state === 'Running' ? 'bg-emerald-400/10 text-emerald-300' : state === 'Needs Attention' ? 'bg-[#FFD700]/10 text-[#FFD700]' : 'bg-white/[.055] text-slate-300'}`}><i className={`size-2 animate-pulse rounded-full ${state === 'Running' ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,.8)]' : 'bg-[#FFD700] shadow-[0_0_10px_rgba(255,215,0,.7)]'}`}/>{state}</span>
+            </div>
+          </div>
     <dl className="mt-6 grid grid-cols-2 gap-4 text-sm"><CardStat label="Schedule" value={agent.campaign?.meta?.frequencyText || agent.trigger?.cron || 'One time'} /><CardStat label="Progress" value={progress(agent)} /><CardStat label="Next run" value={nextRunLabel} /><CardStat label="Last result" value={lastResult(agent)} /></dl>
     <div className="mt-5 h-2 overflow-hidden rounded-full bg-white/[.08]"><div className="solar-progress h-full rounded-full transition-[width] duration-500" style={{ width: `${progressPercent(agent)}%` }}/></div>
     </Link>
