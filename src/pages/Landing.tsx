@@ -1219,7 +1219,7 @@ function FinalCTA() {
           <ArrowRight size={19} />
         </button>
         <p className="mt-4 text-center text-[13px] text-[#8A8A93]">
-          ✅ Instant credit after payment • If not, Contact us - 1 min reply ⚡ • Secured by Paystack
+          ✅ Instant credit + 🎉 celebration after payment • If not, Contact us - 1 min reply ⚡ • Secured by Paystack
         </p>
       </div>
     </section>
@@ -1294,7 +1294,6 @@ export default function Landing() {
         <FinalCTA />
       </main>
       <Footer />
-      <MobileCTA />
-    </div>
+      <MobileCTA />    </div>
   )
-}
+} 

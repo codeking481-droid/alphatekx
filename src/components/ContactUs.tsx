@@ -63,7 +63,7 @@ export function ContactForm({ compact = false, onSuccess }: { compact?: boolean;
       })
       const data = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(data?.error || 'Contact request failed.')
-      setSuccess('Sent! Your support request is received and our team will respond quickly.')
+      setSuccess('Sent! 🎉 Your support request is received and our team will respond quickly.')
       setForm((current) => ({ ...current, message: '', reference: current.reference || payload.reference }))
       onSuccess?.()
     } catch (error) {
@@ -108,7 +108,7 @@ export function ContactForm({ compact = false, onSuccess }: { compact?: boolean;
 
         <label className="block text-left text-sm text-white/80">
           <span className="mb-1.5 block text-xs font-semibold text-[#8A8A93]">Message</span>
-          <textarea value={form.message} onChange={(event) => update('message', event.target.value)} rows={4} className="w-full rounded-xl border border-[#24242A] bg-[#0B0B0C] p-3 text-sm text-white placeholder:text-[#6A6A73] outline-none ring-0" placeholder="I paid but didn't receive credits..." />
+          <textarea value={form.message} onChange={(event) => update('message', event.target.value)} rows={4} className="w-full rounded-xl border border-[#24242A] bg-[#0B0B0C] p-3 text-sm text-white placeholder:text-[#6A6A73] outline-none ring-0" placeholder="I paid ₦100 via Opay but no credit..." />
         </label>
 
         <button disabled={submitting} type="submit" className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-white text-sm font-semibold text-black transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-70">

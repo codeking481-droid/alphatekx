@@ -4139,9 +4139,13 @@ async function initializePaystackPayment(req, res) {
   } else if (requestedPlan === 'early_founder_19' || requestedAmount === 19) {
     item = { type: 'credits', packId: 'early_founder_19', amountUsd: requestedAmount || 19, plan: requestedPlan || 'early_founder_19', credits: 500, callbackUrl }
   } else {
-    // Backwards-compatible fallback: derive pack from credits amount
+    // Backwards-compatible fallback: derive pack from credits, amount, and currency.
     const credits = Number(body.credits || 0)
-    const pack = billing.CREDIT_PACKS.find(p => p.credits === credits) || billing.CREDIT_PACKS[0]
+    const currency = String(body.currency || body.currency_code || 'NGN').trim().toUpperCase()
+    const pack = billing.CREDIT_PACKS.find(p => p.credits === credits && String(p.currency || '').toUpperCase() === currency && p.amountKobo === requestedAmount)
+      || billing.CREDIT_PACKS.find(p => p.credits === credits && String(p.currency || '').toUpperCase() === currency)
+      || billing.CREDIT_PACKS.find(p => p.credits === credits)
+      || billing.CREDIT_PACKS[0]
     item = { type: 'credits', packId: pack.id, callbackUrl }
   }
   try {
@@ -4569,9 +4573,18 @@ export async function verifyPaystack(req, res) {
         const result = await billing.setPlan(user, planId, config)
         return json(res, 200, { verified: true, plan: result.plan, credits: result.remaining, amount: 0, mock: true })
       }
-      const pack = packId ? billing.getCreditPack(packId) : (body.credits ? billing.CREDIT_PACKS.find(p => p.credits === Number(body.credits)) : billing.CREDIT_PACKS[0])
-      const result = await billing.addCredits(user, pack?.credits || 100, config, { reference: 'dev-' + reference, type: 'purchase', reason: `Dev purchase: ${pack?.label || 'credits'}`, metadata: { packId: pack?.id, mock: true } })
-      return json(res, 200, { verified: true, credits: result.remaining, plan: 'free', amount: pack?.amountKobo || 0, mock: true })
+      const bodyCredits = Number(body.credits || 0)
+      const bodyAmount = Number(body.amount || 0)
+      const bodyCurrency = String(body.currency || body.currency_code || 'NGN').trim().toUpperCase()
+      let pack = packId ? billing.getCreditPack(packId) : null
+      if (!pack && bodyCredits) {
+        pack = billing.CREDIT_PACKS.find(p => p.credits === bodyCredits && String(p.currency || '').toUpperCase() === bodyCurrency && p.amountKobo === bodyAmount)
+          || billing.CREDIT_PACKS.find(p => p.credits === bodyCredits && String(p.currency || '').toUpperCase() === bodyCurrency)
+          || billing.CREDIT_PACKS.find(p => p.credits === bodyCredits)
+      }
+      if (!pack) pack = billing.CREDIT_PACKS[0]
+      const result = await billing.addCredits(user, pack.credits, config, { reference: 'dev-' + reference, type: 'purchase', reason: `Dev purchase: ${pack.label}`, metadata: { packId: pack.id, mock: true } })
+      return json(res, 200, { verified: true, credits: result.remaining, plan: 'free', amount: pack.amountKobo, mock: true })
     }
 
     const result = await billing.verifyPayment('paystack', reference, config)
