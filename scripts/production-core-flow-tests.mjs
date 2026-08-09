@@ -11,17 +11,27 @@ async function test(name, fn) {
 }
 const read = path => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 
-await test('Verified Paystack purchases use version-independent durable settlement instead of ephemeral pending state', () => {
+await test('Verified Paystack purchases use atomic idempotent settlement with a safe compatibility path', () => {
   const billing = read('server/billing.mjs')
+  const migration = read('supabase/payment-settlement-v2.sql')
+  const server = read('server.mjs')
+  const dashboard = read('src/pages/Dashboard.tsx')
+  assert.match(billing, /settle_paystack_purchase_v2/)
   assert.match(billing, /completeVerifiedPurchaseWithoutRpc/)
   assert.match(billing, /rest\/v1\/credit_purchases/)
-  assert.match(billing, /Older deployed RPC definitions/)
   assert.match(billing, /Payment amount or currency does not match the selected AlphaTekx product/)
   assert.doesNotMatch(billing, /if \(!pendingRecord\) return \{ ok: false, reference, message: 'Payment reference was not initialized by AlphaTekx'/)
   assert.match(billing, /releaseClaim/)
   assert.match(billing, /payment history could not be saved|history insert returned/)
   assert.match(billing, /legacyUnclassified/)
+  assert.doesNotMatch(billing, /Release it and retry once/)
   assert.doesNotMatch(billing, /Normalize the welcome grant/)
+  assert.match(migration, /for update/)
+  assert.match(migration, /balance_after/)
+  assert.match(migration, /'duplicate', true/)
+  assert.match(server, /creditsAdded: result\.credits, balance: result\.balance/)
+  assert.match(server, /throw new Error\(result\.message \|\| 'Paystack payment was not verified'\)/)
+  assert.match(dashboard, /Your balance is now/)
 })
 
 await test('Admin credit transfers are server-authorized, durable, and idempotent', () => {

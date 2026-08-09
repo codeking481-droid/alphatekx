@@ -6,6 +6,7 @@ import { useAuth } from '../lib/auth'
 import { getCreations } from '../lib/missionStore'
 import { getJson } from '../lib/apiClient'
 import { verifyCheckout } from '../lib/payment'
+import { setCredits as saveCredits } from '../lib/creditStore'
 
 export default function Dashboard() {
   const { user, session, refreshProfile } = useAuth()
@@ -31,6 +32,7 @@ export default function Dashboard() {
       .then(async ({ response, data }) => {
         if (!response.ok) throw new Error(data.error || 'Payment recovery failed')
         if (Number(data.recovered) > 0) {
+          saveCredits(Number(data.balance) || 0)
           await refreshProfile()
           setPaymentCredits(Number(data.balance) || null)
           setCelebrationTitle('Payment recovered')
@@ -56,15 +58,17 @@ export default function Dashboard() {
     void verifyCheckout('paystack', ref)
       .then(async data => {
         if (data.verified === true) {
-          const credited = Number(data.credits || searchParams.get('credits') || pending?.credits || 0)
+          const credited = Number(data.creditsAdded || searchParams.get('credits') || pending?.credits || 0)
+          const balance = Number(data.balance ?? data.credits ?? 0)
           const plan = String(data.plan || searchParams.get('plan') || pending?.plan || '')
           setPaymentCredits(credited)
+          saveCredits(balance)
           if (plan === 'early_founder_19') {
             setCelebrationTitle('Early Founder Deal Activated')
             setCelebrationMessage(`Congratulations! 🎉 Your ${credited || 500} credits are live and LinkedIn automation is unlocked.`)
           } else {
             setCelebrationTitle('Congratulations')
-            setCelebrationMessage(`Payment successful! ${credited ? `${credited.toLocaleString()} credits` : 'Credits'} were added to your account.`)
+            setCelebrationMessage(`Payment successful! ${credited ? `${credited.toLocaleString()} credits were added` : 'Your credits were added'}. Your balance is now ${balance.toLocaleString()} credits.`)
           }
           setShowCongrats(true)
           await refreshProfile()

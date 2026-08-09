@@ -56,7 +56,9 @@ function localUserHeaders(): Record<string, string> {
   return {}
 }
 
-export async function verifyCheckout(provider: PaymentProvider, reference: string): Promise<{ verified: boolean; credits?: number; plan?: string; amount?: number; reference?: string; mock?: boolean }> {
+export type VerifiedCheckout = { verified: boolean; creditsAdded?: number; balance?: number; credits?: number; duplicate?: boolean; plan?: string; amount?: number; reference?: string; mock?: boolean }
+
+export async function verifyCheckout(provider: PaymentProvider, reference: string): Promise<VerifiedCheckout> {
   let lastError = 'Payment verification failed.'
   for (let attempt = 0; attempt < 4; attempt += 1) {
     const res = await fetch('/api/payment/verify-session', {
@@ -66,7 +68,7 @@ export async function verifyCheckout(provider: PaymentProvider, reference: strin
     })
     const data = await responsePayload(res)
     if (res.ok && data.verified === true) {
-      return data as { verified: boolean; credits?: number; plan?: string; amount?: number; reference?: string; mock?: boolean }
+      return data as VerifiedCheckout
     }
     lastError = String(data.error || `Payment verification failed (${res.status})`)
     const retryable = res.status >= 500 || res.status === 409 || /still being credited|temporar|try again|processing/i.test(lastError)

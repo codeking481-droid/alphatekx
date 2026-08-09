@@ -4151,12 +4151,10 @@ async function initializePaystackPayment(req, res) {
 }
 
 async function verifyAndAddCreditsByReference(reference) {
-  try {
-    const config = supabaseConfig()
-    const result = await billing.verifyPayment('paystack', reference, config)
-    if (!result.ok) return null
-    return { user: result.user, credits: result.credits, balance: result.balance, plan: result.plan }
-  } catch { return null }
+  const config = supabaseConfig()
+  const result = await billing.verifyPayment('paystack', reference, config)
+  if (!result.ok) throw new Error(result.message || 'Paystack payment was not verified')
+  return { user: result.user, credits: result.credits, balance: result.balance, plan: result.plan, duplicate: result.duplicate === true }
 }
 
 async function paystackWebhookHandler(req, res) {
@@ -4165,8 +4163,12 @@ async function paystackWebhookHandler(req, res) {
   const signature = String(req.headers['x-paystack-signature'] || '')
   const raw = await readRawBody(req)
   const hash = createHmac('sha512', secret).update(raw).digest('hex')
-  if (!signature || !timingSafeEqual(Buffer.from(signature), Buffer.from(hash))) return json(res, 400, { error: 'Invalid signature' })
-  const body = JSON.parse(raw.toString('utf8'))
+  const signatureBuffer = Buffer.from(signature)
+  const hashBuffer = Buffer.from(hash)
+  if (!signature || signatureBuffer.length !== hashBuffer.length || !timingSafeEqual(signatureBuffer, hashBuffer)) return json(res, 401, { error: 'Invalid signature' })
+  let body
+  try { body = JSON.parse(raw.toString('utf8')) }
+  catch { return json(res, 400, { error: 'Invalid webhook body' }) }
   const reference = await billing.verifyPaystackWebhook(body, secret)
   if (!reference) return json(res, 200, { received: true, ignored: body.event })
   if (reference && (body.data?.metadata?.type === 'marketplace' || String(reference).startsWith('alphatekx_marketplace_'))) {
@@ -8765,9 +8767,16 @@ const server = http.createServer(async (req, res) => {
       if (!reference) return json(res, 400, { error: 'Missing payment reference.' })
       if (provider !== 'paystack') return json(res, 400, { error: 'Unsupported payment provider.' })
       const config = supabaseConfig()
+      const currentUser = await currentOrLocalUser(req, config.url, config.anon)
+      if (!currentUser) return json(res, 401, { error: 'Authentication required' })
       const result = await billing.verifyPayment(provider, reference, config)
-      if (!result.ok) return json(res, 400, { error: result.message || 'Verification failed', verified: false })
-      return json(res, 200, { verified: true, credits: result.balance, plan: result.plan || 'free', amount: result.amount || 0, reference: result.reference || reference })
+      if (!result.ok) {
+        const retryable = /pending|processing|ongoing|temporar|try again/i.test(String(result.message || ''))
+        return json(res, retryable ? 409 : 400, { error: result.message || 'Verification failed', verified: false, retryable })
+      }
+      const ownsPayment = String(result.user?.id || '') === String(currentUser.id || '') || String(result.user?.email || '').trim().toLowerCase() === String(currentUser.email || '').trim().toLowerCase()
+      if (!ownsPayment) return json(res, 403, { error: 'This payment belongs to another AlphaTekx account.' })
+      return json(res, 200, { verified: true, creditsAdded: result.credits, balance: result.balance, credits: result.balance, duplicate: result.duplicate === true, plan: result.plan || 'free', amount: result.amount || 0, reference: result.reference || reference })
     } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Verification failed.' }) }
   }
   if (req.method === 'POST' && req.url === '/api/payment/recover') {
