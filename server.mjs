@@ -2417,43 +2417,87 @@ async function executeAgentAction(agent, action) {
     return { status: 'error', duration: 0, output: null, error_code: 'NO_USER', credits_used: 0, log: 'Agent has no associated user.' }
   }
   const start = Date.now()
+  // Enhanced self-healing wrapper with retries, loop-guard, and Supabase reporting
+  const config = supabaseConfig()
+  const headers = serviceHeaders(config.service)
+  const backoffs = [5000, 30000, 300000]
+  const maxAttempts = backoffs.length
+
+  // Loop guard: if > threshold runs in window, pause automation
   try {
-    const result = await executeConnectorAction(user, action)
-    const response = result.status === 'success'
-      ? { agentId: agent.id, connectorType: action.connector, content: content.slice(0, 500), status: 'success', response: result.log }
-      : { agentId: agent.id, connectorType: action.connector, content: content.slice(0, 500), status: 'failed', error: result.log }
-    await addAgentLog(response)
-    if (result.status === 'success') {
-      try { await alphaBrain.logMemory(user.id, { event_type: 'workflow_run', summary: `${action.connector} ${action.action} succeeded: ${result.log}`, source_workflow_id: agent.id, metadata: { agent: agent.name, connector: action.connector, action: action.action, output: result.output } }) } catch {}
-    } else {
-      try { await alphaBrain.recordHealing(user.id, agent.id, result.log, '', 'logged') } catch {}
+    const windowSec = 60
+    const threshold = 20
+    const windowStart = new Date(Date.now() - windowSec * 1000).toISOString()
+    const runsUrl = `${config.url}/rest/v1/workflow_runs?automation_id=eq.${encodeURIComponent(agent.id)}&created_at=gte.${encodeURIComponent(windowStart)}&select=id`
+    const runsResp = await fetch(runsUrl, { method: 'GET', headers: { ...headers, Prefer: 'count=exact' } })
+    const cr = runsResp.headers.get('content-range') || ''
+    const total = cr.includes('/') ? Number(cr.split('/').slice(-1)[0]) : null
+    if (Number.isInteger(total) && total >= threshold) {
+      // pause automation
+      const pauseUpdate = { status: 'paused', health_status: 'paused_loop', paused_reason: `Loop ${total} runs in ${windowSec}s`, plain_english_error: `Automation paused due to ${total} rapid runs in ${windowSec} seconds.` }
+      try { await fetch(`${config.url}/rest/v1/automations?id=eq.${encodeURIComponent(agent.id)}`, { method: 'PATCH', headers, body: JSON.stringify(pauseUpdate) }) } catch {}
+      const runRow = { automation_id: agent.id, workflow_id: agent.id, user_id: agent.userId || null, status: 'paused_loop', error: 'loop_guard', plain_english_error: `Loop detected ${total} runs in ${windowSec}s`, retry_count: 0, created_at: new Date().toISOString() }
+      try { await fetch(`${config.url}/rest/v1/workflow_runs`, { method: 'POST', headers, body: JSON.stringify(runRow) }) } catch {}
+      await addAgentLog({ agentId: agent.id, connectorType: action.connector, content: content.slice(0, 500), status: 'failed', error: 'Loop guard triggered' })
+      return { status: 'error', duration: Date.now() - start, output: null, error_code: 'LOOP_GUARD', credits_used: 0, log: 'Loop guard triggered: automation paused' }
     }
-    return result
-  } catch (error) {
-    const message = String(error instanceof Error ? error.message : error)
-    await addAgentLog({ agentId: agent.id, connectorType: action.connector, content: content.slice(0, 500), status: 'failed', error: message })
-    try { await alphaBrain.recordHealing(user.id, agent.id, message, `Check ${action.connector} connection and retry.`, 'pending') } catch {}
+  } catch (e) { /* ignore loop guard failures */ }
 
-    // Attempt to record run and surface to Supabase automations table for self-healing
+  let attempt = 0
+  while (attempt < maxAttempts) {
     try {
-      const config = supabaseConfig()
-      const createdAt = new Date().toISOString()
-      const runRow = { automation_id: agent.id, workflow_id: agent.id, user_id: agent.userId || null, status: 'failed', error: message, plain_english_error: message, retry_count: 0, created_at: createdAt }
-      try { await fetch(`${config.url}/rest/v1/workflow_runs`, { method: 'POST', headers: serviceHeaders(config.service), body: JSON.stringify(runRow) }) } catch (e) { /* ignore */ }
+      const result = await executeConnectorAction(user, action)
+      const response = result.status === 'success'
+        ? { agentId: agent.id, connectorType: action.connector, content: content.slice(0, 500), status: 'success', response: result.log }
+        : { agentId: agent.id, connectorType: action.connector, content: content.slice(0, 500), status: 'failed', error: result.log }
+      await addAgentLog(response)
+      if (result.status === 'success') {
+        try { await alphaBrain.logMemory(user.id, { event_type: 'workflow_run', summary: `${action.connector} ${action.action} succeeded: ${result.log}`, source_workflow_id: agent.id, metadata: { agent: agent.name, connector: action.connector, action: action.action, output: result.output } }) } catch {}
+        // record success run
+        try { await fetch(`${config.url}/rest/v1/workflow_runs`, { method: 'POST', headers, body: JSON.stringify({ automation_id: agent.id, workflow_id: agent.id, user_id: agent.userId || null, status: 'success', error: null, plain_english_error: null, retry_count: attempt, created_at: new Date().toISOString() }) }) } catch {}
+      } else {
+        try { await alphaBrain.recordHealing(user.id, agent.id, result.log, '', 'logged') } catch {}
+      }
+      return result
+    } catch (error) {
+      attempt += 1
+      const message = String(error instanceof Error ? error.message : error)
+      await addAgentLog({ agentId: agent.id, connectorType: action.connector, content: content.slice(0, 500), status: 'failed', error: message })
+      try { await alphaBrain.recordHealing(user.id, agent.id, message, `Check ${action.connector} connection and retry.`, 'pending') } catch {}
 
-      // Determine plainEnglish category and update automation health_status
-      let health = 'needs_attention'
-      if (/401|403|unauthori|invalid_grant|token expired/i.test(message)) health = 'needs_reconnect'
-      else if (/429|rate limit|too many requests/i.test(message)) health = 'rate_limit'
-      else if (/schema|column not found|not found/i.test(message)) health = 'needs_attention'
+      // translate minimal errors
+      const isAuth = /401|403|unauthori|invalid_grant|token expired/i.test(message)
+      const isRate = /429|rate limit|too many requests/i.test(message)
+      const isServer = /5\d{2}|502|503|504/i.test(message)
 
-      const update = { health_status: health, plain_english_error: health === 'needs_reconnect' ? `Your ${action.connector} connection needs reconnect. Click Reconnect.` : message }
-      try { await fetch(`${config.url}/rest/v1/automations?id=eq.${encodeURIComponent(agent.id)}`, { method: 'PATCH', headers: serviceHeaders(config.service), body: JSON.stringify(update) }) } catch (e) { /* ignore */ }
-    } catch (e) {
-      // ignore failures to report to Supabase
+      // record failed run
+      try {
+        await fetch(`${config.url}/rest/v1/workflow_runs`, { method: 'POST', headers, body: JSON.stringify({ automation_id: agent.id, workflow_id: agent.id, user_id: agent.userId || null, status: attempt >= maxAttempts ? 'failed_needs_attention' : 'failed', error: message, plain_english_error: isAuth ? `Your ${action.connector} connection expired. Reconnect.` : (isRate ? `Rate limited by ${action.connector}.` : message), retry_count: attempt, created_at: new Date().toISOString() }) })
+      } catch (e) { /* ignore */ }
+
+      if (isAuth) {
+        // mark needs_reconnect and pause
+        try { await fetch(`${config.url}/rest/v1/automations?id=eq.${encodeURIComponent(agent.id)}`, { method: 'PATCH', headers, body: JSON.stringify({ health_status: 'needs_reconnect', plain_english_error: `Your ${action.connector} connection needs reconnect. Click Reconnect.`, status: 'paused' }) }) } catch {}
+        return { status: 'error', duration: Date.now() - start, output: null, error_code: 'AUTH_ERROR', credits_used: 0, log: message }
+      }
+
+      if (!isRate && !isServer && attempt >= maxAttempts) {
+        // non-retriable generic failure
+        try { await fetch(`${config.url}/rest/v1/automations?id=eq.${encodeURIComponent(agent.id)}`, { method: 'PATCH', headers, body: JSON.stringify({ health_status: 'needs_attention', plain_english_error: message }) }) } catch {}
+        return { status: 'error', duration: Date.now() - start, output: null, error_code: 'CONNECTOR_ERROR', credits_used: 0, log: message }
+      }
+
+      if (attempt >= maxAttempts) {
+        try { await fetch(`${config.url}/rest/v1/automations?id=eq.${encodeURIComponent(agent.id)}`, { method: 'PATCH', headers, body: JSON.stringify({ health_status: 'needs_attention', plain_english_error: message }) }) } catch {}
+        return { status: 'error', duration: Date.now() - start, output: null, error_code: 'RETRY_EXHAUSTED', credits_used: 0, log: message }
+      }
+
+      // retryable: wait and retry
+      const wait = backoffs[Math.min(attempt - 1, backoffs.length - 1)] || 5000
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise(r => setTimeout(r, wait))
+      // continue loop
     }
-
-    return { status: 'error', duration: Date.now() - start, output: null, error_code: 'CONNECTOR_ERROR', credits_used: 0, log: message }
   }
 }
 
