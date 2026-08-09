@@ -25,8 +25,6 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!session?.access_token) return
-    const key = `alphatekx:payment-recovery:${session.user.id}`
-    try { if (sessionStorage.getItem(key)) return; sessionStorage.setItem(key, new Date().toISOString()) } catch {}
     void fetch('/api/payment/recover', { method: 'POST', headers: { Authorization: `Bearer ${session.access_token}` } })
       .then(async response => ({ response, data: await response.json().catch(() => ({})) }))
       .then(async ({ response, data }) => {
@@ -40,7 +38,7 @@ export default function Dashboard() {
           setShowCongrats(true)
         }
       })
-      .catch(() => { try { sessionStorage.removeItem(key) } catch {} })
+      .catch(() => {})
   }, [refreshProfile, session?.access_token, session?.user.id])
 
   useEffect(() => {
@@ -80,10 +78,30 @@ export default function Dashboard() {
         }
         setShowContactBanner(true)
       })
-      .catch(() => {
+      .catch(async () => {
+        // A callback can lose its query string on weak mobile networks. The
+        // authenticated recovery endpoint independently asks Paystack for the
+        // user's recent successful transactions and settles them idempotently.
+        if (session?.access_token) {
+          try {
+            const response = await fetch('/api/payment/recover', { method: 'POST', headers: { Authorization: `Bearer ${session.access_token}` } })
+            const recovered = await response.json().catch(() => ({}))
+            if (response.ok && Number(recovered.balance) >= 0) {
+              const balance = Number(recovered.balance) || 0
+              saveCredits(balance)
+              await refreshProfile()
+              setPaymentCredits(balance)
+              setCelebrationTitle(Number(recovered.recovered) > 0 ? 'Payment recovered' : 'Payment checked')
+              setCelebrationMessage(`Your Paystack payments were checked securely. Your balance is ${balance.toLocaleString()} credits.`)
+              setShowCongrats(true)
+              setShowContactBanner(false)
+              return
+            }
+          } catch {}
+        }
         setShowContactBanner(true)
       })
-  }, [refreshProfile, searchParams, setSearchParams])
+  }, [refreshProfile, searchParams, session?.access_token, setSearchParams])
 
   const creations = getCreations().slice(0, 6)
   const emailFirstName = user?.email ? user.email.split('@')[0].split('.')[0].replace(/^./, c => c.toUpperCase()) : 'Builder'
