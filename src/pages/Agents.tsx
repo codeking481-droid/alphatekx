@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowRight, CalendarDays, CheckCircle2, Clock3, Download, Edit3, ExternalLink, Image, Linkedin, LoaderCircle, Plug, Send, Sparkles, X } from 'lucide-react'
+import { ArrowRight, CalendarDays, CheckCircle2, Clock3, Download, Edit3, ExternalLink, Image, Linkedin, LoaderCircle, Mic, MicOff, Plug, Send, Sparkles, X } from 'lucide-react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import { getAgents, setCache, useAgents } from '../lib/agents/agentStore'
@@ -20,6 +20,8 @@ type AlphaConversation = {
   automationDraft: Agent | null
 }
 type CreationSuccess = { id: string; name: string; message?: string }
+type SpeechResultEvent = { results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }> }
+type SpeechRecognitionLike = { lang: string; interimResults: boolean; continuous: boolean; start: () => void; stop: () => void; onresult: ((event: SpeechResultEvent) => void) | null; onerror: (() => void) | null; onend: (() => void) | null }
 
 const CONVERSATION_KEY = 'alphatekx:planning-conversation:v2'
 const PROMPT_KEY = 'alphatekx:planning-prompt:v2'
@@ -68,7 +70,9 @@ export default function Agents() {
   const [creating, setCreating] = useState(false)
   const [jobId, setJobId] = useState<string | null>(() => sessionStorage.getItem('alphatekx:planning-job'))
   const [notice, setNotice] = useState('')
+  const [listening, setListening] = useState(false)
   const composer = useRef<HTMLTextAreaElement>(null)
+  const speech = useRef<SpeechRecognitionLike | null>(null)
   const messageEnd = useRef<HTMLDivElement>(null)
   const linkedIn = integrationStatus.linkedin && 'connected' in integrationStatus.linkedin ? integrationStatus.linkedin : undefined
   const linkedInReady = linkedIn?.connected === true && linkedIn?.ready === true
@@ -219,6 +223,29 @@ export default function Agents() {
     }
   }
 
+  const toggleVoice = () => {
+    if (listening) { speech.current?.stop(); return }
+    const browser = window as Window & { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike }
+    const Recognition = browser.SpeechRecognition || browser.webkitSpeechRecognition
+    if (!Recognition) { setNotice('Voice input is not supported by this browser. You can still type your request.'); return }
+    const recognition = new Recognition()
+    recognition.lang = navigator.language || 'en-NG'
+    recognition.interimResults = true
+    recognition.continuous = false
+    recognition.onresult = event => {
+      const spoken = Array.from(event.results).map(result => result[0]?.transcript || '').join(' ').trim()
+      setInput(spoken)
+      const final = Array.from(event.results).every(result => result.isFinal)
+      if (final && spoken) { recognition.stop(); void send(spoken) }
+    }
+    recognition.onerror = () => { setListening(false); setNotice('Alpha could not hear clearly. Tap the microphone and try again.') }
+    recognition.onend = () => setListening(false)
+    speech.current = recognition
+    setListening(true)
+    setNotice('Listening… Speak naturally. Alpha will send when you finish.')
+    recognition.start()
+  }
+
   const created = (agent: Agent) => {
     const result = { id: agent.id, name: agent.name || 'Automation' }
     clearPlanning()
@@ -348,6 +375,9 @@ export default function Agents() {
         <div className="shrink-0 border-t border-white/[0.06] bg-[#0D0E11]/95 px-3 pb-[max(.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-2xl sm:px-6 sm:pb-5">
           <label htmlFor="automation-request" className="sr-only">{conversation ? 'Answer Alpha' : 'Message Alpha'}</label>
           <div className="mx-auto flex max-w-3xl items-end gap-2 rounded-[1.65rem] border border-white/[0.08] bg-[#18191E] p-2.5 shadow-[0_14px_40px_rgba(0,0,0,0.38)] focus-within:border-white/15">
+            <button type="button" onClick={toggleVoice} disabled={creating} className={`grid h-12 w-12 shrink-0 place-items-center rounded-full border transition ${listening ? 'border-emerald-300/50 bg-emerald-400/15 text-emerald-200 shadow-[0_0_24px_rgba(52,211,153,.18)]' : 'border-white/10 bg-white/[.04] text-white/70 hover:bg-white/[.08] hover:text-white'} disabled:opacity-40`} aria-label={listening ? 'Stop voice input' : 'Speak to Alpha'} title={listening ? 'Stop listening' : 'Speak to Alpha'}>
+              {listening ? <MicOff size={19}/> : <Mic size={19}/>}
+            </button>
             <textarea
               id="automation-request"
               ref={composer}

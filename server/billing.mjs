@@ -209,22 +209,8 @@ async function readProfile(user, config) {
   const totalSpent = Number(profile.total_credits_spent ?? balance.total_credits_spent) || 0
   // If split columns are missing, treat all credits as purchased so spending works
   const normalizedPurchased = (monthly === 0 && purchased === 0 && total > 0) ? total : purchased
-  // Normalize the welcome grant so new free users start with the standard 10-credit onboarding balance.
-  if (!isAdmin(user) && String(profile.plan || 'free') === 'free' && monthly === 0 && purchased === 0 && totalSpent === 0 && total < DEFAULT_CREDITS) {
-    await writeProfile(user, config, { credits: DEFAULT_CREDITS })
-    return {
-      ...profile,
-      id: user.id,
-      email: user.email || profile.email || local?.email || '',
-      credits: DEFAULT_CREDITS,
-      plan: 'free',
-      monthly_credits: 0,
-      purchased_credits: 0,
-      monthly_credits_used: 0,
-      total_credits_spent: 0,
-      subscription_renews_at: profile.subscription_renews_at || balance.subscription_renews_at || null,
-    }
-  }
+  // Welcome credits are granted once by the authenticated signup endpoint.
+  // Never refill an existing balance here: doing so would undo legitimate usage.
   return {
     id: user.id,
     email: user.email || profile.email || local?.email || '',
@@ -421,6 +407,8 @@ export async function addCredits(user, amount, config, { reference, type = 'purc
   const isSubscription = type === 'subscription' || String(reason).includes('subscription') || String(metadata?.plan).includes('pro')
   let monthly = Number(profile.monthly_credits) || 0
   let purchased = Number(profile.purchased_credits) || 0
+  const legacyUnclassified = Math.max(0, (Number(profile.credits) || 0) - monthly - purchased)
+  purchased += legacyUnclassified
   if (isSubscription) {
     monthly += added
     if (metadata?.plan) profile.plan = metadata.plan
@@ -442,26 +430,8 @@ export async function addCredits(user, amount, config, { reference, type = 'purc
 
 async function completeVerifiedPurchase(user, reference, amount, credits, plan, config) {
   if (!config?.url || !config?.service) throw new Error('Durable payment storage is not configured')
-  const response = await fetch(`${config.url}/rest/v1/rpc/complete_credit_purchase`, {
-    method: 'POST',
-    headers: serviceHeaders(config.service),
-    body: JSON.stringify({
-      p_user_id: user.id,
-      p_reference: reference,
-      p_amount: amount,
-      p_credits: credits,
-      p_plan: plan,
-    }),
-  })
-  if (response.ok) return { ok: true, remaining: Number(await response.json()) || 0 }
-
-  const raw = await response.text()
-  if (/already processed|duplicate key|unique constraint/i.test(raw)) {
-    return { ok: true, remaining: await getUserCredits(user, config), duplicate: true }
-  }
-  if (response.status !== 404 && !/PGRST202|schema cache|function.*not found/i.test(raw)) {
-    throw new Error(`Could not save verified credits durably (${response.status})`)
-  }
+  // Use the version-independent durable path. Older deployed RPC definitions
+  // recomputed totals from split columns and could discard a user's live balance.
   return completeVerifiedPurchaseWithoutRpc(user, reference, amount, credits, plan, config)
 }
 
@@ -495,7 +465,11 @@ async function completeVerifiedPurchaseWithoutRpc(user, reference, amount, credi
     if (claimResponse.status === 409 || /duplicate key|unique constraint/i.test(raw)) {
       const existingBalance = await durablePurchaseBalance(user, reference, config)
       if (existingBalance != null) return { ok: true, remaining: existingBalance, duplicate: true }
-      throw new Error('This verified payment is still being credited. Please refresh in a moment.')
+      // A claim without its transaction record is an interrupted settlement.
+      // Release it and retry once; a completed settlement always has history.
+      const releaseResponse = await fetch(`${config.url}/rest/v1/credit_purchases?reference=eq.${encodeURIComponent(reference)}&user_id=eq.${encodeURIComponent(user.id)}`, { method: 'DELETE', headers: serviceHeaders(config.service) })
+      if (!releaseResponse.ok) throw new Error('This verified payment is still being credited. Please refresh in a moment.')
+      return completeVerifiedPurchaseWithoutRpc(user, reference, amount, credits, plan, config)
     }
     throw new Error(`Could not record the verified payment durably (${claimResponse.status})`)
   }
@@ -513,8 +487,10 @@ async function completeVerifiedPurchaseWithoutRpc(user, reference, amount, credi
   const isSubscription = plan !== 'credits'
   const monthlyCredits = Number(profile.monthly_credits) || 0
   const purchasedCredits = Number(profile.purchased_credits) || 0
-  const nextMonthly = isSubscription ? monthlyCredits + credits : monthlyCredits
-  const nextPurchased = isSubscription ? purchasedCredits : purchasedCredits + credits
+  const currentBalance = Number(profile.credits) || 0
+  const legacyUnclassified = Math.max(0, currentBalance - monthlyCredits - purchasedCredits)
+  const nextMonthly = isSubscription ? credits : monthlyCredits
+  const nextPurchased = purchasedCredits + legacyUnclassified + (isSubscription ? 0 : credits)
   const nextBalance = nextMonthly + nextPurchased
   const profilePatch = {
     credits: nextBalance,
@@ -865,7 +841,34 @@ async function verifyPaystack(reference, config) {
     await writeProfile(user, config, { last_payment_at: nowIso() })
   } catch {}
   const paidAt = data.data.paid_at || nowIso()
-  return { ok: true, reference, credits, balance: result.remaining, plan: result.plan, paidAt, provider: 'paystack', amount: Number(data.data?.amount || 0) / 100, user }
+  return { ok: true, reference, credits, balance: result.remaining, plan: result.plan, paidAt, provider: 'paystack', amount: Number(data.data?.amount || 0) / 100, user, duplicate: result.duplicate === true }
+}
+
+export async function recoverRecentPaystackPurchases(user, config) {
+  const secret = process.env.PAYSTACK_SECRET_KEY
+  if (!secret) throw new Error('Paystack is not configured')
+  if (!user?.id || !userEmail(user)) throw new Error('Authentication required')
+  const from = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString()
+  const response = await fetch(`https://api.paystack.co/transaction?status=success&perPage=50&from=${encodeURIComponent(from)}`, {
+    headers: { Authorization: `Bearer ${secret}` },
+  })
+  const payload = await parsePaystackResponse(response, 'payment recovery')
+  if (!response.ok || payload.status !== true) throw new Error(payload.message || 'Paystack payment recovery failed')
+  const email = userEmail(user)
+  const matches = (Array.isArray(payload.data) ? payload.data : [])
+    .filter(transaction => {
+      const metadata = transaction?.metadata || {}
+      const source = String(metadata.source || '')
+      const belongsToUser = String(metadata.user_id || '') === String(user.id) || normalizedEmail(transaction?.customer?.email) === email
+      return belongsToUser && /^(credits_|subscription_)/.test(source) && transaction?.status === 'success' && transaction?.reference
+    })
+    .slice(0, 10)
+  const settled = []
+  for (const transaction of matches) {
+    const result = await verifyPaystack(String(transaction.reference), config)
+    if (result.ok && !result.duplicate) settled.push({ reference: result.reference, credits: result.credits, balance: result.balance })
+  }
+  return { ok: true, recovered: settled.length, payments: settled, balance: await getUserCredits(user, config) }
 }
 
 export async function verifyPaystackWebhook(body, secret) {

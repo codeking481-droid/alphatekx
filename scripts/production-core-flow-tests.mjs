@@ -11,15 +11,17 @@ async function test(name, fn) {
 }
 const read = path => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 
-await test('Verified Paystack purchases use durable atomic settlement instead of ephemeral pending state', () => {
+await test('Verified Paystack purchases use version-independent durable settlement instead of ephemeral pending state', () => {
   const billing = read('server/billing.mjs')
-  assert.match(billing, /rpc\/complete_credit_purchase/)
   assert.match(billing, /completeVerifiedPurchaseWithoutRpc/)
   assert.match(billing, /rest\/v1\/credit_purchases/)
+  assert.match(billing, /Older deployed RPC definitions/)
   assert.match(billing, /Payment amount or currency does not match the selected AlphaTekx product/)
   assert.doesNotMatch(billing, /if \(!pendingRecord\) return \{ ok: false, reference, message: 'Payment reference was not initialized by AlphaTekx'/)
   assert.match(billing, /releaseClaim/)
   assert.match(billing, /payment history could not be saved|history insert returned/)
+  assert.match(billing, /legacyUnclassified/)
+  assert.doesNotMatch(billing, /Normalize the welcome grant/)
 })
 
 await test('Admin credit transfers are server-authorized, durable, and idempotent', () => {
@@ -49,8 +51,21 @@ await test('Paystack callback retries transient settlement failures safely', () 
 
 await test('Google OAuth returns to Auth and opens the workspace automatically', () => {
   const auth = read('src/lib/auth.tsx')
+  const authPage = read('src/pages/Auth.tsx')
   assert.match(auth, /\/auth\?oauth=google/)
   assert.match(auth, /window\.location\.assign\('\/dashboard'\)/)
+  assert.match(auth, /alphatekx:google-signup-state/)
+  assert.match(authPage, /addEventListener\(googleSignupStateEvent/)
+})
+
+await test('Authenticated dashboard can recover successful Paystack payments without a browser reference', () => {
+  const billing = read('server/billing.mjs')
+  const server = read('server.mjs')
+  const dashboard = read('src/pages/Dashboard.tsx')
+  assert.match(billing, /recoverRecentPaystackPurchases/)
+  assert.match(billing, /transaction\?status=success&perPage=50/)
+  assert.match(server, /\/api\/payment\/recover/)
+  assert.match(dashboard, /alphatekx:payment-recovery:/)
 })
 
 await test('Alpha mobile chat uses available workspace height and a safe-area composer', () => {
@@ -58,6 +73,8 @@ await test('Alpha mobile chat uses available workspace height and a safe-area co
   assert.match(agents, /h-full min-h-0/)
   assert.match(agents, /safe-area-inset-bottom/)
   assert.match(agents, /Math\.min\(event\.currentTarget\.scrollHeight, 160\)/)
+  assert.match(agents, /webkitSpeechRecognition/)
+  assert.match(agents, /Speak to Alpha/)
 })
 
 await test('Paystack empty response reports the operation without JSON parser leakage', async () => {

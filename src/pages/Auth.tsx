@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { CheckCircle2, Chrome, LoaderCircle, Mail, ShieldCheck, Sparkles, User, Lock } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { clearGoogleSignupPending, instantGoogleSignup, isGoogleSignupPending, useAuth } from '../lib/auth'
+import { clearGoogleSignupPending, googleSignupStateEvent, instantGoogleSignup, isGoogleSignupPending, useAuth } from '../lib/auth'
 import { getDeviceFingerprint } from '../lib/fingerprint'
 import { startPayment } from '../lib/paystack'
 import { supabase } from '../lib/supabase'
@@ -85,6 +85,9 @@ export default function Auth() {
 
   useEffect(() => {
     setGoogleSignupPending(isGoogleSignupPending())
+    const sync = () => setGoogleSignupPending(isGoogleSignupPending())
+    window.addEventListener(googleSignupStateEvent, sync)
+    return () => window.removeEventListener(googleSignupStateEvent, sync)
   }, [])
 
   useEffect(() => {
