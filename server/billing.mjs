@@ -20,8 +20,8 @@ function writeJsonFile(file, value) {
   try { fs.writeFileSync(file, JSON.stringify(value, null, 2)) } catch {}
 }
 
-function serviceHeaders(serviceKey) {
-  return supabaseServiceHeaders(serviceKey)
+function serviceHeaders(serviceKey, extra = {}) {
+  return supabaseServiceHeaders(serviceKey, extra)
 }
 
 export const PLANS = {
@@ -430,9 +430,37 @@ export async function addCredits(user, amount, config, { reference, type = 'purc
 
 async function completeVerifiedPurchase(user, reference, amount, credits, plan, config) {
   if (!config?.url || !config?.service) throw new Error('Durable payment storage is not configured')
-  // Use the version-independent durable path. Older deployed RPC definitions
-  // recomputed totals from split columns and could discard a user's live balance.
-  return completeVerifiedPurchaseWithoutRpc(user, reference, amount, credits, plan, config)
+  const rpcResponse = await fetch(`${config.url}/rest/v1/rpc/settle_paystack_purchase_v2`, {
+    method: 'POST',
+    headers: serviceHeaders(config.service),
+    body: JSON.stringify({
+      p_user_id: user.id,
+      p_reference: reference,
+      p_amount: amount,
+      p_credits: credits,
+      p_plan: plan,
+      p_email: userEmail(user),
+    }),
+  })
+  if (rpcResponse.ok) {
+    const payload = await rpcResponse.json()
+    const result = Array.isArray(payload) ? payload[0] : payload
+    return {
+      ok: true,
+      remaining: Number(result?.balance) || 0,
+      duplicate: result?.duplicate === true,
+      plan: String(result?.plan || plan || 'credits'),
+    }
+  }
+  const rpcError = await rpcResponse.text()
+  // PGRST202 means the new migration has not reached this environment yet.
+  // Keep the legacy path temporarily available, but never fall back after the
+  // RPC itself ran and rejected a payment.
+  if (rpcResponse.status === 404 || /PGRST202|schema cache|could not find the function/i.test(rpcError)) {
+    process.stderr.write('[billing] settle_paystack_purchase_v2 is unavailable; using compatibility settlement\n')
+    return completeVerifiedPurchaseWithoutRpc(user, reference, amount, credits, plan, config)
+  }
+  throw new Error(`Atomic payment settlement failed (${rpcResponse.status})`)
 }
 
 async function durablePurchaseBalance(user, reference, config) {
@@ -465,11 +493,10 @@ async function completeVerifiedPurchaseWithoutRpc(user, reference, amount, credi
     if (claimResponse.status === 409 || /duplicate key|unique constraint/i.test(raw)) {
       const existingBalance = await durablePurchaseBalance(user, reference, config)
       if (existingBalance != null) return { ok: true, remaining: existingBalance, duplicate: true }
-      // A claim without its transaction record is an interrupted settlement.
-      // Release it and retry once; a completed settlement always has history.
-      const releaseResponse = await fetch(`${config.url}/rest/v1/credit_purchases?reference=eq.${encodeURIComponent(reference)}&user_id=eq.${encodeURIComponent(user.id)}`, { method: 'DELETE', headers: serviceHeaders(config.service) })
-      if (!releaseResponse.ok) throw new Error('This verified payment is still being credited. Please refresh in a moment.')
-      return completeVerifiedPurchaseWithoutRpc(user, reference, amount, credits, plan, config)
+      // Never delete a durable claim here. The profile may already have been
+      // credited before a process interruption; deleting and replaying it can
+      // double-credit a successful payment.
+      throw new Error('This verified payment is still being credited. Please refresh in a moment.')
     }
     throw new Error(`Could not record the verified payment durably (${claimResponse.status})`)
   }
@@ -841,7 +868,7 @@ async function verifyPaystack(reference, config) {
     await writeProfile(user, config, { last_payment_at: nowIso() })
   } catch {}
   const paidAt = data.data.paid_at || nowIso()
-  return { ok: true, reference, credits, balance: result.remaining, plan: result.plan, paidAt, provider: 'paystack', amount: Number(data.data?.amount || 0) / 100, user, duplicate: result.duplicate === true }
+  return { ok: true, reference, credits: expectedCredits, balance: result.remaining, plan: result.plan || durablePlan, paidAt, provider: 'paystack', amount: Number(data.data?.amount || 0) / 100, user, duplicate: result.duplicate === true }
 }
 
 export async function recoverRecentPaystackPurchases(user, config) {
