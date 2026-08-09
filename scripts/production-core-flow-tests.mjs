@@ -53,9 +53,12 @@ await test('Google OAuth returns to Auth and opens the workspace automatically',
   const auth = read('src/lib/auth.tsx')
   const authPage = read('src/pages/Auth.tsx')
   assert.match(auth, /\/auth\?oauth=google/)
-  assert.match(auth, /window\.location\.assign\('\/dashboard'\)/)
+  assert.match(authPage, /navigate\('\/dashboard', \{ replace: true \}\)/)
   assert.match(auth, /alphatekx:google-signup-state/)
+  assert.match(auth, /clearGoogleSignupPending\(\)[\s\S]*AbortController/)
+  assert.match(auth, /12_000/)
   assert.match(authPage, /addEventListener\(googleSignupStateEvent/)
+  assert.match(authPage, /window\.location\.hash\.includes\('access_token='\)/)
 })
 
 await test('HTML app shell cannot keep stale OAuth or payment bundles after deployment', () => {

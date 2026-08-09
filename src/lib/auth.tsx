@@ -52,6 +52,7 @@ const GOOGLE_SIGNUP_PLAN_KEY = 'alphatekx:pending-google-signup-plan'
 const GOOGLE_SIGNUP_PENDING_TTL_MS = 10 * 60 * 1000
 const GOOGLE_SIGNUP_STATE_EVENT = 'alphatekx:google-signup-state'
 let googleSignupLaunchInFlight = false
+let googleSignupCompletionInFlight = false
 
 export function isGoogleSignupPending() {
   try {
@@ -130,13 +131,24 @@ export async function instantGoogleSignup(plan?: string) {
 export async function completeInstantGoogleSignup(session: Session | null) {
   if (!supabase || !session?.access_token || !session.user) return
   const pending = localStorage.getItem(GOOGLE_SIGNUP_PENDING_KEY)
-  if (!pending) return
+  if (!pending || googleSignupCompletionInFlight) return
+
+  googleSignupCompletionInFlight = true
+  const plan = localStorage.getItem(GOOGLE_SIGNUP_PLAN_KEY)
+  // Authentication has already succeeded. Release the sign-in screen before
+  // provisioning welcome credits so a slow database request cannot strand a
+  // valid non-admin user on /auth with every control disabled.
+  clearGoogleSignupPending()
+
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), 12_000)
 
   try {
     const deviceId = getOrCreateDeviceId()
     const fingerprint = `${navigator.userAgent}${screen.width}x${screen.height}${Intl.DateTimeFormat().resolvedOptions().timeZone}`
     const response = await fetch('/api/verify-bonus', {
       method: 'POST',
+      signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${session.access_token}`,
@@ -154,15 +166,13 @@ export async function completeInstantGoogleSignup(session: Session | null) {
       throw new Error(String(body.error || 'Google signup verification failed.'))
     }
 
-    const plan = localStorage.getItem(GOOGLE_SIGNUP_PLAN_KEY)
     if (plan === 'early_founder_19') {
       await startPayment(19, 'early_founder_19')
       return
     }
-
-    window.location.assign('/dashboard')
   } finally {
-    clearGoogleSignupPending()
+    window.clearTimeout(timeout)
+    googleSignupCompletionInFlight = false
   }
 }
 
@@ -306,7 +316,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     if (!supabase || !session?.user) return
     void completeInstantGoogleSignup(session).catch(() => {
-      // Ignore pending Google signup flow failures here; the UI can still continue.
+      // Authentication is independent from bonus provisioning. The signed-in
+      // user can continue while the dashboard/profile recovery path retries.
     })
   }, [session])
 
