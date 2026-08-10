@@ -398,7 +398,26 @@ function AutomationCard({ agent, runningNow, onRun }: { agent: Agent; runningNow
     return () => window.clearInterval(timer)
   }, [])
 
-  const nextRunLabel = nextRun ? `${new Date(nextRun).toLocaleString()} · ${formatCountdown(nextRun, now)}` : 'No future run'
+  const formatNextRunWAT = (iso?: string) => {
+    if (!iso) return 'No future run'
+    const date = new Date(iso)
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Africa/Lagos',
+      weekday: 'short',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+      timeZoneName: 'short',
+    }).formatToParts(date)
+    const weekday = parts.find(part => part.type === 'weekday')?.value || ''
+    const hour = parts.find(part => part.type === 'hour')?.value || ''
+    const minute = parts.find(part => part.type === 'minute')?.value || ''
+    const dayPeriod = parts.find(part => part.type === 'dayPeriod')?.value || ''
+    const zone = parts.find(part => part.type === 'timeZoneName')?.value || 'WAT'
+    return `${weekday} ${hour}:${minute} ${dayPeriod} ${zone}`.replace('  ', ' ')
+  }
+
+  const nextRunLabel = nextRun ? `${formatNextRunWAT(nextRun)} · in ${formatCountdown(nextRun, now)}` : 'No future run'
   const state = displayStatus(agent)
   const isDue = Boolean(nextRun && new Date(nextRun).getTime() <= now && ['running', 'active', 'warning', 'needs_attention'].includes(agent.status))
   return <article className="luxury-card block w-full max-w-full p-5 transition-all duration-300 hover:-translate-y-1 md:p-6">

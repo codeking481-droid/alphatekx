@@ -1,12 +1,31 @@
 import { DEFAULT_CREDIT_BALANCE } from './credits'
 import { supabase } from './supabase'
-import { userEmail as authUserEmail } from './adminAccess'
 
-const KEY = 'alphatekx_credits'
+const STORAGE_PREFIX = 'alphatekx_credits:'
 const EVENT = 'alphatekx:credits-change'
+const CURRENT_USER_KEY = 'alphatekx:current-user-id'
+
+function getStoredUserId() {
+  try {
+    const currentUser = localStorage.getItem(CURRENT_USER_KEY)
+    if (currentUser) return currentUser
+    const raw = localStorage.getItem('alphatekx:local-user')
+    if (raw) {
+      const u = JSON.parse(raw) as { id?: string }
+      if (u?.id) return String(u.id)
+    }
+  } catch {}
+  return null
+}
+
+function getStorageKey() {
+  const userId = getStoredUserId()
+  return userId ? `${STORAGE_PREFIX}${userId}` : `${STORAGE_PREFIX}anonymous`
+}
 
 export function getCredits() {
-  const parsed = Number(localStorage.getItem(KEY) ?? String(DEFAULT_CREDIT_BALANCE))
+  const key = getStorageKey()
+  const parsed = Number(localStorage.getItem(key) ?? String(DEFAULT_CREDIT_BALANCE))
   return Number.isFinite(parsed) ? parsed : DEFAULT_CREDIT_BALANCE
 }
 
@@ -20,7 +39,7 @@ export async function spendCredits(amount: number) {
     try {
       const raw = localStorage.getItem('alphatekx:local-user')
       if (raw) {
-        const u = JSON.parse(raw)
+        const u = JSON.parse(raw) as { id?: string; email?: string }
         if (u?.id && u?.email) {
           headers['x-local-user-id'] = String(u.id)
           headers['x-local-user-email'] = String(u.email)
@@ -46,7 +65,7 @@ export async function spendCredits(amount: number) {
 }
 
 export function addCredits(amount: number) { setCredits(getCredits() + amount) }
-export function setCredits(credits: number) { localStorage.setItem(KEY, String(Math.max(0, credits))); window.dispatchEvent(new Event(EVENT)) }
+export function setCredits(credits: number) { const key = getStorageKey(); localStorage.setItem(key, String(Math.max(0, credits))); window.dispatchEvent(new Event(EVENT)) }
 
 export async function hydrateCredits() {
   if (!supabase) return getCredits()
