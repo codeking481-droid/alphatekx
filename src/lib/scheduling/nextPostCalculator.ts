@@ -83,12 +83,29 @@ function localDateTimeToUtc(date: string, time: string, timeZone = 'UTC') {
   const desired = Date.UTC(year, month - 1, day, hour, minute, 0)
   if (timeZone === 'UTC') return new Date(desired)
   let candidate = desired
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(candidate)).map(part => [part.type, part.value]))
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(new Date(candidate)).map(part => [part.type, part.value]))
     const represented = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(parts.hour), Number(parts.minute), 0)
+    if (represented === candidate) break
     candidate += desired - represented
   }
-  const finalParts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(candidate)).map(part => [part.type, part.value]))
+  const finalParts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date(candidate)).map(part => [part.type, part.value]))
   const finalLocal = Date.UTC(Number(finalParts.year), Number(finalParts.month) - 1, Number(finalParts.day), Number(finalParts.hour), Number(finalParts.minute), 0)
   if (finalLocal !== desired) throw new Error('That local time does not exist in the selected timezone. Choose another exact time.')
   return new Date(candidate)
@@ -106,20 +123,29 @@ export function calculateNextPost(postDays: number | number[] | string | string[
   const { hour, minute } = parseTime(postTime)
   const now = new Date(fromDate)
   if (Number.isNaN(now.getTime())) throw new Error('A valid starting date is required')
-  const baseParts = getPartsInTimeZone(now, timezone)
-  const targetDate = `${baseParts.year}-${String(baseParts.month).padStart(2, '0')}-${String(baseParts.day).padStart(2, '0')}`
-  const targetTime = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
 
-  for (let offset = 0; offset <= 14; offset += 1) {
-    const cursor = new Date(now.getTime() + offset * 24 * 60 * 60 * 1000)
-    const parts = getPartsInTimeZone(cursor, timezone)
+  const localNow = getPartsInTimeZone(now, timezone)
+  for (let offset = 0; offset <= 28; offset += 1) {
+    const nextDay = new Date(now.getTime() + offset * 24 * 60 * 60 * 1000)
+    const parts = getPartsInTimeZone(nextDay, timezone)
     const weekday = new Date(Date.UTC(parts.year, parts.month - 1, parts.day)).getUTCDay()
     if (!days.includes(weekday)) continue
-    const candidate = localDateTimeToUtc(`${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`, targetTime, timezone)
-    if (candidate.getTime() > now.getTime()) return candidate
+
+    const candidate = localDateTimeToUtc(
+      `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`,
+      `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`,
+      timezone,
+    )
+    if (candidate.getTime() > now.getTime()) {
+      return candidate
+    }
   }
 
-  const fallback = localDateTimeToUtc(targetDate, targetTime, timezone)
+  const fallback = localDateTimeToUtc(
+    `${localNow.year}-${String(localNow.month).padStart(2, '0')}-${String(localNow.day).padStart(2, '0')}`,
+    `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`,
+    timezone,
+  )
   return new Date(fallback.getTime() + 24 * 60 * 60 * 1000)
 }
 
@@ -128,16 +154,20 @@ export function generateSchedule(postDays: number | number[] | string | string[]
   const days = normalizeDays(postDays)
   const { hour, minute } = parseTime(postTime)
   let cursor = calculateNextPost(postDays, postTime, timezone, fromDate)
+
   for (let index = 0; index < count; index += 1) {
     results.push(new Date(cursor))
-    const nextDate = new Date(cursor.getTime() + 24 * 60 * 60 * 1000)
     let found = false
-    for (let offset = 0; offset <= 14; offset += 1) {
-      const candidateDate = new Date(nextDate.getTime() + offset * 24 * 60 * 60 * 1000)
-      const parts = getPartsInTimeZone(candidateDate, timezone)
+    for (let offset = 1; offset <= 14; offset += 1) {
+      const nextDay = new Date(cursor.getTime() + offset * 24 * 60 * 60 * 1000)
+      const parts = getPartsInTimeZone(nextDay, timezone)
       const weekday = new Date(Date.UTC(parts.year, parts.month - 1, parts.day)).getUTCDay()
       if (!days.includes(weekday)) continue
-      cursor = localDateTimeToUtc(`${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`, `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`, timezone)
+      cursor = localDateTimeToUtc(
+        `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`,
+        `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`,
+        timezone,
+      )
       found = true
       break
     }
@@ -145,6 +175,7 @@ export function generateSchedule(postDays: number | number[] | string | string[]
       cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000)
     }
   }
+
   return results
 }
 
@@ -181,10 +212,9 @@ export function buildCampaignSchedulePlan({
   let current = cursor
   for (let index = 0; index < Math.max(1, totalRuns); index += 1) {
     scheduledDates.push(current.toISOString())
-    const nextDate = new Date(current.getTime() + 24 * 60 * 60 * 1000)
     let found = false
-    for (let offset = 0; offset <= 14; offset += 1) {
-      const candidateDate = new Date(nextDate.getTime() + offset * 24 * 60 * 60 * 1000)
+    for (let offset = 1; offset <= 14; offset += 1) {
+      const candidateDate = new Date(current.getTime() + offset * 24 * 60 * 60 * 1000)
       const parts = getPartsInTimeZone(candidateDate, timezone)
       const weekday = new Date(Date.UTC(parts.year, parts.month - 1, parts.day)).getUTCDay()
       if (!days.includes(weekday)) continue

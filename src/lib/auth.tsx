@@ -31,14 +31,15 @@ type AuthValue = {
 const AuthContext = createContext<AuthValue | null>(null)
 
 const LOCAL_USER_KEY = 'alphatekx:local-user'
+const CURRENT_USER_KEY = 'alphatekx:current-user-id'
 const PROFILE_TIMEOUT_MS = 10_000
 
 function clearUserArtifacts() {
   try {
-    for (const key of ['alphatekx:connected-platforms', 'alphatekx:running-automation', 'alphatekx:mature-wizard', 'alphatekx:mature-wizard-done']) {
+    for (const key of ['alphatekx:connected-platforms', 'alphatekx:running-automation', 'alphatekx:mature-wizard', 'alphatekx:mature-wizard-done', CURRENT_USER_KEY]) {
       localStorage.removeItem(key)
     }
-    for (let index = 0; index < localStorage.length; index += 1) {
+    for (let index = localStorage.length - 1; index >= 0; index -= 1) {
       const key = localStorage.key(index)
       if (key?.startsWith('alphatekx:connected-platforms:')) localStorage.removeItem(key)
     }
@@ -296,6 +297,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
       const changedUser = Boolean(activeUserId.current && next?.user?.id && activeUserId.current !== next.user.id)
       if (!next || changedUser) clearUserArtifacts()
       activeUserId.current = next?.user?.id || null
+      if (next?.user?.id) {
+        try { localStorage.setItem(CURRENT_USER_KEY, next.user.id) } catch {}
+      }
       setSession(next)
       setLoading(false)
       if (next) {
@@ -319,6 +323,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     const existing = readLocalUser()
     const value: LocalUser = { id: (existing?.email === normalizedEmail ? existing.id : crypto.randomUUID()), email: normalizedEmail, name: name.trim() }
     localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(value))
+    try { localStorage.setItem(CURRENT_USER_KEY, value.id) } catch {}
     setLocalUser(value)
   }
 
@@ -326,6 +331,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     try { await supabase?.auth.signOut({ scope: 'local' }) } catch {}
     clearUserArtifacts()
     localStorage.removeItem(LOCAL_USER_KEY)
+    localStorage.removeItem(CURRENT_USER_KEY)
     setSession(null)
     setLocalUser(null)
     setProfile(null)
