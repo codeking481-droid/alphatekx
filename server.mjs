@@ -29,57 +29,43 @@ import { hasUsableLinkedInStorage, normalizeLinkedInScopes, publishLinkedInTextP
 import { allowedWhatsAppRecipients, applyWhatsAppStatusEvent, executeApprovedWhatsAppMessage, normalizeWhatsAppRecipient, sendWhatsAppText, verifyWhatsAppPhoneRegistration, verifyWhatsAppWebhookSignature, whatsappCredentials, whatsappWebhookEvents } from './server/whatsapp.mjs'
 import { connectorFeatureAccess, featureStatusForUser, refreshFeatureConfig, unavailableConnectorMessage, unavailablePromptConnector } from './server/featureAccess.mjs'
 import * as alphaConnector from './server/composioConnectorService.mjs'
-// Wrap low-level provider execution with a resilient wrapper so all callers
-// (including media publishing and manual posting endpoints) benefit from
-// retries, backoffs, and deferred credit settlement to avoid charging on
-// transient failures. This keeps self-healing behavior consistent across
-// direct `alphaConnector.executeProviderAction` usages.
-{
+// Provide a local wrapper function for provider executions. We do NOT mutate
+// the imported module's exports (they are read-only in ESM). Instead we
+// expose `executeProviderWithHealing` and update call sites to use it.
+async function executeProviderWithHealing(user, provider, actionName, params = {}, options = {}) {
   const originalExecute = alphaConnector.executeProviderAction && alphaConnector.executeProviderAction.bind(alphaConnector)
-  if (originalExecute) {
-    alphaConnector.executeProviderAction = async function executeProviderWithHealing(user, provider, actionName, params = {}, options = {}) {
-      const backoffs = [5000, 30000, 300000]
-      const maxAttempts = backoffs.length
-      let attempt = 0
-      // Prefer deferring credit settlement if the underlying service supports it
-      options = { ...(options || {}), deferCreditSettlement: true }
+  if (!originalExecute) throw new Error('Connector execution not available')
+  const backoffs = [5000, 30000, 300000]
+  const maxAttempts = backoffs.length
+  let attempt = 0
+  options = { ...(options || {}), deferCreditSettlement: true }
 
-      while (true) {
-        try {
-          const res = await originalExecute(user, provider, actionName, params, options)
-          return res
-        } catch (err) {
-          attempt += 1
-          const message = String(err instanceof Error ? err.message : err)
-          const isAuth = /401|403|unauthori|invalid_grant|token expired/i.test(message)
-          const isRate = /429|rate limit|too many requests/i.test(message)
-          const isServer = /5\d{2}|502|503|504/i.test(message)
+  while (true) {
+    try {
+      return await originalExecute(user, provider, actionName, params, options)
+    } catch (err) {
+      attempt += 1
+      const message = String(err instanceof Error ? err.message : err)
+      const isAuth = /401|403|unauthori|invalid_grant|token expired/i.test(message)
+      const isRate = /429|rate limit|too many requests/i.test(message)
+      const isServer = /5\d{2}|502|503|504/i.test(message)
 
-          // Try provider-specific quick fixes when possible
-          try {
-            if (isAuth && (provider === 'gmail' || provider === 'google' || provider === 'youtube')) {
-              // best-effort refresh Google tokens for the user if possible
-              try { await refreshGoogleTokens(await getUserIntegration(user.id, 'google', supabaseConfig()).catch(() => null), supabaseConfig()) } catch (e) { }
-            }
-          } catch (e) { }
-
-          if (!isRate && !isServer) {
-            // non-transient: rethrow immediately
-            throw err
-          }
-
-          if (attempt > maxAttempts) {
-            // exhausted retries
-            throw err
-          }
-
-          const wait = backoffs[Math.min(attempt - 1, backoffs.length - 1)] || 5000
-          // wait then retry
-          // eslint-disable-next-line no-await-in-loop
-          await new Promise((r) => setTimeout(r, wait))
-          // continue loop
+      // Try quick fixes for auth where we can
+      try {
+        if (isAuth && (provider === 'gmail' || provider === 'google' || provider === 'youtube')) {
+          try { await refreshGoogleTokens(await getUserIntegration(user.id, 'google', supabaseConfig()).catch(() => null), supabaseConfig()) } catch (e) { }
         }
+      } catch (e) { }
+
+      if (!isRate && !isServer) {
+        throw err
       }
+
+      if (attempt > maxAttempts) throw err
+
+      const wait = backoffs[Math.min(attempt - 1, backoffs.length - 1)] || 5000
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((r) => setTimeout(r, wait))
     }
   }
 }
@@ -3533,7 +3519,7 @@ async function runCampaignAgent(existing, trigger, executionId, user, admin) {
         let result
         if (usesComposio) {
           const execution = buildSocialPublishingAction(platform, post, caption, campaign)
-          result = await alphaConnector.executeProviderAction(user, platform, execution.action, {
+          result = await executeProviderWithHealing(user, platform, execution.action, {
             ...execution.params,
             approvalId: `campaign:${existing.id}`,
             idempotencyKey: `${existing.id}:${post.id}:${platform}`,
@@ -5991,21 +5977,21 @@ async function postToSocial(platform, user, params) {
 
       if (platform === 'instagram') {
         if (!imageUrl) throw new Error('Instagram requires a confirmed image. Regenerate this post before publishing.')
-        return await alphaConnector.executeProviderAction(fullUser, platform, 'create_post', {
+        return await executeProviderWithHealing(fullUser, platform, 'create_post', {
           ...actionPayload,
           caption: text,
           image_url: imageUrl,
         })
       }
       if (platform === 'facebook') {
-        return await alphaConnector.executeProviderAction(fullUser, platform, 'create_page_post', {
+        return await executeProviderWithHealing(fullUser, platform, 'create_page_post', {
           ...actionPayload,
           message: text,
           ...(imageUrl ? { image_url: imageUrl } : {}),
         })
       }
       if (platform === 'x' || platform === 'twitter') {
-        return await alphaConnector.executeProviderAction(fullUser, platform, text.length > 280 ? 'create_thread' : 'create_tweet', {
+        return await executeProviderWithHealing(fullUser, platform, text.length > 280 ? 'create_thread' : 'create_tweet', {
           ...actionPayload,
           text,
           ...(imageUrl ? { image_url: imageUrl } : {}),
@@ -6014,7 +6000,7 @@ async function postToSocial(platform, user, params) {
       if (platform === 'whatsapp') {
         const to = String(params.to || params.phone || params.phoneNumber || '')
         if (!to) throw new Error('WhatsApp message requires a recipient phone number in `to` or `phone`.')
-        return await alphaConnector.executeProviderAction(fullUser, platform, 'send_message', {
+        return await executeProviderWithHealing(fullUser, platform, 'send_message', {
           ...actionPayload,
           to,
           message: text,
@@ -6022,7 +6008,7 @@ async function postToSocial(platform, user, params) {
       }
       if (platform === 'youtube') {
         if (!videoUrl) throw new Error('YouTube needs a video selected from Media Library before publishing.')
-        return await alphaConnector.executeProviderAction(fullUser, platform, 'upload_video', {
+        return await executeProviderWithHealing(fullUser, platform, 'upload_video', {
           ...actionPayload,
           title: String(params.title || params.topic || 'AlphaTekx video').slice(0, 100),
           description: text || String(params.description || 'Published by AlphaTekx after explicit approval.'),
@@ -6240,7 +6226,7 @@ async function executeConnectorAction(user, action) {
   try {
     let result
     if (action.connector === 'gmail' && ['send_email', 'list_messages'].includes(action.action)) {
-      const composioResult = await alphaConnector.executeProviderAction(user, 'gmail', action.action, {
+      const composioResult = await executeProviderWithHealing(user, 'gmail', action.action, {
         ...params,
         approvalId: String(params.approvalId || `automation:${action.action}`),
         idempotencyKey: String(params.idempotencyKey || `automation:${user.id}:${action.action}:${Date.now()}`),
@@ -6287,7 +6273,7 @@ async function executeConnectorAction(user, action) {
       }
       case 'googledocs': {
         if (['create_document', 'get_document', 'update_document'].includes(action.action)) {
-          const documentResult = await alphaConnector.executeProviderAction(user, 'googledocs', action.action, {
+          const documentResult = await executeProviderWithHealing(user, 'googledocs', action.action, {
             ...params,
             approvalId: String(params.approvalId || `automation:${action.action}`),
             idempotencyKey: String(params.idempotencyKey || `automation:${user.id}:${action.action}:${Date.now()}`),
@@ -7845,7 +7831,7 @@ const server = http.createServer(async (req, res) => {
       const results = []
       for (let index = 0; index < claimed.actions.length; index += 1) {
         const action = claimed.actions[index]
-        results.push(await alphaConnector.executeProviderAction(user, action.provider, action.action, {
+        results.push(await executeProviderWithHealing(user, action.provider, action.action, {
           ...(action.params || {}),
           approvalId: claimed.id,
           idempotencyKey: `ceo:${claimed.id}:${index}`,
@@ -7965,7 +7951,7 @@ const server = http.createServer(async (req, res) => {
       const approvalId = String(body.approval_id || body.approvalId || '').trim()
       if (!idempotencyKey) return json(res, 400, { error: 'Idempotency key is required', code: 'IDEMPOTENCY_REQUIRED' })
       if (!approvalId) return json(res, 400, { error: 'Explicit approval is required', code: 'APPROVAL_REQUIRED' })
-      const result = await alphaConnector.executeProviderAction(user, body.platform, body.action, {
+      const result = await executeProviderWithHealing(user, body.platform, body.action, {
         ...(body.params || {}), idempotencyKey, approvalId,
       })
       return json(res, 200, {
@@ -8123,7 +8109,7 @@ const server = http.createServer(async (req, res) => {
       const user = await currentOrLocalUser(req, config.url, config.anon)
       if (!user) return json(res, 401, { error: 'Authentication required' })
       const id = String(req.url).split('/').at(-2)
-      return json(res, 200, await mediaLibrary.publishMediaNow(config, user, id, alphaConnector.executeProviderAction))
+      return json(res, 200, await mediaLibrary.publishMediaNow(config, user, id, executeProviderWithHealing))
     } catch (error) {
       const code = error?.code || (/insufficient credits/i.test(String(error?.message || '')) ? 'INSUFFICIENT_CREDITS' : 'MEDIA_PUBLISH_FAILED')
       const status = code === 'INSUFFICIENT_CREDITS' ? 402 : code === 'RECONNECT_NEEDED' ? 409 : code === 'DB_ERROR' ? 503 : 502
@@ -8321,7 +8307,7 @@ const server = http.createServer(async (req, res) => {
         const user = await currentOrLocalUser(req, config.url, config.anon)
         if (!user) return json(res, 401, { error: 'Authentication required' })
         const body = await readBody(req)
-        return json(res, 200, await alphaConnector.executeProviderAction(user, match[1], match[2], body.params || {}))
+        return json(res, 200, await executeProviderWithHealing(user, match[1], match[2], body.params || {}))
       } catch (error) {
         const code = error?.code || (/insufficient credits/i.test(String(error?.message || '')) ? 'INSUFFICIENT_CREDITS' : 'EXECUTION_FAILED')
         return json(res, code === 'INSUFFICIENT_CREDITS' ? 402 : code === 'RECONNECT_NEEDED' ? 409 : 502, { error: error instanceof Error ? error.message : 'Execution failed', code, charged: false })
@@ -9143,7 +9129,7 @@ if (!process.env.VERCEL) {
       for (const agent of due) {
         try { await runAgentWithQueue(agent, 'schedule') } catch (err) { process.stdout.write(`[cron] agent ${agent.id} run error: ${err instanceof Error ? err.message : err}\n`) }
       }
-      const mediaRuns = await mediaLibrary.runDueMedia(supabaseConfig(), alphaConnector.executeProviderAction, now).catch(err => {
+      const mediaRuns = await mediaLibrary.runDueMedia(supabaseConfig(), executeProviderWithHealing, now).catch(err => {
         process.stdout.write(`[cron] media queue error: ${err instanceof Error ? err.message : err}\n`)
         return []
       })
