@@ -1,0 +1,25 @@
+name: Self-Healing Integration Tests
+
+on:
+  pull_request:
+    paths:
+      - 'src/lib/selfHealing/**'
+      - 'server.mjs'
+      - 'scripts/integration/**'
+      - 'db/self_healing_v1.sql'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      - name: Install
+        run: npm ci
+      - name: Run integration tests
+        run: node scripts/integration/run-integration-tests.mjs
+      - name: Build
+        run: npm run build
