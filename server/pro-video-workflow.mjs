@@ -7,6 +7,7 @@ import * as videoPipeline from './videoPipeline.mjs'
 import * as youtubeIntegration from './youtube-integration.mjs'
 import * as thumbnailGenerator from './thumbnail-generator.mjs'
 import * as advancedEffects from './advanced-effects.mjs'
+import * as uniquenessEngine from './uniqueness-engine.mjs'
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -87,15 +88,24 @@ export async function executeProVideoWorkflow(jobId, progressCallback = null) {
   job.status = 'running'
   job.timestamps.started = new Date()
 
+  // Generate unique variation for this video
+  const videoVariation = uniquenessEngine.createUniqueVariation({
+    colorGrade: job.config.colorGrade,
+    transition: job.config.transition,
+  })
+  
+  emitProgress(jobId, 0, `🎨 ${uniquenessEngine.describeVariation(videoVariation)}`)
+
   try {
-    // Step 1: Generate video with advanced effects
+    // Step 1: Generate video with advanced effects + uniqueness
     emitProgress(jobId, 1, '🎬 Starting pro video generation...')
     progressCallback?.({ step: 1, jobId, message: 'Generating video with advanced effects' })
 
     const videoConfig = {
       duration: job.config.duration,
-      colorGrade: job.config.colorGrade,
-      transition: job.config.transition,
+      colorGrade: videoVariation.colorGrade.name, // Use randomized color grade
+      transition: videoVariation.transition, // Use randomized transition
+      variation: videoVariation, // Full variation object
     }
 
     // Build production video with advanced effects
@@ -110,8 +120,8 @@ export async function executeProVideoWorkflow(jobId, progressCallback = null) {
       videoConfig // Pass advanced effects config
     )
 
-    emitProgress(jobId, 2, `✅ Video created: ${(videoResult.bytes.length / 1024 / 1024).toFixed(2)}MB`)
-    progressCallback?.({ step: 2, jobId, message: 'Video generation complete' })
+    emitProgress(jobId, 2, `✅ Video created: ${(videoResult.bytes.length / 1024 / 1024).toFixed(2)}MB | Unique Seed: ${videoVariation.seed.substring(0, 8)}`)
+    progressCallback?.({ step: 2, jobId, message: 'Video generation complete', variation: videoVariation })
 
     // Step 2: Generate thumbnails
     emitProgress(jobId, 3, '🎨 Generating thumbnails...')
@@ -132,6 +142,7 @@ export async function executeProVideoWorkflow(jobId, progressCallback = null) {
       resolution: '1920x1080',
       bitrate: '5000k',
       audioQuality: '192k',
+      qualityMetrics: videoResult.quality || {},
       warnings: [],
     }
 
@@ -207,10 +218,17 @@ export async function executeProVideoWorkflow(jobId, progressCallback = null) {
       metadata,
       schedule: scheduleResult,
       qualityReport,
+      variation: {
+        seed: videoVariation.seed,
+        colorGrade: videoVariation.colorGrade.name,
+        transition: videoVariation.transition,
+        textEffect: videoVariation.textEffect.animation,
+        zoomStyle: videoVariation.zoomStyle.name,
+      },
       duration: Math.round((job.timestamps.completed - job.timestamps.started) / 1000),
     }
 
-    emitProgress(jobId, 8, `🎉 Pro video workflow complete!`)
+    emitProgress(jobId, 8, `🎉 Pro video workflow complete! (Unique Seed: ${videoVariation.seed.substring(0, 8)})`)
     progressCallback?.({ step: 8, jobId, message: 'Video production complete!', final: true, result: job.result })
 
     return job.result
