@@ -8,6 +8,7 @@ import { connectorFeatureAccess, unavailableConnectorMessage, unavailablePromptC
 import { classifyIntent, clarificationResponse, conversationalResponse, helpResponse, INTENT_CATEGORIES } from './intentClassifier.mjs'
 import { ALPHATEKX_BRAIN, answerFromBrain } from './brainKnowledge.mjs'
 import * as billing from '../billing.mjs'
+import * as videoPipeline from '../videoPipeline.mjs'
 import { normalizeAutomationLifecycle } from '../automation/lifecycle.mjs'
 
 const STAGES = [
@@ -543,18 +544,51 @@ export function createConversationEngine(deps) {
     }
     // Quick video generation trigger: user asked to generate/create a video
     const isVideoCmd = /\b(?:generate|create|make)\s+(?:a\s+)?video\b/i.test(prompt) || /\bvideo about\b/i.test(prompt) || /\bcreate\s+(?:a\s+)?faceless\s+video\b/i.test(prompt)
-    if (isVideoCmd && typeof getGenerateVideo === 'function') {
+    if (isVideoCmd) {
       conversation.conversationStage = 'generating_content'
       const userObj = { id: conversation.userId, email: conversation.userEmail }
+      
+      // Show thinking process
+      const topic = prompt.replace(/\b(?:create|generate|make)\s+(?:a\s+)?(?:video\s+)?(?:of|about)?\s+/i, '').trim()
+      addMessage(conversation, 'alpha', `Got it, building your **${topic}** video.\n\nStep 1: Writing script with Groq - 6 scenes...\nStep 2: Searching Pexels for clips...\nStep 3: Downloading 6 HD videos...\nStep 4: Generating voiceovers...\nStep 5: Editing with text, music, transitions...\nStep 6: Uploading final MP4...`)
+      
       try {
-        addMessage(conversation, 'alpha', `Got it — generating your video now. I'll start planning and fetching clips.`)
-        const result = await getGenerateVideo(userObj, prompt, {})
-        // result.item contains media record and video_url
-        const url = result?.video_url || result?.item?.file_url || null
-        if (url) addMessage(conversation, 'alpha', `Your video is ready: ${url}`)
-        else addMessage(conversation, 'alpha', 'Video generated but no URL was returned. Check media library.')
+        // Use streaming video pipeline with progress callbacks
+        const progressMessages = []
+        const progressCallback = (update) => {
+          const msg = String(update.message || '')
+          if (msg && !progressMessages.includes(msg)) {
+            progressMessages.push(msg)
+            console.log(`[VIDEO PROGRESS] ${msg}`)
+          }
+        }
+        
+        // Call new production video pipeline
+        const result = await videoPipeline.buildProductionVideo(topic, 60, progressCallback, '16:9')
+        
+        if (result?.bytes && result.bytes.length > 0) {
+          // Store video if getGenerateVideo is available (for storage integration)
+          let videoUrl = null
+          if (typeof getGenerateVideo === 'function') {
+            try {
+              const storageResult = await getGenerateVideo(userObj, topic, { videoBytes: result.bytes, videoMime: result.mime })
+              videoUrl = storageResult?.video_url || storageResult?.item?.file_url
+            } catch (storageErr) {
+              console.warn('[conversationEngine] Failed to store video:', storageErr instanceof Error ? storageErr.message : storageErr)
+            }
+          }
+          
+          const finalMsg = videoUrl 
+            ? `Your **${topic}** video is ready! 6 scenes, voiceover, background music, text overlays.\n\n🎬 [Download Video](${videoUrl})\n\n**Script:**\n${result.script?.map((s, i) => `Scene ${i+1}: "${s.narration}"`).join('\n')}`
+            : `Your **${topic}** video is ready! 6 scenes edited with voiceover, music, and text overlays.\n\n**Script:**\n${result.script?.map((s, i) => `Scene ${i+1}: "${s.narration}"`).join('\n')}`
+          
+          addMessage(conversation, 'alpha', finalMsg)
+        } else {
+          addMessage(conversation, 'alpha', `Video generation completed but no output. Please try again.`)
+        }
       } catch (err) {
-        addMessage(conversation, 'alpha', `I couldn't generate the video: ${err instanceof Error ? err.message : String(err)}`)
+        const errMsg = err instanceof Error ? err.message : String(err)
+        addMessage(conversation, 'alpha', `I encountered an issue: ${errMsg}\n\nPossible solutions:\n- Try a different topic\n- Check that Groq API key is configured\n- Ensure Pexels API keys are active`)
       }
       return
     }
