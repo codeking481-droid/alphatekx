@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import ffmpegPath from 'ffmpeg-static'
 import { supabaseServiceHeaders } from './supabaseHeaders.mjs'
-import { canGenerateVideo, recordVideoGeneration, getUserBilling } from './billing.mjs'
+import { canGenerateVideo, recordVideoGeneration, getUserBilling, getPlanVideoPolicy } from './billing.mjs'
 
 const BUCKET = 'media-library'
 const MAX_FILE_SIZE = 500 * 1024 * 1024
@@ -113,36 +113,39 @@ function normalizeVideoPlanScenes(scenes, prompt, duration) {
 async function buildVideoPlan(prompt, duration, aspectRatio) {
   const cleanPrompt = String(prompt || '').trim()
   const key = getGroqApiKey()
-  if (!key) return [{ description: cleanPrompt, query: cleanPrompt, durationSeconds: duration, index: 0 }]
-  const model = String(process.env.GROQ_MODEL || 'llama-3.3-70b-versatile').trim()
-  const system = `You are a premium commercial video director. Convert the request into a short plan for ${duration}-second stock video that can be sourced from Pexels. Return valid JSON only.`
-  const user = `Request: ${cleanPrompt}\nAspect ratio: ${aspectRatio}\nTarget duration: ${duration} seconds.\nReturn an array of 1 to 3 scenes. Each scene must include: description, pexelsQuery, durationSeconds.`
+  const clipDuration = 20
+  const clipCount = Math.max(1, Math.floor(duration / clipDuration))
+  // If Groq key not present, fallback to basic plan splitting
+  if (!key) {
+    const out = []
+    for (let i = 0; i < clipCount; i += 1) {
+      out.push({ index: i, keyword: cleanPrompt, emotion: 'neutral', effect: '', durationSeconds: clipDuration })
+    }
+    return out
+  }
+  const model = String(process.env.GROQ_MODEL || 'llama-3.3-70b').trim()
+  const targetWords = duration <= 120 ? 300 : duration <= 300 ? 750 : duration <= 480 ? 1200 : 1800
+  const system = `You are an expert video director and writer. Produce a detailed director plan for a ${Math.round(duration/60)}-minute faceless emotional stock video. Respond with valid JSON only.`
+  const user = `Prompt: ${cleanPrompt}\nAspect ratio: ${aspectRatio}\nTarget duration seconds: ${duration}\nTarget word count for narration: ${targetWords}\nBreak the video into ${clipCount} clips of ${clipDuration} seconds each. For each clip produce an object with: {keyword, emotion, effect, duration:20, text} where effect contains keywords like 'shake','glow','slow','fast','rumble' if applicable. Return a JSON array of ${clipCount} clip objects.`
   try {
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${key}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: user },
-        ],
-        temperature: 0.7,
-        max_tokens: 260,
-      }),
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      body: JSON.stringify({ model, messages: [{ role: 'system', content: system }, { role: 'user', content: user }], temperature: 0.7, max_tokens: 2500 }),
     })
     const data = await response.json()
     const content = String(data?.choices?.[0]?.message?.content || '').trim()
     const parsed = parseJsonSafe(content)
-    const scenes = normalizeVideoPlanScenes(parsed, cleanPrompt, duration)
-    return scenes
-  } catch (error) {
-    console.warn(`[AlphaTekX] Groq video plan failed: ${error instanceof Error ? error.message : error}`)
-    return [{ description: cleanPrompt, query: cleanPrompt, durationSeconds: duration, index: 0 }]
+    if (Array.isArray(parsed) && parsed.length >= 1) {
+      return parsed.map((c, idx) => ({ index: idx, keyword: String(c.keyword || c.query || cleanPrompt).trim(), emotion: c.emotion || c.mood || 'neutral', effect: c.effect || c.effects || String(c.effect || ''), durationSeconds: Number(c.duration || clipDuration) || clipDuration, text: c.text || '' }))
+    }
+  } catch (err) {
+    console.warn('[AlphaTekX] Groq planner failed:', err instanceof Error ? err.message : err)
   }
+  // Fallback simple split
+  const out = []
+  for (let i = 0; i < clipCount; i += 1) out.push({ index: i, keyword: cleanPrompt, emotion: 'neutral', effect: '', durationSeconds: clipDuration })
+  return out
 }
 
 function choosePexelsFile(video) {
@@ -160,15 +163,28 @@ function choosePexelsFile(video) {
 }
 
 async function searchPexelsClips(query, aspectRatio) {
-  const apiKey = getPexelsApiKey()
-  if (!apiKey) return []
-  const response = await fetch(
-    `https://api.pexels.com/videos/search?query=${encodeURIComponent(query)}&per_page=5&orientation=${encodeURIComponent(pexelsOrientation(aspectRatio))}`,
-    { headers: { Authorization: apiKey } },
-  )
-  const data = await responseJson(response)
-  if (!Array.isArray(data?.videos)) return []
-  return data.videos
+  const apiKeys = [process.env.PEXELS_API_KEY_1, process.env.PEXELS_API_KEY_2, process.env.PEXELS_API_KEY_3, process.env.PEXELS_API_KEY].map(String).filter(Boolean)
+  if (!apiKeys.length) return []
+  const perPage = 20
+  for (const key of apiKeys) {
+    try {
+      const response = await fetch(`https://api.pexels.com/videos/search?query=${encodeURIComponent(query)}&per_page=${perPage}&orientation=${encodeURIComponent(pexelsOrientation(aspectRatio))}`, { headers: { Authorization: key } })
+      if (!response.ok) {
+        if (response.status === 429 || response.status === 401) continue
+        const dataErr = await response.text().catch(() => '')
+        console.warn('[AlphaTekX] Pexels returned error:', response.status, dataErr)
+        continue
+      }
+      const data = await responseJson(response)
+      if (!Array.isArray(data?.videos)) return []
+      // Filter HD and duration >=20s
+      return (data.videos || []).filter(v => (v.width || 0) >= 1280 && (v.duration || 0) >= 20)
+    } catch (err) {
+      console.warn('[AlphaTekX] Pexels fetch error with key:', err instanceof Error ? err.message : err)
+      continue
+    }
+  }
+  return []
 }
 
 async function fetchPexelsClip(planScene, aspectRatio) {
@@ -187,6 +203,30 @@ async function fetchPexelsClip(planScene, aspectRatio) {
     }
   }
   return null
+}
+
+// Simple local librarian cache to avoid reusing same clip ids for a user within 7 days
+const LIBRARIAN_FILE = path.resolve('data', 'librarian.json')
+function loadLibrarian() {
+  try { return JSON.parse(fs.readFileSync(LIBRARIAN_FILE, 'utf8')) } catch { return {} }
+}
+function saveLibrarian(data) {
+  try { fs.mkdirSync(path.dirname(LIBRARIAN_FILE), { recursive: true }) } catch {}
+  try { fs.writeFileSync(LIBRARIAN_FILE, JSON.stringify(data, null, 2), 'utf8') } catch {}
+}
+function isClipRecentlyUsed(userId, clipId) {
+  const data = loadLibrarian()
+  const list = Array.isArray(data[userId]) ? data[userId] : []
+  const cutoff = Date.now() - (7 * 24 * 60 * 60 * 1000)
+  return list.some(entry => entry.id === clipId && new Date(entry.at).getTime() >= cutoff)
+}
+function markClipUsed(userId, clipId) {
+  const data = loadLibrarian()
+  const list = Array.isArray(data[userId]) ? data[userId] : []
+  list.unshift({ id: clipId, at: new Date().toISOString() })
+  // keep only last 200 entries
+  data[userId] = list.slice(0, 200)
+  saveLibrarian(data)
 }
 
 async function transcodeClip(inputPath, outputPath, durationSeconds, aspectRatio) {
@@ -223,6 +263,58 @@ async function transcodeClip(inputPath, outputPath, durationSeconds, aspectRatio
   }
 }
 
+async function processClipWithEffects(inputPath, outputPath, scene, aspectRatio) {
+  // scene: { keyword, emotion, effect, durationSeconds, text }
+  const duration = Number(scene.durationSeconds || 20)
+  const effects = String(scene.effect || scene.effects || '')
+  const wantsShake = /shak|shook|shake/i.test(effects)
+  const wantsGlow = /glow/i.test(effects)
+  const wantsSlow = /slow/i.test(effects)
+  const wantsFast = /fast/i.test(effects)
+  const wantsRumble = /rumble/i.test(effects)
+  const wantsPopText = /pop/i.test(effects) || (scene.text && scene.text.trim())
+  const sfxWhoosh = String(process.env.WHOOSH_PATH || path.join('public', 'sfx', 'whoosh.mp3'))
+  const sfxRumble = String(process.env.RUMBLE_PATH || path.join('public', 'sfx', 'rumble.mp3'))
+
+  const filters = []
+  // scale/crop to aspect
+  filters.push(ffmpegScaleFilter(aspectRatio))
+  // speed
+  if (wantsSlow) filters.push(`setpts=${2.0}*PTS`)
+  if (wantsFast) filters.push(`setpts=${0.5}*PTS`)
+  // subtle shake via rotation expression
+  if (wantsShake) filters.push("rotate=0.03*sin(8*PI*t)")
+  // glow approximate
+  if (wantsGlow) filters.push('gblur=sigma=10:steps=1,boxblur=5:1')
+  // zoom (fast/slow)
+  if (wantsFast) filters.push("zoompan=z='min(zoom+0.06,1.5)':d=1")
+  else if (wantsSlow) filters.push("zoompan=z='if(lte(zoom,1),1.01*zoom,1.01)':d=1")
+  // drawtext pop
+  const drawParts = []
+  if (wantsPopText && (scene.text || scene.keyword)) {
+    const txt = (scene.text || scene.keyword || '').replace(/[:'"\\]/g, '')
+    drawParts.push(`drawtext=fontcolor=white:borderw=6:bordercolor=black:fontsize=80:text='${txt}':x=(w-text_w)/2:y=(h-text_h)/2:enable='between(t,0.2,3)'`)
+  }
+  const filterComplex = [...filters, ...drawParts].join(',')
+
+  const args = ['-y', '-i', inputPath]
+  const useWhoosh = wantsRumble ? sfxRumble : wantsShake || wantsPopText ? sfxWhoosh : ''
+  if (useWhoosh && fs.existsSync(useWhoosh)) args.push('-i', useWhoosh)
+  if (filterComplex) args.push('-vf', filterComplex)
+  args.push('-t', String(duration))
+  // audio mapping
+  if (useWhoosh && fs.existsSync(useWhoosh)) {
+    args.push('-filter_complex', fs.existsSync(useWhoosh) ? `[0:a][1:a]amix=inputs=2:duration=first:dropout_transition=2[aout]` : '')
+    args.push('-map', '0:v', '-map', '[aout]')
+    args.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-c:a', 'aac', '-b:a', '128k', outputPath)
+    // Clean up empty filter_complex entry if not needed
+    args.splice(args.findIndex(a => a === ''), 1)
+  } else {
+    args.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-c:a', 'aac', '-b:a', '128k', outputPath)
+  }
+  return runFfmpeg(args, path.dirname(outputPath))
+}
+
 async function concatenateClips(tempDir, clipPaths, outputPath) {
   const listFile = path.join(tempDir, 'concat-list.txt')
   const content = clipPaths.map(clip => `file '${path.basename(clip).replace(/'/g, "'\\''")}'`).join('\n')
@@ -256,9 +348,18 @@ async function renderPexelsVideo(prompt, duration, aspectRatio) {
       const sourcePath = path.join(tempDir, `scene-${scene.index}-source.mp4`)
       const downloaded = await downloadVideo(clip.url, 180_000)
       await fs.promises.writeFile(sourcePath, downloaded.bytes)
-      const trimmedPath = path.join(tempDir, `scene-${scene.index}-trimmed.mp4`)
-      await transcodeClip(sourcePath, trimmedPath, scene.durationSeconds, aspectRatio)
-      clipPaths.push(trimmedPath)
+      const processedPath = path.join(tempDir, `scene-${scene.index}-processed.mp4`)
+      try {
+        await processClipWithEffects(sourcePath, processedPath, scene, aspectRatio)
+        clipPaths.push(processedPath)
+        // Mark clip as used for this user if we can extract an id from url
+        try { const clipId = String(new URL(clip.url).pathname.split('/').pop() || '') ; if (clipId) markClipUsed(user.id, clipId) } catch {}
+      } catch (err) {
+        console.warn('[AlphaTekX] per-clip processing failed:', err instanceof Error ? err.message : err)
+        const trimmedPath = path.join(tempDir, `scene-${scene.index}-trimmed.mp4`)
+        await transcodeClip(sourcePath, trimmedPath, scene.durationSeconds, aspectRatio)
+        clipPaths.push(trimmedPath)
+      }
     }
     if (!clipPaths.length) throw new Error('Pexels did not return any usable clips for this request.')
     if (clipPaths.length === 1) {
@@ -822,6 +923,48 @@ export async function generateVideo(config, user, prompt, options = {}) {
   try {
     await recordVideoGeneration(user, config, { count: 1 }).catch(() => {})
   } catch {}
+  // Scheduler and Vault handling based on plan policy
+  try {
+    const billing = await getUserBilling(user, config)
+    const policy = getPlanVideoPolicy(billing.plan)
+    // For $49-like plans, schedule 7 auto-posts at 9AM daily if enabled
+    if (policy.schedulerDays && policy.schedulerDays >= 7 && options.autoSchedule) {
+      const scheduled = []
+      const start = new Date()
+      // next 9AM local
+      start.setHours(9, 0, 0, 0)
+      for (let i = 0; i < 7; i += 1) {
+        const d = new Date(start);
+        d.setDate(start.getDate() + i)
+        const scheduledFor = d.toISOString()
+        // create scheduled media entries
+        try {
+          await insertMediaRecord(config, {
+            user_id: user.id,
+            storage_path: storagePath,
+            file_name: item.file_name,
+            file_type: 'video',
+            mime_type: item.mime_type || downloaded.mime,
+            file_size: item.file_size || downloaded.bytes.length,
+            title: `${cleanPrompt} (scheduled)`,
+            description: cleanPrompt,
+            tags: ['auto-schedule', billing.plan],
+            status: 'scheduled',
+            scheduled_for: scheduledFor,
+          })
+          scheduled.push(scheduledFor)
+        } catch (err) { console.warn('[AlphaTekX] scheduling insert failed', err) }
+      }
+    }
+    // For $99 plans, mark vault saved – insert optional vault column if available
+    if (policy.vault) {
+      try {
+        await insertMediaRecord(config, { user_id: user.id, storage_path: storagePath, file_name: item.file_name, file_type: 'video', vault_saved: true, tags: ['vault', billing.plan] }, 'return=minimal')
+      } catch (err) { console.warn('[AlphaTekX] vault save failed', err) }
+    }
+  } catch (err) {
+    console.warn('[AlphaTekX] scheduler/vault handling failed:', err)
+  }
   const fileUrl = await signedUrl(config, storagePath, 86400)
   return { item: { ...item, file_url: fileUrl }, video_url: fileUrl, video_storage_path: storagePath, model }
 }
