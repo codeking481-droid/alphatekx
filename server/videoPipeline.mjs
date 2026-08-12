@@ -22,6 +22,23 @@ function ffmpegBinary() {
   return binary
 }
 
+function getFontPath() {
+  // Try common font paths on different systems
+  const fontPaths = [
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',  // Linux
+    '/System/Library/Fonts/Arial.ttf',  // macOS
+    'C:\\Windows\\Fonts\\arial.ttf',  // Windows
+    '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',  // Linux alt
+  ]
+  for (const fpath of fontPaths) {
+    try {
+      if (fs.existsSync(fpath)) return fpath
+    } catch { }
+  }
+  // Fallback: return first path (FFmpeg will handle missing font)
+  return fontPaths[0]
+}
+
 async function runFfmpeg(args, cwd) {
   const result = spawnSync(ffmpegBinary(), args, { cwd, encoding: 'utf8', windowsHide: true })
   if (result.status === 0) return result
@@ -232,20 +249,48 @@ export async function editClipWithText(inputPath, outputPath, scene, tempDir, as
   const duration = scene.durationSec || 10
   const text = scene.onScreenText !== 'none' ? scene.onScreenText : ''
   
+  // Try editing with text first, fallback to without if drawtext fails
+  try {
+    await editClipWithTextInternal(inputPath, outputPath, scene, tempDir, aspectRatio, true)
+  } catch (err) {
+    const errMsg = String(err)
+    if (errMsg.includes('drawtext') || errMsg.includes('No such filter')) {
+      log('FFmpeg', `Text overlay failed (drawtext), retrying without text for scene ${scene.sceneIndex}`)
+      try {
+        await editClipWithTextInternal(inputPath, outputPath, scene, tempDir, aspectRatio, false)
+      } catch (retryErr) {
+        // Last resort: just scale and zoom without any effects
+        log('FFmpeg', `All effects failed, using minimal filter chain for scene ${scene.sceneIndex}`)
+        await editClipWithTextInternal(inputPath, outputPath, scene, tempDir, aspectRatio, false, true)
+      }
+    } else {
+      throw err
+    }
+  }
+}
+
+async function editClipWithTextInternal(inputPath, outputPath, scene, tempDir, aspectRatio, withText = true, minimal = false) {
+  const duration = scene.durationSec || 10
+  const text = withText && scene.onScreenText !== 'none' ? scene.onScreenText : ''
+  
   // Build filter chain
   const filters = []
   
   // Scale to aspect ratio
   filters.push(ffmpegScaleFilter(aspectRatio))
   
-  // Add text overlay with pop effect
-  if (text) {
+  // Add text overlay with proper fontfile (if withText is true)
+  if (text && !minimal) {
     const textEscaped = text.replace(/'/g, "'\\''")
-    filters.push(`drawtext=text='${textEscaped}':fontsize=72:fontcolor=white:borderw=4:bordercolor=black:x=(w-text_w)/2:y=(h-text_h)/2:enable='between(t,0.1,${duration-0.5})'`)
+    const fontPath = getFontPath().replace(/\\/g, '/')
+    // Enhanced drawtext with fontfile, proper escaping, and positioning
+    filters.push(`drawtext=fontfile='${fontPath}':text='${textEscaped}':fontsize=72:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=10:x=(w-text_w)/2:y=(h-text_h)/2-100:enable='between(t,0.1,${duration-0.5})'`)
   }
   
-  // Subtle Ken Burns zoom effect
-  filters.push(`zoompan=z='if(between(t,0,${duration}),1+0.01*t,1)':d=1:x='(w/2-(w/zoom/2))':y='(h/2-(h/zoom/2))'`)
+  // Subtle Ken Burns zoom effect (skip if minimal)
+  if (!minimal) {
+    filters.push(`zoompan=z='if(between(t,0,${duration}),1+0.01*t,1)':d=1:x='(w/2-(w/zoom/2))':y='(h/2-(h/zoom/2))'`)
+  }
   
   const filterString = filters.join(',')
   
