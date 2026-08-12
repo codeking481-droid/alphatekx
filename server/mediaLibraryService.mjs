@@ -1,4 +1,9 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
+import { spawnSync } from 'node:child_process'
+import { tmpdir } from 'node:os'
+import ffmpegPath from 'ffmpeg-static'
 import { supabaseServiceHeaders } from './supabaseHeaders.mjs'
 
 const BUCKET = 'media-library'
@@ -28,6 +33,271 @@ async function responseJson(response) {
     throw error
   }
   return payload
+}
+
+function parseJsonSafe(text) {
+  const raw = String(text || '').trim()
+  if (!raw) return null
+  const cleaned = raw.replace(/^[^\[\{]+/, '').replace(/\u0000/g, '')
+  try { return JSON.parse(cleaned) } catch {}
+  return null
+}
+
+function getGroqApiKey() {
+  return [process.env.GROQ_API_KEY, process.env.GROQ_API_KEY_1].map(String).find(k => k.trim())?.trim() || ''
+}
+
+function getPexelsApiKey() {
+  return [process.env.PEXELS_API_KEY, process.env.PEXELS_API_KEY_1, process.env.PEXELS_API_KEY_2, process.env.PEXELS_API_KEY_3]
+    .map(String)
+    .find(k => k.trim())
+    ?.trim() || ''
+}
+
+function pexelsOrientation(aspectRatio) {
+  return aspectRatio === '9:16' ? 'portrait' : 'landscape'
+}
+
+function ffmpegBinary() {
+  const binary = String(ffmpegPath || process.env.FFMPEG_PATH || '').trim()
+  if (!binary) throw new Error('Video processing requires FFmpeg. Add ffmpeg-static to the project or configure FFMPEG_PATH.')
+  return binary
+}
+
+function ffmpegScaleFilter(aspectRatio) {
+  if (aspectRatio === '9:16') {
+    return 'scale=w=720:h=1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2:color=black'
+  }
+  return 'scale=w=1280:h=720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black'
+}
+
+async function runFfmpeg(args, cwd) {
+  const result = spawnSync(ffmpegBinary(), args, { cwd, encoding: 'utf8', windowsHide: true })
+  if (result.status === 0) return result
+  const stderr = String(result.stderr || result.stdout || '').trim()
+  throw new Error(stderr || 'FFmpeg failed without output.')
+}
+
+function normalizeVideoPlanScenes(scenes, prompt, duration) {
+  const normalized = Array.isArray(scenes) ? scenes.slice(0, 3).map((scene, index) => {
+    const description = String(scene?.description || scene?.pexelsQuery || scene?.query || prompt || '').trim().replace(/\s+/g, ' ') || prompt
+    return {
+      description,
+      query: String(scene?.pexelsQuery || scene?.query || description).trim() || prompt,
+      durationSeconds: Number(scene?.durationSeconds) || 0,
+      index,
+    }
+  }) : []
+  if (!normalized.length) return [{ description: prompt, query: prompt, durationSeconds: duration, index: 0 }]
+  const total = normalized.reduce((sum, scene) => sum + scene.durationSeconds, 0)
+  if (total <= 0) {
+    const each = Math.max(1, Math.floor(duration / normalized.length))
+    normalized.forEach(scene => { scene.durationSeconds = each })
+  } else if (total !== duration) {
+    let remaining = duration
+    normalized.forEach((scene, index) => {
+      if (index === normalized.length - 1) {
+        scene.durationSeconds = remaining
+      } else {
+        const ratio = scene.durationSeconds / total
+        const rounded = Math.max(1, Math.round(duration * ratio))
+        scene.durationSeconds = rounded
+        remaining -= rounded
+      }
+    })
+  }
+  return normalized.map(scene => ({ ...scene, durationSeconds: Math.max(1, Math.min(scene.durationSeconds, duration)) }))
+}
+
+async function buildVideoPlan(prompt, duration, aspectRatio) {
+  const cleanPrompt = String(prompt || '').trim()
+  const key = getGroqApiKey()
+  if (!key) return [{ description: cleanPrompt, query: cleanPrompt, durationSeconds: duration, index: 0 }]
+  const model = String(process.env.GROQ_MODEL || 'llama-3.3-70b-versatile').trim()
+  const system = `You are a premium commercial video director. Convert the request into a short plan for ${duration}-second stock video that can be sourced from Pexels. Return valid JSON only.`
+  const user = `Request: ${cleanPrompt}\nAspect ratio: ${aspectRatio}\nTarget duration: ${duration} seconds.\nReturn an array of 1 to 3 scenes. Each scene must include: description, pexelsQuery, durationSeconds.`
+  try {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: user },
+        ],
+        temperature: 0.7,
+        max_tokens: 260,
+      }),
+    })
+    const data = await response.json()
+    const content = String(data?.choices?.[0]?.message?.content || '').trim()
+    const parsed = parseJsonSafe(content)
+    const scenes = normalizeVideoPlanScenes(parsed, cleanPrompt, duration)
+    return scenes
+  } catch (error) {
+    console.warn(`[AlphaTekX] Groq video plan failed: ${error instanceof Error ? error.message : error}`)
+    return [{ description: cleanPrompt, query: cleanPrompt, durationSeconds: duration, index: 0 }]
+  }
+}
+
+function choosePexelsFile(video) {
+  if (!video || !Array.isArray(video.video_files) || video.video_files.length === 0) return null
+  const candidates = video.video_files.filter(file => String(file.file_type || '').toLowerCase() === 'video/mp4')
+  if (!candidates.length) return null
+  candidates.sort((a, b) => {
+    const qualityOrder = { hq: 3, hd: 2, sd: 1 }
+    const aQuality = qualityOrder[String(a.quality || '').toLowerCase()] || 0
+    const bQuality = qualityOrder[String(b.quality || '').toLowerCase()] || 0
+    if (bQuality !== aQuality) return bQuality - aQuality
+    return (b.width || 0) - (a.width || 0)
+  })
+  return candidates[0]
+}
+
+async function searchPexelsClips(query, aspectRatio) {
+  const apiKey = getPexelsApiKey()
+  if (!apiKey) return []
+  const response = await fetch(
+    `https://api.pexels.com/videos/search?query=${encodeURIComponent(query)}&per_page=5&orientation=${encodeURIComponent(pexelsOrientation(aspectRatio))}`,
+    { headers: { Authorization: apiKey } },
+  )
+  const data = await responseJson(response)
+  if (!Array.isArray(data?.videos)) return []
+  return data.videos
+}
+
+async function fetchPexelsClip(planScene, aspectRatio) {
+  const queries = [planScene.query, planScene.description].filter(Boolean)
+  for (const query of queries) {
+    try {
+      const clips = await searchPexelsClips(query, aspectRatio)
+      for (const clip of clips) {
+        const file = choosePexelsFile(clip)
+        if (file?.link) {
+          return { url: String(file.link), description: planScene.description, durationSeconds: planScene.durationSeconds }
+        }
+      }
+    } catch (error) {
+      console.warn(`[AlphaTekX] Pexels search failed for query "${query}": ${error instanceof Error ? error.message : error}`)
+    }
+  }
+  return null
+}
+
+async function transcodeClip(inputPath, outputPath, durationSeconds, aspectRatio) {
+  const filter = ffmpegScaleFilter(aspectRatio)
+  const args = [
+    '-y',
+    '-i', inputPath,
+    '-t', String(durationSeconds),
+    '-vf', filter,
+    '-c:v', 'libx264',
+    '-preset', 'veryfast',
+    '-crf', '23',
+    '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac',
+    '-b:a', '128k',
+    outputPath,
+  ]
+  try {
+    return runFfmpeg(args, path.dirname(outputPath))
+  } catch (error) {
+    const fallback = [
+      '-y',
+      '-i', inputPath,
+      '-t', String(durationSeconds),
+      '-vf', filter,
+      '-c:v', 'libx264',
+      '-preset', 'veryfast',
+      '-crf', '23',
+      '-pix_fmt', 'yuv420p',
+      '-an',
+      outputPath,
+    ]
+    return runFfmpeg(fallback, path.dirname(outputPath))
+  }
+}
+
+async function concatenateClips(tempDir, clipPaths, outputPath) {
+  const listFile = path.join(tempDir, 'concat-list.txt')
+  const content = clipPaths.map(clip => `file '${path.basename(clip).replace(/'/g, "'\\''")}'`).join('\n')
+  await fs.promises.writeFile(listFile, content, 'utf8')
+  const args = [
+    '-y',
+    '-f', 'concat',
+    '-safe', '0',
+    '-i', path.basename(listFile),
+    '-c:v', 'libx264',
+    '-preset', 'veryfast',
+    '-crf', '23',
+    '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac',
+    '-b:a', '128k',
+    '-movflags', '+faststart',
+    path.basename(outputPath),
+  ]
+  return runFfmpeg(args, tempDir)
+}
+
+async function renderPexelsVideo(prompt, duration, aspectRatio) {
+  const plan = await buildVideoPlan(prompt, duration, aspectRatio)
+  const tempDir = await fs.promises.mkdtemp(path.join(tmpdir(), 'alpha-video-'))
+  const outputPath = path.join(tempDir, 'alpha-output.mp4')
+  try {
+    const clipPaths = []
+    for (const scene of plan) {
+      const clip = await fetchPexelsClip(scene, aspectRatio)
+      if (!clip) continue
+      const sourcePath = path.join(tempDir, `scene-${scene.index}-source.mp4`)
+      const downloaded = await downloadVideo(clip.url, 180_000)
+      await fs.promises.writeFile(sourcePath, downloaded.bytes)
+      const trimmedPath = path.join(tempDir, `scene-${scene.index}-trimmed.mp4`)
+      await transcodeClip(sourcePath, trimmedPath, scene.durationSeconds, aspectRatio)
+      clipPaths.push(trimmedPath)
+    }
+    if (!clipPaths.length) throw new Error('Pexels did not return any usable clips for this request.')
+    if (clipPaths.length === 1) {
+      await fs.promises.copyFile(clipPaths[0], outputPath)
+    } else {
+      await concatenateClips(tempDir, clipPaths, outputPath)
+    }
+    const bytes = await fs.promises.readFile(outputPath)
+    return { bytes, mime: 'video/mp4' }
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {})
+  }
+}
+
+async function generateLegacyPollinationsVideo(config, user, prompt, options = {}) {
+  const key = String(process.env.POLLINATIONS_API_KEY || '').trim()
+  if (!key) {
+    const error = new Error('Video generation is not configured yet. Add POLLINATIONS_API_KEY on Render, then redeploy.')
+    error.code = 'VIDEO_PROVIDER_NOT_CONFIGURED'
+    throw error
+  }
+  const cleanPrompt = String(prompt || '').trim()
+  const model = String(process.env.POLLINATIONS_VIDEO_MODEL || 'wan-fast').trim()
+  const duration = Math.min(10, Math.max(4, Number(options.duration) || 5))
+  const aspectRatio = options.aspectRatio === '9:16' ? '9:16' : '16:9'
+  const params = new URLSearchParams({ model, duration: String(duration), aspectRatio, enhance: 'true' })
+  const url = `https://gen.pollinations.ai/video/${encodeURIComponent(cleanPrompt)}?${params.toString()}`
+  const delays = [0, 2_000, 5_000]
+  let downloaded = null
+  let lastError = null
+  for (let attempt = 0; attempt < 3 && !downloaded; attempt += 1) {
+    if (delays[attempt]) await wait(delays[attempt])
+    try { downloaded = await downloadVideo(url, 180_000, { Authorization: `Bearer ${key}` }) }
+    catch (error) {
+      lastError = error
+      console.warn(`[AlphaTekX] Pollinations video attempt ${attempt + 1} failed: ${error instanceof Error ? error.message : error}`)
+    }
+  }
+  if (!downloaded) throw Object.assign(new Error(`Alpha could not verify a generated video after three attempts. ${lastError instanceof Error ? lastError.message : ''}`.trim()), { code: 'VIDEO_PROVIDER_ERROR' })
+  return downloaded
 }
 
 const OPTIONAL_MEDIA_COLUMNS = new Set([
@@ -444,32 +714,24 @@ async function downloadVideo(url, timeoutMs = 180_000, requestHeaders = {}) {
 export async function generateVideo(config, user, prompt, options = {}) {
   assertConfig(config)
   await ensureBucket(config)
-  const key = String(process.env.POLLINATIONS_API_KEY || '').trim()
-  if (!key) {
-    const error = new Error('Video generation is not configured yet. Add POLLINATIONS_API_KEY on Render, then redeploy.')
-    error.code = 'VIDEO_PROVIDER_NOT_CONFIGURED'
-    throw error
-  }
   const cleanPrompt = String(prompt || '').trim()
   if (cleanPrompt.length < 10) throw Object.assign(new Error('Describe the video in at least 10 characters.'), { code: 'INVALID_CONTENT' })
-  const model = String(process.env.POLLINATIONS_VIDEO_MODEL || 'wan-fast').trim()
   const duration = Math.min(10, Math.max(4, Number(options.duration) || 5))
   const aspectRatio = options.aspectRatio === '9:16' ? '9:16' : '16:9'
-  const params = new URLSearchParams({ model, duration: String(duration), aspectRatio, enhance: 'true' })
-  const url = `https://gen.pollinations.ai/video/${encodeURIComponent(cleanPrompt)}?${params.toString()}`
-  const delays = [0, 2_000, 5_000]
   let downloaded = null
-  let lastError = null
-  for (let attempt = 0; attempt < 3 && !downloaded; attempt += 1) {
-    if (delays[attempt]) await wait(delays[attempt])
-    try { downloaded = await downloadVideo(url, 180_000, { Authorization: `Bearer ${key}` }) }
-    catch (error) {
-      lastError = error
-      console.warn(`[AlphaTekX] Pollinations video attempt ${attempt + 1} failed: ${error instanceof Error ? error.message : error}`)
+  let model = 'groq+pexels'
+  try {
+    downloaded = await renderPexelsVideo(cleanPrompt, duration, aspectRatio)
+  } catch (primaryError) {
+    console.warn(`[AlphaTekX] Pexels video pipeline failed: ${primaryError instanceof Error ? primaryError.message : primaryError}`)
+    try {
+      downloaded = await generateLegacyPollinationsVideo(config, user, cleanPrompt, { duration, aspectRatio })
+      model = String(process.env.POLLINATIONS_VIDEO_MODEL || 'wan-fast').trim()
+    } catch (fallbackError) {
+      const error = fallbackError instanceof Error ? fallbackError : new Error('Video generation failed.')
+      throw Object.assign(error, { code: error.code || 'VIDEO_PROVIDER_ERROR' })
     }
   }
-  if (!downloaded) throw Object.assign(new Error(`Alpha could not verify a generated video after three attempts. ${lastError instanceof Error ? lastError.message : ''}`.trim()), { code: 'VIDEO_PROVIDER_ERROR' })
-
   const extension = extensionForMime(downloaded.mime) || 'mp4'
   const storagePath = `${user.id}/auto-generated-video/${Date.now()}-${randomUUID()}.${extension}`
   await responseJson(await fetch(`${config.url}/storage/v1/object/${BUCKET}/${storagePath}`, {

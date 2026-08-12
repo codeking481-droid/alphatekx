@@ -54,6 +54,7 @@
     "node": ">=22.0.0"
   },
   "dependencies": {
+    "ffmpeg-static": "^5.1.0",
     "@composio/core": "^0.14.0",
     "@fingerprintjs/fingerprintjs": "^5.2.0",
     "@hello-pangea/dnd": "^17.0.0",
