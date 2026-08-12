@@ -111,6 +111,9 @@ try { fs.mkdirSync(previewsDir, { recursive: true }) } catch {}
 try { fs.mkdirSync(dataDir, { recursive: true }) } catch {}
 
 const schedulerState = { lastRun: null, nextRun: null, activeAgents: 0, startedAt: new Date().toISOString(), isRunning: false, uptime: () => Math.floor((Date.now() - new Date(schedulerState.startedAt).getTime()) / 1000) }
+// Video work must outlive a browser connection.  This in-memory registry is intentionally
+// small and only stores live work; final bytes live in the configured media bucket.
+const videoJobs = new Map()
 const allowedOrigins = new Set(['https://alphatekx.name.ng', 'https://www.alphatekx.name.ng', 'http://localhost:5173', `http://localhost:${port}`])
 function isAllowedOrigin(origin) {
   if (!origin) return false
@@ -8370,7 +8373,10 @@ const server = http.createServer(async (req, res) => {
       const prompt = String(body.prompt || '').trim()
       if (!prompt) return json(res, 400, { error: 'Prompt required' })
       
-      const duration = Math.min(120, Math.max(10, Number(body.duration) || 60))
+      const duration = Math.min(600, Math.max(10, Number(body.duration) || 600))
+      const jobId = randomUUID()
+      const job = { id: jobId, userId: user.id, status: 'running', events: [], createdAt: new Date().toISOString(), result: null, error: null }
+      videoJobs.set(jobId, job)
       
       // Set response headers for Server-Sent Events
       res.writeHead(200, {
@@ -8380,37 +8386,58 @@ const server = http.createServer(async (req, res) => {
         'Access-Control-Allow-Origin': '*',
       })
       
-      // Send progress updates as SSE
-      const sendProgress = (step, message) => {
-        const data = { step, message, timestamp: new Date().toISOString() }
-        res.write(`data: ${JSON.stringify(data)}\n\n`)
+      // The pipeline calls this with one object. Keep the event contract stable for
+      // reconnecting clients and avoid ever serialising a stack trace to the browser.
+      const sendProgress = (update = {}) => {
+        const data = { jobId, ...update, timestamp: update.timestamp || new Date().toISOString() }
+        job.events.push(data)
+        if (job.events.length > 50) job.events.shift()
+        if (!res.writableEnded) res.write(`data: ${JSON.stringify(data)}\n\n`)
       }
       
       try {
-        sendProgress(0, `Starting video generation for: ${prompt}`)
+        sendProgress({ step: 0, totalSteps: duration >= 480 ? 20 : 6, message: `Starting video generation for: ${prompt}`, phase: 'starting' })
         
         // Generate video with progress streaming
         const result = await videoPipeline.buildProductionVideo(prompt, duration, sendProgress, '16:9')
         
-        // Store the generated video
+        // Store the generated video. The result stays available from job status even
+        // if a client disconnects while the upload is finishing.
         const storagePath = `${user.id}/generated-videos/${Date.now()}-${randomUUID()}.mp4`
-        await fetch(`${config.url}/storage/v1/object/media-library/${storagePath}`, {
+        const upload = await fetch(`${config.url}/storage/v1/object/media-library/${storagePath}`, {
           method: 'POST',
           headers: supabaseServiceHeaders(config.service, { 'Content-Type': 'video/mp4' }),
           body: result.bytes,
         })
-        
-        sendProgress(7, `Uploading final video...`)
-        sendProgress(8, JSON.stringify({ success: true, videoUrl: `/videos/${storagePath}`, script: result.script }))
+        if (!upload.ok) throw new Error('The final video could not be saved to your Media Library.')
+        const signed = await fetch(`${config.url}/storage/v1/object/sign/media-library/${storagePath}`, {
+          method: 'POST',
+          headers: supabaseServiceHeaders(config.service, { 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ expiresIn: 60 * 60 * 24 }),
+        })
+        const signedPayload = await signed.json().catch(() => ({}))
+        if (!signed.ok || !signedPayload.signedURL) throw new Error('The final video was saved but a secure preview link could not be created.')
+        const videoUrl = `${config.url}/storage/v1${signedPayload.signedURL}`
+        job.status = 'completed'
+        job.result = { finalVideoUrl: videoUrl, script: result.script, clipsUsed: result.clipsUsed, size: result.bytes.length }
+        sendProgress({ step: 100, totalSteps: 100, message: 'Video ready to watch and download.', finalVideoUrl: videoUrl, size: result.bytes.length, phase: 'complete' })
         res.end()
       } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error)
-        sendProgress(999, `Error: ${msg}`)
+        const msg = error instanceof Error ? error.message : 'Video generation could not finish.'
+        job.status = 'failed'
+        job.error = msg
+        sendProgress({ step: 0, message: 'Alpha could not finish this video. Please retry; no credits were charged.', phase: 'failed', error: msg })
         res.end()
       }
     } catch (error) {
       return json(res, 400, { error: error instanceof Error ? error.message : 'Video stream failed' })
     }
+  }
+  const videoStatusMatch = req.url?.match(/^\/api\/alpha\/video\/([^/]+)\/status$/)
+  if (req.method === 'GET' && videoStatusMatch) {
+    const job = videoJobs.get(videoStatusMatch[1])
+    if (!job) return json(res, 404, { error: 'Video job not found or expired.' })
+    return json(res, 200, { job: { id: job.id, status: job.status, events: job.events, result: job.result, error: job.error } })
   }
   if (req.method === 'GET' && req.url === '/api/alpha/conversations') {
     try {

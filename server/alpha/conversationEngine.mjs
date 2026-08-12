@@ -546,71 +546,15 @@ export function createConversationEngine(deps) {
     const isVideoCmd = /\b(?:generate|create|make)\s+(?:a\s+)?video\b/i.test(prompt) || /\bvideo about\b/i.test(prompt) || /\bcreate\s+(?:a\s+)?faceless\s+video\b/i.test(prompt)
     if (isVideoCmd) {
       conversation.conversationStage = 'generating_content'
-      const userObj = { id: conversation.userId, email: conversation.userEmail }
       
-      // Show thinking process with real-time updates
+      // Extract topic from user prompt
       const topic = prompt.replace(/\b(?:create|generate|make)\s+(?:a\s+)?(?:video\s+)?(?:of|about)?\s+/i, '').trim()
-      const progressMsgId = addMessage(conversation, 'alpha', `🎬 Building your **${topic}** video...\n\n⏳ Step 1: Writing script...`)
       
-      try {
-        // Use streaming video pipeline with progress callbacks that update chat
-        let lastUpdate = Date.now()
-        const stepLabels = {1:'✍️ Writing script', 2:'🎬 Downloading clips', 3:'🎙️ Generating voiceovers', 4:'🎨 Editing with effects', 5:'🔗 Merging clips', 6:'✅ Finalizing'}
-        const progressCallback = (update) => {
-          const msg = String(update.message || '')
-          const step = update.step || 0
-          const label = stepLabels[step] || `Step ${step}`
-          console.log(`[VIDEO PROGRESS] ${label}: ${msg}`)
-          
-          // Update progress message in chat every 2 seconds
-          if (Date.now() - lastUpdate > 2000 && progressMsgId && conversation.messages) {
-            lastUpdate = Date.now()
-            const msgIdx = conversation.messages.findIndex(m => m.id === progressMsgId)
-            if (msgIdx >= 0) {
-              conversation.messages[msgIdx].content = `🎬 Building your **${topic}** video...\n\n${label}\n⏸️ ${msg}`
-            }
-          }
-        }
-        
-        // Call new production video pipeline
-        const result = await videoPipeline.buildProductionVideo(topic, 60, progressCallback, '16:9')
-        
-        if (result?.bytes && result.bytes.length > 0) {
-          // Store video if getGenerateVideo is available (for storage integration)
-          let videoUrl = null
-          if (typeof getGenerateVideo === 'function') {
-            try {
-              progressCallback({ step: 6, message: 'Uploading...' })
-              const storageResult = await getGenerateVideo(userObj, topic, { videoBytes: result.bytes, videoMime: result.mime })
-              videoUrl = storageResult?.video_url || storageResult?.item?.file_url
-            } catch (storageErr) {
-              console.warn('[conversationEngine] Failed to store video:', storageErr instanceof Error ? storageErr.message : storageErr)
-            }
-          }
-          
-          const scriptText = result.script?.map((s, i) => `${i+1}. ${s.narration}`).join('\n') || 'Script unavailable'
-          const finalMsg = videoUrl 
-            ? `✅ Your **${topic}** video is ready!\n\n🎬 **[Download Video](${videoUrl})**\n\n**Script** (6 scenes):\n${scriptText}`
-            : `✅ Your **${topic}** video is ready! 6 scenes with voiceover & effects.\n\n**Script:**\n${scriptText}`
-          
-          // Update the progress message with final result
-          if (progressMsgId && conversation.messages) {
-            const msgIdx = conversation.messages.findIndex(m => m.id === progressMsgId)
-            if (msgIdx >= 0) {
-              conversation.messages[msgIdx].content = finalMsg
-            } else {
-              addMessage(conversation, 'alpha', finalMsg)
-            }
-          } else {
-            addMessage(conversation, 'alpha', finalMsg)
-          }
-        } else {
-          addMessage(conversation, 'alpha', `⚠️ Video generation completed but output was empty. Try again.`)
-        }
-      } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err)
-        addMessage(conversation, 'alpha', `⚠️ Video failed: ${errMsg}\n\n**Fix:** Check GROQ_API_KEY and PEXELS_API_KEY_1-3 in .env`)
-      }
+      // Send Glass Studio component marker to frontend
+      // The frontend will render VideoBuildGlassContainer component with the SSE stream
+      const duration = 600  // 10 minutes default
+      const glassStudioMsg = `🎬 Building your **${topic}** video...\n\n[GLASS_STUDIO_COMPONENT:${JSON.stringify({ prompt: topic, duration })}]`
+      addMessage(conversation, 'alpha', glassStudioMsg)
       return
     }
     const classification = classifyIntent(prompt)

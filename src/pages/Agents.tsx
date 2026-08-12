@@ -8,6 +8,7 @@ import { useAuth } from '../lib/auth'
 import { getIntegrationStatus, startLinkedInAuth, type IntegrationStatus } from '../lib/integrations'
 import { getConnectedApps } from '../lib/connectors/connectorApi'
 import { getJson, postJson } from '../lib/apiClient'
+import VideoBuildGlassContainer from '../components/VideoBuildGlassContainer'
 
 type ConversationMessage = { role: 'user' | 'alpha' | 'system'; text: string; ts: string; generatedCount?: number; totalCredits?: number }
 type AlphaConversation = {
@@ -71,6 +72,7 @@ export default function Agents() {
   const [jobId, setJobId] = useState<string | null>(() => sessionStorage.getItem('alphatekx:planning-job'))
   const [notice, setNotice] = useState('')
   const [listening, setListening] = useState(false)
+  const [videoPrompt, setVideoPrompt] = useState('')
   const composer = useRef<HTMLTextAreaElement>(null)
   const speech = useRef<SpeechRecognitionLike | null>(null)
   const messageEnd = useRef<HTMLDivElement>(null)
@@ -193,6 +195,13 @@ export default function Agents() {
   const send = async (overrideMessage?: string) => {
     const message = String(overrideMessage ?? input).trim()
     if (!message || creating) return
+    if (/\b(?:create|generate|make)\s+(?:a\s+)?(?:\d+\s*(?:min|minute)\s+)?(?:mrbeast[-\s]style\s+)?video\b/i.test(message)) {
+      setVideoPrompt(message)
+      setInput('')
+      if (composer.current) composer.current.style.height = 'auto'
+      setNotice('Glass Studio is building your video server-side.')
+      return
+    }
     setCreating(true)
     setNotice(conversation?.id ? 'Alpha is continuing your plan…' : 'Alpha is reviewing your request…')
     setInput('')
@@ -319,6 +328,7 @@ export default function Agents() {
       </section> : <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-none bg-[#0D0E11]/95 sm:rounded-[1.75rem] sm:border sm:border-white/[0.07] sm:shadow-[0_24px_80px_rgba(0,0,0,.30)]">
         <div className="absolute right-3 top-3 z-20 sm:right-6">{conversation && <button onClick={startNew} className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-xs font-semibold text-[#8A8A93] hover:text-white">New chat</button>}</div>
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain scroll-smooth px-3 py-3 [scrollbar-gutter:stable] sm:px-6 sm:py-6" aria-live="polite">
+          {videoPrompt && <div className="mx-auto w-full max-w-3xl"><VideoBuildGlassContainer prompt={videoPrompt} duration={600} onClose={() => { setVideoPrompt(''); setNotice('') }}/></div>}
           {!conversation ? (
             <div className="mx-auto flex h-full max-w-4xl flex-col items-center justify-center px-2 py-6 text-center">
               <span className="grid size-12 place-items-center rounded-2xl border border-white/10 bg-white/[0.02] text-white"><Sparkles size={22}/></span>

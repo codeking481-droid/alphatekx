@@ -25,24 +25,61 @@ function ffmpegBinary() {
 function getFontPath() {
   // Try common font paths on different systems
   const fontPaths = [
-    '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',  // Linux
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',  // Linux (Render)
+    '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',  // Linux alt
     '/System/Library/Fonts/Arial.ttf',  // macOS
     'C:\\Windows\\Fonts\\arial.ttf',  // Windows
-    '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',  // Linux alt
+    '/tmp/DejaVuSans-Bold.ttf',  // Fallback to /tmp
   ]
   for (const fpath of fontPaths) {
     try {
-      if (fs.existsSync(fpath)) return fpath
+      if (fs.existsSync(fpath)) {
+        log('Font', `Using font: ${fpath}`)
+        return fpath
+      }
     } catch { }
   }
-  // Fallback: return first path (FFmpeg will handle missing font)
+  // Last resort: return Linux path (will fallback in drawtext if missing)
+  log('Font', 'Warning: No font found, will use system default')
   return fontPaths[0]
 }
 
+async function ensureFontExists() {
+  const fontPath = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
+  if (fs.existsSync(fontPath)) return fontPath
+  
+  // Try to create /tmp font if main font missing
+  const tmpFont = '/tmp/DejaVuSans-Bold.ttf'
+  if (fs.existsSync(tmpFont)) return tmpFont
+  
+  // If we can't find font, log warning but continue
+  log('Font', 'DejaVuSans-Bold not found, will use FFmpeg fallback')
+  return fontPath  // Return expected path, will fallback to no-text if missing
+}
+
 async function runFfmpeg(args, cwd) {
-  const result = spawnSync(ffmpegBinary(), args, { cwd, encoding: 'utf8', windowsHide: true })
+  const binary = ffmpegBinary()
+  const result = spawnSync(binary, args, { 
+    cwd, 
+    encoding: 'utf8', 
+    windowsHide: true,
+    maxBuffer: 10 * 1024 * 1024,  // 10MB buffer for large outputs
+  })
+  
+  const stderr = String(result.stderr || '')
+  const stdout = String(result.stdout || '')
+  
   if (result.status === 0) return result
-  throw new Error(String(result.stderr || result.stdout || 'FFmpeg failed'))
+  
+  // Log the error for debugging
+  const errorMsg = stderr || stdout || 'FFmpeg failed with unknown error'
+  
+  // Check for specific filter errors that can be recovered from
+  if (errorMsg.includes("No such filter") || errorMsg.includes("Unknown filter")) {
+    throw new Error(`FFmpeg filter error: ${errorMsg.substring(0, 200)}`)
+  }
+  
+  throw new Error(`FFmpeg error (exit ${result.status}): ${errorMsg.substring(0, 500)}`)
 }
 
 function ffmpegScaleFilter(aspectRatio) {
@@ -85,17 +122,35 @@ export async function generateVideoScript(prompt, durationSec = 120) {
   const groqKey = getGroqKey()
   if (!groqKey) throw new Error('Groq API key required for script generation')
 
-  const sceneDuration = Math.floor(durationSec / 6)
-  const groqPrompt = `Break this video topic into exactly 6 scenes. Each scene is ${sceneDuration} seconds.
+  // Long-form requests use a deliberate 20-scene structure.  Short jobs keep the
+  // quicker six-scene path so a normal request does not unexpectedly become huge.
+  const sceneCount = durationSec >= 480 ? 20 : 6
+  const sceneDuration = Math.max(8, Math.floor(durationSec / sceneCount))
+  
+  let structure = ''
+  if (sceneCount === 20) {
+    structure = `MrBeast style video structure:
+- Scene 1: HOOK (0-30s) - shocking statement or question that makes people stop scrolling
+- Scenes 2-4: SETUP (30s-2min) - explain the premise, build curiosity
+- Scenes 5-16: BUILDUP/CHALLENGE (2-7min) - 12 scenes of rising tension, plot twists, challenges, surprises
+- Scenes 17-19: PAYOFF (7-9min) - climax, resolution, reward reveal
+- Scene 20: CTA (9-10min) - call to action, subscribe, like, share message`
+  } else {
+    structure = 'Start with a hook, then setup, buildup, payoff, and CTA.'
+  }
+  
+  const groqPrompt = `You are creating a viral video script for YouTube. Break this topic into exactly ${sceneCount} scenes. Each scene is about ${sceneDuration} seconds.
 Topic: "${prompt}"
 
-For each scene, provide JSON object with:
-- narration: 20-40 word voiceover script for this scene
-- pexelsKeywords: array of 3 search keywords for Pexels (e.g. ["keyword1", "keyword2", "keyword3"])
-- onScreenText: short text to display (5-10 words, or "none")
-- emotion: "inspiring", "calm", "energetic", "sad", "peaceful" etc
+${structure}
 
-Return ONLY a JSON array of 6 objects. No markdown, no explanation.`
+For each scene, provide JSON object with:
+- narration: 20-40 word voiceover script for this scene (natural, conversational, engaging)
+- pexelsKeywords: array of 3 search keywords for Pexels (e.g. ["keyword1", "keyword2", "keyword3"])
+- onScreenText: short punchy text to display on screen (5-10 words, MrBeast style like "WAIT FOR IT" or "THIS IS CRAZY" or "none")
+- emotion: "inspiring", "calm", "energetic", "sad", "peaceful", "shocking", "funny" etc
+
+Return ONLY a JSON array of ${sceneCount} objects. No markdown, no explanation.`
 
   const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
@@ -107,7 +162,7 @@ Return ONLY a JSON array of 6 objects. No markdown, no explanation.`
       model: 'llama-3.3-70b-versatile',
       messages: [{ role: 'user', content: groqPrompt }],
       temperature: 0.7,
-      max_tokens: 1000,
+      max_tokens: 2000,
     }),
   })
 
@@ -124,8 +179,8 @@ Return ONLY a JSON array of 6 objects. No markdown, no explanation.`
   if (!jsonMatch) throw new Error('No valid JSON in Groq response')
   
   const parsed = JSON.parse(jsonMatch[0])
-  if (!Array.isArray(parsed) || parsed.length !== 6) {
-    throw new Error('Script must have exactly 6 scenes')
+  if (!Array.isArray(parsed) || parsed.length !== sceneCount) {
+    throw new Error(`Script must have exactly ${sceneCount} scenes, got ${Array.isArray(parsed) ? parsed.length : 'unknown'}`)
   }
 
   return parsed.map((scene, i) => ({
@@ -254,14 +309,21 @@ export async function editClipWithText(inputPath, outputPath, scene, tempDir, as
     await editClipWithTextInternal(inputPath, outputPath, scene, tempDir, aspectRatio, true)
   } catch (err) {
     const errMsg = String(err)
-    if (errMsg.includes('drawtext') || errMsg.includes('No such filter')) {
-      log('FFmpeg', `Text overlay failed (drawtext), retrying without text for scene ${scene.sceneIndex}`)
+    if (errMsg.includes('drawtext') || errMsg.includes('No such filter') || errMsg.includes('Unknown filter')) {
+      log('FFmpeg', `Text overlay failed (drawtext not available), retrying without text for scene ${scene.sceneIndex}`)
       try {
         await editClipWithTextInternal(inputPath, outputPath, scene, tempDir, aspectRatio, false)
       } catch (retryErr) {
         // Last resort: just scale and zoom without any effects
         log('FFmpeg', `All effects failed, using minimal filter chain for scene ${scene.sceneIndex}`)
-        await editClipWithTextInternal(inputPath, outputPath, scene, tempDir, aspectRatio, false, true)
+        try {
+          await editClipWithTextInternal(inputPath, outputPath, scene, tempDir, aspectRatio, false, true)
+        } catch (minimalErr) {
+          // Ultimate fallback: just copy and scale
+          log('FFmpeg', `Minimal editing failed, copying clip as-is for scene ${scene.sceneIndex}`)
+          const args = ['-y', '-i', inputPath, '-vf', ffmpegScaleFilter(aspectRatio), '-c:v', 'libx264', '-preset', 'veryfast', '-c:a', 'aac', '-t', String(duration), outputPath]
+          await runFfmpeg(args, tempDir)
+        }
       }
     } else {
       throw err
@@ -281,15 +343,25 @@ async function editClipWithTextInternal(inputPath, outputPath, scene, tempDir, a
   
   // Add text overlay with proper fontfile (if withText is true)
   if (text && !minimal) {
-    const textEscaped = text.replace(/'/g, "'\\''")
-    const fontPath = getFontPath().replace(/\\/g, '/')
-    // Enhanced drawtext with fontfile, proper escaping, and positioning
-    filters.push(`drawtext=fontfile='${fontPath}':text='${textEscaped}':fontsize=72:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=10:x=(w-text_w)/2:y=(h-text_h)/2-100:enable='between(t,0.1,${duration-0.5})'`)
+    try {
+      const fontPath = await ensureFontExists()
+      // Escape single quotes in text by replacing ' with '\''
+      const textEscaped = text.replace(/'/g, "'\\''")
+      // Use proper drawtext syntax with escaped font path
+      // Note: FFmpeg drawtext expects font path without quotes in the filter string
+      const drawTextFilter = `drawtext=fontfile=${fontPath}:text='${textEscaped}':fontsize=72:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=10:x=(w-text_w)/2:y=(h-text_h)/2-100:enable='between(t,0.1,${Math.max(0.5, duration-0.5)})'`
+      filters.push(drawTextFilter)
+    } catch (e) {
+      // If text filter fails to build, skip it
+      log('FFmpeg', `Text filter skipped: ${e instanceof Error ? e.message : e}`)
+    }
   }
   
-  // Subtle Ken Burns zoom effect (skip if minimal)
+  // MrBeast-style zoom punch effect: zoom 100% -> 120% every 3 seconds
   if (!minimal) {
-    filters.push(`zoompan=z='if(between(t,0,${duration}),1+0.01*t,1)':d=1:x='(w/2-(w/zoom/2))':y='(h/2-(h/zoom/2))'`)
+    // Create zoom pulses: Every 3 seconds, zoom from 1.0 to 1.15
+    const zoomExpression = `min(1.0 + 0.15 * abs(sin(t / 3 * 3.14159)), 1.15)`
+    filters.push(`zoompan=z='${zoomExpression}':d=1:x='(w/2-(w/zoom/2))':y='(h/2-(h/zoom/2))':fps=30`)
   }
   
   const filterString = filters.join(',')
@@ -385,11 +457,15 @@ export async function concatenateClips(clipPaths, outputPath, tempDir, duration)
 
 /**=== PROGRESS STREAMING ===*/
 
-export function streamProgress(callback, step, message) {
+export function streamProgress(callback, step, message, extra = {}) {
   if (typeof callback === 'function') {
     callback({
       step,
       message,
+      totalSteps: extra.totalSteps || 6,
+      clipIndex: extra.clipIndex,
+      clipCount: extra.clipCount,
+      phase: extra.phase,
       timestamp: new Date().toISOString(),
     })
   }
@@ -404,7 +480,7 @@ export async function buildProductionVideo(prompt, durationSec = 120, progressCa
 
   try {
     // Step 1: Generate script with Groq
-    streamProgress(progressCallback, 1, `Writing script with Groq - 6 scenes...`)
+    streamProgress(progressCallback, 1, `Writing script with Groq...`, { phase: 'script' })
     const script = await generateVideoScript(prompt, durationSec)
     streamProgress(progressCallback, 1, `Script ready: ${script.length} scenes`)
 
@@ -417,7 +493,7 @@ export async function buildProductionVideo(prompt, durationSec = 120, progressCa
         clips.push(clip)
         const clipPath = path.join(tempDir, `clip-${scene.sceneIndex}.mp4`)
         await fs.promises.writeFile(clipPath, clip.bytes)
-        streamProgress(progressCallback, 2, `Downloaded clip ${scene.sceneIndex + 1}/6`)
+        streamProgress(progressCallback, 2, `Downloaded clip ${scene.sceneIndex + 1}/${script.length}`, { phase: 'download', clipIndex: scene.sceneIndex, clipCount: script.length })
       }
     }
     streamProgress(progressCallback, 2, `Found ${clips.length}/${script.length} clips`)
@@ -432,7 +508,7 @@ export async function buildProductionVideo(prompt, durationSec = 120, progressCa
         await fs.promises.writeFile(voicePath, voiceBytes)
         voiceovers.push(voicePath)
       }
-      streamProgress(progressCallback, 3, `Voiceover ${scene.sceneIndex + 1}/6 done`)
+      streamProgress(progressCallback, 3, `Voiceover ${scene.sceneIndex + 1}/${script.length} done`, { phase: 'voiceover', clipIndex: scene.sceneIndex, clipCount: script.length })
     }
 
     // Step 4: Edit each clip with text, effects, voiceover
@@ -443,7 +519,7 @@ export async function buildProductionVideo(prompt, durationSec = 120, progressCa
       const clipPath = path.join(tempDir, `clip-${i}.mp4`)
       
       if (!await fs.promises.access(clipPath).then(() => true).catch(() => false)) {
-        streamProgress(progressCallback, 4, `Clip ${i + 1} missing, skipping`)
+        streamProgress(progressCallback, 4, `Clip ${i + 1} missing, skipping`, { phase: 'edit', clipIndex: i, clipCount: script.length })
         continue
       }
 
@@ -460,7 +536,7 @@ export async function buildProductionVideo(prompt, durationSec = 120, progressCa
       }
       
       editedClips.push(withAudioPath)
-      streamProgress(progressCallback, 4, `Edited clip ${i + 1}/${script.length}`)
+      streamProgress(progressCallback, 4, `Edited clip ${i + 1}/${script.length}`, { phase: 'edit', clipIndex: i, clipCount: script.length })
     }
 
     if (editedClips.length === 0) {

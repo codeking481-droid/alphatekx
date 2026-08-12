@@ -3,6 +3,7 @@ import { ArrowUp, Bot, Check, Clock, Copy, DollarSign, ExternalLink, Loader2, Me
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import { createChatThread, saveChatThread, getChatThread, type GeneralChatMessage } from '../lib/chatHistoryStore'
+import VideoBuildGlassContainer from '../components/VideoBuildGlassContainer'
 
 function uid() { return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}` }
 function formatTime(d = new Date()) { return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) }
@@ -86,6 +87,23 @@ function Markdown({ children }: { children: string }) {
 }
 
 function ChatWidget({ message }: { message: GeneralChatMessage }) {
+  // Check for Glass Studio component marker
+  if (message.content?.includes('[GLASS_STUDIO_COMPONENT:')) {
+    try {
+      const componentMatch = message.content.match(/\[GLASS_STUDIO_COMPONENT:(.+?)\]/)
+      if (componentMatch) {
+        const componentData = JSON.parse(componentMatch[1])
+        return (
+          <div className="mt-3 w-full max-w-4xl">
+            <VideoBuildGlassContainer prompt={componentData.prompt} duration={componentData.duration || 600} />
+          </div>
+        )
+      }
+    } catch (e) {
+      console.warn('Failed to parse Glass Studio component:', e)
+    }
+  }
+
   if (message.tool === 'clock') {
     return (
       <div className="mt-3 inline-flex items-center gap-2 rounded-xl border border-violet-400/20 bg-violet-500/10 px-3 py-2 text-sm backdrop-blur-xl">
@@ -430,9 +448,9 @@ export default function Chat() {
                       )}
                     </div>
                   </div>
-                  {message.content && (
+                  {message.content && !message.content.includes('[GLASS_STUDIO_COMPONENT:') && (
                     <div className="text-[15px] leading-7 text-zinc-100">
-                      <Markdown>{message.content}</Markdown>
+                      <Markdown>{message.content.replace(/\[GLASS_STUDIO_COMPONENT:.*?\]/g, '').trim()}</Markdown>
                     </div>
                   )}
                   <ChatWidget message={message} />
