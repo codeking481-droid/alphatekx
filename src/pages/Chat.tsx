@@ -4,6 +4,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import { createChatThread, saveChatThread, getChatThread, type GeneralChatMessage } from '../lib/chatHistoryStore'
 import VideoBuildGlassContainer from '../components/VideoBuildGlassContainer'
+import ProVideoBuildContainer from '../components/ProVideoBuildContainer'
 
 function uid() { return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}` }
 function formatTime(d = new Date()) { return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) }
@@ -87,6 +88,29 @@ function Markdown({ children }: { children: string }) {
 }
 
 function ChatWidget({ message }: { message: GeneralChatMessage }) {
+  // Check for Pro Video component marker
+  if (message.content?.includes('[PRO_VIDEO_COMPONENT:')) {
+    try {
+      const componentMatch = message.content.match(/\[PRO_VIDEO_COMPONENT:(.+?)\]/)
+      if (componentMatch) {
+        const componentData = JSON.parse(componentMatch[1])
+        return (
+          <div className="mt-3 w-full max-w-4xl">
+            <ProVideoBuildContainer
+              prompt={componentData.prompt}
+              duration={componentData.duration || 600}
+              colorGrade={componentData.colorGrade || 'vibrant'}
+              youtubeUpload={componentData.youtubeUpload !== false}
+              scheduleDurationDays={componentData.scheduleDurationDays || 0}
+            />
+          </div>
+        )
+      }
+    } catch (e) {
+      console.warn('Failed to parse Pro Video component:', e)
+    }
+  }
+
   // Check for Glass Studio component marker
   if (message.content?.includes('[GLASS_STUDIO_COMPONENT:')) {
     try {
@@ -448,9 +472,9 @@ export default function Chat() {
                       )}
                     </div>
                   </div>
-                  {message.content && !message.content.includes('[GLASS_STUDIO_COMPONENT:') && (
+                  {message.content && !message.content.includes('[GLASS_STUDIO_COMPONENT:') && !message.content.includes('[PRO_VIDEO_COMPONENT:') && (
                     <div className="text-[15px] leading-7 text-zinc-100">
-                      <Markdown>{message.content.replace(/\[GLASS_STUDIO_COMPONENT:.*?\]/g, '').trim()}</Markdown>
+                      <Markdown>{message.content.replace(/\[(?:GLASS_STUDIO|PRO_VIDEO)_COMPONENT:.*?\]/g, '').trim()}</Markdown>
                     </div>
                   )}
                   <ChatWidget message={message} />

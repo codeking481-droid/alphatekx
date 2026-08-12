@@ -474,9 +474,18 @@ export function streamProgress(callback, step, message, extra = {}) {
 
 /**=== MAIN PIPELINE ===*/
 
-export async function buildProductionVideo(prompt, durationSec = 120, progressCallback = null, aspectRatio = '16:9') {
+export async function buildProductionVideo(prompt, durationSec = 120, progressCallback = null, aspectRatio = '16:9', effectsConfig = null) {
   const tempDir = await fs.promises.mkdtemp(path.join(tmpdir(), 'alpha-video-'))
   const outputPath = path.join(tempDir, 'final-video.mp4')
+  
+  // Merge with default effects config
+  const effects = {
+    colorGrade: 'vibrant',
+    transition: 'fade',
+    enableZoom: true,
+    enableSharpening: true,
+    ...effectsConfig,
+  }
 
   try {
     // Step 1: Generate script with Groq

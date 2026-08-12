@@ -71,6 +71,7 @@ async function executeProviderWithHealing(user, provider, actionName, params = {
 }
 import * as mediaLibrary from './server/mediaLibraryService.mjs'
 import * as videoPipeline from './server/videoPipeline.mjs'
+import * as proVideoWorkflow from './server/pro-video-workflow.mjs'
 import * as moneyLoop from './server/moneyLoopService.mjs'
 import * as eliteBuilder from './server/eliteBuilderService.mjs'
 import { claimPendingAction, createPendingAction, finishPendingAction, listPendingActions } from './server/ceoPendingActions.mjs'
@@ -8439,6 +8440,58 @@ const server = http.createServer(async (req, res) => {
     if (!job) return json(res, 404, { error: 'Video job not found or expired.' })
     return json(res, 200, { job: { id: job.id, status: job.status, events: job.events, result: job.result, error: job.error } })
   }
+
+  // Pro video workflow endpoint - advanced editing + YouTube scheduling
+  if (req.method === 'POST' && req.url === '/api/alpha/pro-video') {
+    try {
+      const config = supabaseConfig()
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      if (!user) return json(res, 401, { error: 'Authentication required' })
+
+      const body = await readBody(req)
+      const prompt = String(body.prompt || '').trim()
+      if (!prompt) return json(res, 400, { error: 'Prompt required' })
+
+      // Create pro video job
+      const job = proVideoWorkflow.createProVideoJob(prompt, {
+        duration: Math.min(600, Math.max(10, Number(body.duration) || 600)),
+        colorGrade: body.colorGrade || 'vibrant',
+        transition: body.transition || 'fade',
+        scheduleDurationDays: Number(body.scheduleDurationDays) || 7,
+        youtubeUpload: body.youtubeUpload !== false,
+      })
+
+      // Set response headers for Server-Sent Events
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+      })
+
+      const sendProgress = (update = {}) => {
+        const data = { jobId: job.id, ...update, timestamp: update.timestamp || new Date().toISOString() }
+        if (!res.writableEnded) res.write(`data: ${JSON.stringify(data)}\n\n`)
+      }
+
+      // Run pro workflow asynchronously
+      proVideoWorkflow
+        .executeProVideoWorkflow(job.id, sendProgress)
+        .then(() => {
+          res.end()
+        })
+        .catch((error) => {
+          sendProgress({
+            error: error instanceof Error ? error.message : 'Workflow failed',
+            phase: 'failed',
+          })
+          res.end()
+        })
+    } catch (error) {
+      return json(res, 400, { error: error instanceof Error ? error.message : 'Pro video failed' })
+    }
+  }
+
   if (req.method === 'GET' && req.url === '/api/alpha/conversations') {
     try {
       const config = supabaseConfig()
