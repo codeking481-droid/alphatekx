@@ -70,6 +70,7 @@ async function executeProviderWithHealing(user, provider, actionName, params = {
   }
 }
 import * as mediaLibrary from './server/mediaLibraryService.mjs'
+import * as videoPipeline from './server/videoPipeline.mjs'
 import * as moneyLoop from './server/moneyLoopService.mjs'
 import * as eliteBuilder from './server/eliteBuilderService.mjs'
 import { claimPendingAction, createPendingAction, finishPendingAction, listPendingActions } from './server/ceoPendingActions.mjs'
@@ -8356,6 +8357,59 @@ const server = http.createServer(async (req, res) => {
         return json(res, 200, { conversation, agent: null, warning: alphaConfigurationMessage(error) })
       }
       return json(res, error instanceof Error && error.message.includes('No AI provider') ? 503 : 400, { error: error instanceof Error ? error.message : 'Conversation failed' })
+    }
+  }
+  if (req.method === 'POST' && req.url === '/api/alpha/video-stream') {
+    // Streaming video generation with progress updates
+    try {
+      const config = supabaseConfig()
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      if (!user) return json(res, 401, { error: 'Authentication required' })
+      
+      const body = await readBody(req)
+      const prompt = String(body.prompt || '').trim()
+      if (!prompt) return json(res, 400, { error: 'Prompt required' })
+      
+      const duration = Math.min(120, Math.max(10, Number(body.duration) || 60))
+      
+      // Set response headers for Server-Sent Events
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+      })
+      
+      // Send progress updates as SSE
+      const sendProgress = (step, message) => {
+        const data = { step, message, timestamp: new Date().toISOString() }
+        res.write(`data: ${JSON.stringify(data)}\n\n`)
+      }
+      
+      try {
+        sendProgress(0, `Starting video generation for: ${prompt}`)
+        
+        // Generate video with progress streaming
+        const result = await videoPipeline.buildProductionVideo(prompt, duration, sendProgress, '16:9')
+        
+        // Store the generated video
+        const storagePath = `${user.id}/generated-videos/${Date.now()}-${randomUUID()}.mp4`
+        await fetch(`${config.url}/storage/v1/object/media-library/${storagePath}`, {
+          method: 'POST',
+          headers: supabaseServiceHeaders(config.service, { 'Content-Type': 'video/mp4' }),
+          body: result.bytes,
+        })
+        
+        sendProgress(7, `Uploading final video...`)
+        sendProgress(8, JSON.stringify({ success: true, videoUrl: `/videos/${storagePath}`, script: result.script }))
+        res.end()
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error)
+        sendProgress(999, `Error: ${msg}`)
+        res.end()
+      }
+    } catch (error) {
+      return json(res, 400, { error: error instanceof Error ? error.message : 'Video stream failed' })
     }
   }
   if (req.method === 'GET' && req.url === '/api/alpha/conversations') {
