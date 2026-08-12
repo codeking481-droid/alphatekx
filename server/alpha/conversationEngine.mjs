@@ -548,18 +548,27 @@ export function createConversationEngine(deps) {
       conversation.conversationStage = 'generating_content'
       const userObj = { id: conversation.userId, email: conversation.userEmail }
       
-      // Show thinking process
+      // Show thinking process with real-time updates
       const topic = prompt.replace(/\b(?:create|generate|make)\s+(?:a\s+)?(?:video\s+)?(?:of|about)?\s+/i, '').trim()
-      addMessage(conversation, 'alpha', `Got it, building your **${topic}** video.\n\nStep 1: Writing script with Groq - 6 scenes...\nStep 2: Searching Pexels for clips...\nStep 3: Downloading 6 HD videos...\nStep 4: Generating voiceovers...\nStep 5: Editing with text, music, transitions...\nStep 6: Uploading final MP4...`)
+      const progressMsgId = addMessage(conversation, 'alpha', `🎬 Building your **${topic}** video...\n\n⏳ Step 1: Writing script...`)
       
       try {
-        // Use streaming video pipeline with progress callbacks
-        const progressMessages = []
+        // Use streaming video pipeline with progress callbacks that update chat
+        let lastUpdate = Date.now()
+        const stepLabels = {1:'✍️ Writing script', 2:'🎬 Downloading clips', 3:'🎙️ Generating voiceovers', 4:'🎨 Editing with effects', 5:'🔗 Merging clips', 6:'✅ Finalizing'}
         const progressCallback = (update) => {
           const msg = String(update.message || '')
-          if (msg && !progressMessages.includes(msg)) {
-            progressMessages.push(msg)
-            console.log(`[VIDEO PROGRESS] ${msg}`)
+          const step = update.step || 0
+          const label = stepLabels[step] || `Step ${step}`
+          console.log(`[VIDEO PROGRESS] ${label}: ${msg}`)
+          
+          // Update progress message in chat every 2 seconds
+          if (Date.now() - lastUpdate > 2000 && progressMsgId && conversation.messages) {
+            lastUpdate = Date.now()
+            const msgIdx = conversation.messages.findIndex(m => m.id === progressMsgId)
+            if (msgIdx >= 0) {
+              conversation.messages[msgIdx].content = `🎬 Building your **${topic}** video...\n\n${label}\n⏸️ ${msg}`
+            }
           }
         }
         
@@ -571,6 +580,7 @@ export function createConversationEngine(deps) {
           let videoUrl = null
           if (typeof getGenerateVideo === 'function') {
             try {
+              progressCallback({ step: 6, message: 'Uploading...' })
               const storageResult = await getGenerateVideo(userObj, topic, { videoBytes: result.bytes, videoMime: result.mime })
               videoUrl = storageResult?.video_url || storageResult?.item?.file_url
             } catch (storageErr) {
@@ -578,17 +588,28 @@ export function createConversationEngine(deps) {
             }
           }
           
+          const scriptText = result.script?.map((s, i) => `${i+1}. ${s.narration}`).join('\n') || 'Script unavailable'
           const finalMsg = videoUrl 
-            ? `Your **${topic}** video is ready! 6 scenes, voiceover, background music, text overlays.\n\n🎬 [Download Video](${videoUrl})\n\n**Script:**\n${result.script?.map((s, i) => `Scene ${i+1}: "${s.narration}"`).join('\n')}`
-            : `Your **${topic}** video is ready! 6 scenes edited with voiceover, music, and text overlays.\n\n**Script:**\n${result.script?.map((s, i) => `Scene ${i+1}: "${s.narration}"`).join('\n')}`
+            ? `✅ Your **${topic}** video is ready!\n\n🎬 **[Download Video](${videoUrl})**\n\n**Script** (6 scenes):\n${scriptText}`
+            : `✅ Your **${topic}** video is ready! 6 scenes with voiceover & effects.\n\n**Script:**\n${scriptText}`
           
-          addMessage(conversation, 'alpha', finalMsg)
+          // Update the progress message with final result
+          if (progressMsgId && conversation.messages) {
+            const msgIdx = conversation.messages.findIndex(m => m.id === progressMsgId)
+            if (msgIdx >= 0) {
+              conversation.messages[msgIdx].content = finalMsg
+            } else {
+              addMessage(conversation, 'alpha', finalMsg)
+            }
+          } else {
+            addMessage(conversation, 'alpha', finalMsg)
+          }
         } else {
-          addMessage(conversation, 'alpha', `Video generation completed but no output. Please try again.`)
+          addMessage(conversation, 'alpha', `⚠️ Video generation completed but output was empty. Try again.`)
         }
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err)
-        addMessage(conversation, 'alpha', `I encountered an issue: ${errMsg}\n\nPossible solutions:\n- Try a different topic\n- Check that Groq API key is configured\n- Ensure Pexels API keys are active`)
+        addMessage(conversation, 'alpha', `⚠️ Video failed: ${errMsg}\n\n**Fix:** Check GROQ_API_KEY and PEXELS_API_KEY_1-3 in .env`)
       }
       return
     }
