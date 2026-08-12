@@ -176,6 +176,8 @@ async function searchPexelsClips(query, aspectRatio) {
         continue
       }
       const data = await responseJson(response)
+      // Log which key succeeded and how many videos were returned
+      try { console.info(`[AlphaTekX] Pexels first: using key ${key}, found ${Array.isArray(data?.videos) ? data.videos.length : 0} videos for query "${query}"`) } catch {}
       if (!Array.isArray(data?.videos)) return []
       // Filter HD and duration >=20s
       return (data.videos || []).filter(v => (v.width || 0) >= 1280 && (v.duration || 0) >= 20)
@@ -361,7 +363,7 @@ async function renderPexelsVideo(prompt, duration, aspectRatio) {
         clipPaths.push(trimmedPath)
       }
     }
-    if (!clipPaths.length) throw new Error('Pexels did not return any usable clips for this request.')
+    if (!clipPaths.length) return null
     if (clipPaths.length === 1) {
       await fs.promises.copyFile(clipPaths[0], outputPath)
     } else {
@@ -415,7 +417,7 @@ async function applyCapCutEffects(tempDir, inputPath, outputPath, { text = '' } 
 async function generateLegacyPollinationsVideo(config, user, prompt, options = {}) {
   const key = String(process.env.POLLINATIONS_API_KEY || '').trim()
   if (!key) {
-    const error = new Error('Video generation is not configured yet. Add POLLINATIONS_API_KEY on Render, then redeploy.')
+    const error = new Error('Pollinations API key is not configured.')
     error.code = 'VIDEO_PROVIDER_NOT_CONFIGURED'
     throw error
   }
@@ -887,16 +889,29 @@ export async function generateVideo(config, user, prompt, options = {}) {
 
   let downloaded = null
   let model = 'groq+pexels'
+  let primaryError = null
   try {
     downloaded = await renderPexelsVideo(cleanPrompt, duration, aspectRatio)
-  } catch (primaryError) {
-    console.warn(`[AlphaTekX] Pexels video pipeline failed: ${primaryError instanceof Error ? primaryError.message : primaryError}`)
-    try {
-      downloaded = await generateLegacyPollinationsVideo(config, user, cleanPrompt, { duration, aspectRatio })
-      model = String(process.env.POLLINATIONS_VIDEO_MODEL || 'wan-fast').trim()
-    } catch (fallbackError) {
-      const error = fallbackError instanceof Error ? fallbackError : new Error('Video generation failed.')
-      throw Object.assign(error, { code: error.code || 'VIDEO_PROVIDER_ERROR' })
+  } catch (err) {
+    primaryError = err
+    console.warn(`[AlphaTekX] Pexels video pipeline failed: ${err instanceof Error ? err.message : err}`)
+  }
+  // If Pexels returned nothing or errored, try Pollinations only if configured
+  if (!downloaded) {
+    const pollKey = String(process.env.POLLINATIONS_API_KEY || '').trim()
+    if (pollKey) {
+      try {
+        downloaded = await generateLegacyPollinationsVideo(config, user, cleanPrompt, { duration, aspectRatio })
+        model = String(process.env.POLLINATIONS_VIDEO_MODEL || 'wan-fast').trim()
+      } catch (fallbackError) {
+        const error = fallbackError instanceof Error ? fallbackError : new Error('Video generation failed.')
+        throw Object.assign(error, { code: error.code || 'VIDEO_PROVIDER_ERROR' })
+      }
+    } else {
+      const message = primaryError ? (primaryError instanceof Error ? primaryError.message : String(primaryError)) : 'Pexels did not return any usable clips for this request.'
+      const err = new Error(`Video generation failed: ${message}`)
+      err.code = 'VIDEO_PROVIDER_ERROR'
+      throw err
     }
   }
   const extension = extensionForMime(downloaded.mime) || 'mp4'
