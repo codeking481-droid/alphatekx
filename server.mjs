@@ -8401,23 +8401,25 @@ const server = http.createServer(async (req, res) => {
         
         // Generate video with progress streaming
         const result = await videoPipeline.buildProductionVideo(prompt, duration, sendProgress, '16:9')
+        if (!result || !result.bytes) throw new Error('Video pipeline returned invalid result')
         
         // Store the generated video. The result stays available from job status even
         // if a client disconnects while the upload is finishing.
+        sendProgress({ step: 99, message: 'Uploading to media library...', phase: 'upload' })
         const storagePath = `${user.id}/generated-videos/${Date.now()}-${randomUUID()}.mp4`
         const upload = await fetch(`${config.url}/storage/v1/object/media-library/${storagePath}`, {
           method: 'POST',
           headers: supabaseServiceHeaders(config.service, { 'Content-Type': 'video/mp4' }),
           body: result.bytes,
         })
-        if (!upload.ok) throw new Error('The final video could not be saved to your Media Library.')
+        if (!upload.ok) throw new Error(`Media upload failed: ${upload.status} ${upload.statusText}`)
         const signed = await fetch(`${config.url}/storage/v1/object/sign/media-library/${storagePath}`, {
           method: 'POST',
           headers: supabaseServiceHeaders(config.service, { 'Content-Type': 'application/json' }),
           body: JSON.stringify({ expiresIn: 60 * 60 * 24 }),
         })
         const signedPayload = await signed.json().catch(() => ({}))
-        if (!signed.ok || !signedPayload.signedURL) throw new Error('The final video was saved but a secure preview link could not be created.')
+        if (!signed.ok || !signedPayload.signedURL) throw new Error(`Could not create preview link: ${signed.status}`)
         const videoUrl = `${config.url}/storage/v1${signedPayload.signedURL}`
         job.status = 'completed'
         job.result = { finalVideoUrl: videoUrl, script: result.script, clipsUsed: result.clipsUsed, size: result.bytes.length }
@@ -8425,9 +8427,10 @@ const server = http.createServer(async (req, res) => {
         res.end()
       } catch (error) {
         const msg = error instanceof Error ? error.message : 'Video generation could not finish.'
+        console.error('[VIDEO_STREAM_ERROR]', msg, error instanceof Error ? error.stack : '')
         job.status = 'failed'
         job.error = msg
-        sendProgress({ step: 0, message: 'Alpha could not finish this video. Please retry; no credits were charged.', phase: 'failed', error: msg })
+        sendProgress({ step: 0, message: `Alpha encountered an error: ${msg}`, phase: 'failed', error: msg })
         res.end()
       }
     } catch (error) {
