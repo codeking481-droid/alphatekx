@@ -537,10 +537,10 @@ function isProviderOrConfigError(error) {
 function alphaConfigurationMessage(error) {
   const message = String(error instanceof Error ? error.message : error || '')
   if (/No AI provider|not configured|api key|invalid_api_key|unauthorized/i.test(message)) {
-    return 'Alpha is online, but the AI provider is not configured correctly. Add a working Groq key in Render as GROQ_API_KEY, then redeploy.'
+    return 'Alpha is online, but the AI provider is not configured correctly. Add a working Groq key in Render as GROQ_API_KEY or GROQ_API_KEY_1, then redeploy.'
   }
   if (/rate limit|quota|tokens per|temporarily unavailable|upstream/i.test(message)) {
-    return 'Alpha is online, but the AI provider is temporarily unavailable or rate-limited. Groq should be the primary provider; check GROQ_API_KEY and GROQ_MODEL in Render.'
+    return 'Alpha is online, but the AI provider is temporarily unavailable or rate-limited. Groq should be the primary provider; check GROQ_API_KEY_1-4 in Render.'
   }
   return 'Alpha is online, but the AI provider/configuration failed while planning. Check Render environment variables and try again.'
 }
@@ -9175,9 +9175,10 @@ const server = http.createServer(async (req, res) => {
 })
 
 if (!process.env.VERCEL) {
+  const hasGroqKey = !!(process.env.GROQ_API_KEY || process.env.GROQ_API_KEY_1 || process.env.GROQ_API_KEY_2 || process.env.GROQ_API_KEY_3 || process.env.GROQ_API_KEY_4)
   console.log('[AlphaTekX] API Key Status:')
   console.log('  Pexels keys:', !!process.env.PEXELS_API_KEY_1, !!process.env.PEXELS_API_KEY_2, !!process.env.PEXELS_API_KEY_3)
-  console.log('  Groq key:', !!process.env.GROQ_API_KEY)
+  console.log('  Groq key:', hasGroqKey)
   console.log('  Pollinations key:', !!process.env.POLLINATIONS_API_KEY, '(optional)')
   
   server.listen(port, () => process.stdout.write(`[AlphaTekX] listening on ${port}\n`))
