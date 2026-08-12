@@ -9,6 +9,8 @@ import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import ffmpegPath from 'ffmpeg-static'
+import * as qualityAssurance from './quality-assurance.mjs'
+import * as uniquenessEngine from './uniqueness-engine.mjs'
 
 /**=== UTILITIES ===*/
 
@@ -474,9 +476,18 @@ export function streamProgress(callback, step, message, extra = {}) {
 
 /**=== MAIN PIPELINE ===*/
 
-export async function buildProductionVideo(prompt, durationSec = 120, progressCallback = null, aspectRatio = '16:9') {
+export async function buildProductionVideo(prompt, durationSec = 120, progressCallback = null, aspectRatio = '16:9', effectsConfig = null) {
   const tempDir = await fs.promises.mkdtemp(path.join(tmpdir(), 'alpha-video-'))
   const outputPath = path.join(tempDir, 'final-video.mp4')
+  
+  // Merge with default effects config
+  const effects = {
+    colorGrade: 'vibrant',
+    transition: 'fade',
+    enableZoom: true,
+    enableSharpening: true,
+    ...effectsConfig,
+  }
 
   try {
     // Step 1: Generate script with Groq
@@ -548,11 +559,24 @@ export async function buildProductionVideo(prompt, durationSec = 120, progressCa
     await concatenateClips(editedClips, outputPath, tempDir, durationSec)
     streamProgress(progressCallback, 5, `Final video concatenated`)
 
-    // Step 6: Verify and return
+    // Step 6: Quality Assurance Check
+    streamProgress(progressCallback, 6, `Running quality checks...`, { phase: 'quality' })
+    const qualityReport = qualityAssurance.analyzeVideoQuality(outputPath)
+    if (qualityReport.valid) {
+      const metrics = qualityReport.metrics
+      const isPro = qualityAssurance.isProfessionalQuality(metrics)
+      streamProgress(progressCallback, 6, `Quality Score: ${Math.round(metrics.qualityScore)}/100 ${isPro ? '✅ Professional' : '⚠️ Acceptable'}`, { 
+        phase: 'quality',
+        qualityScore: Math.round(metrics.qualityScore),
+        issues: qualityReport.metrics.issues
+      })
+    }
+
+    // Step 7: Verify and return
     const stats = await fs.promises.stat(outputPath)
     if (stats.size === 0) throw new Error('Output video is empty')
 
-    streamProgress(progressCallback, 6, `Done! Video size: ${(stats.size / 1024 / 1024).toFixed(2)}MB`)
+    streamProgress(progressCallback, 7, `Done! Video size: ${(stats.size / 1024 / 1024).toFixed(2)}MB`)
     const bytes = await fs.promises.readFile(outputPath)
     
     return {
@@ -561,6 +585,7 @@ export async function buildProductionVideo(prompt, durationSec = 120, progressCa
       script,
       clipsUsed: editedClips.length,
       durationSec,
+      quality: qualityReport.metrics,
     }
   } finally {
     // Cleanup
