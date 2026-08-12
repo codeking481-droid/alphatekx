@@ -31,6 +31,8 @@ export const PLANS = {
     priceKobo: 0,
     monthlyCredits: 0,
     maxActiveAutomations: 1,
+    monthlyVideos: 1,
+    videoMaxDurationSec: 2 * 60,
     features: ['10 free signup credits', '1 active automation', 'Basic automations', 'Execution history'],
   },
   starter: {
@@ -68,6 +70,8 @@ export const PLANS = {
     currency: 'USD',
     monthlyCredits: 400,
     maxActiveAutomations: 10,
+    monthlyVideos: 10,
+    videoMaxDurationSec: 5 * 60,
     features: ['400 credits every month', 'Up to 10 active automations', 'Priority scheduling', 'Early founder pricing'],
   },
   creator_monthly: {
@@ -102,8 +106,17 @@ export const PLANS = {
 
 export const CREDIT_PACKS = [
   { id: 'test_100', credits: 100, amountKobo: 10000, currency: 'NGN', label: 'Test purchase', description: 'Test payment for ₦100' },
-  { id: 'early_founder_19', credits: 500, amountKobo: 1900, currency: 'USD', label: 'Early Founder Deal', description: '500 credits for $19' },
+  // Video monthly subscription packs (use plan ids when subscribing)
+  { id: 'video_19', credits: 0, amountKobo: 1900, currency: 'USD', label: '$19 Video Monthly', description: '10 videos / month, up to 5 mins each', type: 'subscription', planId: 'video_19' },
+  { id: 'video_49', credits: 0, amountKobo: 4900, currency: 'USD', label: '$49 Video Monthly', description: '30 videos / month, up to 8 mins each + scheduler', type: 'subscription', planId: 'video_49' },
+  { id: 'video_99', credits: 0, amountKobo: 9900, currency: 'USD', label: '$99 Video Monthly', description: 'Unlimited videos, up to 12 mins + Vault', type: 'subscription', planId: 'video_99' },
 ]
+
+// Video-specific plan entries (explicit)
+PLANS.video_free = { id: 'video_free', name: 'Free Video', priceKobo: 0, monthlyVideos: 1, videoMaxDurationSec: 2 * 60, features: ['1 video / month, max 2 mins'] }
+PLANS.video_19 = { id: 'video_19', name: '$19 Video', priceKobo: 1900, monthlyVideos: 10, videoMaxDurationSec: 5 * 60, features: ['10 videos / month, max 5 mins'] }
+PLANS.video_49 = { id: 'video_49', name: '$49 Video', priceKobo: 4900, monthlyVideos: 30, videoMaxDurationSec: 8 * 60, schedulerDays: 7, librarianUniqueClips: 84, features: ['30 videos / month, max 8 mins, 7-day scheduler'] }
+PLANS.video_99 = { id: 'video_99', name: '$99 Video', priceKobo: 9900, monthlyVideos: Infinity, videoMaxDurationSec: 12 * 60, vault: true, features: ['Unlimited videos, max 12 mins, Vault & team seats'] }
 
 export function getPlan(id) { return PLANS[id] || PLANS.free }
 export function getCreditPack(id) {
@@ -215,6 +228,8 @@ async function readProfile(user, config) {
     monthly_credits: monthly,
     monthly_videos: Number(profile.monthly_videos ?? balance.monthly_videos) || 0,
     monthly_videos_used: Number(profile.monthly_videos_used ?? balance.monthly_videos_used) || 0,
+    video_count_used: Number(profile.video_count_used ?? balance.video_count_used ?? profile.monthly_videos_used ?? 0) || 0,
+    video_count_reset_date: profile.video_count_reset_date || balance.video_count_reset_date || profile.subscription_renews_at || null,
     purchased_credits: normalizedPurchased,
     monthly_credits_used: Number(profile.monthly_credits_used ?? balance.monthly_credits_used) || 0,
     total_credits_spent: totalSpent,
@@ -227,6 +242,10 @@ async function writeProfile(user, config, patch) {
   if ('monthly_credits' in patch) balancePatch.monthly_credits = patch.monthly_credits
   if ('purchased_credits' in patch) balancePatch.purchased_credits = patch.purchased_credits
   if ('monthly_credits_used' in patch) balancePatch.monthly_credits_used = patch.monthly_credits_used
+  if ('monthly_videos' in patch) balancePatch.monthly_videos = patch.monthly_videos
+  if ('monthly_videos_used' in patch) balancePatch.monthly_videos_used = patch.monthly_videos_used
+  if ('video_count_used' in patch) balancePatch.video_count_used = patch.video_count_used
+  if ('video_count_reset_date' in patch) balancePatch.video_count_reset_date = patch.video_count_reset_date
   if ('total_credits_spent' in patch) balancePatch.total_credits_spent = patch.total_credits_spent
   if ('subscription_renews_at' in patch) balancePatch.subscription_renews_at = patch.subscription_renews_at
   if ('plan' in patch) balancePatch.plan = patch.plan
@@ -243,6 +262,10 @@ async function writeProfile(user, config, patch) {
       if ('monthly_credits' in patch) extraPatch.monthly_credits = patch.monthly_credits
       if ('purchased_credits' in patch) extraPatch.purchased_credits = patch.purchased_credits
       if ('monthly_credits_used' in patch) extraPatch.monthly_credits_used = patch.monthly_credits_used
+      if ('monthly_videos' in patch) extraPatch.monthly_videos = patch.monthly_videos
+      if ('monthly_videos_used' in patch) extraPatch.monthly_videos_used = patch.monthly_videos_used
+      if ('video_count_used' in patch) extraPatch.video_count_used = patch.video_count_used
+      if ('video_count_reset_date' in patch) extraPatch.video_count_reset_date = patch.video_count_reset_date
       if ('total_credits_spent' in patch) extraPatch.total_credits_spent = patch.total_credits_spent
       if ('subscription_renews_at' in patch) extraPatch.subscription_renews_at = patch.subscription_renews_at
       if (Object.keys(extraPatch).length) await fetch(`${config.url}/rest/v1/profiles?id=eq.${user.id}`, { method: 'PATCH', headers: serviceHeaders(config.service), body: JSON.stringify({ ...extraPatch, updated_at: nowIso() }) })
@@ -660,7 +683,7 @@ export async function resetMonthlyVideos(config) {
       const monthlyVideos = Number(plan.monthlyVideos || 0)
       const nextRenew = new Date()
       nextRenew.setDate(nextRenew.getDate() + 30)
-      await writeProfile(user, config, { monthly_videos: monthlyVideos, monthly_videos_used: 0, subscription_renews_at: nextRenew.toISOString() })
+      await writeProfile(user, config, { monthly_videos: monthlyVideos, monthly_videos_used: 0, video_count_used: 0, video_count_reset_date: nextRenew.toISOString(), subscription_renews_at: nextRenew.toISOString() })
       profilesToUpdate.push(userId)
     }
   }
@@ -669,32 +692,60 @@ export async function resetMonthlyVideos(config) {
 
 export function getPlanVideoPolicy(planId) {
   const plan = getPlan(planId)
-  const price = Number(plan.priceKobo || 0)
-  // Map price thresholds to policy: <=1900 => $19, <=4900 => $49, >=9900 => $99
-  if (price >= 9900) return { monthly: Infinity, maxDurationSec: 12 * 60, schedulerDays: 7, vault: true }
-  if (price <= 1900) return { monthly: 10, maxDurationSec: 5 * 60, schedulerDays: 0, vault: false }
-  if (price <= 4900) return { monthly: 30, maxDurationSec: 8 * 60, schedulerDays: 7, vault: false }
-  // Fallback conservative policy
-  return { monthly: 10, maxDurationSec: 5 * 60, schedulerDays: 0, vault: false }
+  if (!plan) return { monthly: 0, maxDurationSec: 2 * 60, schedulerDays: 0, vault: false }
+  switch (String(plan.id)) {
+    case 'video_99':
+      return { monthly: Infinity, maxDurationSec: 12 * 60, schedulerDays: 7, vault: true }
+    case 'video_49':
+      return { monthly: 30, maxDurationSec: 8 * 60, schedulerDays: 7, vault: false, librarianUniqueClips: Number(plan.librarianUniqueClips || 84) }
+    case 'video_19':
+      return { monthly: 10, maxDurationSec: 5 * 60, schedulerDays: 0, vault: false }
+    case 'video_free':
+    case 'free':
+      return { monthly: 1, maxDurationSec: 2 * 60, schedulerDays: 0, vault: false }
+    default:
+      return { monthly: Number(plan.monthlyVideos || 0) || 0, maxDurationSec: Number(plan.videoMaxDurationSec || 0) || 2 * 60, schedulerDays: Number(plan.schedulerDays || 0) || 0, vault: Boolean(plan.vault || false) }
+  }
 }
 
 export async function canGenerateVideo(user, config, durationSeconds) {
   if (isAdmin(user)) return { ok: true }
-  const billing = await getUserBilling(user, config)
-  const planPolicy = getPlanVideoPolicy(billing.plan)
-  const used = Number(billing.monthly_videos_used || billing.monthlyVideosUsed || 0)
-  const allowed = Number(planPolicy.monthly || 0)
+  const profile = await readProfile(user, config)
+  if (!profile) return { ok: false, reason: 'PROFILE_NOT_FOUND' }
+  // Reset counts if the reset date has passed
+  const now = new Date()
+  let resetDate = profile.video_count_reset_date ? new Date(profile.video_count_reset_date) : null
+  if (!resetDate || resetDate <= now) {
+    const next = new Date()
+    next.setDate(next.getDate() + 30)
+    await writeProfile(user, config, { video_count_used: 0, video_count_reset_date: next.toISOString() }).catch(() => {})
+    profile.video_count_used = 0
+    profile.video_count_reset_date = next.toISOString()
+    resetDate = new Date(profile.video_count_reset_date)
+  }
+  const planPolicy = getPlanVideoPolicy(profile.plan)
+  const used = Number(profile.video_count_used || 0)
+  const allowed = planPolicy.monthly === Infinity ? Infinity : Number(planPolicy.monthly || 0)
   if (Number(durationSeconds) > Number(planPolicy.maxDurationSec)) return { ok: false, reason: 'VIDEO_DURATION_EXCEEDED', limit: planPolicy.maxDurationSec }
   if (allowed !== Infinity && used >= allowed) return { ok: false, reason: 'VIDEO_MONTHLY_LIMIT_REACHED', limit: allowed }
-  return { ok: true, remaining: allowed === Infinity ? Infinity : Math.max(0, allowed - used), policy: planPolicy }
+  return { ok: true, remaining: allowed === Infinity ? Infinity : Math.max(0, allowed - used), policy: planPolicy, resetDate: profile.video_count_reset_date }
 }
 
 export async function recordVideoGeneration(user, config, { count = 1 } = {}) {
   const profile = await readProfile(user, config)
-  const currentUsed = Number(profile.monthly_videos_used || 0)
+  const currentUsed = Number(profile.video_count_used || 0)
   const nextUsed = currentUsed + Number(count || 1)
-  await writeProfile(user, config, { monthly_videos_used: nextUsed })
-  await recordTransaction(user.id, { type: 'spend', creditsRemoved: 0, balanceAfter: Number(profile.credits) || 0, reason: 'Video generation usage', metadata: { monthly_videos_used: nextUsed } })
+  // Ensure reset date exists
+  const now = new Date()
+  let resetDate = profile.video_count_reset_date ? new Date(profile.video_count_reset_date) : null
+  if (!resetDate || resetDate <= now) {
+    const next = new Date()
+    next.setDate(next.getDate() + 30)
+    await writeProfile(user, config, { video_count_used: nextUsed, video_count_reset_date: next.toISOString() }).catch(() => {})
+  } else {
+    await writeProfile(user, config, { video_count_used: nextUsed }).catch(() => {})
+  }
+  await recordTransaction(user.id, { type: 'spend', creditsRemoved: 0, balanceAfter: Number(profile.credits) || 0, reason: 'Video generation usage', metadata: { video_count_used: nextUsed } })
   return { ok: true, used: nextUsed }
 }
 

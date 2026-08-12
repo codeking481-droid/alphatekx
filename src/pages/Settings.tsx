@@ -4,7 +4,7 @@ import { Check, CreditCard, Globe, LoaderCircle, LogOut, Moon, Palette, Receipt,
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { getCredits, hydrateCredits, setCredits as saveCredits, subscribeCredits } from '../lib/creditStore'
-import { CREDIT_PACKS, formatCredits, formatAmount, formatCurrency, getPlan, PLANS, type BillingSummary, type CreditPack, type PlanId } from '../lib/billing'
+import { formatCredits, formatCurrency, getPlan, PLANS, type BillingSummary, type PlanId } from '../lib/billing'
 import { initializeCheckout, verifyCheckout } from '../lib/payment'
 
 export default function Settings() {
@@ -15,7 +15,6 @@ export default function Settings() {
   const [credits, setCredits] = useState(getCredits())
   const [billing, setBilling] = useState<BillingSummary | null>(null)
   const [loadingBilling, setLoadingBilling] = useState(false)
-  const [selectedPack, setSelectedPack] = useState<CreditPack | null>(null)
   const [selectedPlan, setSelectedPlan] = useState<PlanId | null>(null)
   const [notice, setNotice] = useState('')
   const [pending, setPending] = useState(false)
@@ -126,7 +125,7 @@ export default function Settings() {
   })
 
   const startCheckout = async () => {
-    if (!selectedPack && !selectedPlan) return
+    if (!selectedPlan) return
     if (selectedPlan === 'free') {
       setPending(true)
       setNotice('Downgrading to Free...')
@@ -144,7 +143,7 @@ export default function Settings() {
     setPending(true)
     setNotice('Opening secure checkout...')
     try {
-      const item = selectedPlan ? { type: 'subscription' as const, planId: selectedPlan } : { type: 'credits' as const, packId: selectedPack!.id }
+      const item = { type: 'subscription' as const, planId: selectedPlan }
       const data = await initializeCheckout('paystack', item)
       if (data.authorization_url) {
         window.location.href = data.authorization_url
@@ -157,8 +156,7 @@ export default function Settings() {
     }
   }
 
-  const selectPack = (pack: CreditPack) => { setSelectedPack(pack); setSelectedPlan(null) }
-  const selectPlan = (planId: PlanId) => { setSelectedPlan(planId); setSelectedPack(null) }
+  const selectPlan = (planId: PlanId) => { setSelectedPlan(planId) }
 
   const deleteAccount = () => {
     if (!confirm('This will sign you out and clear local data. To permanently delete your account, contact hello@alphatekx.name.ng.')) return
@@ -250,29 +248,12 @@ export default function Settings() {
             </div>
           </div>
 
-          <div className="mt-6">
-            <h3 className="flex items-center gap-2 font-black text-white"><Wallet size={16} className="text-cyan-300"/> Buy credits</h3>
-            <p className="text-sm font-semibold text-slate-300">Purchased credits never expire. Prices are shown in the pack currency.</p>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              {CREDIT_PACKS.map((pack) => {
-                const active = selectedPack?.id === pack.id
-                return (
-                  <button key={pack.id} onClick={() => selectPack(pack)} className={`relative rounded-2xl border p-4 text-left text-white shadow-[0_12px_30px_rgba(3,7,18,.24)] transition-all ${active ? 'border-cyan-300/60 bg-blue-500/20' : 'border-violet-400/30 bg-violet-500/15 hover:border-blue-300/60 hover:bg-blue-500/15'}`}>
-                    {active && <span className="absolute right-3 top-3 grid size-5 place-items-center rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white"><Check size={12}/></span>}
-                    <span className="flex items-center gap-2 font-black text-white"><WalletCards size={16}/>{pack.label}</span>
-                    <p className="mt-2 text-3xl font-black text-[#FFD700]">{formatAmount(pack.amountKobo, pack.currency)}</p>
-                    <p className="mt-1 text-xs font-semibold text-slate-200">{pack.description}</p>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
 
           {notice && <p role="status" className="mt-4 rounded-lg border border-violet-200 bg-violet-500/10 p-3 text-sm font-semibold text-white">{notice}</p>}
 
-          <button onClick={() => void startCheckout()} disabled={pending || (!selectedPack && !selectedPlan)} className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl btn-alpha px-4 text-sm font-medium text-white transition-all disabled:opacity-50">
+          <button onClick={() => void startCheckout()} disabled={pending || !selectedPlan} className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl btn-alpha px-4 text-sm font-medium text-white transition-all disabled:opacity-50">
             {pending ? <LoaderCircle className="animate-spin" size={16}/> : <WalletCards size={16}/>}
-            {selectedPlan ? `Upgrade to ${getPlan(selectedPlan).name} — ${formatCurrency(getPlan(selectedPlan).priceKobo)}` : selectedPack ? `Buy ${selectedPack.label} for ${formatAmount(selectedPack.amountKobo, selectedPack.currency)}` : 'Select a plan or credit pack'}
+            {selectedPlan ? `Upgrade to ${getPlan(selectedPlan).name} — ${formatCurrency(getPlan(selectedPlan).priceKobo)}` : 'Select a plan'}
           </button>
 
           <div className="mt-6">
