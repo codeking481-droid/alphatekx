@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import ffmpegPath from 'ffmpeg-static'
 import { supabaseServiceHeaders } from './supabaseHeaders.mjs'
+import { canGenerateVideo, recordVideoGeneration } from './billing.mjs'
 
 const BUCKET = 'media-library'
 const MAX_FILE_SIZE = 500 * 1024 * 1024
@@ -265,11 +266,49 @@ async function renderPexelsVideo(prompt, duration, aspectRatio) {
     } else {
       await concatenateClips(tempDir, clipPaths, outputPath)
     }
-    const bytes = await fs.promises.readFile(outputPath)
-    return { bytes, mime: 'video/mp4' }
+    // Apply CapCut-style FFmpeg effects pass: shake, glow bloom cyan, pop text, whoosh overlay, zoom
+    const effectsPath = path.join(tempDir, 'alpha-effects.mp4')
+    try {
+      await applyCapCutEffects(tempDir, outputPath, effectsPath, { text: prompt })
+      const bytes = await fs.promises.readFile(effectsPath)
+      return { bytes, mime: 'video/mp4' }
+    } catch (err) {
+      // If effects fail, fall back to the original render
+      console.warn('[AlphaTekX] CapCut effects failed:', err instanceof Error ? err.message : err)
+      const bytes = await fs.promises.readFile(outputPath)
+      return { bytes, mime: 'video/mp4' }
+    }
   } finally {
     await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {})
   }
+}
+
+async function applyCapCutEffects(tempDir, inputPath, outputPath, { text = '' } = {}) {
+  // Optional whoosh/rumble sound overlay path via env
+  const sound = String(process.env.WHOOSH_PATH || '').trim()
+  const soundArgs = sound ? ['-i', sound] : []
+  // Build a filter_complex that approximates shake, glow bloom cyan, pop text, and zoom
+  const textSafe = String(text || '').replace(/[:'"\\]/g, '')
+  const drawText = `drawtext=fontcolor=white:borderw=6:bordercolor=black:fontsize=48:text='${textSafe}':x=(w-text_w)/2:y=h-120:enable='between(t,0.2,1.2)'`
+  const rotateExpr = "rotate=0.02*sin(6*PI*t)" // subtle shake via rotation
+  const glowFilters = 'boxblur=luma_radius=10:luma_power=1,geq=r=lum(0*0)+0' // simple blur for bloom
+  const zoomExpr = "zoompan=z='if(between(t,0,2),1+0.02*t,1)':d=1"
+  const filterComplexParts = []
+  // video base processing: scale and small rotate (shake) and blur for bloom
+  filterComplexParts.push(`[0:v]scale=1280:720,${rotateExpr},${glowFilters},${zoomExpr},${drawText}[v]`)
+  let filterComplex = filterComplexParts.join(';')
+  const args = ['-y', '-i', inputPath, ...soundArgs, '-filter_complex', filterComplex]
+  // Map outputs
+  if (sound) {
+    // audio mixing: input 0 audio + input 1 (sound)
+    args.push('-map', '[v]', '-map', '0:a?', '-map', '1:a?')
+    // use amix in chain if both audios present
+    // Simpler: let ffmpeg auto-select audio; keep default mapping
+  } else {
+    args.push('-map', '[v]', '-map', '0:a?')
+  }
+  args.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '128k', outputPath)
+  return runFfmpeg(args, tempDir)
 }
 
 async function generateLegacyPollinationsVideo(config, user, prompt, options = {}) {
@@ -716,8 +755,21 @@ export async function generateVideo(config, user, prompt, options = {}) {
   await ensureBucket(config)
   const cleanPrompt = String(prompt || '').trim()
   if (cleanPrompt.length < 10) throw Object.assign(new Error('Describe the video in at least 10 characters.'), { code: 'INVALID_CONTENT' })
-  const duration = Math.min(10, Math.max(4, Number(options.duration) || 5))
+  const duration = Math.min(12 * 60, Math.max(4, Number(options.duration) || 5))
   const aspectRatio = options.aspectRatio === '9:16' ? '9:16' : '16:9'
+  // Enforce plan-based video guardrails before planning/groq calls
+  try {
+    const allowed = await canGenerateVideo(user, config, duration)
+    if (!allowed.ok) {
+      const err = new Error(allowed.reason === 'VIDEO_DURATION_EXCEEDED' ? `Requested duration exceeds your plan's maximum of ${allowed.limit} seconds.` : 'Your monthly video limit has been reached.')
+      err.code = allowed.reason || 'VIDEO_BLOCKED'
+      throw err
+    }
+  } catch (error) {
+    if (error.code) throw error
+    // If billing check fails unexpectedly, continue with caution
+  }
+
   let downloaded = null
   let model = 'groq+pexels'
   try {
@@ -753,6 +805,9 @@ export async function generateVideo(config, user, prompt, options = {}) {
     })
   const item = rows?.[0]
   if (!item?.id) throw Object.assign(new Error('The generated video was stored but its media record could not be confirmed.'), { code: 'DB_ERROR' })
+  try {
+    await recordVideoGeneration(user, config, { count: 1 }).catch(() => {})
+  } catch {}
   const fileUrl = await signedUrl(config, storagePath, 86400)
   return { item: { ...item, file_url: fileUrl }, video_url: fileUrl, video_storage_path: storagePath, model }
 }

@@ -102,11 +102,6 @@ export const PLANS = {
 
 export const CREDIT_PACKS = [
   { id: 'test_100', credits: 100, amountKobo: 10000, currency: 'NGN', label: 'Test purchase', description: 'Test payment for ₦100' },
-  { id: 'spark_5', credits: 5, amountKobo: 100, currency: 'USD', label: 'Spark', description: '5 credits for $1' },
-  { id: 'creator_20', credits: 20, amountKobo: 300, currency: 'USD', label: 'Creator', description: '20 credits for $3' },
-  { id: 'naira_20', credits: 20, amountKobo: 10000, currency: 'NGN', label: '20 credits', description: '20 credits for ₦100' },
-  { id: 'builder_40', credits: 40, amountKobo: 500, currency: 'USD', label: 'Builder', description: '40 credits for $5' },
-  { id: 'scale_100', credits: 100, amountKobo: 1000, currency: 'USD', label: 'Scale', description: '100 credits for $10' },
   { id: 'early_founder_19', credits: 500, amountKobo: 1900, currency: 'USD', label: 'Early Founder Deal', description: '500 credits for $19' },
 ]
 
@@ -218,6 +213,8 @@ async function readProfile(user, config) {
     credits: total,
     plan: String(profile.plan || 'free'),
     monthly_credits: monthly,
+    monthly_videos: Number(profile.monthly_videos ?? balance.monthly_videos) || 0,
+    monthly_videos_used: Number(profile.monthly_videos_used ?? balance.monthly_videos_used) || 0,
     purchased_credits: normalizedPurchased,
     monthly_credits_used: Number(profile.monthly_credits_used ?? balance.monthly_credits_used) || 0,
     total_credits_spent: totalSpent,
@@ -641,12 +638,64 @@ export async function resetMonthlyCredits(config) {
       const total = plan.monthlyCredits + purchased
       const nextRenew = new Date()
       nextRenew.setDate(nextRenew.getDate() + 30)
-      await writeProfile(user, config, { credits: total, monthly_credits: plan.monthlyCredits, monthly_credits_used: 0, subscription_renews_at: nextRenew.toISOString() })
+      // Reset monthly credits and also initialize monthly video allowance if the plan defines it
+      await writeProfile(user, config, { credits: total, monthly_credits: plan.monthlyCredits, monthly_credits_used: 0, monthly_videos: plan.monthlyVideos || 0, monthly_videos_used: 0, subscription_renews_at: nextRenew.toISOString() })
       await recordTransaction(userId, { type: 'subscription', creditsAdded: plan.monthlyCredits, balanceAfter: total, reason: `Monthly credits reset for ${plan.name}`, metadata: { plan: plan.id } })
       profilesToUpdate.push(userId)
     }
   }
   return profilesToUpdate.length
+}
+
+export async function resetMonthlyVideos(config) {
+  const now = new Date()
+  const balances = readJsonFile(balancesFile, {})
+  const profilesToUpdate = []
+  for (const [userId, record] of Object.entries(balances)) {
+    if (!record.subscription_renews_at) continue
+    const renew = new Date(record.subscription_renews_at)
+    if (renew <= now) {
+      const user = { id: userId, email: record.email || '' }
+      const plan = getPlan(record.plan)
+      const monthlyVideos = Number(plan.monthlyVideos || 0)
+      const nextRenew = new Date()
+      nextRenew.setDate(nextRenew.getDate() + 30)
+      await writeProfile(user, config, { monthly_videos: monthlyVideos, monthly_videos_used: 0, subscription_renews_at: nextRenew.toISOString() })
+      profilesToUpdate.push(userId)
+    }
+  }
+  return profilesToUpdate.length
+}
+
+export function getPlanVideoPolicy(planId) {
+  const plan = getPlan(planId)
+  const price = Number(plan.priceKobo || 0)
+  // Map price thresholds to policy: <=1900 => $19, <=4900 => $49, >=9900 => $99
+  if (price >= 9900) return { monthly: Infinity, maxDurationSec: 12 * 60, schedulerDays: 7, vault: true }
+  if (price <= 1900) return { monthly: 10, maxDurationSec: 5 * 60, schedulerDays: 0, vault: false }
+  if (price <= 4900) return { monthly: 30, maxDurationSec: 8 * 60, schedulerDays: 7, vault: false }
+  // Fallback conservative policy
+  return { monthly: 10, maxDurationSec: 5 * 60, schedulerDays: 0, vault: false }
+}
+
+export async function canGenerateVideo(user, config, durationSeconds) {
+  if (isAdmin(user)) return { ok: true }
+  const billing = await getUserBilling(user, config)
+  const planPolicy = getPlanVideoPolicy(billing.plan)
+  const used = Number(billing.monthly_videos_used || billing.monthlyVideosUsed || 0)
+  const allowed = Number(planPolicy.monthly || 0)
+  if (Number(durationSeconds) > Number(planPolicy.maxDurationSec)) return { ok: false, reason: 'VIDEO_DURATION_EXCEEDED', limit: planPolicy.maxDurationSec }
+  if (allowed !== Infinity && used >= allowed) return { ok: false, reason: 'VIDEO_MONTHLY_LIMIT_REACHED', limit: allowed }
+  return { ok: true, remaining: allowed === Infinity ? Infinity : Math.max(0, allowed - used), policy: planPolicy }
+}
+
+export async function recordVideoGeneration(user, config, { count = 1 } = {}) {
+  const profile = await readProfile(user, config)
+  const currentUsed = Number(profile.monthly_videos_used || 0)
+  const nextUsed = currentUsed + Number(count || 1)
+  await writeProfile(user, config, { monthly_videos_used: nextUsed })
+  await recordTransaction(user.id, { type: 'spend', creditsRemoved: 0, balanceAfter: Number(profile.credits) || 0, reason: 'Video generation usage', metadata: { monthly_videos_used: nextUsed } })
+  return { ok: true, used: nextUsed }
 }
 
 export function scheduleMonthlyReset(cronSchedule, callback) {
