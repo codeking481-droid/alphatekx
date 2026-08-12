@@ -1090,9 +1090,10 @@ function Pricing() {
   const { user } = useAuth()
   const [yearly, setYearly] = useState(true)
   const plans = [
-    { name: 'Starter', price: 15, credits: '150 credits', naira: '~₦23,500' },
-    { name: 'Founder', price: 29, credits: '400 credits', naira: '~₦45,600', featured: true },
-    { name: 'Scale', price: 79, credits: '1,200 credits', naira: '~₦124,100' },
+    { id: 'free', name: 'Free', price: 0, credits: '10 credits', naira: '~Free', details: '1 video / month, max 2 mins' },
+    { id: 'video_19', name: '$19', price: 19, credits: '400 credits', naira: '~₦45,600', details: '10 videos / month, max 5 mins', featured: true },
+    { id: 'video_49', name: '$49', price: 49, credits: '800 credits', naira: '~₦124,100', details: '30 videos / month, max 8 mins, 7-day scheduler' },
+    { id: 'video_99', name: '$99', price: 99, credits: '1,200 credits', naira: '~Premium', details: 'Unlimited videos, max 12 mins, Vault & team seats' },
   ]
 
   const handleEarlyFounderDeal = () => {
@@ -1141,11 +1142,11 @@ function Pricing() {
           </p>
         </div>
 
-        <div className="mt-14 grid gap-5 lg:grid-cols-3">
+        <div className="mt-14 grid gap-5 md:grid-cols-2 lg:grid-cols-2">
           {plans.map((plan) => (
             <motion.article
               whileHover={{ y: -6 }}
-              key={plan.name}
+              key={plan.id}
               className={`relative rounded-[28px] border bg-[#09090C] p-7 ${
                 plan.featured ? 'border-[#FFD700] shadow-[0_0_60px_rgba(255,215,0,.10)]' : 'border-[#FFD700]/20'
               }`}
@@ -1163,6 +1164,7 @@ function Pricing() {
               </p>
               <p className="mt-2 text-xs font-semibold text-white/45">{plan.naira} via Paystack</p>
               <p className="mt-1 font-semibold text-white/45">{plan.credits} · every channel included</p>
+              <p className="mt-2 text-sm text-white/60">{plan.details}</p>
               <div className="my-7 h-px bg-white/10" />
 
               {['One approval flow', 'Confirmed publishing', 'No per-channel fee'].map((item) => (
@@ -1174,10 +1176,10 @@ function Pricing() {
 
               <button
                 type="button"
-                onClick={() => void instantGoogleSignup(plan.featured ? 'early_founder_19' : undefined)}
+                onClick={() => void instantGoogleSignup(plan.id === 'video_19' ? 'early_founder_19' : undefined)}
                 className={`mt-8 inline-flex min-h-[48px] w-full items-center justify-center rounded-full px-4 font-black ${
                   plan.featured ? 'bg-[#FFD700] text-black' : 'border border-white/15 text-white'
-                }`}
+                }`}>
               >
                 {plan.featured ? 'Claim New Deal' : `Choose ${plan.name}`}
               </button>
