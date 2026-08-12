@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import ffmpegPath from 'ffmpeg-static'
 import { supabaseServiceHeaders } from './supabaseHeaders.mjs'
-import { canGenerateVideo, recordVideoGeneration } from './billing.mjs'
+import { canGenerateVideo, recordVideoGeneration, getUserBilling } from './billing.mjs'
 
 const BUCKET = 'media-library'
 const MAX_FILE_SIZE = 500 * 1024 * 1024
@@ -761,7 +761,21 @@ export async function generateVideo(config, user, prompt, options = {}) {
   try {
     const allowed = await canGenerateVideo(user, config, duration)
     if (!allowed.ok) {
-      const err = new Error(allowed.reason === 'VIDEO_DURATION_EXCEEDED' ? `Requested duration exceeds your plan's maximum of ${allowed.limit} seconds.` : 'Your monthly video limit has been reached.')
+      // Provide friendly plan-specific messaging
+      const billing = await getUserBilling(user, config).catch(() => null)
+      const planId = billing?.plan || 'free'
+      let message = 'Your monthly video limit has been reached.'
+      if (allowed.reason === 'VIDEO_DURATION_EXCEEDED') {
+        if (planId === 'free' || planId === 'video_free') message = "Free na 1 video 2 mins only, upgrade to $19"
+        else if (planId === 'video_19' || planId === 'early_founder') message = 'Max 5 mins for $19, upgrade to $49 for 8 mins'
+        else if (planId === 'video_49') message = 'Max 8 mins for $49, upgrade to $99 for 12 mins'
+        else message = `Requested duration exceeds your plan's maximum of ${allowed.limit} seconds.`
+      } else if (allowed.reason === 'VIDEO_MONTHLY_LIMIT_REACHED') {
+        if (planId === 'free' || planId === 'video_free') message = "Free na 1 video 2 mins only, upgrade to $19"
+        else if (planId === 'video_19' || planId === 'early_founder') message = 'You have used your 10 videos for $19. Upgrade to $49 for 30 videos.'
+        else if (planId === 'video_49') message = 'You have used your 30 videos for $49. Upgrade to $99 for unlimited videos.'
+      }
+      const err = new Error(message)
       err.code = allowed.reason || 'VIDEO_BLOCKED'
       throw err
     }

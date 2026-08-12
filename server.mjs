@@ -8079,6 +8079,12 @@ const server = http.createServer(async (req, res) => {
       const config = supabaseConfig()
       const user = await currentOrLocalUser(req, config.url, config.anon)
       if (!user) return json(res, 401, { error: 'Authentication required' })
+      if (!isAdminAuthUser(user)) {
+        const billingSummary = await billing.getUserBilling(user, config)
+        if (!billingSummary || billingSummary.plan === 'free' || Number(billingSummary.monthlyCredits || 0) <= 0) {
+          return json(res, 402, { error: 'Video generation requires a paid monthly plan. Upgrade your plan to continue.', code: 'VIDEO_SUBSCRIPTION_REQUIRED' })
+        }
+      }
       const body = await readBody(req)
       return json(res, 201, await mediaLibrary.generateVideo(config, user, body.prompt, {
         duration: body.duration,

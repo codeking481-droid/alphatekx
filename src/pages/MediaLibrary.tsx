@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarClock, CheckCircle2, Download, FileVideo2, Image, LoaderCircle, Play, Trash2, UploadCloud, X } from 'lucide-react'
+import { useAuth } from '../lib/auth'
 import { getCredits } from '../lib/creditStore'
 import { createSmartImage, createSmartVideo, deleteMedia, getMediaSetupStatus, listMedia, previewMedia as getMediaPreview, publishMedia, updateMedia, uploadMedia, type MediaItem } from '../lib/mediaLibrary'
 
@@ -32,6 +33,7 @@ export default function MediaLibrary() {
   const [progress, setProgress] = useState('')
   const [notice, setNotice] = useState('')
   const [scheduleOpen, setScheduleOpen] = useState(false)
+  const { profile } = useAuth()
   const [previewItem, setPreviewItem] = useState<MediaItem | null>(null)
   const [previewLoading, setPreviewLoading] = useState<string | null>(null)
   const [brokenCards, setBrokenCards] = useState<Set<string>>(() => new Set())
@@ -173,6 +175,10 @@ export default function MediaLibrary() {
   const generateVideo = async () => {
     const prompt = imagePrompt.trim()
     if (!prompt) { setNotice('Describe the video you want Alpha to create.'); return }
+    if (profile?.plan === 'free') {
+      setNotice('Video generation is only available on a paid monthly plan. Upgrade in Settings to continue.')
+      return
+    }
     setBusy(true)
     setNotice('Alpha is generating and verifying your video. This can take a few minutes…')
     try {
@@ -221,6 +227,11 @@ export default function MediaLibrary() {
           <span className="mt-1 block text-xs font-semibold text-slate-400">Generate a verified image or short video and save it directly to your private vault.</span>
           <div className="mt-3 flex w-fit rounded-xl border border-white/10 bg-black/20 p-1">{(['image','video'] as const).map(type => <button type="button" key={type} onClick={() => setGenerationType(type)} className={`min-h-9 rounded-lg px-4 text-xs font-black capitalize ${generationType === type ? 'bg-violet-600 text-white' : 'text-slate-400'}`}>{type}</button>)}</div>
           <input value={imagePrompt} onChange={event => setImagePrompt(event.target.value)} placeholder={generationType === 'image' ? 'e.g. premium editorial photo of a thrift gown in Lagos' : 'e.g. cinematic 5-second video of a luxury car driving at sunset'} className="field mt-3" disabled={busy || setupRequired}/>
+          {generationType === 'video' && profile?.plan === 'free' && (
+            <div className="mt-3 rounded-2xl border border-amber-400/30 bg-amber-500/10 p-3 text-sm text-amber-100">
+              Video generation is available only on a paid monthly plan. Visit Settings to upgrade.
+            </div>
+          )}
         </label>
         <button onClick={() => void (generationType === 'image' ? generateImage() : generateVideo())} disabled={busy || setupRequired || !imagePrompt.trim()} className="btn-alpha min-h-12 shrink-0 rounded-xl px-5 text-sm font-black disabled:opacity-50">{busy ? 'Alpha is creating…' : `Generate ${generationType}`}</button>
       </div>
