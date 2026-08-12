@@ -9121,6 +9121,11 @@ const server = http.createServer(async (req, res) => {
 })
 
 if (!process.env.VERCEL) {
+  console.log('[AlphaTekX] API Key Status:')
+  console.log('  Pexels keys:', !!process.env.PEXELS_API_KEY_1, !!process.env.PEXELS_API_KEY_2, !!process.env.PEXELS_API_KEY_3)
+  console.log('  Groq key:', !!process.env.GROQ_API_KEY)
+  console.log('  Pollinations key:', !!process.env.POLLINATIONS_API_KEY, '(optional)')
+  
   server.listen(port, () => process.stdout.write(`[AlphaTekX] listening on ${port}\n`))
   schedule('* * * * *', async () => {
     if (schedulerState.isRunning) return
