@@ -7,6 +7,7 @@ import { scheduledCreditCost } from '../schedulePricing.mjs'
 import { connectorFeatureAccess, unavailableConnectorMessage, unavailablePromptConnector } from '../featureAccess.mjs'
 import { classifyIntent, clarificationResponse, conversationalResponse, helpResponse, INTENT_CATEGORIES } from './intentClassifier.mjs'
 import { ALPHATEKX_BRAIN, answerFromBrain } from './brainKnowledge.mjs'
+import * as billing from '../billing.mjs'
 import { normalizeAutomationLifecycle } from '../automation/lifecycle.mjs'
 
 const STAGES = [
@@ -61,6 +62,22 @@ function conversationalReply(text) {
     return conversationalResponse(text)
   }
   return ''
+}
+
+function getAgentAbilities(planId) {
+  try {
+    const plan = billing.getPlan(planId)
+    const videos = plan.monthlyVideos === Infinity ? 'Unlimited' : String(plan.monthlyVideos || 0)
+    const maxMin = Math.round((plan.videoMaxDurationSec || 120) / 60)
+    const scheduler = plan.schedulerDays ? `${plan.schedulerDays}-day scheduler` : null
+    const vault = plan.vault ? 'Vault saving + team seats' : null
+    const parts = [`${videos} videos / month`, `max ${maxMin} min each`]
+    if (scheduler) parts.push(scheduler)
+    if (vault) parts.push(vault)
+    return `I can generate faceless videos using Pexels + Groq planning and FFmpeg-style CapCut effects. Plan: ${plan.name} — ${parts.join(', ')}. I search HD Pexels clips, apply per-clip zoom/shake/glow/pop-text effects, and mix whoosh/rumble SFX. I save the final MP4 and provide a download link.`
+  } catch (e) {
+    return 'I can generate faceless videos with Pexels, Groq planning, and FFmpeg based effects. Tell me the topic and desired duration.'
+  }
 }
 
 function addDays(date, days) {
@@ -315,17 +332,16 @@ function buildCron(timeDisplay, fallbackHour = 8) {
   return `${t.minute} ${t.hour} * * *`
 }
 
-const ALPHA_SYSTEM_IDENTITY = `You are Alpha, the intelligent automation brain of AlphaTekx.
-Your job is to turn user goals into safe, valid, executable automations.
-You can understand requests, ask one concise question at a time, generate original content, explain plans, suggest improvements, and help users manage automations.
-Your available connection families include GitHub for code and repository work, Google Docs for documents and proposals, Google Sheets for orders and inventory, YouTube for approved video uploads, Discord for team messages, WhatsApp for customer communication, and Instagram/Facebook for approved social publishing.
-Route explicit order or inventory requests to Google Sheets, document or proposal requests to Google Docs, repository or code requests to GitHub, team-chat requests to Discord, video publishing to YouTube, and social publishing to the named social platform. Use deterministic registered capabilities before model-based intent classification.
-Never claim to have checked or changed an external service unless its registered tool returned a confirmed result. If the required account is disconnected, ask the user to connect it instead of improvising.
-Stay concise. Match the user's language naturally; light Nigerian English or Pidgin is welcome when the user writes that way, but never force it or assume every user runs a fashion business.
-You must distinguish between discussing an idea, generating content, planning an automation, waiting for information, waiting for app connection, waiting for approval, scheduling, executing, and confirming completion.
-You must never say an action succeeded unless a registered tool or execution record confirms success.
-You must never invent connected accounts, published posts, sent messages, uploaded videos, payment results, calendar events, spreadsheet updates, or automation executions.
-Always respond in valid JSON when asked.`
+const ALPHA_SYSTEM_IDENTITY = `You are AlphaTekX AI, an intelligent assistant like ChatGPT specialized for faceless YouTube automation.
+You know your abilities precisely based on the user's billing plan and can describe them concisely.
+You generate faceless videos by planning clips (Groq), searching HD Pexels footage, and applying CapCut-like FFmpeg edits (zoom, slow/fast, shake, glow, pop text, whoosh/rumble SFX). You save final MP4s and provide verified download links.
+Behavior rules:
+- Speak like ChatGPT: friendly, helpful, ask clarifying questions, and explain your plan (e.g. "I'll break the script into 6 clips...").
+- If asked "what can you do?" list abilities tailored to the user's current plan using server billing info.
+- If the user requests a video ("generate video about X"), check plan guardrails and either start generation or return a clear upgrade message with an upgrade button suggestion.
+- Do not invent external results; only confirm actions that completed successfully.
+- Remember conversation context and librarian memory to avoid repeating clips within configured windows.
+When asked, provide JSON only if explicitly requested.`
 
 function requiredMissingFields(intent, knownFields) {
   const missing = []
@@ -410,6 +426,8 @@ export function createConversationEngine(deps) {
     spendUserCredits,
     getIntegrationStatus,
     getSmartImage,
+    getGenerateVideo,
+    getUserBilling,
     executeAgent,
   } = deps
 
@@ -512,6 +530,23 @@ export function createConversationEngine(deps) {
       addMessage(conversation, 'alpha', brainAnswer, { knowledgeSource: 'alphatekx-brain' })
       return
     }
+    // Quick video generation trigger: user asked to generate/create a video
+    const isVideoCmd = /\b(?:generate|create|make)\s+(?:a\s+)?video\b/i.test(prompt) || /\bvideo about\b/i.test(prompt) || /\bcreate\s+(?:a\s+)?faceless\s+video\b/i.test(prompt)
+    if (isVideoCmd && typeof getGenerateVideo === 'function') {
+      conversation.conversationStage = 'generating_content'
+      const userObj = { id: conversation.userId, email: conversation.userEmail }
+      try {
+        addMessage(conversation, 'alpha', `Got it — generating your video now. I'll start planning and fetching clips.`)
+        const result = await getGenerateVideo(userObj, prompt, {})
+        // result.item contains media record and video_url
+        const url = result?.video_url || result?.item?.file_url || null
+        if (url) addMessage(conversation, 'alpha', `Your video is ready: ${url}`)
+        else addMessage(conversation, 'alpha', 'Video generated but no URL was returned. Check media library.')
+      } catch (err) {
+        addMessage(conversation, 'alpha', `I couldn't generate the video: ${err instanceof Error ? err.message : String(err)}`)
+      }
+      return
+    }
     const classification = classifyIntent(prompt)
     conversation.intentClassification = classification
     conversation.intent = classification.category
@@ -523,7 +558,20 @@ export function createConversationEngine(deps) {
       conversation.missingFields = []
       conversation.automationDraft = null
       conversation.conversationStage = 'chatting'
-      addMessage(conversation, 'alpha', classification.category === INTENT_CATEGORIES.help ? helpResponse(prompt) : (conversationalResponse(prompt) || conversationalReply(prompt)))
+      const lower = String(prompt || '').toLowerCase()
+      const wantsAbilities = /what\s+can\s+(?:you|alpha|alphatekx)\s+do|what\s+are\s+your\s+(?:abilities|capabilities)|what\s+can\s+you\s+do\?/.test(lower)
+      if (wantsAbilities && typeof getUserBilling === 'function') {
+        try {
+          const billingSummary = await getUserBilling({ id: conversation.userId, email: conversation.userEmail })
+          const planId = billingSummary?.plan || 'free'
+          const abilities = getAgentAbilities(planId)
+          addMessage(conversation, 'alpha', `Sure — here are your capabilities based on your plan (${planId}):\n\n${abilities}`)
+        } catch (e) {
+          addMessage(conversation, 'alpha', conversationalResponse(prompt) || conversationalReply(prompt))
+        }
+      } else {
+        addMessage(conversation, 'alpha', classification.category === INTENT_CATEGORIES.help ? helpResponse(prompt) : (conversationalResponse(prompt) || conversationalReply(prompt)))
+      }
       return
     }
     if (classification.category === INTENT_CATEGORIES.clarification) {

@@ -4100,6 +4100,8 @@ function getConversationEngine() {
     getServerAgent,
     getUserCredits: user => getUserCredits(user, supabaseConfig()),
     spendUserCredits,
+    getGenerateVideo: (user, prompt, options) => mediaLibrary.generateVideo(supabaseConfig(), user, prompt, options),
+    getUserBilling: (user) => billing.getUserBilling(user, supabaseConfig()),
     getSmartImage: (user, content, objective, platform, options) => mediaLibrary.findSmartImage(supabaseConfig(), user, content, objective, platform, options),
     executeAgent: (agent, user) => runAgent(agent, 'manual', user),
     getIntegrationStatus: async (userId, provider, userEmail = '') => {
