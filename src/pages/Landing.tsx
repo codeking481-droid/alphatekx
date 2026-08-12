@@ -1180,7 +1180,6 @@ function Pricing() {
                 className={`mt-8 inline-flex min-h-[48px] w-full items-center justify-center rounded-full px-4 font-black ${
                   plan.featured ? 'bg-[#FFD700] text-black' : 'border border-white/15 text-white'
                 }`}>
-              >
                 {plan.featured ? 'Claim New Deal' : `Choose ${plan.name}`}
               </button>
             </motion.article>
