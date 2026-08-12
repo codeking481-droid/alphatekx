@@ -55,6 +55,8 @@
   },
   "dependencies": {
     "ffmpeg-static": "^5.1.0",
+    "sharp": "^0.33.0",
+    "canvas": "^2.11.2",
     "@composio/core": "^0.14.0",
     "@fingerprintjs/fingerprintjs": "^5.2.0",
     "@hello-pangea/dnd": "^17.0.0",
