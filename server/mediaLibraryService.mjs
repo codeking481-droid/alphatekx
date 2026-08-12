@@ -338,6 +338,116 @@ async function concatenateClips(tempDir, clipPaths, outputPath) {
   return runFfmpeg(args, tempDir)
 }
 
+// Generate 3 search query variations using AI for better Pexels matching
+async function generateSearchVariations(topic, clipDescription) {
+  const groqKey = getGroqApiKey()
+  if (!groqKey) return [topic, clipDescription].filter(Boolean).slice(0, 3)
+  try {
+    const prompt = `Generate 3 synonyms/variations for searching stock video footage. Keep each under 30 chars. For topic "${topic}" and scene "${clipDescription}", return JSON array with 3 strings only: ["query1", "query2", "query3"]`
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${groqKey}` },
+      body: JSON.stringify({ model: 'llama-3.3-70b', messages: [{ role: 'user', content: prompt }], temperature: 0.5, max_tokens: 100 }),
+    })
+    if (response.ok) {
+      const data = await response.json()
+      const content = String(data?.choices?.[0]?.message?.content || '').trim()
+      const parsed = parseJsonSafe(content)
+      if (Array.isArray(parsed) && parsed.length === 3) return parsed.map(String)
+    }
+  } catch (err) {
+    console.warn('[AlphaTekX] Query variation generation failed:', err instanceof Error ? err.message : err)
+  }
+  return [topic, clipDescription, `${topic} footage`].filter(Boolean).slice(0, 3)
+}
+
+// Search Pexels photos as fallback when videos fail
+async function searchPexelsPhotos(query, aspectRatio, pageNum = 1) {
+  const apiKeys = [process.env.PEXELS_API_KEY_1, process.env.PEXELS_API_KEY_2, process.env.PEXELS_API_KEY_3, process.env.PEXELS_API_KEY].map(String).filter(Boolean)
+  if (!apiKeys.length) return []
+  const perPage = 15
+  for (const key of apiKeys) {
+    try {
+      const response = await fetch(`https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=${perPage}&page=${pageNum}&orientation=${pexelsOrientation(aspectRatio)}`, { headers: { Authorization: key } })
+      if (response.status === 429) continue
+      if (!response.ok) continue
+      const data = await response.json()
+      return (data?.photos || []).filter(p => (p.width || 0) >= 800 && (p.height || 0) >= 600)
+    } catch (err) {
+      console.warn('[AlphaTekX] Pexels photo search error:', err instanceof Error ? err.message : err)
+      continue
+    }
+  }
+  return []
+}
+
+// Create Ken Burns zoom effect video from a single photo
+async function createKenBurnsVideo(photoPath, outputPath, durationSeconds, aspectRatio) {
+  // Ken Burns: slow zoom on a static image using FFmpeg
+  const filter = ffmpegScaleFilter(aspectRatio)
+  const zoomEffect = `${filter},zoompan=z='zoom+0.02':d=1:x='(w/2-(w/zoom/2))':y='(h/2-(h/zoom/2))'`
+  const args = [
+    '-y',
+    '-loop', '1',
+    '-i', photoPath,
+    '-c:v', 'libx264',
+    '-t', String(durationSeconds),
+    '-pix_fmt', 'yuv420p',
+    '-vf', zoomEffect,
+    '-preset', 'veryfast',
+    '-crf', '23',
+    outputPath,
+  ]
+  return runFfmpeg(args, path.dirname(outputPath))
+}
+
+// Create solid color background video as last resort fallback
+async function createSolidColorVideo(outputPath, durationSeconds, aspectRatio, color = '#1a1a1a', textOverlay = '') {
+  const [width, height] = aspectRatio === '9:16' ? ['720', '1280'] : ['1280', '720']
+  const textFilter = textOverlay.trim() ? `drawtext=fontsize=48:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2:text='${textOverlay.replace(/'/g, "'\\''")}',` : ''
+  const args = [
+    '-y',
+    '-f', 'lavfi',
+    '-i', `color=${color}:s=${width}x${height}:d=${durationSeconds}`,
+    '-c:v', 'libx264',
+    '-preset', 'veryfast',
+    '-crf', '23',
+    '-pix_fmt', 'yuv420p',
+    '-vf', textFilter ? textFilter.slice(0, -1) : 'scale=w=' + width + ':h=' + height,
+    outputPath,
+  ]
+  return runFfmpeg(args, path.dirname(outputPath))
+}
+
+// Smart Pexels video search with key rotation and multi-page fallback
+async function smartPexelsVideoSearch(queries, aspectRatio) {
+  const apiKeys = [process.env.PEXELS_API_KEY_1, process.env.PEXELS_API_KEY_2, process.env.PEXELS_API_KEY_3, process.env.PEXELS_API_KEY].map(String).filter(Boolean)
+  if (!apiKeys.length) return null
+  const perPage = 15
+  for (const query of queries) {
+    for (let page = 1; page <= 2; page++) {
+      for (let keyIdx = 0; keyIdx < apiKeys.length; keyIdx++) {
+        try {
+          const key = apiKeys[keyIdx]
+          const response = await fetch(`https://api.pexels.com/videos/search?query=${encodeURIComponent(query)}&per_page=${perPage}&page=${page}&orientation=${pexelsOrientation(aspectRatio)}`, { headers: { Authorization: key } })
+          if (response.status === 429) continue
+          if (!response.ok) continue
+          const data = await response.json()
+          const videos = (data?.videos || []).filter(v => (v.width || 0) >= 1280 && (v.duration || 0) >= 20)
+          if (videos.length > 0) {
+            console.info(`[AlphaTekX] Video found: query="${query}", page=${page}, key_idx=${keyIdx}, count=${videos.length}`)
+            return videos
+          }
+        } catch (err) {
+          console.warn(`[AlphaTekX] Pexels video search failed: query="${query}" page=${page} key_idx=${keyIdx}`)
+          continue
+        }
+      }
+    }
+  }
+  return null
+}
+
 async function renderPexelsVideo(prompt, duration, aspectRatio) {
   const plan = await buildVideoPlan(prompt, duration, aspectRatio)
   const tempDir = await fs.promises.mkdtemp(path.join(tmpdir(), 'alpha-video-'))
@@ -345,39 +455,107 @@ async function renderPexelsVideo(prompt, duration, aspectRatio) {
   try {
     const clipPaths = []
     for (const scene of plan) {
-      const clip = await fetchPexelsClip(scene, aspectRatio)
-      if (!clip) continue
-      const sourcePath = path.join(tempDir, `scene-${scene.index}-source.mp4`)
-      const downloaded = await downloadVideo(clip.url, 180_000)
-      await fs.promises.writeFile(sourcePath, downloaded.bytes)
-      const processedPath = path.join(tempDir, `scene-${scene.index}-processed.mp4`)
+      let clipPath = null
+      // Step 1: Try Pexels VIDEOS with smart search variations
       try {
-        await processClipWithEffects(sourcePath, processedPath, scene, aspectRatio)
-        clipPaths.push(processedPath)
-        // Mark clip as used for this user if we can extract an id from url
-        try { const clipId = String(new URL(clip.url).pathname.split('/').pop() || '') ; if (clipId) markClipUsed(user.id, clipId) } catch {}
+        const variations = await generateSearchVariations(prompt, scene.description)
+        console.info(`[AlphaTekX] Searching Pexels videos with variations: ${variations.join(', ')}`)
+        const videos = await smartPexelsVideoSearch(variations, aspectRatio)
+        if (videos && videos.length > 0) {
+          const video = videos[0]
+          const file = choosePexelsFile(video)
+          if (file?.link) {
+            try {
+              const sourcePath = path.join(tempDir, `scene-${scene.index}-video.mp4`)
+              const downloaded = await downloadVideo(file.link, 180_000)
+              await fs.promises.writeFile(sourcePath, downloaded.bytes)
+              const processedPath = path.join(tempDir, `scene-${scene.index}-processed.mp4`)
+              try {
+                await processClipWithEffects(sourcePath, processedPath, scene, aspectRatio)
+                clipPath = processedPath
+                console.info(`[AlphaTekX] Clip ${scene.index}: Pexels video success`)
+              } catch (err) {
+                console.warn(`[AlphaTekX] Clip ${scene.index}: Effects failed, transcoding instead`)
+                const trimmedPath = path.join(tempDir, `scene-${scene.index}-trimmed.mp4`)
+                await transcodeClip(sourcePath, trimmedPath, scene.durationSeconds, aspectRatio)
+                clipPath = trimmedPath
+              }
+            } catch (err) {
+              console.warn(`[AlphaTekX] Clip ${scene.index}: Pexels video download failed:`, err instanceof Error ? err.message : err)
+            }
+          }
+        }
       } catch (err) {
-        console.warn('[AlphaTekX] per-clip processing failed:', err instanceof Error ? err.message : err)
-        const trimmedPath = path.join(tempDir, `scene-${scene.index}-trimmed.mp4`)
-        await transcodeClip(sourcePath, trimmedPath, scene.durationSeconds, aspectRatio)
-        clipPaths.push(trimmedPath)
+        console.warn(`[AlphaTekX] Clip ${scene.index}: Pexels video search failed`, err instanceof Error ? err.message : err)
       }
+      
+      // Step 2: If video failed, try Pexels PHOTOS with Ken Burns effect
+      if (!clipPath) {
+        try {
+          const variations = await generateSearchVariations(prompt, scene.description)
+          console.info(`[AlphaTekX] Searching Pexels PHOTOS for clip ${scene.index}...`)
+          for (const query of variations) {
+            const photos = await searchPexelsPhotos(query, aspectRatio)
+            if (photos && photos.length > 0) {
+              try {
+                const photoUrl = photos[0].src.original
+                const photoPath = path.join(tempDir, `scene-${scene.index}-photo.jpg`)
+                const downloaded = await downloadImage(photoUrl, 50 * 1024, 60_000)
+                await fs.promises.writeFile(photoPath, downloaded.bytes)
+                const kenBurnsPath = path.join(tempDir, `scene-${scene.index}-kenburns.mp4`)
+                await createKenBurnsVideo(photoPath, kenBurnsPath, scene.durationSeconds, aspectRatio)
+                const processedPath = path.join(tempDir, `scene-${scene.index}-processed.mp4`)
+                try {
+                  await processClipWithEffects(kenBurnsPath, processedPath, scene, aspectRatio)
+                  clipPath = processedPath
+                } catch {
+                  clipPath = kenBurnsPath
+                }
+                console.info(`[AlphaTekX] Clip ${scene.index}: Pexels photo + Ken Burns success`)
+                break
+              } catch (err) {
+                console.warn(`[AlphaTekX] Clip ${scene.index}: Ken Burns failed`, err instanceof Error ? err.message : err)
+              }
+            }
+          }
+        } catch (err) {
+          console.warn(`[AlphaTekX] Clip ${scene.index}: Photo search failed`, err instanceof Error ? err.message : err)
+        }
+      }
+      
+      // Step 3: Fallback to solid color background with text (never fail)
+      if (!clipPath) {
+        try {
+          console.info(`[AlphaTekX] Clip ${scene.index}: Using solid color fallback`)
+          const fallbackPath = path.join(tempDir, `scene-${scene.index}-fallback.mp4`)
+          await createSolidColorVideo(fallbackPath, scene.durationSeconds, aspectRatio, '#1a1a1a', scene.keyword)
+          clipPath = fallbackPath
+        } catch (err) {
+          console.warn(`[AlphaTekX] Clip ${scene.index}: Fallback failed`, err instanceof Error ? err.message : err)
+        }
+      }
+      
+      if (clipPath) clipPaths.push(clipPath)
     }
-    if (!clipPaths.length) return null
-    if (clipPaths.length === 1) {
+    
+    // Merge all clips
+    if (!clipPaths.length) {
+      console.warn('[AlphaTekX] No clips generated, creating single fallback video')
+      await createSolidColorVideo(outputPath, duration, aspectRatio, '#1a1a1a', prompt.slice(0, 60))
+    } else if (clipPaths.length === 1) {
       await fs.promises.copyFile(clipPaths[0], outputPath)
     } else {
       await concatenateClips(tempDir, clipPaths, outputPath)
     }
-    // Apply CapCut-style FFmpeg effects pass: shake, glow bloom cyan, pop text, whoosh overlay, zoom
+    
+    // Apply CapCut-style effects
     const effectsPath = path.join(tempDir, 'alpha-effects.mp4')
     try {
       await applyCapCutEffects(tempDir, outputPath, effectsPath, { text: prompt })
       const bytes = await fs.promises.readFile(effectsPath)
       return { bytes, mime: 'video/mp4' }
     } catch (err) {
-      // If effects fail, fall back to the original render
-      console.warn('[AlphaTekX] CapCut effects failed:', err instanceof Error ? err.message : err)
+      console.warn('[AlphaTekX] CapCut effects failed, returning base render:', err instanceof Error ? err.message : err)
       const bytes = await fs.promises.readFile(outputPath)
       return { bytes, mime: 'video/mp4' }
     }
@@ -908,10 +1086,17 @@ export async function generateVideo(config, user, prompt, options = {}) {
         throw Object.assign(error, { code: error.code || 'VIDEO_PROVIDER_ERROR' })
       }
     } else {
-      const message = primaryError ? (primaryError instanceof Error ? primaryError.message : String(primaryError)) : 'Pexels did not return any usable clips for this request.'
-      const err = new Error(`Video generation failed: ${message}`)
-      err.code = 'VIDEO_PROVIDER_ERROR'
-      throw err
+      // No Pollinations key; create solid color fallback video
+      console.warn('[AlphaTekX] Pexels video failed and Pollinations API key not configured; using solid color fallback.')
+      const tempDir = await fs.promises.mkdtemp(path.join(tmpdir(), 'alpha-fallback-'))
+      try {
+        const fallbackPath = path.join(tempDir, 'fallback.mp4')
+        await createSolidColorVideo(fallbackPath, duration, aspectRatio, '#1a1a1a', cleanPrompt.slice(0, 60))
+        const bytes = await fs.promises.readFile(fallbackPath)
+        downloaded = { bytes, mime: 'video/mp4' }
+      } finally {
+        await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {})
+      }
     }
   }
   const extension = extensionForMime(downloaded.mime) || 'mp4'
