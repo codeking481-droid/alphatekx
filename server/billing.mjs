@@ -618,13 +618,23 @@ export async function setPlan(user, planId, config, { reference } = {}) {
   const total = monthly + purchased
   const renewal = new Date()
   renewal.setDate(renewal.getDate() + 30)
-  await writeProfile(user, config, {
+  const profilePatch = {
     plan: plan.id,
     credits: total,
     monthly_credits: monthly,
     monthly_credits_used: 0,
     subscription_renews_at: renewal.toISOString(),
-  })
+  }
+  // If this is a video subscription plan, initialize video counters and reset date
+  if (String(plan.id).startsWith('video_') || String(plan.id).startsWith('video')) {
+    profilePatch.monthly_videos = Number(plan.monthlyVideos || plan.monthly_videos || 0)
+    profilePatch.monthly_videos_used = 0
+    profilePatch.video_count_used = 0
+    const nextReset = new Date()
+    nextReset.setDate(nextReset.getDate() + 30)
+    profilePatch.video_count_reset_date = nextReset.toISOString()
+  }
+  await writeProfile(user, config, profilePatch)
   await recordTransaction(user.id, { type: 'plan_change', creditsAdded: monthly, balanceAfter: total, reason: `Upgraded to ${plan.name}`, metadata: { plan: plan.id } })
   return { ok: true, remaining: total, plan: plan.id, renewalDate: renewal.toISOString() }
 }
