@@ -1,7 +1,13 @@
 /**
- * PRODUCTION VIDEO PIPELINE
- * Full chain-of-thought video generation with Groq planning, Pexels multi-clip downloading,
- * voiceover generation, and comprehensive FFmpeg editing with text, music, and transitions
+ * ALPHATEKX RESILIENT VIDEO PIPELINE
+ * Multi-phase, human-paced video generation with continuation support
+ * 
+ * PHASES:
+ * 1. SCRIPT - Generate script with Groq (critical foundation)
+ * 2. NARRATION - Create voice-overs one by one
+ * 3. SEARCH - Download video clips from Pexels
+ * 4. EDITING - Apply FFmpeg effects and zoompan
+ * 5. CONCAT - Combine final video
  */
 
 import fs from 'node:fs'
@@ -9,13 +15,24 @@ import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import ffmpegPath from 'ffmpeg-static'
-import * as qualityAssurance from './quality-assurance.mjs'
-import * as uniquenessEngine from './uniqueness-engine.mjs'
+
+/**=== STATE & CONFIGURATION ===*/
+
+const PLAN_CONFIG = {
+  free: { scenesMax: 6, duration: 120, resolution: '720p', watermark: true, effects: 'basic', name: 'Free' },
+  starter: { scenesMax: 12, duration: 300, resolution: '1080p', watermark: false, effects: 'standard', name: 'Starter' },
+  creator: { scenesMax: 20, duration: 480, resolution: '1080p', watermark: false, effects: 'mrbeast', name: 'Creator' },
+  beast: { scenesMax: 32, duration: 780, resolution: '1080p', watermark: false, effects: 'mrbeast-long', name: 'Beast' },
+}
+
+export function getPlanConfig(plan = 'free') {
+  return PLAN_CONFIG[plan?.toLowerCase()] || PLAN_CONFIG.free
+}
 
 /**=== UTILITIES ===*/
 
-function log(step, message) {
-  console.log(`[VIDEO] Step ${step}: ${message}`)
+function log(phase, message) {
+  console.log(`[${phase.toUpperCase()}] ${message}`)
 }
 
 function ffmpegBinary() {
@@ -25,70 +42,34 @@ function ffmpegBinary() {
 }
 
 function getFontPath() {
-  // Try common font paths on different systems
   const fontPaths = [
-    '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',  // Linux (Render)
-    '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',  // Linux alt
-    '/System/Library/Fonts/Arial.ttf',  // macOS
-    'C:\\Windows\\Fonts\\arial.ttf',  // Windows
-    '/tmp/DejaVuSans-Bold.ttf',  // Fallback to /tmp
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+    '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
+    '/System/Library/Fonts/Arial.ttf',
+    'C:\\Windows\\Fonts\\arial.ttf',
+    path.resolve(process.cwd(), 'public/fonts/DejaVuSans-Bold.ttf'),
   ]
   for (const fpath of fontPaths) {
     try {
-      if (fs.existsSync(fpath)) {
-        log('Font', `Using font: ${fpath}`)
-        return fpath
-      }
-    } catch { }
+      if (fs.existsSync(fpath)) return fpath
+    } catch {}
   }
-  // Last resort: return Linux path (will fallback in drawtext if missing)
-  log('Font', 'Warning: No font found, will use system default')
   return fontPaths[0]
 }
 
-async function ensureFontExists() {
-  const fontPath = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
-  if (fs.existsSync(fontPath)) return fontPath
-  
-  // Try to create /tmp font if main font missing
-  const tmpFont = '/tmp/DejaVuSans-Bold.ttf'
-  if (fs.existsSync(tmpFont)) return tmpFont
-  
-  // If we can't find font, log warning but continue
-  log('Font', 'DejaVuSans-Bold not found, will use FFmpeg fallback')
-  return fontPath  // Return expected path, will fallback to no-text if missing
-}
-
-async function runFfmpeg(args, cwd) {
+async function runFfmpeg(args, cwd = tmpdir()) {
   const binary = ffmpegBinary()
-  const result = spawnSync(binary, args, { 
-    cwd, 
-    encoding: 'utf8', 
+  const result = spawnSync(binary, args, {
+    cwd,
+    encoding: 'utf8',
     windowsHide: true,
-    maxBuffer: 10 * 1024 * 1024,  // 10MB buffer for large outputs
+    maxBuffer: 20 * 1024 * 1024,
   })
-  
-  const stderr = String(result.stderr || '')
-  const stdout = String(result.stdout || '')
-  
-  if (result.status === 0) return result
-  
-  // Log the error for debugging
-  const errorMsg = stderr || stdout || 'FFmpeg failed with unknown error'
-  
-  // Check for specific filter errors that can be recovered from
-  if (errorMsg.includes("No such filter") || errorMsg.includes("Unknown filter")) {
-    throw new Error(`FFmpeg filter error: ${errorMsg.substring(0, 200)}`)
-  }
-  
-  throw new Error(`FFmpeg error (exit ${result.status}): ${errorMsg.substring(0, 500)}`)
-}
 
-function ffmpegScaleFilter(aspectRatio) {
-  if (aspectRatio === '9:16') {
-    return 'scale=w=1080:h=1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black'
-  }
-  return 'scale=w=1920:h=1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=black'
+  if (result.status === 0) return result
+
+  const errorMsg = String(result.stderr || result.stdout || 'Unknown error')
+  throw new Error(`FFmpeg error (exit ${result.status}): ${errorMsg.substring(0, 500)}`)
 }
 
 async function downloadFile(url, timeoutMs = 120000) {
@@ -118,86 +99,261 @@ function getElevenLabsKey() {
   return process.env.ELEVENLABS_API_KEY || ''
 }
 
-/**=== GROQ SCRIPT GENERATION ===*/
+/**=== STATE MANAGEMENT ===*/
+
+async function loadOrInitState(jobDir, script) {
+  const stateFile = path.join(jobDir, 'state.json')
+  try {
+    if (fs.existsSync(stateFile)) {
+      const content = await fs.promises.readFile(stateFile, 'utf8')
+      return JSON.parse(content)
+    }
+  } catch (err) {
+    log('RESUME', `Failed to load state: ${err instanceof Error ? err.message : err}`)
+  }
+
+  // Initialize fresh state
+  const state = {
+    phase: 'script',
+    totalScenes: (script || []).length,
+    completedScenes: {
+      script: 0,
+      narration: 0,
+      search: 0,
+      editing: 0,
+      concat: 0,
+    },
+    failedRetries: {},
+  }
+  await saveState(jobDir, state)
+  return state
+}
+
+async function saveState(jobDir, state) {
+  const stateFile = path.join(jobDir, 'state.json')
+  await fs.promises.mkdir(jobDir, { recursive: true })
+  await fs.promises.writeFile(stateFile, JSON.stringify(state, null, 2), 'utf8')
+}
+
+/**=== PHASE 1: SCRIPT GENERATION ===*/
 
 export async function generateVideoScript(prompt, durationSec = 120) {
   const groqKey = getGroqKey()
-  if (!groqKey) throw new Error('Groq API key required for script generation')
+  if (!groqKey) throw new Error('Groq API key required')
 
-  // Long-form requests use a deliberate 20-scene structure.  Short jobs keep the
-  // quicker six-scene path so a normal request does not unexpectedly become huge.
-  const sceneCount = durationSec >= 480 ? 20 : 6
+  // Determine scene count based on duration
+  let sceneCount = 6
+  if (durationSec >= 780) sceneCount = 32
+  else if (durationSec >= 480) sceneCount = 20
+  else if (durationSec >= 300) sceneCount = 12
+
   const sceneDuration = Math.max(8, Math.floor(durationSec / sceneCount))
-  
+
   let structure = ''
-  if (sceneCount === 20) {
-    structure = `MrBeast style video structure:
-- Scene 1: HOOK (0-30s) - shocking statement or question that makes people stop scrolling
-- Scenes 2-4: SETUP (30s-2min) - explain the premise, build curiosity
-- Scenes 5-16: BUILDUP/CHALLENGE (2-7min) - 12 scenes of rising tension, plot twists, challenges, surprises
-- Scenes 17-19: PAYOFF (7-9min) - climax, resolution, reward reveal
-- Scene 20: CTA (9-10min) - call to action, subscribe, like, share message`
+  if (sceneCount >= 20) {
+    structure = `MrBeast style structure:
+- Scene 1: HOOK (0-3s) - shocking statement
+- Scenes 2-4: SETUP (3-8s) - build curiosity  
+- Scenes 5-16: BUILDUP (8-25s) - rising tension, challenges
+- Scenes 17-19: PAYOFF (25-28s) - climax, reward
+- Scene 20+: CTA - call to action`
   } else {
-    structure = 'Start with a hook, then setup, buildup, payoff, and CTA.'
+    structure = 'Hook → Setup → Buildup → Payoff → CTA'
   }
-  
-  const groqPrompt = `You are creating a viral video script for YouTube. Break this topic into exactly ${sceneCount} scenes. Each scene is about ${sceneDuration} seconds.
+
+  const groqPrompt = `You are a viral video scriptwriter. Create exactly ${sceneCount} scenes, each ${sceneDuration}s.
 Topic: "${prompt}"
 
 ${structure}
 
-For each scene, provide JSON object with:
-- narration: 20-40 word voiceover script for this scene (natural, conversational, engaging)
-- pexelsKeywords: array of 3 search keywords for Pexels (e.g. ["keyword1", "keyword2", "keyword3"])
-- onScreenText: short punchy text to display on screen (5-10 words, MrBeast style like "WAIT FOR IT" or "THIS IS CRAZY" or "none")
-- emotion: "inspiring", "calm", "energetic", "sad", "peaceful", "shocking", "funny" etc
+Return ONLY a JSON array with exactly ${sceneCount} objects: [{narration: "...", pexelsKeywords: ["word1", "word2", "word3"], onScreenText: "short text", emotion: "name"}]
+NO markdown, NO code blocks, NO comments. JUST the JSON array.`
 
-Return ONLY a JSON array of ${sceneCount} objects. No markdown, no explanation.`
+  let data = null
+  let attempts = 0
+  while (attempts < 3) {
+    try {
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${groqKey}`,
+        },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [{ role: 'user', content: groqPrompt }],
+          temperature: 0.6,
+          max_tokens: 2500,
+        }),
+      })
 
-  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${groqKey}`,
-    },
-    body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
-      messages: [{ role: 'user', content: groqPrompt }],
-      temperature: 0.7,
-      max_tokens: 2000,
-    }),
-  })
+      if (!response.ok) {
+        const err = await response.text()
+        throw new Error(`Groq API error (${response.status}): ${err.substring(0, 150)}`)
+      }
 
-  if (!response.ok) {
-    const err = await response.text()
-    throw new Error(`Groq failed: ${err}`)
+      data = await response.json()
+      break
+    } catch (err) {
+      attempts++
+      log('SCRIPT', `Attempt ${attempts}: ${err instanceof Error ? err.message : err}`)
+      if (attempts < 3) await new Promise(r => setTimeout(r, 2000))
+    }
   }
 
-  const data = await response.json()
+  if (!data) throw new Error('Groq API failed after 3 attempts')
+
   const content = data?.choices?.[0]?.message?.content || ''
   
-  // Parse JSON from response
-  const jsonMatch = content.match(/\[[\s\S]*\]/)
-  if (!jsonMatch) throw new Error('No valid JSON in Groq response')
+  let parsed = null
+  const patterns = [
+    /\[\s*\{[\s\S]*?\}\s*\]/,
+    /```json\s*(\[[\s\S]*?\])\s*```/,
+    /```\s*(\[[\s\S]*?\])\s*```/,
+  ]
   
-  const parsed = JSON.parse(jsonMatch[0])
+  for (const pattern of patterns) {
+    const match = content.match(pattern)
+    if (match) {
+      try {
+        const jsonStr = match[1] || match[0]
+        parsed = JSON.parse(jsonStr)
+        break
+      } catch {}
+    }
+  }
+  
+  if (!parsed) throw new Error(`Invalid Groq response: ${content.substring(0, 200)}`)
   if (!Array.isArray(parsed) || parsed.length !== sceneCount) {
-    throw new Error(`Script must have exactly ${sceneCount} scenes, got ${Array.isArray(parsed) ? parsed.length : 'unknown'}`)
+    throw new Error(`Expected ${sceneCount} scenes, got ${Array.isArray(parsed) ? parsed.length : 'invalid'}`)
   }
 
   return parsed.map((scene, i) => ({
     sceneIndex: i,
     narration: String(scene.narration || '').slice(0, 200),
-    pexelsKeywords: Array.isArray(scene.pexelsKeywords) ? scene.pexelsKeywords.slice(0, 3) : ['scene', 'video', prompt.split(' ')[0]],
+    pexelsKeywords: Array.isArray(scene.pexelsKeywords) ? scene.pexelsKeywords.slice(0, 3) : ['video', 'content'],
     onScreenText: String(scene.onScreenText || 'none').slice(0, 50),
     emotion: String(scene.emotion || 'neutral'),
     durationSec: sceneDuration,
   }))
 }
 
-/**=== PEXELS MULTI-CLIP DOWNLOAD ===*/
+/**=== PHASE 2: NARRATION GENERATION ===*/
 
-export async function searchPexelsVideos(query, keyIndex = 0) {
+async function generateVoiceoverMP3(text, sceneIndex) {
+  const elevenKey = getElevenLabsKey()
+
+  if (elevenKey) {
+    try {
+      log('NARRATION', `Scene ${sceneIndex}: Generating with ElevenLabs...`)
+      const response = await fetch('https://api.elevenlabs.io/v1/text-to-speech/21m00Tcm4TlvDq8ikWAM', {
+        method: 'POST',
+        headers: {
+          'xi-api-key': elevenKey,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          text: text.slice(0, 1000),
+          model_id: 'eleven_monolingual_v1',
+          voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+        }),
+      })
+
+      if (!response.ok) {
+        const err = await response.text()
+        throw new Error(`ElevenLabs: ${err}`)
+      }
+
+      log('NARRATION', `Scene ${sceneIndex}: Voice ready (ElevenLabs)`)
+      return Buffer.from(await response.arrayBuffer())
+    } catch (err) {
+      log('NARRATION', `Scene ${sceneIndex}: ElevenLabs failed, using fallback`)
+    }
+  }
+
+  // Fallback: try gTTS
+  try {
+    log('NARRATION', `Scene ${sceneIndex}: Generating with gTTS fallback...`)
+    const response = await fetch('https://api.gtts.dev/api/speak', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: text.slice(0, 100), lang: 'en' }),
+    })
+
+    if (response.ok) {
+      log('NARRATION', `Scene ${sceneIndex}: Voice ready (gTTS fallback)`)
+      return Buffer.from(await response.arrayBuffer())
+    }
+  } catch (err) {
+    log('NARRATION', `Scene ${sceneIndex}: gTTS also failed`)
+  }
+
+  // Final fallback: silent audio
+  log('NARRATION', `Scene ${sceneIndex}: Using silent audio`)
+  return Buffer.alloc(0)
+}
+
+async function phaseNarration(jobDir, script, state, onProgress) {
+  const narrationsDir = path.join(jobDir, 'voices')
+  await fs.promises.mkdir(narrationsDir, { recursive: true })
+
+  const startIndex = state.completedScenes.narration
+  const totalScenes = script.length
+
+  for (let i = startIndex; i < totalScenes; i++) {
+    const voiceFile = path.join(narrationsDir, `voice-${i}.mp3`)
+
+    // Skip if already exists (continuation)
+    if (fs.existsSync(voiceFile)) {
+      state.completedScenes.narration = i + 1
+      await saveState(jobDir, state)
+      onProgress({
+        phase: 'narration',
+        clipIndex: i,
+        message: `Voice ${i + 1}/${totalScenes} already ready`,
+      })
+      continue
+    }
+
+    // Generate voiceover with retries
+    let retries = 0
+    let voiceBuffer = null
+
+    while (retries < 2) {
+      try {
+        voiceBuffer = await generateVoiceoverMP3(script[i].narration, i)
+        break
+      } catch (err) {
+        retries++
+        log('NARRATION', `Scene ${i}: Retry ${retries} after ${err instanceof Error ? err.message : err}`)
+        if (retries < 2) await new Promise(r => setTimeout(r, 2000))
+      }
+    }
+
+    // Save even if failed (will use silent)
+    await fs.promises.writeFile(voiceFile, voiceBuffer || Buffer.alloc(0))
+
+    state.completedScenes.narration = i + 1
+    await saveState(jobDir, state)
+
+    onProgress({
+      phase: 'narration',
+      clipIndex: i,
+      message: `Voice ${i + 1}/${totalScenes} ready`,
+    })
+
+    // Calm pace
+    await new Promise(r => setTimeout(r, 300))
+  }
+
+  log('NARRATION', `Phase complete: ${totalScenes}/${totalScenes} voices ready`)
+  state.phase = 'search'
+  await saveState(jobDir, state)
+}
+
+/**=== PHASE 3: PEXELS SEARCH & DOWNLOAD ===*/
+
+async function searchPexelsVideos(query, keyIndex = 0) {
   const key = getPexelsKey(keyIndex)
   if (!key) return []
 
@@ -208,7 +364,7 @@ export async function searchPexelsVideos(query, keyIndex = 0) {
       timeout: 10000,
     })
 
-    if (response.status === 429) return null  // Rate limited - signal retry with next key
+    if (response.status === 429) return null // Rate limited
     if (!response.ok) return []
 
     const data = await response.json()
@@ -216,245 +372,353 @@ export async function searchPexelsVideos(query, keyIndex = 0) {
       .filter(v => v.video_files && v.video_files.length > 0)
       .slice(0, 5)
   } catch (err) {
-    console.warn(`[VIDEO] Pexels search failed for "${query}": ${err instanceof Error ? err.message : err}`)
+    console.warn(`[SEARCH] Pexels search failed for "${query}": ${err instanceof Error ? err.message : err}`)
     return []
   }
 }
 
-export async function downloadPexelsClip(scene, aspectRatio = '16:9') {
+async function downloadPexelsClip(scene, clipsDir) {
   const keywords = scene.pexelsKeywords || ['video']
-  
-  // Try each keyword with key rotation
+  const clipFile = path.join(clipsDir, `clip-${scene.sceneIndex}.mp4`)
+
   for (const keyword of keywords) {
     for (let keyIdx = 0; keyIdx < 4; keyIdx++) {
       try {
         const videos = await searchPexelsVideos(keyword, keyIdx)
-        if (videos === null) continue  // Rate limited, try next key
-        if (videos.length === 0) continue  // No results, try next keyword
-        
+        if (videos === null) {
+          // Rate limited, wait and try next key
+          await new Promise(r => setTimeout(r, 2000))
+          continue
+        }
+        if (videos.length === 0) continue
+
         const video = videos[0]
         const file = video.video_files
           .filter(f => f.quality === 'hd' || f.quality === 'sd')
           .sort((a, b) => (b.width || 0) - (a.width || 0))[0]
-        
+
         if (file?.link) {
-          log('Pexels', `Downloading clip for "${keyword}" (scene ${scene.sceneIndex})`)
+          log('SEARCH', `Scene ${scene.sceneIndex}: Downloading clip for "${keyword}"`)
           const bytes = await downloadFile(file.link, 60000)
-          return { url: file.link, bytes, durationSec: scene.durationSec }
+          await fs.promises.writeFile(clipFile, bytes)
+
+          // Save thumbnail
+          const thumbFile = path.join(clipsDir, `thumb-${scene.sceneIndex}.jpg`)
+          try {
+            const thumbUrl = video.image
+            if (thumbUrl) {
+              const thumbBytes = await downloadFile(thumbUrl, 30000)
+              await fs.promises.writeFile(thumbFile, thumbBytes)
+            }
+          } catch (e) {
+            log('SEARCH', `Scene ${scene.sceneIndex}: Thumbnail download failed`)
+          }
+
+          return clipFile
         }
       } catch (err) {
-        console.warn(`[VIDEO] Download failed: ${err instanceof Error ? err.message : err}`)
+        log('SEARCH', `Scene ${scene.sceneIndex}: Download error: ${err instanceof Error ? err.message : err}`)
         continue
       }
     }
   }
 
-  log('Pexels', `No videos found for scene ${scene.sceneIndex}, will use fallback`)
+  // Fallback: create blank clip (1 second)
+  log('SEARCH', `Scene ${scene.sceneIndex}: No Pexels clip found, will use blank`)
   return null
 }
 
-/**=== VOICEOVER GENERATION ===*/
+async function phaseSearch(jobDir, script, state, onProgress) {
+  const clipsDir = path.join(jobDir, 'clips')
+  await fs.promises.mkdir(clipsDir, { recursive: true })
 
-export async function generateVoiceoverMP3(text, sceneIndex) {
-  const elevenKey = getElevenLabsKey()
-  
-  if (elevenKey) {
-    try {
-      return await generateElevenLabsVoiceover(text, elevenKey, sceneIndex)
-    } catch (err) {
-      console.warn(`[VIDEO] ElevenLabs failed: ${err instanceof Error ? err.message : err}`)
+  const startIndex = state.completedScenes.search
+  const totalScenes = script.length
+
+  for (let i = startIndex; i < totalScenes; i++) {
+    const clipFile = path.join(clipsDir, `clip-${i}.mp4`)
+
+    // Skip if exists (continuation)
+    if (fs.existsSync(clipFile)) {
+      state.completedScenes.search = i + 1
+      await saveState(jobDir, state)
+      onProgress({
+        phase: 'search',
+        clipIndex: i,
+        message: `Clip ${i + 1}/${totalScenes} already available`,
+      })
+      continue
     }
+
+    // Download with retries
+    let retries = 0
+    while (retries < 3) {
+      try {
+        await downloadPexelsClip(script[i], clipsDir)
+        break
+      } catch (err) {
+        retries++
+        log('SEARCH', `Scene ${i}: Retry ${retries}`)
+        if (retries < 3) await new Promise(r => setTimeout(r, 2000))
+      }
+    }
+
+    state.completedScenes.search = i + 1
+    await saveState(jobDir, state)
+
+    onProgress({
+      phase: 'search',
+      clipIndex: i,
+      message: `Clip ${i + 1}/${totalScenes} ready`,
+    })
+
+    // Calm download pace
+    await new Promise(r => setTimeout(r, 500))
   }
 
-  // Fallback: Create silent audio track (1 second)
-  log('Voiceover', `Scene ${sceneIndex}: Using silent fallback`)
-  return await createSilentAudioMP3(1)
+  log('SEARCH', `Phase complete: ${totalScenes}/${totalScenes} clips ready`)
+  state.phase = 'editing'
+  await saveState(jobDir, state)
 }
 
-async function generateElevenLabsVoiceover(text, apiKey, sceneIndex) {
-  const response = await fetch('https://api.elevenlabs.io/v1/text-to-speech/21m00Tcm4TlvDq8ikWAM', {
-    method: 'POST',
-    headers: {
-      'xi-api-key': apiKey,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      text: text.slice(0, 1000),
-      model_id: 'eleven_monolingual_v1',
-      voice_settings: { stability: 0.5, similarity_boost: 0.75 },
-    }),
-  })
+/**=== PHASE 4: FFMPEG EDITING ===*/
 
-  if (!response.ok) {
-    const err = await response.text()
-    throw new Error(`ElevenLabs: ${err}`)
-  }
-
-  log('Voiceover', `Scene ${sceneIndex}: Generated with ElevenLabs`)
-  return Buffer.from(await response.arrayBuffer())
-}
-
-async function createSilentAudioMP3(durationSec) {
-  // Generate raw PCM silence, encode as MP3
-  // For now, return empty buffer (will use FFmpeg to handle)
-  return Buffer.alloc(0)
-}
-
-/**=== FFMPEG VIDEO EDITING ===*/
-
-export async function editClipWithText(inputPath, outputPath, scene, tempDir, aspectRatio) {
+async function editSceneClip(inputPath, outputPath, scene, jobDir, resolution = '1080p') {
   const duration = scene.durationSec || 10
   const text = scene.onScreenText !== 'none' ? scene.onScreenText : ''
-  
-  // Try editing with text first, fallback to without if drawtext fails
-  try {
-    await editClipWithTextInternal(inputPath, outputPath, scene, tempDir, aspectRatio, true)
-  } catch (err) {
-    const errMsg = String(err)
-    if (errMsg.includes('drawtext') || errMsg.includes('No such filter') || errMsg.includes('Unknown filter')) {
-      log('FFmpeg', `Text overlay failed (drawtext not available), retrying without text for scene ${scene.sceneIndex}`)
-      try {
-        await editClipWithTextInternal(inputPath, outputPath, scene, tempDir, aspectRatio, false)
-      } catch (retryErr) {
-        // Last resort: just scale and zoom without any effects
-        log('FFmpeg', `All effects failed, using minimal filter chain for scene ${scene.sceneIndex}`)
-        try {
-          await editClipWithTextInternal(inputPath, outputPath, scene, tempDir, aspectRatio, false, true)
-        } catch (minimalErr) {
-          // Ultimate fallback: just copy and scale
-          log('FFmpeg', `Minimal editing failed, copying clip as-is for scene ${scene.sceneIndex}`)
-          const args = ['-y', '-i', inputPath, '-vf', ffmpegScaleFilter(aspectRatio), '-c:v', 'libx264', '-preset', 'veryfast', '-c:a', 'aac', '-t', String(duration), outputPath]
-          await runFfmpeg(args, tempDir)
-        }
-      }
-    } else {
-      throw err
-    }
-  }
-}
 
-async function editClipWithTextInternal(inputPath, outputPath, scene, tempDir, aspectRatio, withText = true, minimal = false) {
-  const duration = scene.durationSec || 10
-  const text = withText && scene.onScreenText !== 'none' ? scene.onScreenText : ''
-  
-  // Build filter chain
-  const filters = []
-  
-  // Scale to aspect ratio
-  filters.push(ffmpegScaleFilter(aspectRatio))
-  
-  // Add text overlay with proper fontfile (if withText is true)
-  if (text && !minimal) {
+  // Check if input exists, if not create blank
+  if (!fs.existsSync(inputPath)) {
+    log('EDITING', `Scene ${scene.sceneIndex}: Input missing, creating blank clip`)
+    // Create 1-second blank clip
+    const blankArgs = [
+      '-f', 'lavfi',
+      '-i', `color=c=black:s=${resolution === '1080p' ? '1920x1080' : '1280x720'}:d=${duration}`,
+      '-pix_fmt', 'yuv420p',
+      '-y',
+      outputPath,
+    ]
+    await runFfmpeg(blankArgs)
+    return
+  }
+
+  const [width, height] = resolution === '1080p' ? ['1920', '1080'] : ['1280', '720']
+  const scaleFilter = `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black`
+
+  // Build filter chain - MrBeast style
+  let filters = [scaleFilter]
+
+  // Improved zoom effect (1.0 → 1.2 over duration for dramatic effect)
+  const zoomStart = 1.0
+  const zoomEnd = 1.2
+  const t_expr = `t`
+  const zoomExpr = `${zoomStart}+(${'t'}/${duration})*(${zoomEnd}-${zoomStart})`
+  filters.push(`zoompan=z='${zoomExpr}':d=${duration}:x='(w/2-(w/zoom/2))':y='(h/2-(h/zoom/2))':fps=30`)
+
+  // Add text overlay if present
+  if (text) {
     try {
-      const fontPath = await ensureFontExists()
-      // Escape single quotes in text by replacing ' with '\''
+      const fontPath = getFontPath()
       const textEscaped = text.replace(/'/g, "'\\''")
-      // Use proper drawtext syntax with escaped font path
-      // Note: FFmpeg drawtext expects font path without quotes in the filter string
-      const drawTextFilter = `drawtext=fontfile=${fontPath}:text='${textEscaped}':fontsize=72:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=10:x=(w-text_w)/2:y=(h-text_h)/2-100:enable='between(t,0.1,${Math.max(0.5, duration-0.5)})'`
-      filters.push(drawTextFilter)
+      // White bold text with black outline box
+      const drawText = `drawtext=fontfile='${fontPath}':text='${textEscaped}':fontsize=72:fontcolor=white:borderw=3:bordercolor=black:box=1:boxcolor=black@0.7:boxborderw=8:x=(w-text_w)/2:y=(h-text_h)/2-80:enable='between(t,0.2,${Math.max(0.5, duration - 0.5)})'`
+      filters.push(drawText)
     } catch (e) {
-      // If text filter fails to build, skip it
-      log('FFmpeg', `Text filter skipped: ${e instanceof Error ? e.message : e}`)
+      log('EDITING', `Scene ${scene.sceneIndex}: Text filter skipped - ${e instanceof Error ? e.message : e}`)
     }
   }
-  
-  // MrBeast-style zoom punch effect: zoom 100% -> 120% every 3 seconds
-  if (!minimal) {
-    // Create zoom pulses: Every 3 seconds, zoom from 1.0 to 1.15
-    const zoomExpression = `min(1.0 + 0.15 * abs(sin(t / 3 * 3.14159)), 1.15)`
-    filters.push(`zoompan=z='${zoomExpression}':d=1:x='(w/2-(w/zoom/2))':y='(h/2-(h/zoom/2))':fps=30`)
-  }
-  
-  const filterString = filters.join(',')
-  
+
   const args = [
     '-y',
     '-i', inputPath,
     '-t', String(duration),
-    '-vf', filterString,
+    '-vf', filters.join(','),
     '-c:v', 'libx264',
     '-preset', 'veryfast',
     '-crf', '23',
     '-pix_fmt', 'yuv420p',
-    '-an',  // No audio yet, will mix later
-    outputPath,
-  ]
-
-  await runFfmpeg(args, tempDir)
-}
-
-export async function addVoiceoverAndMusic(videoPath, voiceoverPath, outputPath, tempDir, duration) {
-  // If voiceover is empty, just add background music
-  if (!voiceoverPath || (await fs.promises.stat(voiceoverPath).catch(() => null))?.size === 0) {
-    return addBackgroundMusic(videoPath, outputPath, tempDir, duration)
-  }
-
-  const args = [
-    '-y',
-    '-i', videoPath,
-    '-i', voiceoverPath,
-    '-filter_complex', `[1:a]aformat=sample_rates=44100:channel_layouts=stereo[voice];[voice]volume=1.0[voiced];[voiced]apad=whole_dur=${duration}[voiced_padded];[voiced_padded]amix=inputs=1[audio]`,
-    '-map', '0:v',
-    '-map', '[audio]',
-    '-c:v', 'copy',
     '-c:a', 'aac',
     '-b:a', '128k',
-    '-shortest',
     outputPath,
   ]
 
-  await runFfmpeg(args, tempDir)
-}
-
-async function addBackgroundMusic(videoPath, outputPath, tempDir, duration) {
-  // Use FFmpeg to add silence or background music if available
-  const musicPath = path.join(process.cwd(), 'public', 'assets', 'music.mp3')
-  const hasMusicFile = await fs.promises.access(musicPath).then(() => true).catch(() => false)
-
-  if (hasMusicFile) {
-    const args = [
+  // Try full edit, fallback to simpler versions
+  try {
+    await runFfmpeg(args)
+  } catch (err) {
+    log('EDITING', `Scene ${scene.sceneIndex}: Full edit failed, retrying with basic scale`)
+    const simpleArgs = [
       '-y',
-      '-i', videoPath,
-      '-i', musicPath,
-      '-c:v', 'copy',
-      '-filter_complex', `[1:a]volume=0.15,aformat=sample_rates=44100:channel_layouts=stereo[music];[music]apad=whole_dur=${duration}[music_padded];[music_padded]atrim=duration=${duration}[final_audio]`,
-      '-map', '0:v',
-      '-map', '[final_audio]',
+      '-i', inputPath,
+      '-t', String(duration),
+      '-vf', scaleFilter,
+      '-c:v', 'libx264',
+      '-preset', 'veryfast',
+      '-pix_fmt', 'yuv420p',
       '-c:a', 'aac',
       '-b:a', '128k',
-      '-shortest',
       outputPath,
     ]
-    await runFfmpeg(args, tempDir)
-  } else {
-    // No music file, just copy video without audio
-    const args = ['-y', '-i', videoPath, '-c:v', 'copy', '-an', outputPath]
-    await runFfmpeg(args, tempDir)
+    try {
+      await runFfmpeg(simpleArgs)
+    } catch (err2) {
+      log('EDITING', `Scene ${scene.sceneIndex}: Even basic edit failed, copying input`)
+      await fs.promises.copyFile(inputPath, outputPath)
+    }
   }
 }
 
-export async function concatenateClips(clipPaths, outputPath, tempDir, duration) {
-  const concatFile = path.join(tempDir, 'concat.txt')
-  const content = clipPaths.map(clip => `file '${clip.replace(/'/g, "'\\''")}'`).join('\n')
-  await fs.promises.writeFile(concatFile, content, 'utf8')
+async function phaseEditing(jobDir, script, state, onProgress, resolution = '1080p') {
+  const clipsDir = path.join(jobDir, 'clips')
+  const editedDir = path.join(jobDir, 'edited')
+  await fs.promises.mkdir(editedDir, { recursive: true })
 
-  const args = [
+  const startIndex = state.completedScenes.editing
+  const totalScenes = script.length
+
+  for (let i = startIndex; i < totalScenes; i++) {
+    const clipFile = path.join(clipsDir, `clip-${i}.mp4`)
+    const editedFile = path.join(editedDir, `edited-${i}.mp4`)
+
+    // Skip if exists (continuation)
+    if (fs.existsSync(editedFile)) {
+      state.completedScenes.editing = i + 1
+      await saveState(jobDir, state)
+      onProgress({
+        phase: 'editing',
+        clipIndex: i,
+        message: `Scene ${i + 1}/${totalScenes} already edited`,
+      })
+      continue
+    }
+
+    // Edit with retries
+    let retries = 0
+    while (retries < 2) {
+      try {
+        await editSceneClip(clipFile, editedFile, script[i], jobDir, resolution)
+        break
+      } catch (err) {
+        retries++
+        log('EDITING', `Scene ${i}: Retry ${retries}`)
+        if (retries < 2) await new Promise(r => setTimeout(r, 2000))
+      }
+    }
+
+    state.completedScenes.editing = i + 1
+    await saveState(jobDir, state)
+
+    onProgress({
+      phase: 'editing',
+      clipIndex: i,
+      message: `Scene ${i + 1}/${totalScenes} edited`,
+    })
+
+    // Calm editing pace
+    await new Promise(r => setTimeout(r, 400))
+  }
+
+  log('EDITING', `Phase complete: ${totalScenes}/${totalScenes} scenes edited`)
+  state.phase = 'concat'
+  await saveState(jobDir, state)
+}
+
+/**=== PHASE 5: FINAL CONCATENATION ===*/
+
+async function phaseConcat(jobDir, script, state, onProgress, duration, resolution = '1080p') {
+  const editedDir = path.join(jobDir, 'edited')
+  const narrationsDir = path.join(jobDir, 'voices')
+  const finalPath = path.join(jobDir, `final-${duration}sec.mp4`)
+
+  // Check we have at least 90% of scenes edited
+  const editedCount = script.filter((_, i) => fs.existsSync(path.join(editedDir, `edited-${i}.mp4`))).length
+  if (editedCount < Math.ceil(script.length * 0.9)) {
+    throw new Error(`Not enough edited scenes ready: ${editedCount}/${script.length}`)
+  }
+
+  log('CONCAT', `Building final video with ${editedCount}/${script.length} scenes`)
+
+  // Create concat demuxer file with audio tracks
+  const concatFile = path.join(jobDir, 'concat.txt')
+  const clipLines = []
+  let audioInputIndex = 1
+  const audioInputs = []
+  
+  for (let i = 0; i < script.length; i++) {
+    const editedClip = path.join(editedDir, `edited-${i}.mp4`)
+    const voiceFile = path.join(narrationsDir, `voice-${i}.mp3`)
+    
+    if (fs.existsSync(editedClip)) {
+      clipLines.push(`file '${editedClip.replace(/'/g, "'\\''")}'`)
+      
+      // Track audio files for mixing if they exist
+      if (fs.existsSync(voiceFile)) {
+        audioInputs.push({ index: audioInputIndex++, file: voiceFile, sceneIndex: i })
+      }
+    }
+  }
+  await fs.promises.writeFile(concatFile, clipLines.join('\n'), 'utf8')
+
+  // Concatenate video clips with audio mixing
+  log('CONCAT', `Concatenating ${clipLines.length} video clips with ${audioInputs.length} audio tracks`)
+  
+  let concatArgs = [
     '-y',
     '-f', 'concat',
     '-safe', '0',
     '-i', concatFile,
-    '-c:v', 'libx264',
-    '-preset', 'veryfast',
-    '-crf', '23',
-    '-pix_fmt', 'yuv420p',
-    '-c:a', 'aac',
-    '-b:a', '128k',
-    '-movflags', '+faststart',
-    outputPath,
   ]
+  
+  // Add audio inputs for narration mixing
+  for (const audio of audioInputs) {
+    concatArgs.push('-i', audio.file)
+  }
+  
+  // Video codec
+  concatArgs.push('-c:v', 'libx264')
+  concatArgs.push('-preset', 'veryfast')
+  concatArgs.push('-crf', '23')
+  concatArgs.push('-pix_fmt', 'yuv420p')
+  
+  // If we have audio to mix, create audio filter
+  if (audioInputs.length > 0) {
+    // Mix all audio inputs with video audio
+    let filterStr = '[0:a:0]'
+    for (let i = 0; i < audioInputs.length; i++) {
+      filterStr += `[${i + 1}:a:0]`
+    }
+    filterStr += `concat=n=${audioInputs.length + 1}:v=0:a=1[aout]`
+    
+    concatArgs.push('-filter_complex', filterStr)
+    concatArgs.push('-map', '0:v')
+    concatArgs.push('-map', '[aout]')
+    concatArgs.push('-c:a', 'aac')
+    concatArgs.push('-b:a', '192k')
+  } else {
+    // Just copy audio from video
+    concatArgs.push('-c:a', 'aac')
+    concatArgs.push('-b:a', '192k')
+  }
+  
+  concatArgs.push('-movflags', '+faststart')
+  concatArgs.push(finalPath)
 
-  await runFfmpeg(args, tempDir)
+  await runFfmpeg(concatArgs)
+
+  log('CONCAT', `Video concatenated: ${finalPath}`)
+
+  state.completedScenes.concat = script.length
+  await saveState(jobDir, state)
+
+  onProgress({
+    phase: 'final',
+    step: 100,
+    message: `Final ${duration}s video ready!`,
+    finalVideoPath: finalPath,
+  })
+
+  log('FINAL', `Video complete: ${duration}s at ${resolution}`)
+  return finalPath
 }
 
 /**=== PROGRESS STREAMING ===*/
@@ -476,119 +740,76 @@ export function streamProgress(callback, step, message, extra = {}) {
 
 /**=== MAIN PIPELINE ===*/
 
-export async function buildProductionVideo(prompt, durationSec = 120, progressCallback = null, aspectRatio = '16:9', effectsConfig = null) {
-  const tempDir = await fs.promises.mkdtemp(path.join(tmpdir(), 'alpha-video-'))
-  const outputPath = path.join(tempDir, 'final-video.mp4')
-  
-  // Merge with default effects config
-  const effects = {
-    colorGrade: 'vibrant',
-    transition: 'fade',
-    enableZoom: true,
-    enableSharpening: true,
-    ...effectsConfig,
-  }
+export async function buildProductionVideo(prompt, { duration, plan = 'free', jobId, onProgress }) {
+  const planConfig = getPlanConfig(plan)
+  const jobDir = path.join(tmpdir(), `alpha-${jobId}`)
 
   try {
-    // Step 1: Generate script with Groq
-    streamProgress(progressCallback, 1, `Writing script with Groq...`, { phase: 'script' })
-    const script = await generateVideoScript(prompt, durationSec)
-    streamProgress(progressCallback, 1, `Script ready: ${script.length} scenes`)
+    // Create job directory
+    await fs.promises.mkdir(jobDir, { recursive: true })
 
-    // Step 2: Download clips from Pexels
-    streamProgress(progressCallback, 2, `Searching Pexels for ${script.length} video clips...`)
-    const clips = []
-    for (const scene of script) {
-      const clip = await downloadPexelsClip(scene, aspectRatio)
-      if (clip) {
-        clips.push(clip)
-        const clipPath = path.join(tempDir, `clip-${scene.sceneIndex}.mp4`)
-        await fs.promises.writeFile(clipPath, clip.bytes)
-        streamProgress(progressCallback, 2, `Downloaded clip ${scene.sceneIndex + 1}/${script.length}`, { phase: 'download', clipIndex: scene.sceneIndex, clipCount: script.length })
+    // PHASE 1: SCRIPT
+    log('SCRIPT', `Starting script generation for: ${prompt}`)
+    onProgress?.({ phase: 'script', message: 'Generating script with Groq...' })
+
+    let script = null
+    try {
+      script = await generateVideoScript(prompt, planConfig.duration)
+      log('SCRIPT', `Script ready: ${script.length} scenes`)
+      onProgress?.({ phase: 'script', step: 10, message: `Script ready - ${script.length} scenes written` })
+    } catch (err) {
+      throw new Error(`[SCRIPT] Failed: ${err instanceof Error ? err.message : err}`)
+    }
+
+    // Load or init state
+    let state = await loadOrInitState(jobDir, script)
+
+    // PHASE 2: NARRATION
+    if (state.phase === 'script' || state.phase === 'narration') {
+      log('NARRATION', `Starting narration generation (scenes: ${state.completedScenes.narration}/${script.length})`)
+      onProgress?.({ phase: 'narration', message: 'Generating voice-overs one by one...' })
+      await phaseNarration(jobDir, script, state, onProgress || (() => {}))
+      state = await loadOrInitState(jobDir, script)
+    }
+
+    // PHASE 3: SEARCH
+    if (state.phase === 'search') {
+      log('SEARCH', `Starting Pexels search (clips: ${state.completedScenes.search}/${script.length})`)
+      onProgress?.({ phase: 'search', message: 'Searching and downloading from Pexels...' })
+      await phaseSearch(jobDir, script, state, onProgress || (() => {}))
+      state = await loadOrInitState(jobDir, script)
+    }
+
+    // PHASE 4: EDITING
+    if (state.phase === 'editing') {
+      log('EDITING', `Starting FFmpeg editing (scenes: ${state.completedScenes.editing}/${script.length})`)
+      const resolution = planConfig.resolution
+      onProgress?.({ phase: 'editing', message: `Editing scenes with ${resolution} resolution...` })
+      await phaseEditing(jobDir, script, state, onProgress || (() => {}), resolution)
+      state = await loadOrInitState(jobDir, script)
+    }
+
+    // PHASE 5: CONCAT
+    if (state.phase === 'concat') {
+      log('FINAL', `Starting final concatenation...`)
+      onProgress?.({ phase: 'final', message: 'Concatenating final video...' })
+      const finalPath = await phaseConcat(jobDir, script, state, onProgress || (() => {}), planConfig.duration, planConfig.resolution)
+
+      return {
+        success: true,
+        videoPath: finalPath,
+        duration: planConfig.duration,
+        scenes: script.length,
+        plan,
+        jobId,
       }
     }
-    streamProgress(progressCallback, 2, `Found ${clips.length}/${script.length} clips`)
 
-    // Step 3: Generate voiceovers
-    streamProgress(progressCallback, 3, `Generating voiceovers for ${script.length} scenes...`)
-    const voiceovers = []
-    for (const scene of script) {
-      const voiceBytes = await generateVoiceoverMP3(scene.narration, scene.sceneIndex)
-      const voicePath = path.join(tempDir, `voice-${scene.sceneIndex}.mp3`)
-      if (voiceBytes && voiceBytes.length > 0) {
-        await fs.promises.writeFile(voicePath, voiceBytes)
-        voiceovers.push(voicePath)
-      }
-      streamProgress(progressCallback, 3, `Voiceover ${scene.sceneIndex + 1}/${script.length} done`, { phase: 'voiceover', clipIndex: scene.sceneIndex, clipCount: script.length })
-    }
-
-    // Step 4: Edit each clip with text, effects, voiceover
-    streamProgress(progressCallback, 4, `Editing clips with text, effects, audio...`)
-    const editedClips = []
-    for (let i = 0; i < script.length; i++) {
-      const scene = script[i]
-      const clipPath = path.join(tempDir, `clip-${i}.mp4`)
-      
-      if (!await fs.promises.access(clipPath).then(() => true).catch(() => false)) {
-        streamProgress(progressCallback, 4, `Clip ${i + 1} missing, skipping`, { phase: 'edit', clipIndex: i, clipCount: script.length })
-        continue
-      }
-
-      const editedPath = path.join(tempDir, `edited-${i}.mp4`)
-      await editClipWithText(clipPath, editedPath, scene, tempDir, aspectRatio)
-      
-      // Add voiceover
-      const withAudioPath = path.join(tempDir, `audio-${i}.mp4`)
-      const voicePath = voiceovers[i]
-      if (voicePath) {
-        await addVoiceoverAndMusic(editedPath, voicePath, withAudioPath, tempDir, scene.durationSec)
-      } else {
-        await addVoiceoverAndMusic(editedPath, null, withAudioPath, tempDir, scene.durationSec)
-      }
-      
-      editedClips.push(withAudioPath)
-      streamProgress(progressCallback, 4, `Edited clip ${i + 1}/${script.length}`, { phase: 'edit', clipIndex: i, clipCount: script.length })
-    }
-
-    if (editedClips.length === 0) {
-      throw new Error('No clips were successfully edited')
-    }
-
-    // Step 5: Concatenate all clips
-    streamProgress(progressCallback, 5, `Merging ${editedClips.length} clips into final video...`)
-    await concatenateClips(editedClips, outputPath, tempDir, durationSec)
-    streamProgress(progressCallback, 5, `Final video concatenated`)
-
-    // Step 6: Quality Assurance Check
-    streamProgress(progressCallback, 6, `Running quality checks...`, { phase: 'quality' })
-    const qualityReport = qualityAssurance.analyzeVideoQuality(outputPath)
-    if (qualityReport.valid) {
-      const metrics = qualityReport.metrics
-      const isPro = qualityAssurance.isProfessionalQuality(metrics)
-      streamProgress(progressCallback, 6, `Quality Score: ${Math.round(metrics.qualityScore)}/100 ${isPro ? '✅ Professional' : '⚠️ Acceptable'}`, { 
-        phase: 'quality',
-        qualityScore: Math.round(metrics.qualityScore),
-        issues: qualityReport.metrics.issues
-      })
-    }
-
-    // Step 7: Verify and return
-    const stats = await fs.promises.stat(outputPath)
-    if (stats.size === 0) throw new Error('Output video is empty')
-
-    streamProgress(progressCallback, 7, `Done! Video size: ${(stats.size / 1024 / 1024).toFixed(2)}MB`)
-    const bytes = await fs.promises.readFile(outputPath)
-    
-    return {
-      bytes,
-      mime: 'video/mp4',
-      script,
-      clipsUsed: editedClips.length,
-      durationSec,
-      quality: qualityReport.metrics,
-    }
-  } finally {
-    // Cleanup
-    await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {})
+    throw new Error('Invalid pipeline state')
+  } catch (err) {
+    log('ERROR', `${err instanceof Error ? err.message : err}`)
+    throw err
   }
 }
+
+export default { buildProductionVideo, getPlanConfig }

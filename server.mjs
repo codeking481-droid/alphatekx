@@ -8364,7 +8364,7 @@ const server = http.createServer(async (req, res) => {
     }
   }
   if (req.method === 'POST' && req.url === '/api/alpha/video-stream') {
-    // Streaming video generation with progress updates
+    // Streaming video generation with resilient multi-phase pipeline
     try {
       const config = supabaseConfig()
       const user = await currentOrLocalUser(req, config.url, config.anon)
@@ -8374,7 +8374,8 @@ const server = http.createServer(async (req, res) => {
       const prompt = String(body.prompt || '').trim()
       if (!prompt) return json(res, 400, { error: 'Prompt required' })
       
-      const duration = Math.min(600, Math.max(10, Number(body.duration) || 600))
+      const plan = String(body.plan || 'free').toLowerCase()
+      const planConfig = videoPipeline.getPlanConfig(plan)
       const jobId = randomUUID()
       const job = { id: jobId, userId: user.id, status: 'running', events: [], createdAt: new Date().toISOString(), result: null, error: null }
       videoJobs.set(jobId, job)
@@ -8387,32 +8388,44 @@ const server = http.createServer(async (req, res) => {
         'Access-Control-Allow-Origin': '*',
       })
       
-      // The pipeline calls this with one object. Keep the event contract stable for
-      // reconnecting clients and avoid ever serialising a stack trace to the browser.
+      // Stream progress updates
       const sendProgress = (update = {}) => {
         const data = { jobId, ...update, timestamp: update.timestamp || new Date().toISOString() }
         job.events.push(data)
-        if (job.events.length > 50) job.events.shift()
+        if (job.events.length > 100) job.events.shift()
         if (!res.writableEnded) res.write(`data: ${JSON.stringify(data)}\n\n`)
       }
       
       try {
-        sendProgress({ step: 0, totalSteps: duration >= 480 ? 20 : 6, message: `Starting video generation for: ${prompt}`, phase: 'starting' })
+        sendProgress({ 
+          phase: 'starting', 
+          message: `Starting ${plan} video (${planConfig.scenesMax} scenes, ${planConfig.duration}s)`, 
+          totalScenes: planConfig.scenesMax 
+        })
         
-        // Generate video with progress streaming
-        const result = await videoPipeline.buildProductionVideo(prompt, duration, sendProgress, '16:9')
-        if (!result || !result.bytes) throw new Error('Video pipeline returned invalid result')
+        // Build video with resilient pipeline
+        const result = await videoPipeline.buildProductionVideo(prompt, {
+          duration: planConfig.duration,
+          plan,
+          jobId,
+          onProgress: sendProgress,
+        })
         
-        // Store the generated video. The result stays available from job status even
-        // if a client disconnects while the upload is finishing.
-        sendProgress({ step: 99, message: 'Uploading to media library...', phase: 'upload' })
+        if (!result || !result.videoPath) throw new Error('Video pipeline returned invalid result')
+        
+        // Read the final video file
+        const videoBytes = await fs.promises.readFile(result.videoPath)
+        
+        // Upload to media library
+        sendProgress({ phase: 'upload', message: 'Uploading to media library...' })
         const storagePath = `${user.id}/generated-videos/${Date.now()}-${randomUUID()}.mp4`
         const upload = await fetch(`${config.url}/storage/v1/object/media-library/${storagePath}`, {
           method: 'POST',
           headers: supabaseServiceHeaders(config.service, { 'Content-Type': 'video/mp4' }),
-          body: result.bytes,
+          body: videoBytes,
         })
-        if (!upload.ok) throw new Error(`Media upload failed: ${upload.status} ${upload.statusText}`)
+        if (!upload.ok) throw new Error(`Media upload failed: ${upload.status}`)
+        
         const signed = await fetch(`${config.url}/storage/v1/object/sign/media-library/${storagePath}`, {
           method: 'POST',
           headers: supabaseServiceHeaders(config.service, { 'Content-Type': 'application/json' }),
@@ -8420,17 +8433,31 @@ const server = http.createServer(async (req, res) => {
         })
         const signedPayload = await signed.json().catch(() => ({}))
         if (!signed.ok || !signedPayload.signedURL) throw new Error(`Could not create preview link: ${signed.status}`)
+        
         const videoUrl = `${config.url}/storage/v1${signedPayload.signedURL}`
         job.status = 'completed'
-        job.result = { finalVideoUrl: videoUrl, script: result.script, clipsUsed: result.clipsUsed, size: result.bytes.length }
-        sendProgress({ step: 100, totalSteps: 100, message: 'Video ready to watch and download.', finalVideoUrl: videoUrl, size: result.bytes.length, phase: 'complete' })
+        job.result = { 
+          finalVideoUrl: videoUrl, 
+          scenes: result.scenes,
+          duration: result.duration,
+          plan: result.plan,
+          size: videoBytes.length 
+        }
+        
+        sendProgress({ 
+          phase: 'complete', 
+          step: 100, 
+          message: `✅ Video complete! ${(videoBytes.length / 1024 / 1024).toFixed(1)}MB ready to download`,
+          finalVideoUrl: videoUrl,
+          size: videoBytes.length 
+        })
         res.end()
       } catch (error) {
-        const msg = error instanceof Error ? error.message : 'Video generation could not finish.'
+        const msg = error instanceof Error ? error.message : 'Video generation failed'
         console.error('[VIDEO_STREAM_ERROR]', msg, error instanceof Error ? error.stack : '')
         job.status = 'failed'
         job.error = msg
-        sendProgress({ step: 0, message: `Alpha encountered an error: ${msg}`, phase: 'failed', error: msg })
+        sendProgress({ phase: 'error', message: `Error: ${msg}`, error: msg })
         res.end()
       }
     } catch (error) {
