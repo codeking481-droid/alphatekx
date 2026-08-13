@@ -1,13 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowRight, Download, FileText, Radar, ShieldCheck, Sparkles } from 'lucide-react'
-
-const scanSecrets = [
-  'Scanning secrets...',
-  'Leak found: sk_live_***',
-  'Header drift detected',
-  'Broken env var reference',
-  'Performance bottleneck found',
-]
+import { getCredits, setCredits } from '../lib/creditStore'
 
 export default function ScanPage() {
   const [url, setUrl] = useState('https://example-app.com')
@@ -16,12 +9,21 @@ export default function ScanPage() {
   const [findings, setFindings] = useState<Array<{ id: string; label: string; detail: string; severity: 'critical' | 'warning' | 'info' }>>([])
   const [score, setScore] = useState(92)
   const [status, setStatus] = useState('Ready for inspection')
+  const [credits, setCreditsState] = useState(10)
 
   const scoreTone = useMemo(() => {
     if (score >= 80) return 'text-emerald-300'
     if (score >= 60) return 'text-amber-300'
     return 'text-rose-300'
   }, [score])
+
+  useEffect(() => {
+    // Load initial credits
+    const currentCredits = getCredits()
+    if (currentCredits > 0) {
+      setCreditsState(currentCredits)
+    }
+  }, [])
 
   const handleScan = async () => {
     setIsScanning(true)
@@ -37,9 +39,10 @@ export default function ScanPage() {
       })
 
       if (!response.ok && response.status === 402) {
-        setStatus('Free scan limit reached')
+        const errorData = await response.json().catch(() => ({ error: 'Insufficient credits' }))
+        setStatus(errorData.error || 'Insufficient credits')
         setIsScanning(false)
-        setProgress(100)
+        setProgress(0)
         return
       }
 
@@ -77,16 +80,22 @@ export default function ScanPage() {
               detail: payload.detail || '',
             }, ...current])
           }
-          if (payload.type === 'done' || payload.type === 'summary') {
-            setStatus('Scan complete')
+          if (payload.type === 'done') {
+            setStatus(`Scan complete`)
             setScore(Number(payload.score || 72))
+            if (payload.creditsRemaining !== undefined) {
+              const newBalance = Math.max(0, payload.creditsRemaining)
+              setCreditsState(newBalance)
+              setCredits(newBalance)
+            }
             setIsScanning(false)
           }
         }
       }
-    } catch {
+    } catch (error) {
       setIsScanning(false)
-      setStatus('Scan failed safely')
+      const errorMsg = error instanceof Error ? error.message : 'Scan failed'
+      setStatus(`Error: ${errorMsg}`)
     }
   }
 
