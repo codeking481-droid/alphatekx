@@ -115,6 +115,7 @@ const schedulerState = { lastRun: null, nextRun: null, activeAgents: 0, startedA
 // Video work must outlive a browser connection.  This in-memory registry is intentionally
 // small and only stores live work; final bytes live in the configured media bucket.
 const videoJobs = new Map()
+const scanQuotaByDay = globalThis.__alphatekxScanQuotaByDay || (globalThis.__alphatekxScanQuotaByDay = new Map())
 const allowedOrigins = new Set(['https://alphatekx.name.ng', 'https://www.alphatekx.name.ng', 'http://localhost:5173', `http://localhost:${port}`])
 function isAllowedOrigin(origin) {
   if (!origin) return false
@@ -9290,6 +9291,200 @@ const server = http.createServer(async (req, res) => {
       return json(res, 500, { error: err instanceof Error ? err.message : String(err), root, distRoot })
     }
   }
+  const normalizeScanKey = (req) => {
+    const ip = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'anonymous').split(',')[0].trim()
+    const userId = String(req.headers['x-local-user-id'] || req.headers.authorization || '').trim()
+    return `${userId || 'anonymous'}:${ip}`
+  }
+
+  function scanFinding(id, severity, title, detail, code) {
+    return { id, severity, title, detail, code }
+  }
+
+  async function safeHead(url) {
+    try {
+      const response = await fetch(url, {
+        method: 'HEAD',
+        redirect: 'manual',
+        headers: { 'User-Agent': 'AlphaScan/1.0' },
+        signal: AbortSignal.timeout(8000),
+      })
+      return { ok: response.ok, status: response.status, url: response.url }
+    } catch {
+      return null
+    }
+  }
+
+  async function runScanFromUrl(targetUrl) {
+    const findings = []
+    const fetchedAt = Date.now()
+    const normalizedUrl = String(targetUrl || '').trim()
+    if (!normalizedUrl) throw new Error('Missing URL')
+
+    let parsed
+    try {
+      parsed = new URL(normalizedUrl)
+    } catch {
+      throw new Error('Please enter a valid http or https URL.')
+    }
+    if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Only http and https URLs are allowed.')
+
+    const base = parsed.origin
+    const html = await fetch(normalizedUrl, {
+      method: 'GET',
+      headers: { 'User-Agent': 'AlphaScan/1.0', Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
+      signal: AbortSignal.timeout(20000),
+      redirect: 'follow',
+    }).then(async response => {
+      if (!response.ok) throw new Error(`Target responded with HTTP ${response.status}.`)
+      return await response.text()
+    }).catch(error => {
+      throw new Error(error instanceof Error ? error.message : 'Could not fetch the target website.')
+    })
+
+    const severePatterns = [
+      { regex: /sk_live_[A-Za-z0-9]+/gi, label: 'Live secret key exposed in HTML', code: 'SECRET_LEAK' },
+      { regex: /pk_live_[A-Za-z0-9]+/gi, label: 'Live publish key exposed in HTML', code: 'SECRET_LEAK' },
+      { regex: /AKIA[0-9A-Z]{16}/g, label: 'AWS access key exposed in HTML', code: 'SECRET_LEAK' },
+      { regex: /openai\s*[:=][\s\"']*sk-[A-Za-z0-9]+/gi, label: 'OpenAI key exposed in HTML', code: 'SECRET_LEAK' },
+      { regex: /AIza[0-9A-Za-z\-_]{35}/g, label: 'Google API key exposed in HTML', code: 'SECRET_LEAK' },
+    ]
+
+    for (const pattern of severePatterns) {
+      if (pattern.regex.test(html)) {
+        findings.push(scanFinding(`secret-${pattern.code}-${Math.random().toString(16).slice(2, 8)}`, 'critical', 'Leaked secret detected', `${pattern.label}. This is a real risk and should be revoked immediately.`, pattern.code))
+      }
+      pattern.regex.lastIndex = 0
+    }
+
+    const sensitivePaths = ['/.env', '/config.json', '/.git']
+    for (const sensitivePath of sensitivePaths) {
+      const headResult = await safeHead(new URL(sensitivePath, base).toString())
+      if (headResult && headResult.ok && headResult.status < 500) {
+        findings.push(scanFinding(`exposed-${sensitivePath.replace(/\W+/g, '-')}`, 'critical', 'Sensitive file exposed', `The target exposes ${sensitivePath} and is readable without approval.`, 'EXPOSED_PATH'))
+      }
+    }
+
+    const anchorLinks = [...html.matchAll(/<a\s[^>]*href=["']([^"']+)["'][^>]*>/gi)].slice(0, 20).map(match => match[1]).filter(Boolean)
+    const brokenLinks = []
+    for (const link of anchorLinks) {
+      try {
+        const resolved = new URL(link, base)
+        if (resolved.origin !== base) continue
+        const response = await fetch(resolved.toString(), { method: 'HEAD', redirect: 'manual', headers: { 'User-Agent': 'AlphaScan/1.0' }, signal: AbortSignal.timeout(8000) })
+        if (response.status === 404 || response.status >= 500) {
+          brokenLinks.push({ href: resolved.toString(), status: response.status })
+        }
+      } catch {}
+    }
+    if (brokenLinks.length) {
+      findings.push(scanFinding(`broken-links-${brokenLinks.length}`, 'warning', 'Broken internal links found', `${brokenLinks.length} internal links are returning an error or 404.`, 'BROKEN_LINKS'))
+    }
+
+    const imageMatches = [...html.matchAll(/<img\s[^>]*src=["']([^"']+)["'][^>]*>/gi)].map(match => match[1]).filter(Boolean)
+    const totalImageBytes = Math.max(0, imageMatches.length * 180000)
+    const lazyCount = [...html.matchAll(/<img\s[^>]*loading=["']lazy["'][^>]*>/gi)].length
+    const ttfbMs = Math.max(80, Date.now() - fetchedAt)
+    const performanceSeverity = totalImageBytes > 600000 || ttfbMs > 2500 || lazyCount === 0 ? 'warning' : 'info'
+    if (performanceSeverity !== 'info') {
+      findings.push(scanFinding(`performance-${ttfbMs}`, performanceSeverity, 'Performance issue detected', `Initial load looks slow: ~${ttfbMs}ms to render and ${imageMatches.length} images discovered. Lazy loading is ${lazyCount === 0 ? 'missing' : 'present'} for some assets.`, 'PERFORMANCE'))
+    }
+
+    const title = (html.match(/<title[^>]*>(.*?)<\/title>/is) || [])[1]
+    const description = (html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["'][^>]*>/is) || [])[1] || (html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']description["'][^>]*>/is) || [])[1]
+    const ogImage = (html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["'][^>]*>/is) || [])[1]
+    const h1 = (html.match(/<h1[^>]*>(.*?)<\/h1>/is) || [])[1]
+    const seoIssues = []
+    if (!title) seoIssues.push('Missing title tag')
+    if (!description) seoIssues.push('Missing meta description')
+    if (!ogImage) seoIssues.push('Missing OG image')
+    if (!h1) seoIssues.push('Missing H1 heading')
+    if (seoIssues.length) {
+      findings.push(scanFinding(`seo-${seoIssues.length}`, 'info', 'SEO gap identified', seoIssues.join('; '), 'SEO'))
+    }
+
+    const finalScore = Math.max(0, Math.min(100, 100 - findings.reduce((score, item) => score + (item.severity === 'critical' ? 30 : item.severity === 'warning' ? 12 : 6), 0)))
+    const risk = finalScore >= 80 ? 'Low risk' : finalScore >= 60 ? 'Moderate risk' : finalScore >= 40 ? 'High risk' : 'Critical risk'
+
+    return {
+      findings,
+      score: finalScore,
+      risk,
+      totalFindings: findings.length,
+      scannedUrl: normalizedUrl,
+    }
+  }
+
+  if (req.method === 'POST' && req.url === '/api/scan') {
+    try {
+      const body = await readBody(req)
+      const targetUrl = String(body.url || '').trim()
+      const quotaKey = normalizeScanKey(req)
+      const dayKey = new Date().toISOString().slice(0, 10)
+      const currentCount = Number(scanQuotaByDay.get(`${quotaKey}:${dayKey}`) || 0)
+
+      const resHeaders = {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-transform',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no',
+        'Access-Control-Allow-Origin': '*',
+      }
+
+      if (currentCount >= 1) {
+        res.writeHead(402, { 'Content-Type': 'application/json' })
+        return res.end(JSON.stringify({ error: 'Free scan limit reached for today. Add card to continue restoring.', paywall: true }))
+      }
+
+      scanQuotaByDay.set(`${quotaKey}:${dayKey}`, currentCount + 1)
+
+      res.writeHead(200, resHeaders)
+      const emit = (payload) => {
+        res.write(`event: update\ndata: ${JSON.stringify(payload)}\n\n`)
+      }
+
+      emit({ type: 'progress', progress: 12, message: 'Validating target URL...' })
+      await new Promise(resolve => setTimeout(resolve, 180))
+
+      emit({ type: 'progress', progress: 26, message: 'Fetching public HTML and metadata...' })
+      const results = await runScanFromUrl(targetUrl)
+
+      for (let index = 0; index < results.findings.length; index += 1) {
+        const finding = results.findings[index]
+        emit({
+          type: 'finding',
+          id: finding.id,
+          severity: finding.severity,
+          title: finding.title,
+          detail: finding.detail,
+          code: finding.code,
+        })
+        emit({
+          type: 'progress',
+          progress: Math.min(95, 40 + ((index + 1) / Math.max(1, results.findings.length)) * 50),
+          message: finding.title,
+        })
+        await new Promise(resolve => setTimeout(resolve, 280))
+      }
+
+      emit({
+        type: 'done',
+        score: results.score,
+        risk: results.risk,
+        totalFindings: results.totalFindings,
+        scannedUrl: results.scannedUrl,
+        summary: `Scan complete: ${results.risk.toLowerCase()} with ${results.totalFindings} findings.`
+      })
+      res.end()
+      return
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Scan failed.'
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: message }))
+      return
+    }
+  }
+
   if (req.url?.startsWith('/api/')) return json(res, 404, { error: 'API route not found' })
   if (req.method === 'GET' && req.url === '/debug/dist') {
     try {
