@@ -64,15 +64,14 @@ const PAGES: Record<string, PageData> = {
     ),
   },
   help: {
-    title: 'Help',
+    title: 'Alpha Restoration Help',
     body: (
       <>
-        <p className="text-white/70">Quick answers to common questions. For more, contact us.</p>
+        <p className="text-white/70">Alpha restores broken work, not random new builds. Use the studio for report-only scans, video healing, and marketplace sales.</p>
         <ul className="mt-6 space-y-4 rounded-2xl border border-violet-400/20 bg-violet-500/10 p-6 backdrop-blur-xl text-white/70">
-          <li><strong className="text-white">Do I need to code?</strong> No. AlphaTekx is designed to be used in plain English.</li>
-          <li><strong className="text-white">Can I stop an automation?</strong> Yes. Every automation can be paused, resumed, edited, or deleted.</li>
-          <li><strong className="text-white">How do credits work?</strong> Credits are consumed when an automation runs actions or uses AI features.</li>
-          <li><strong className="text-white">Is my data safe?</strong> OAuth tokens are stored server-side, and we ask before sensitive actions.</li>
+          <li><strong className="text-white">Scan report-only</strong> — Paste a broken app link and review the report: API leak, secret key, broken env, and performance issues. We do not touch the live link unless you explicitly approve a restore.</li>
+          <li><strong className="text-white">Restore video healer</strong> — Upload shaky or broken footage and recover it into polished world-class output with voice-over, cross-cutting, and long-to-short or short-to-long edits.</li>
+          <li><strong className="text-white">Sell marketplace</strong> — Add your restored app, video, or template and list it for sale with a clear price. Paid plans unlock unlimited sell access and 1080p/4K delivery.</li>
         </ul>
       </>
     ),
