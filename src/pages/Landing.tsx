@@ -100,7 +100,7 @@ function Header() {
               to="/dashboard"
               className="inline-flex h-10 items-center rounded-full bg-[#FFD700] px-5 text-sm font-black text-black transition hover:brightness-110"
             >
-              Open dashboard
+              Open studio
             </Link>
           ) : (
             <button
@@ -108,7 +108,7 @@ function Header() {
               onClick={() => void instantGoogleSignup()}
               className="inline-flex h-10 items-center rounded-full bg-[#FFD700] px-5 text-sm font-black text-black transition hover:brightness-110"
             >
-              Start free
+              Restore now
             </button>
           )}
         </div>
@@ -143,7 +143,7 @@ function Header() {
               to="/dashboard"
               className="mt-2 rounded-xl bg-[#FFD700] px-4 py-3 text-center font-black text-black"
             >
-              Launch My Second You
+              Restore My Broken Thing
             </Link>
           ) : (
             <button
@@ -151,7 +151,7 @@ function Header() {
               onClick={() => void instantGoogleSignup()}
               className="mt-2 rounded-xl bg-[#FFD700] px-4 py-3 text-center font-black text-black"
             >
-              Launch My Second You
+              Restore My Broken Thing
             </button>
           )}
         </motion.nav>
@@ -312,15 +312,11 @@ function Hero() {
             className="inline-flex items-center gap-2 rounded-full border border-[#FFD700]/25 bg-[#FFD700]/[.06] px-3 py-2 text-[11px] font-black uppercase tracking-[.16em] text-[#FFD700]"
           >
             <i className="size-2 animate-pulse rounded-full bg-[#FFD700]" />
-            Your AI employee is ready
+            RESTORATION ECONOMY
           </motion.div>
 
           <h1 className="mt-7 font-['Space_Grotesk',Inter,sans-serif] text-[52px] font-black leading-[.94] tracking-[-.06em] text-white sm:text-7xl lg:text-[88px] xl:text-[96px]">
-            <WordReveal text="Your Second You" />
-            <br />
-            <span className="bg-gradient-to-r from-[#FFD700] via-[#FFC300] to-[#8B3FC7] bg-clip-text text-transparent">
-              <WordReveal text="That Never Sleeps." />
-            </span>
+            <WordReveal text="WE DON'T BUILD WEBSITES, WE RESTORE." />
           </h1>
 
           <motion.p
@@ -329,7 +325,7 @@ function Hero() {
             transition={{ delay: 0.75 }}
             className="mx-auto mt-7 max-w-2xl text-lg font-medium leading-8 text-white/60 sm:text-xl lg:mx-0"
           >
-            AI creates, posts, and grows your socials — while you live your real life.
+            Paste your broken link or broken video. We heal it to world-class. Builders create new. We restore hope.
           </motion.p>
 
           <motion.div
@@ -339,10 +335,9 @@ function Hero() {
             className="mx-auto mt-6 max-w-lg lg:mx-0"
           >
             <div className="flex flex-wrap items-center justify-center gap-3 text-[10px] font-bold text-white/50 sm:justify-start lg:text-xs">
-              <span className="flex items-center gap-1.5"><Check size={12} className="text-emerald-400" /> 4-day live test</span>
-              <span className="flex items-center gap-1.5"><Check size={12} className="text-emerald-400" /> Official LinkedIn API</span>
-              <span className="flex items-center gap-1.5"><Check size={12} className="text-emerald-400" /> Fingerprint anti-fraud</span>
-              <span className="flex items-center gap-1.5"><Check size={12} className="text-emerald-400" /> Paystack live</span>
+              <span className="flex items-center gap-1.5"><Check size={12} className="text-emerald-400" /> Read-only scan</span>
+              <span className="flex items-center gap-1.5"><Check size={12} className="text-emerald-400" /> World-class healing</span>
+              <span className="flex items-center gap-1.5"><Check size={12} className="text-emerald-400" /> Market-ready restore</span>
             </div>
           </motion.div>
 
@@ -357,7 +352,7 @@ function Hero() {
                 to="/dashboard"
                 className="group inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-full bg-[#FFD700] px-7 font-black text-black shadow-[0_0_42px_rgba(107,33,168,.55)] transition hover:-translate-y-1 hover:shadow-[0_0_55px_rgba(255,215,0,.28)] sm:w-auto"
               >
-                Launch My Second You — Start Free
+                Restore My Broken Thing Now
                 <ArrowRight className="transition group-hover:translate-x-1" size={19} />
               </Link>
             ) : (
@@ -366,15 +361,11 @@ function Hero() {
                 onClick={() => void instantGoogleSignup()}
                 className="group inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-full bg-[#FFD700] px-7 font-black text-black shadow-[0_0_42px_rgba(107,33,168,.55)] transition hover:-translate-y-1 hover:shadow-[0_0_55px_rgba(255,215,0,.28)] sm:w-auto"
               >
-                Launch My Second You — Start Free
+                Restore My Broken Thing Now
                 <ArrowRight className="transition group-hover:translate-x-1" size={19} />
               </button>
             )}
-            <span className="text-xs font-semibold text-white/35 sm:pt-5">Start free · Approval stays yours</span>
           </motion.div>
-          <Link to="/founders-legacy" className="mt-4 inline-flex items-center gap-2 text-sm font-black uppercase tracking-[0.24em] text-[#FFD700] transition hover:text-[#FFE66D]">
-            Built with grind at 6AM
-          </Link>
         </div>
 
         <DashboardMockup />
@@ -385,9 +376,9 @@ function Hero() {
 
 function Problem() {
   const cards = [
-    ['Too much busywork', 'Your attention was not designed to become a publishing queue.'],
-    ['Broken consistency', 'Growth stalls whenever client work, life, or a full calendar interrupts posting.'],
-    ['No operating system', 'Separate writing, scheduling, publishing, and reporting tools create more work—not leverage.'],
+    ['App recovery', 'Broken deployments are not dead — they are opportunities. Alpha scans read-only and restores the stack without touching your live product blindly.'],
+    ['Video healing', 'Raw footage, weak pacing, and missing style are fixed into world-class edits that feel like the creators you admire.'],
+    ['Market value', 'After restoration, your repaired app or video can be listed for sale and monetized through the Alpha market.'],
   ]
 
   return (
@@ -399,8 +390,12 @@ function Problem() {
           viewport={{ once: true }}
           className="mx-auto max-w-4xl text-center font-['Space_Grotesk',Inter,sans-serif] text-4xl font-black tracking-[-.045em] text-white sm:text-6xl"
         >
-          Your business should not depend on you <span className="text-[#FFD700]">remembering every task.</span>
+          Builders Are Many. <span className="text-[#FFD700]">Restorers Are Few.</span>
         </motion.h2>
+
+        <p className="mx-auto mt-6 max-w-3xl text-center text-lg leading-8 text-white/50">
+          Lovable, Bolt, Base44 already built everything. What the world needs now is restoration — where broken deployments, boring videos become MrBeast-level.
+        </p>
 
         <div className="mt-16 grid gap-4 md:grid-cols-3">
           {cards.map(([title, copy], index) => (
@@ -425,22 +420,22 @@ function Problem() {
 
 const stackCards = [
   {
-    label: 'AI CREATES',
-    copy: 'Original scripts, hooks, captions, and campaign ideas shaped around your voice.',
+    label: 'STEP 1',
+    copy: 'Paste Broken Thing (App link or raw video + MrBeast link)',
     icon: BrainCircuit,
     border: 'border-white/10',
     glow: 'shadow-black',
   },
   {
-    label: 'AI POSTS',
-    copy: 'One approved plan becomes a dependable calendar across every connected platform.',
+    label: 'STEP 2',
+    copy: 'Alpha Scans & Learns The Style (Read-only scan, no breaking your link)',
     icon: Rocket,
     border: 'border-[#FFD700]/45',
     glow: 'shadow-[0_30px_90px_rgba(255,215,0,.10)]',
   },
   {
-    label: 'AI GROWS',
-    copy: 'Real execution data closes the loop, so every cycle gets sharper and more valuable.',
+    label: 'STEP 3',
+    copy: 'Get Healed, World-Class Version Back + Sell It',
     icon: BarChart3,
     border: 'border-[#6B21A8]',
     glow: 'shadow-[0_30px_100px_rgba(107,33,168,.28)]',
@@ -488,12 +483,12 @@ function HowItWorks() {
         <div className="w-[36%] max-md:w-full">
           <p className="text-xs font-black uppercase tracking-[.2em] text-[#FFD700]">How it works</p>
           <h2 className="mt-5 text-4xl font-black tracking-[-.045em] text-white sm:text-5xl">
-            How AlphaTekX
+            How Alpha Restores
             <br />
-            Becomes You
+            Broken Things
           </h2>
           <p className="mt-5 max-w-sm leading-7 text-white/40">
-            Your standards stay. The repetitive execution disappears.
+            Broken links and rough footage are healed into world-class assets, then monetized.
           </p>
         </div>
 
@@ -760,10 +755,10 @@ function InteractiveOutcomeDemo() {
   const [active, setActive] = useState(0)
   const example = outcomeExamples[active]
   const steps = [
-    ['Understands', 'The outcome, audience, platforms, and missing decisions'],
-    ['Prepares', 'The work, schedule, media, and exact credit cost'],
-    ['Waits', 'Nothing executes until the final plan is approved'],
-    ['Confirms', 'Provider IDs and history prove what actually happened'],
+    ['Scans', 'The broken app or video is examined read-only to find leaks, errors, weak structure, and style gaps'],
+    ['Learns', 'Alpha studies the target style and defines the exact restoration path'],
+    ['Heals', 'The app or video is brought back to world-class quality without a rebuild from scratch'],
+    ['Sells', 'After restoration, the repaired asset can be listed and monetized in the market'],
   ]
 
   return (
@@ -776,17 +771,17 @@ function InteractiveOutcomeDemo() {
             Start with a result, not a workflow diagram.
           </h2>
           <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-white/50">
-            Alpha translates everyday language into controlled, reviewable work across your connected tools.
+            Alpha scans broken apps and raw videos, learns the style you want, and returns a healed version that looks world-class.
           </p>
         </div>
 
         <div className="mt-12 grid overflow-hidden rounded-[32px] border border-white/10 bg-[#09090C] shadow-[0_40px_120px_rgba(107,33,168,.18)] lg:grid-cols-[.9fr_1.1fr]">
           <div className="border-b border-white/10 p-5 sm:p-8 lg:border-b-0 lg:border-r">
             <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[.18em] text-white/35">
-              <WandSparkles size={15} className="text-[#FFD700]" /> Tell Alpha what success looks like
+              <WandSparkles size={15} className="text-[#FFD700]" /> Tell Alpha what needs healing
             </div>
             <div className="mt-5 min-h-44 rounded-2xl border border-white/10 bg-black p-5 text-lg font-semibold leading-8 text-white sm:text-xl">
-              {example.prompt}
+              Paste a broken deployed app link or upload a raw video and tell Alpha the style you want restored.
               <span className="ml-1 inline-block h-5 w-0.5 animate-pulse bg-[#FFD700] align-middle" />
             </div>
             <div className="mt-4 flex snap-x gap-2 overflow-x-auto pb-2">
@@ -802,7 +797,7 @@ function InteractiveOutcomeDemo() {
               ))}
             </div>
             <div className="mt-4 flex items-center justify-between gap-4 rounded-2xl border border-[#FFD700]/20 bg-[#FFD700]/[.055] p-4">
-              <div><p className="text-[10px] font-black uppercase tracking-wider text-[#FFD700]">Prepared outcome</p><p className="mt-1 text-sm font-bold text-white/70">{example.result}</p></div>
+              <div><p className="text-[10px] font-black uppercase tracking-wider text-[#FFD700]">Prepared restoration</p><p className="mt-1 text-sm font-bold text-white/70">Broken link or video analyzed · style learned · world-class version ready</p></div>
               <Play size={20} className="shrink-0 text-[#FFD700]" fill="currentColor" />
             </div>
           </div>
@@ -837,13 +832,13 @@ function IntegrationsStrip() {
       <div className="mx-auto max-w-7xl">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="text-xs font-black uppercase tracking-[.22em] text-[#FFD700]">One command centre</p>
+            <p className="text-xs font-black uppercase tracking-[.22em] text-[#FFD700]">One restoration studio</p>
             <h2 className="mt-4 max-w-3xl text-4xl font-black tracking-[-.045em] text-white sm:text-6xl">
-              Your tools finally work like one team.
+              Broken links and weak videos get restored with precision.
             </h2>
           </div>
           <p className="max-w-md text-base leading-7 text-white/50">
-            Connect the services you already use. Alpha plans the work, waits for approval, executes through the connected provider, and records what happened.
+            We scan read-only, learn the style, and heal your broken asset into a polished, market-ready version without starting from zero.
           </p>
         </div>
 
@@ -872,21 +867,21 @@ function UseCases() {
   const cases = [
     {
       eyebrow: 'For founders',
-      title: 'Turn one business goal into a complete content operation.',
-      copy: 'Describe the outcome once. Alpha gathers only the missing details, prepares the campaign, calculates the work, and keeps every post visible before approval.',
-      metric: 'Plan → review → publish',
+      title: 'Turn broken launches into restored revenue engines.',
+      copy: 'A deployed app with leaks, weak performance, or environment issues gets a read-only scan and a full restoration back to world-class health.',
+      metric: 'Diagnose → restore → monetize',
     },
     {
       eyebrow: 'For creators',
-      title: 'Stay present without living inside every platform.',
-      copy: 'Generate platform-aware content, match media, schedule at the right time, and retain a history of what was actually published.',
-      metric: 'One workspace',
+      title: 'Turn weak raw footage into MrBeast-level cuts and pacing.',
+      copy: 'Upload raw video, paste the style reference, and Alpha restores the edit to the energy, rhythm, captions, and sound design you want.',
+      metric: 'Raw → healed → sold',
     },
     {
-      eyebrow: 'For small teams',
-      title: 'Give repeatable work an owner that never forgets.',
-      copy: 'Connect communication and productivity tools so recurring jobs move from request to confirmed execution without another spreadsheet of reminders.',
-      metric: 'Always accountable',
+      eyebrow: 'For sellers',
+      title: 'List repaired assets and convert restoration into income.',
+      copy: 'After healing, restored apps and videos can go live in the market so the work earns back value with a 10% fee on sales.',
+      metric: 'Repair → list → profit',
     },
   ]
 
@@ -894,9 +889,9 @@ function UseCases() {
     <section id="use-cases" className="bg-black px-4 py-24 sm:px-6 lg:py-36">
       <div className="mx-auto max-w-7xl">
         <div className="max-w-4xl">
-          <p className="text-xs font-black uppercase tracking-[.22em] text-[#FFD700]">Built around outcomes</p>
+          <p className="text-xs font-black uppercase tracking-[.22em] text-[#FFD700]">Built around repair</p>
           <h2 className="mt-5 text-4xl font-black tracking-[-.05em] text-white sm:text-6xl lg:text-7xl">
-            Less software to operate. More work completed.
+            Less noise. More restoration. More value.
           </h2>
         </div>
 
@@ -924,9 +919,9 @@ function UseCases() {
 
 function TrustSection() {
   const safeguards = [
-    ['You approve the work', 'Alpha prepares and previews the final output before a publish action runs.', ShieldCheck],
-    ['Success must be confirmed', 'A provider response and post identifier—not a loading spinner—determine success.', CircleCheckBig],
-    ['Failures are not charged', 'Credits are deducted only after the connected platform confirms execution.', LockKeyhole],
+    ['Read-only first', 'Alpha scans the broken app without touching the production link, so the risk is visible before healing begins.', ShieldCheck],
+    ['Style is learned, not guessed', 'A broken video gets matched to the style you want, including pacing, zooms, captions, and sound design.', CircleCheckBig],
+    ['Repair is transparent', 'You get a clear result from the audit or edit, and the restored asset is ready to sell when it is healed.', LockKeyhole],
   ]
 
   return (
@@ -934,12 +929,12 @@ function TrustSection() {
       <div className="pointer-events-none absolute left-1/2 top-1/2 size-[700px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#6B21A8]/15 blur-[150px]" />
       <div className="relative mx-auto grid max-w-7xl gap-12 lg:grid-cols-[.8fr_1.2fr] lg:items-center">
         <div>
-          <p className="text-xs font-black uppercase tracking-[.22em] text-[#FFD700]">Control is the feature</p>
+          <p className="text-xs font-black uppercase tracking-[.22em] text-[#FFD700]">Repair, without panic</p>
           <h2 className="mt-5 text-4xl font-black tracking-[-.05em] text-white sm:text-6xl">
-            Automation you can trust with your name.
+            Healed output, not blind rebuilds.
           </h2>
           <p className="mt-6 max-w-xl text-lg leading-8 text-white/50">
-            AlphaTekx is designed around review, explicit approval, durable execution history, and honest provider confirmation.
+            Alpha starts with the truth: what is broken, what is exposed, and what the style should become before the restoration begins.
           </p>
         </div>
 
@@ -970,9 +965,9 @@ function TrustSection() {
 
 function ExecutionProof() {
   const proof = [
-    { icon: Gauge, title: 'Live progress', copy: 'See what is waiting, running, confirmed, or needs attention without guessing.' },
-    { icon: History, title: 'Durable history', copy: 'Every completed action keeps its platform, timestamp, content, result, and provider reference.' },
-    { icon: ShieldCheck, title: 'Exactly-once charging', copy: 'Idempotency protects duplicate execution and credits follow confirmed outcomes.' },
+    { icon: Gauge, title: 'Scan report', copy: 'Alpha identifies exposed keys, broken envs, slow performance, and weak structures before any healing step.' },
+    { icon: History, title: 'Restoration history', copy: 'Every repair keeps its findings, style match, and healed output so the result is transparent and trackable.' },
+    { icon: ShieldCheck, title: 'Safe healing', copy: 'We restore without a destructive rebuild, no random edits, and no guessing on what actually broke.' },
   ]
 
   return (
@@ -981,8 +976,8 @@ function ExecutionProof() {
         <div className="grid gap-12 lg:grid-cols-2 lg:items-center">
           <div>
             <p className="text-xs font-black uppercase tracking-[.22em] text-[#FFD700]">Proof, not promises</p>
-            <h2 className="mt-5 text-4xl font-black tracking-[-.05em] text-white sm:text-6xl">Watch the work move from request to result.</h2>
-            <p className="mt-6 max-w-xl text-lg leading-8 text-white/50">A serious AI employee needs an audit trail. Alpha keeps execution visible instead of hiding it behind a cheerful success message.</p>
+            <h2 className="mt-5 text-4xl font-black tracking-[-.05em] text-white sm:text-6xl">Watch the repair move from broken to restored.</h2>
+            <p className="mt-6 max-w-xl text-lg leading-8 text-white/50">A serious restoration workflow needs an audit trail. Alpha keeps the scan, the fix, and the final result visible instead of hiding the damage.</p>
             <div className="mt-9 space-y-3">
               {proof.map(({ icon: Icon, title, copy }) => (
                 <div key={title} className="flex gap-4 rounded-2xl border border-white/[.07] p-5">
@@ -1022,11 +1017,11 @@ function ExecutionProof() {
 
 function Comparison() {
   const rows = [
-    ['Describe the outcome in natural language', true, false],
-    ['Ask only for missing information', true, false],
-    ['Review before execution', true, true],
-    ['Confirmed execution history', true, false],
-    ['One accountable AI workspace', true, false],
+    ['Paste a broken app link or raw video', true, false],
+    ['Learn the required style before editing', true, false],
+    ['Repair with a read-only scan first', true, false],
+    ['Deliver a world-class healed version', true, false],
+    ['List the restored asset for sale', true, false],
   ]
 
   return (
@@ -1034,8 +1029,8 @@ function Comparison() {
       <div className="mx-auto max-w-6xl">
         <div className="text-center">
           <p className="text-xs font-black uppercase tracking-[.22em] text-[#FFD700]">A different operating model</p>
-          <h2 className="mt-5 text-4xl font-black tracking-[-.05em] text-white sm:text-6xl">Not another scheduler with AI added.</h2>
-          <p className="mx-auto mt-5 max-w-2xl leading-7 text-white/45">Traditional tools give you more workflows to configure. Alpha begins with the result you want.</p>
+          <h2 className="mt-5 text-4xl font-black tracking-[-.05em] text-white sm:text-6xl">Not another builder. A dedicated restorer.</h2>
+          <p className="mx-auto mt-5 max-w-2xl leading-7 text-white/45">Builders create new things. We restore broken things to world-class quality, faster and smarter.</p>
         </div>
 
         <div className="mt-12 overflow-hidden rounded-[28px] border border-white/10 bg-[#09090C]">
@@ -1057,11 +1052,11 @@ function Comparison() {
 
 function FAQ() {
   const items = [
-    ['What is an AI employee?', 'An AI employee is software that can understand an outcome, gather missing details, prepare work, use connected tools, and report the result—not merely answer a question.'],
-    ['Does Alpha publish without permission?', 'No. Publishing workflows are designed to show the prepared work and require explicit approval before execution.'],
-    ['What happens if a platform fails?', 'The run records an honest failure. Alpha does not mark the job successful or charge execution credits without provider confirmation.'],
-    ['Can I connect the tools I already use?', 'Yes. AlphaTekx supports native and securely managed connections across social, communication, and productivity tools, subject to each provider’s permissions.'],
-    ['Do I need to build complicated workflows?', 'No. Start with the result you want. Alpha asks for the missing decisions and turns them into a reviewable plan.'],
+    ['What does Alpha restore?', 'Alpha restores broken deployed apps and broken raw videos. We scan for leaks, errors, weak performance, and style gaps, then heal the asset to world-class quality.'],
+    ['Does Alpha touch my live app?', 'No. App restoration starts with a read-only scan. We report issues first and never break your link or production deployment.'],
+    ['Can Alpha match a style like MrBeast or IShowSpeed?', 'Yes. Upload the broken video and paste the reference link, and Alpha learns the pacing, cuts, captions, zooms, and sound design before restoring it.'],
+    ['Can I sell restored work after healing?', 'Yes. Once a restored app or video is ready, it can be listed in the market and we take a 10% fee on the sale.'],
+    ['Do I need to build from scratch?', 'No. We do not build new apps or videos from zero. We restore what is broken into a world-class version.'],
   ]
 
   return (
@@ -1088,17 +1083,12 @@ function FAQ() {
 
 function Pricing() {
   const { user } = useAuth()
-  const [yearly, setYearly] = useState(true)
+  const [yearly, setYearly] = useState(false)
   const plans = [
-    { id: 'free', name: 'Free', price: 0, credits: '10 credits', naira: '~Free', details: '1 video / month, max 2 mins' },
-    { id: 'video_19', name: '$19', price: 19, credits: '400 credits', naira: '~₦45,600', details: '10 videos / month, max 5 mins', featured: true },
-    { id: 'video_49', name: '$49', price: 49, credits: '800 credits', naira: '~₦124,100', details: '30 videos / month, max 8 mins, 7-day scheduler' },
-    { id: 'video_99', name: '$99', price: 99, credits: '1,200 credits', naira: '~Premium', details: 'Unlimited videos, max 12 mins, Vault & team seats' },
+    { id: 'healer_starter', name: 'HEALER STARTER', price: 19, annualPrice: 190, details: '10 App Scans (report only, no touch) + 3 Video Restorations (MrBeast style) + PDF Audit Report', featured: false },
+    { id: 'healer_pro', name: 'HEALER PRO', price: 49, annualPrice: 490, details: '50 Full App Restorations (we heal, not just report) + 25 Video Restorations (MrBeast, IShowSpeed, Malva styles) + List 5 Restored Items For Sale (10% fee)', featured: true },
+    { id: 'healer_empire', name: 'HEALER EMPIRE', price: 99, annualPrice: 990, details: 'UNLIMITED Restorations + All Styles + Unlimited Market Listings + API Access + Priority Healing + White-label Reports', featured: false },
   ]
-
-  const handleEarlyFounderDeal = () => {
-    void instantGoogleSignup('early_founder_19')
-  }
 
   return (
     <section id="pricing" className="bg-black px-4 py-24 sm:px-6 lg:py-32">
@@ -1106,10 +1096,10 @@ function Pricing() {
         <div className="text-center">
           <p className="text-xs font-black uppercase tracking-[.2em] text-[#FFD700]">Simple by design</p>
           <h2 className="mt-5 text-4xl font-black tracking-[-.045em] text-white sm:text-6xl">
-            One Credit. All Platforms.
+            Heal What’s Broken. Sell What’s Restored.
           </h2>
           <p className="mx-auto mt-5 max-w-2xl leading-7 text-white/40">
-            Unlike tools that charge for every channel, AlphaTekX prices the job—not the number of places it needs to happen.
+            We do not build from scratch. We restore broken apps, broken videos, and broken opportunities into world-class value.
           </p>
 
           <div className="mx-auto mt-8 flex w-fit rounded-full border border-white/10 bg-white/[.04] p-1">
@@ -1123,26 +1113,13 @@ function Pricing() {
               onClick={() => setYearly(true)}
               className={`rounded-full px-5 py-2.5 text-sm font-bold ${yearly ? 'bg-[#FFD700] text-black' : 'text-white/40'}`}
             >
-              Yearly <span className="ml-1 text-[10px]">New deal</span>
+              Annual <span className="ml-1 text-[10px]">2 months free</span>
             </button>
           </div>
+          <p className="mt-4 text-sm text-white/45">Annual billing saves 2 months.</p>
         </div>
 
-        <div className="mx-auto mt-10 max-w-3xl rounded-[24px] border border-[#FFD700]/30 bg-gradient-to-r from-[#FFD700]/15 via-transparent to-[#8B3FC7]/15 p-5 text-left shadow-[0_0_60px_rgba(255,215,0,.08)]">
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="rounded-full bg-[#FFD700] px-3 py-1 text-[10px] font-black uppercase tracking-[.2em] text-black">
-              New deal
-            </span>
-            <span className="text-sm font-semibold text-white/80">
-              First 100 founders lock in $19/month for launch access with 500 credits.
-            </span>
-          </div>
-          <p className="mt-3 text-sm leading-6 text-white/55">
-            Early access includes full publishing flow, live approvals, and no per-channel fee while the launch rate lasts.
-          </p>
-        </div>
-
-        <div className="mt-14 grid gap-5 md:grid-cols-2 lg:grid-cols-2">
+        <div className="mt-14 grid gap-5 md:grid-cols-3">
           {plans.map((plan) => (
             <motion.article
               whileHover={{ y: -6 }}
@@ -1153,21 +1130,20 @@ function Pricing() {
             >
               {plan.featured && (
                 <span className="absolute right-5 top-5 rounded-full bg-[#FFD700] px-3 py-1 text-[9px] font-black uppercase text-black">
-                  Launch choice
+                  Most Popular
                 </span>
               )}
 
               <p className="text-xs font-black uppercase tracking-[.16em] text-[#FFD700]">{plan.name}</p>
               <p className="mt-7 text-5xl font-black text-white">
-                ${yearly ? plan.price : Math.ceil(plan.price * 1.25)}
+                ${yearly ? plan.annualPrice : plan.price}
                 <span className="text-sm font-semibold text-white/30">/mo</span>
               </p>
-              <p className="mt-2 text-xs font-semibold text-white/45">{plan.naira} via Paystack</p>
-              <p className="mt-1 font-semibold text-white/45">{plan.credits} · every channel included</p>
+              <p className="mt-2 text-xs font-semibold text-white/45">{yearly ? `Billed at $${plan.annualPrice} yearly` : 'Monthly billing'}</p>
               <p className="mt-2 text-sm text-white/60">{plan.details}</p>
               <div className="my-7 h-px bg-white/10" />
 
-              {['One approval flow', 'Confirmed publishing', 'No per-channel fee'].map((item) => (
+              {['Read-only app scan protection', 'World-class restoration workflow', 'Market-ready output'].map((item) => (
                 <div key={item} className="mt-3 flex items-center gap-2 text-sm font-semibold text-white/65">
                   <Check size={16} className="text-[#FFD700]" />
                   {item}
@@ -1176,11 +1152,11 @@ function Pricing() {
 
               <button
                 type="button"
-                onClick={() => void instantGoogleSignup(plan.id === 'video_19' ? 'early_founder_19' : undefined)}
+                onClick={() => void instantGoogleSignup()}
                 className={`mt-8 inline-flex min-h-[48px] w-full items-center justify-center rounded-full px-4 font-black ${
                   plan.featured ? 'bg-[#FFD700] text-black' : 'border border-white/15 text-white'
                 }`}>
-                {plan.featured ? 'Claim New Deal' : `Choose ${plan.name}`}
+                {plan.featured ? 'Choose HEALER PRO' : `Choose ${plan.name}`}
               </button>
             </motion.article>
           ))}
@@ -1203,25 +1179,22 @@ function FinalCTA() {
       <div className="relative mx-auto max-w-4xl">
         <Zap className="mx-auto text-[#FFD700]" />
         <h2 className="mt-6 text-5xl font-black tracking-[-.055em] text-white sm:text-7xl">
-          Stop Posting.
+          Don’t Build New.
           <br />
           <span className="bg-gradient-to-r from-[#FFD700] to-[#8B3FC7] bg-clip-text text-transparent">
-            Start Growing.
+            Restore It.
           </span>
         </h2>
-        <p className="mt-6 text-lg text-white/45">Your second you is ready.</p>
+        <p className="mt-6 text-lg text-white/45">Your broken app or video deserves a second life.</p>
         <button
           type="button"
-          onClick={() => void instantGoogleSignup('early_founder_19')}
+          onClick={() => void instantGoogleSignup()}
           style={{ background: '#FFFFFF', color: '#000000', height: '48px', borderRadius: '12px', fontWeight: 600 }}
           className="mt-9 inline-flex min-h-14 items-center justify-center gap-2 rounded-full bg-[#FFD700] px-8 font-black text-black shadow-[0_0_50px_rgba(107,33,168,.5)]"
         >
-          Claim New Deal $19 - Early Founder
+          Restore My Broken Thing Now
           <ArrowRight size={19} />
         </button>
-        <p className="mt-4 text-center text-[13px] text-[#8A8A93]">
-          ✅ Instant credit + 🎉 celebration after payment • If not, Contact us - 1 min reply ⚡ • Secured by Paystack
-        </p>
       </div>
     </section>
   )
@@ -1236,7 +1209,10 @@ function Footer() {
           <Link to="/privacy">Privacy</Link>
           <Link to="/terms">Terms</Link>
         </div>
-        <span>© 2026 AlphaTekX</span>
+        <div className="flex flex-col items-end gap-1 text-right">
+          <span>Annual billing saves 2 months.</span>
+          <span>AlphaTekX - Where Broken Things Are Restored.</span>
+        </div>
       </div>
     </footer>
   )
@@ -1276,7 +1252,7 @@ export default function Landing() {
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-black pb-[100px] font-['Inter',sans-serif] text-white">
-      <SEO title="AlphaTekX — Your Second You That Never Sleeps" description="AI creates, posts, and grows your socials while you live your real life." />
+      <SEO title="AlphaTekX — We Don't Build Websites, We Restore" description="Paste your broken link or broken video. We heal it to world-class." />
       <motion.div style={{ scaleX }} className="fixed inset-x-0 top-0 z-[60] h-0.5 origin-left bg-gradient-to-r from-[#6B21A8] to-[#FFD700]" />
       <Header />
       <main className="overflow-x-clip overflow-y-visible">
