@@ -748,6 +748,16 @@ export async function buildProductionVideo(prompt, { duration, plan = 'free', jo
     // Create job directory and ensure tmp is writable on Render / serverless hosts
     fs.mkdirSync(jobDir, { recursive: true })
     console.log('[INIT] Job folder created', jobId, jobDir)
+    
+    // Verify tmp directory is writable by writing a test file
+    const testFile = path.join(jobDir, '.write-test')
+    fs.writeFileSync(testFile, 'tmp-writable-test')
+    fs.unlinkSync(testFile)
+    console.log('[INIT] Tmp directory is writable, proceeding with video generation')
+    
+    if (!fs.existsSync(jobDir)) {
+      throw new Error(`Job directory not accessible: ${jobDir}`)
+    }
 
     // PHASE 1: SCRIPT
     log('SCRIPT', `Starting script generation for: ${prompt}`)
