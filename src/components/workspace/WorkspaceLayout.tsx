@@ -84,7 +84,7 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
   const isHome = location.pathname === '/dashboard'
   const toggleSidebar = () => setOpen((prev) => !prev)
 
-  return <div className="workspace-living-bg relative flex h-[100dvh] min-h-0 flex-col overflow-hidden text-white">
+  return <div className="workspace-living-bg relative flex h-[100dvh] w-full min-h-0 flex-col overflow-hidden text-white">
     <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center justify-between border-b border-white/10 bg-[#111214]/90 px-4 backdrop-blur-2xl">
       <button onClick={toggleSidebar} className="grid size-10 place-items-center rounded-xl border border-white/10 bg-white/[0.02] text-white transition hover:bg-white/[0.04]" aria-label={open ? 'Close menu' : 'Open menu'}><Menu size={18}/></button>
       <NavLink to="/dashboard" className="text-sm font-black tracking-[.14em] text-white">ALPHATEKX</NavLink>
@@ -93,8 +93,8 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
         <span className={!isAdmin && needsCreditTopUp(credits) ? 'text-[#F5C518]' : 'text-white'}>{isAdmin ? 'Admin' : `${credits} Credits`}</span>
       </button>
     </header>
-    {open && <button className="fixed inset-0 z-40 bg-black/30 transition-opacity duration-200" onClick={() => setOpen(false)} aria-label="Close menu"/>}
-    <aside className={`fixed inset-y-0 left-0 z-50 flex w-[284px] max-w-[88vw] flex-col border-r border-white/10 bg-[#111214]/95 text-white backdrop-blur-2xl transition-transform duration-200 ease-out ${open ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
+    {open && <button className="fixed inset-0 z-40 bg-black/40 transition-opacity duration-200 backdrop-blur-[1px]" onClick={() => setOpen(false)} aria-label="Close menu"/>}
+    <aside className={`fixed inset-y-0 left-0 z-50 flex w-[284px] max-w-[82vw] flex-col border-r border-white/10 bg-[#111214]/95 text-white shadow-[0_12px_45px_rgba(0,0,0,0.42)] backdrop-blur-2xl transition-transform duration-200 ease-out ${open ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
       <div className="flex h-[72px] items-center justify-between px-5">
         <NavLink to="/dashboard" onClick={() => setOpen(false)} className="flex items-center gap-3">
           <span className="grid size-9 place-items-center rounded-xl bg-white text-sm font-black text-[#0B0B0C]">A</span>
@@ -127,9 +127,9 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
       </div>
     </aside>
 
-    <main id="workspace-scroll-root" className="relative z-10 min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain scroll-smooth pt-16 lg:pl-[284px] [-webkit-overflow-scrolling:touch]">
+    <main id="workspace-scroll-root" className="relative z-10 min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain scroll-smooth pt-16 [-webkit-overflow-scrolling:touch]">
       {isHome && show && (
-        <div className="mx-auto max-w-3xl px-4 pt-6">
+        <div className="mx-auto w-full max-w-[430px] px-4 pt-6 sm:max-w-3xl">
           <div className="relative rounded-2xl border border-white/10 bg-[#111214] p-5">
             <button onClick={dismiss} className="absolute right-3 top-3 text-[#8A8A93] hover:text-white"><X size={16} /></button>
             <div className="flex items-center gap-2 text-sm font-semibold text-white"><Sparkles size={16} className="text-white" /> How Alpha works</div>
