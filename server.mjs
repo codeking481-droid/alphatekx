@@ -9507,10 +9507,7 @@ API_SECRET=FAKE_SECRET_VALUE_12345`)
     try {
       const body = await readBody(req)
       const targetUrl = String(body.url || '').trim()
-      const quotaKey = normalizeScanKey(req)
-      const dayKey = new Date().toISOString().slice(0, 10)
-      const currentCount = Number(scanQuotaByDay.get(`${quotaKey}:${dayKey}`) || 0)
-
+      
       const resHeaders = {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache, no-transform',
@@ -9522,19 +9519,22 @@ API_SECRET=FAKE_SECRET_VALUE_12345`)
       // SCAN COSTS 3 CREDITS
       const SCAN_COST = 3
       const user = currentOrLocalUser(req)
-      const userCredits = await getUserCredits(user, supabaseConfig())
+      let userCredits = await getUserCredits(user, supabaseConfig())
       
-      if (currentCount >= 1 || userCredits < SCAN_COST) {
+      // PHASE 1: Give new users 10 starting credits
+      if (userCredits === 0) {
+        userCredits = 10
+      }
+      
+      if (userCredits < SCAN_COST) {
         res.writeHead(402, { 'Content-Type': 'application/json' })
         return res.end(JSON.stringify({ 
-          error: `Free scan limit reached. You need ${Math.max(0, SCAN_COST - userCredits)} more credits to scan. Get 100 credits for $49/mo.`, 
+          error: `You need ${SCAN_COST - userCredits} more credits. Get 100 credits for $49/mo.`, 
           paywall: true,
           creditsNeeded: SCAN_COST,
           creditsAvailable: userCredits
         }))
       }
-
-      scanQuotaByDay.set(`${quotaKey}:${dayKey}`, currentCount + 1)
 
       res.writeHead(200, resHeaders)
       const emit = (payload) => {
@@ -9565,9 +9565,18 @@ API_SECRET=FAKE_SECRET_VALUE_12345`)
         await new Promise(resolve => setTimeout(resolve, 280))
       }
 
-      // DEDUCT CREDITS AFTER SUCCESSFUL SCAN
-      await spendUserCredits(user, SCAN_COST, { type: 'scan', url: targetUrl })
+      // DEDUCT CREDITS AFTER SUCCESSFUL SCAN (Phase 1: show deduction without persistence)
       const remainingCredits = userCredits - SCAN_COST
+      
+      // Try to persist if user is authenticated, but don't block on failure for Phase 1
+      try {
+        const actualCredits = await getUserCredits(user, supabaseConfig())
+        if (actualCredits > 0) {
+          await spendUserCredits(user, SCAN_COST, { type: 'scan', url: targetUrl })
+        }
+      } catch (err) {
+        console.warn('[Phase 1] Credit deduction skipped (local user or DB error):', err instanceof Error ? err.message : err)
+      }
 
       emit({
         type: 'done',
@@ -9575,8 +9584,8 @@ API_SECRET=FAKE_SECRET_VALUE_12345`)
         risk: results.risk,
         totalFindings: results.totalFindings,
         scannedUrl: results.scannedUrl,
-        creditsRemaining: remainingCredits,
-        summary: `Scan complete: ${results.risk.toLowerCase()} with ${results.totalFindings} findings. (${remainingCredits} credits remaining)`
+        creditsRemaining: Math.max(0, remainingCredits),
+        summary: `Scan complete: ${results.risk.toLowerCase()} with ${results.totalFindings} findings. (${Math.max(0, remainingCredits)} credits remaining)`
       })
       res.end()
       return
