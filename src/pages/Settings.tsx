@@ -159,7 +159,12 @@ export default function Settings() {
   const selectPlan = (planId: PlanId) => { setSelectedPlan(planId) }
 
   const deleteAccount = () => {
-    if (!confirm('This will sign you out and clear local data. To permanently delete your account, contact hello@alphatekx.name.ng.')) return
+    const first = window.confirm('You sure? All Media Library and History will be deleted permanently.')
+    if (!first) return
+
+    const second = window.confirm('Confirm: delete your Alpha account and all saved media, history, and settings permanently.')
+    if (!second) return
+
     localStorage.clear()
     void signOut()
     navigate('/')
