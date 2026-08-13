@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Bot, Plus, Rocket, ShoppingBag, Sparkles, TrendingUp } from 'lucide-react'
+import { Bot, Linkedin, Rocket, ShoppingBag, Sparkles } from 'lucide-react'
 import OnboardingModal, { useOnboarding } from '../components/OnboardingModal'
 import { useAuth } from '../lib/auth'
-import { getCreations } from '../lib/missionStore'
-import { getJson } from '../lib/apiClient'
 import { verifyCheckout } from '../lib/payment'
 import { setCredits as saveCredits } from '../lib/creditStore'
 
@@ -19,9 +17,6 @@ export default function Dashboard() {
   const [paymentCredits, setPaymentCredits] = useState<number | null>(null)
   const [celebrationTitle, setCelebrationTitle] = useState('Congratulations')
   const [celebrationMessage, setCelebrationMessage] = useState('Payment successful! Credits were added to your account.')
-  const [insights, setInsights] = useState<{ id: string; title: string; description: string; severity: string }[]>([])
-
-  useEffect(() => { void getJson<{ predictions: { id: string; title: string; description: string; severity: string }[] }>('/api/brain/predictions').then(d => setInsights(d.predictions || [])).catch(() => {}) }, [])
 
   useEffect(() => {
     if (!session?.access_token) return
@@ -79,9 +74,6 @@ export default function Dashboard() {
         setShowContactBanner(true)
       })
       .catch(async () => {
-        // A callback can lose its query string on weak mobile networks. The
-        // authenticated recovery endpoint independently asks Paystack for the
-        // user's recent successful transactions and settles them idempotently.
         if (session?.access_token) {
           try {
             const response = await fetch('/api/payment/recover', { method: 'POST', headers: { Authorization: `Bearer ${session.access_token}` } })
@@ -103,23 +95,22 @@ export default function Dashboard() {
       })
   }, [refreshProfile, searchParams, session?.access_token, setSearchParams])
 
-  const creations = getCreations().slice(0, 6)
-  const emailFirstName = user?.email ? user.email.split('@')[0].split('.')[0].replace(/^./, c => c.toUpperCase()) : 'Builder'
+  const emailFirstName = user?.email ? user.email.split('@')[0].split('.')[0].replace(/^./, c => c.toUpperCase()) : 'Restorer'
   const displayName = (user && ('name' in user ? user.name : (user as { user_metadata?: { name?: string } }).user_metadata?.name)) || emailFirstName
 
   const actions = [
-    { label: 'Create an automation', sub: 'Let Alpha work for you', icon: Bot, to: '/automations' },
-    { label: 'Review your history', sub: 'See what already ran', icon: TrendingUp, to: '/history' },
-    { label: 'Check your brain', sub: 'Memory, goals, insights', icon: Sparkles, to: '/brain' },
-    { label: 'Sell something', sub: 'Marketplace or your store', icon: ShoppingBag, to: '/marketplace' },
+    { label: 'Restore App', sub: 'Paste broken link', icon: Bot, to: '/automations' },
+    { label: 'Restore Video', sub: 'Upload broken video + style link', icon: Rocket, to: '/history' },
+    { label: 'Post to LinkedIn', sub: 'Keep your restoration wins public', icon: Linkedin, to: '/brain' },
+    { label: 'My Restored Items for Sale', sub: 'List and sell restored work', icon: ShoppingBag, to: '/marketplace' },
   ]
 
   return (
     <div className="min-h-screen px-5 py-8 md:px-10">
       <div className="mx-auto max-w-5xl">
         <div className="mb-2 text-sm text-white/55">Hello, {displayName}</div>
-        <h1 className="text-2xl font-bold md:text-3xl">What do you want to do today?</h1>
-        <p className="mt-1 text-sm text-white/55">Pick one. Alpha handles the rest.</p>
+        <h1 className="text-2xl font-bold md:text-3xl">Alpha Restoration Studio</h1>
+        <p className="mt-1 text-sm text-white/55">Choose the restoration lane you need.</p>
 
         {(paymentRef || searchParams.get('payment') === 'success' || showContactBanner) && (
           <div className="mt-5 rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4 text-sm text-amber-100">
@@ -142,44 +133,6 @@ export default function Dashboard() {
             </button>
           ))}
         </div>
-
-        {insights.length > 0 && (
-          <div className="mt-8 rounded-2xl border border-violet-400/20 bg-violet-500/10 p-5">
-            <div className="mb-3 flex items-center gap-2 text-sm font-semibold"><TrendingUp size={16} className="text-indigo-300"/>Alpha Insights</div>
-            <div className="space-y-2">
-              {insights.slice(0, 3).map(p => (
-                <div key={p.id} className={`rounded-xl border p-3 text-sm ${p.severity === 'warning' ? 'border-amber-500/30 bg-amber-500/10 text-amber-100' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100'}`}>
-                  <div className="font-medium">{p.title}</div>
-                  <p className="mt-0.5 text-xs opacity-80">{p.description}</p>
-                </div>
-              ))}
-            </div>
-            <button onClick={() => navigate('/brain')} className="mt-3 text-xs font-medium text-indigo-300 hover:text-indigo-200">Open Brain →</button>
-          </div>
-        )}
-
-        {creations.length > 0 && (
-          <div className="mt-8">
-            <h2 className="text-lg font-semibold">Your projects</h2>
-            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {creations.map(c => (
-                <button key={c.id} onClick={() => navigate(`/mission/${c.missionId}`)} className="group rounded-2xl border border-violet-400/20 bg-violet-500/10 p-5 text-left transition-all hover:border-indigo-400/30 hover:bg-violet-500/10">
-                  <h3 className="text-base font-semibold text-zinc-100">{c.title || 'Untitled project'}</h3>
-                  <p className="mt-1 truncate text-sm text-slate-400">{c.slug ? `${c.slug}.alphatekx.name.ng` : 'Draft'}</p>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {creations.length === 0 && (
-          <div className="mt-8 rounded-2xl border border-dashed border-violet-400/20 p-8 text-center">
-            <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-violet-500/10"><Plus size={22} className="text-zinc-400" /></div>
-            <h3 className="mt-3 text-base font-semibold">No automations yet</h3>
-            <p className="mt-1 text-sm text-zinc-400">Create your first automation and let Alpha handle it for you.</p>
-            <button onClick={() => navigate('/automations')} className="mt-4 inline-flex items-center gap-2 rounded-full bg-indigo-600 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-500"><Plus size={16} /> Start automating</button>
-          </div>
-        )}
       </div>
       <OnboardingModal open={onboarding.open} onComplete={onboarding.finish} onClose={onboarding.close} />
       {showCongrats && (
