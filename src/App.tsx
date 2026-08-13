@@ -11,6 +11,7 @@ const Home = lazy(() => import('./pages/Home'))
 const ScanPage = lazy(() => import('./pages/ScanPage'))
 const RestorePage = lazy(() => import('./pages/RestorePage'))
 const MarketPage = lazy(() => import('./pages/MarketPage'))
+const MarketplaceNew = lazy(() => import('./pages/MarketplaceNew'))
 const Automations = lazy(() => import('./pages/Agents'))
 const ActiveAutomations = lazy(() => import('./pages/ActiveAutomations'))
 const Connectors = lazy(() => import('./pages/Connectors'))
@@ -62,6 +63,7 @@ export default function App() {
       <Route path="/scan" element={protectedPage(<ScanPage />)} />
       <Route path="/restore" element={protectedPage(<RestorePage />)} />
       <Route path="/market" element={protectedPage(<MarketPage />)} />
+      <Route path="/marketplace/new" element={protectedPage(<MarketplaceNew />)} />
       <Route path="/automations" element={protectedPage(<Automations />)} />
       <Route path="/active-automations" element={protectedPage(<ActiveAutomations />)} />
       <Route path="/active-automations/:id" element={protectedPage(<ActiveAutomations />)} />
@@ -71,7 +73,6 @@ export default function App() {
       <Route path="/apps" element={protectedPage(<Connectors />)} />
       <Route path="/media-library" element={protectedPage(<MediaLibrary />)} />
       <Route path="/marketplace" element={protectedPage(<MarketPage />)} />
-      <Route path="/marketplace/new" element={protectedPage(<MarketPage />)} />
       <Route path="/marketplace/:id" element={protectedPage(<MarketPage />)} />
       <Route path="/builder" element={<Navigate to="/active-automations" replace />} />
       <Route path="/builder/*" element={<Navigate to="/active-automations" replace />} />

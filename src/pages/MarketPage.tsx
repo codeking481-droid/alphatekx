@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { ArrowRight, MessageSquareText, ShoppingBag, Star } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { ArrowRight, MessageSquareText, Plus, ShoppingBag, Star } from 'lucide-react'
 
 const products = [
   { id: 1, title: 'Restored SaaS landing page', category: 'Apps', price: '$19', rating: 4.9 },
@@ -9,6 +10,7 @@ const products = [
 ]
 
 export default function MarketPage() {
+  const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<'All' | 'Apps' | 'Videos' | 'Templates'>('All')
 
@@ -25,7 +27,10 @@ export default function MarketPage() {
           <p className="text-[10px] font-black uppercase tracking-[0.22em] text-amber-300">Alpha market</p>
           <h1 className="mt-3 text-3xl font-black tracking-[-0.06em] text-white sm:text-4xl">Sell My Work — Market</h1>
         </div>
-        <button type="button" className="btn-primary">List an item</button>
+        <button type="button" onClick={() => navigate('/marketplace/new')} className="btn-primary flex items-center gap-2">
+          <Plus size={16} />
+          Add product
+        </button>
       </header>
 
       <section className="mt-8 rounded-[28px] border border-white/10 bg-[#101114] p-4 shadow-[0_28px_70px_rgba(0,0,0,0.18)] sm:p-5">

@@ -95,7 +95,7 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
 
   return <div className="workspace-living-bg relative flex h-[100dvh] w-full min-h-0 flex-col overflow-hidden text-white">
     <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center justify-between border-b border-white/10 bg-[#111214]/90 px-4 backdrop-blur-2xl">
-      <button onClick={toggleSidebar} className="grid size-10 place-items-center rounded-xl border border-white/10 bg-white/[0.02] text-white transition hover:bg-white/[0.04] lg:hidden" aria-label={open ? 'Close menu' : 'Open menu'}><Menu size={18}/></button>
+      <button onClick={toggleSidebar} className="grid size-10 place-items-center rounded-xl border border-white/10 bg-white/[0.02] text-white transition hover:bg-white/[0.04]" aria-label={open ? 'Close menu' : 'Open menu'}><Menu size={18}/></button>
       <NavLink to="/agen" className="text-sm font-black tracking-[.14em] text-white">ALPHATEKX</NavLink>
       <button onClick={() => navigate('/settings?tab=billing')} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-sm font-semibold text-white transition hover:bg-white/[0.04]">
         <span className="inline-block h-2.5 w-2.5 rounded-full bg-[#F5C518]" />
@@ -103,23 +103,24 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
       </button>
     </header>
     {open && <button className="fixed inset-0 z-40 bg-black/40 transition-opacity duration-200 backdrop-blur-[1px] lg:hidden" onClick={() => setOpen(false)} aria-label="Close menu"/>}
-    <aside className={`fixed inset-y-0 left-0 z-50 flex w-[284px] max-w-[82vw] flex-col border-r border-white/10 bg-[#111214]/95 text-white shadow-[0_12px_45px_rgba(0,0,0,0.42)] backdrop-blur-2xl transition-transform duration-200 ease-out ${open ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
-      <div className="flex h-[72px] items-center justify-between px-5">
-        <NavLink to="/agen" onClick={() => setOpen(false)} className="flex items-center gap-3">
-          <span className="grid size-9 place-items-center rounded-xl bg-white text-sm font-black text-[#0B0B0C]">A</span>
-          <span><strong className="block text-sm font-black tracking-[.12em]">ALPHATEKX</strong><small className="block text-[10px] font-medium text-[#8A8A93]">Alpha restoration</small></span>
+    {!open && <button className="fixed left-4 top-[86px] z-40 grid size-11 place-items-center rounded-xl border border-white/10 bg-[#111214]/90 text-white shadow-lg transition hover:bg-white/[0.04] lg:left-5" onClick={() => setOpen(true)} aria-label="Open menu"><Menu size={18}/></button>}
+    <aside className={`fixed inset-y-0 left-0 z-50 flex max-w-[82vw] flex-col border-r border-white/10 bg-[#111214]/95 text-white shadow-[0_12px_45px_rgba(0,0,0,0.42)] backdrop-blur-2xl transition-all duration-200 ease-out ${open ? 'w-[284px] translate-x-0' : '-translate-x-full w-[92px] lg:translate-x-0'} ${!open && 'lg:w-[92px]'} lg:translate-x-0`}>
+      <div className="flex h-[72px] items-center justify-between px-3">
+        <NavLink to="/agen" onClick={() => setOpen(false)} className="flex items-center gap-3 overflow-hidden">
+          <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-white text-sm font-black text-[#0B0B0C]">A</span>
+          {open && <span><strong className="block text-sm font-black tracking-[.12em]">ALPHATEKX</strong><small className="block text-[10px] font-medium text-[#8A8A93]">Alpha restoration</small></span>}
         </NavLink>
         <button onClick={() => setOpen(false)} className="grid size-9 place-items-center rounded-xl text-[#8A8A93] transition hover:bg-white/5 hover:text-white lg:hidden" aria-label="Close menu"><X size={18}/></button>
       </div>
       <nav className="flex-1 overflow-y-auto px-3 pb-3">
-        <p className="mb-2 px-3 pt-4 text-[10px] font-black uppercase tracking-[.18em] text-[#8A8A93]">Workspace</p>
+        <p className={`mb-2 px-3 pt-4 text-[10px] font-black uppercase tracking-[.18em] text-[#8A8A93] ${!open ? 'hidden' : ''}`}>Workspace</p>
         <div className="space-y-1">
-          {primary.map(([label, to, Icon]) => <NavLink key={label} to={to} title={label} onClick={() => setOpen(false)} className={({ isActive }) => `group relative flex min-h-11 items-center gap-3 rounded-xl px-3 text-[13px] font-semibold transition ${isActive ? 'bg-white/[0.04] text-white' : 'text-[#8A8A93] hover:bg-white/[.02] hover:text-white'}`}><span className={`grid size-8 shrink-0 place-items-center rounded-lg ${location.pathname.startsWith(to) ? 'bg-white/[0.06] text-white' : 'text-[#8A8A93] group-hover:text-white'}`}><Icon size={17}/></span><span className="min-w-0 flex-1 truncate">{label}</span>{label === 'Running Automation' && running > 0 && <span className="rounded-full bg-white/[0.04] px-2 py-0.5 text-[10px] font-black text-white">{running}</span>}{location.pathname.startsWith(to) && <i className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-white"/>}</NavLink>)}
+          {primary.map(([label, to, Icon]) => <NavLink key={label} to={to} title={label} onClick={() => setOpen(false)} className={({ isActive }) => `group relative flex min-h-11 items-center gap-3 rounded-xl px-3 text-[13px] font-semibold transition ${isActive ? 'bg-white/[0.04] text-white' : 'text-[#8A8A93] hover:bg-white/[.02] hover:text-white'} ${!open ? 'justify-center px-2' : ''}`}><span className={`grid size-8 shrink-0 place-items-center rounded-lg ${location.pathname.startsWith(to) ? 'bg-white/[0.06] text-white' : 'text-[#8A8A93] group-hover:text-white'}`}><Icon size={17}/></span>{open && <span className="min-w-0 flex-1 truncate">{label}</span>}{open && label === 'Running Automation' && running > 0 && <span className="rounded-full bg-white/[0.04] px-2 py-0.5 text-[10px] font-black text-white">{running}</span>}{location.pathname.startsWith(to) && open && <i className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-white"/>}</NavLink>)}
         </div>
-        <p className="mb-2 mt-6 px-3 text-[10px] font-black uppercase tracking-[.18em] text-[#8A8A93]">Account</p>
+        <p className={`mb-2 mt-6 px-3 text-[10px] font-black uppercase tracking-[.18em] text-[#8A8A93] ${!open ? 'hidden' : ''}`}>Account</p>
         <div className="space-y-1">
-          {secondary.map(([label, to, Icon]) => <NavLink key={label} to={to} title={label} onClick={() => setOpen(false)} className={({ isActive }) => `group relative flex min-h-11 items-center gap-3 rounded-xl px-3 text-[13px] font-semibold transition ${isActive ? 'bg-white/[0.04] text-white' : 'text-[#8A8A93] hover:bg-white/[.02] hover:text-white'}`}><span className={`grid size-8 shrink-0 place-items-center rounded-lg ${location.pathname.startsWith(to) ? 'bg-white/[0.06] text-white' : 'text-[#8A8A93] group-hover:text-white'}`}><Icon size={17}/></span>{label}{location.pathname.startsWith(to) && <i className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-white"/>}</NavLink>)}
-          {isAdmin && <NavLink to="/admin" title="Admin" onClick={() => setOpen(false)} className="group flex min-h-11 items-center gap-3 rounded-xl px-3 text-[13px] font-semibold text-[#8A8A93] hover:bg-white/[.02] hover:text-white"><span className="grid size-8 place-items-center rounded-lg text-[#8A8A93]"><ShieldCheck size={17}/></span>Admin</NavLink>}
+          {secondary.map(([label, to, Icon]) => <NavLink key={label} to={to} title={label} onClick={() => setOpen(false)} className={({ isActive }) => `group relative flex min-h-11 items-center gap-3 rounded-xl px-3 text-[13px] font-semibold transition ${isActive ? 'bg-white/[0.04] text-white' : 'text-[#8A8A93] hover:bg-white/[.02] hover:text-white'} ${!open ? 'justify-center px-2' : ''}`}><span className={`grid size-8 shrink-0 place-items-center rounded-lg ${location.pathname.startsWith(to) ? 'bg-white/[0.06] text-white' : 'text-[#8A8A93] group-hover:text-white'}`}><Icon size={17}/></span>{open && label}{open && location.pathname.startsWith(to) && <i className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-white"/>}</NavLink>)}
+          {isAdmin && <NavLink to="/admin" title="Admin" onClick={() => setOpen(false)} className={`group flex min-h-11 items-center gap-3 rounded-xl px-3 text-[13px] font-semibold text-[#8A8A93] hover:bg-white/[.02] hover:text-white ${!open ? 'justify-center px-2' : ''}`}><span className="grid size-8 place-items-center rounded-lg text-[#8A8A93]"><ShieldCheck size={17}/></span>{open && 'Admin'}</NavLink>}
         </div>
       </nav>
       <div className="border-t border-white/10 p-3">
