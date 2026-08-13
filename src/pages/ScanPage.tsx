@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowRight, Download, FileText, Radar, ShieldCheck, Sparkles } from 'lucide-react'
-import { getCredits, setCredits } from '../lib/creditStore'
+import { getCredits, setCredits, hydrateCredits, subscribeCredits } from '../lib/creditStore'
 
 const SCAN_PHASES = [
   'Validating target URL...',
@@ -20,8 +20,12 @@ export default function ScanPage() {
   const [findings, setFindings] = useState<Array<{ id: string; label: string; detail: string; severity: 'critical' | 'warning' | 'info' }>>([])
   const [score, setScore] = useState(92)
   const [status, setStatus] = useState('Ready for inspection')
-  const [credits, setCreditsState] = useState(10)
+  const [credits, setCreditsState] = useState(() => {
+    // Initialize from creditStore on mount
+    return getCredits() || 10
+  })
   const [scanError, setScanError] = useState<string | null>(null)
+  const [isLoadingCredits, setIsLoadingCredits] = useState(false)
 
   const scoreTone = useMemo(() => {
     if (score >= 80) return 'text-emerald-300'
@@ -30,10 +34,36 @@ export default function ScanPage() {
   }, [score])
 
   useEffect(() => {
-    // Load initial credits
-    const currentCredits = getCredits()
-    if (currentCredits > 0) {
-      setCreditsState(currentCredits)
+    // Load and hydrate credits on mount
+    let unsubscribe: (() => void) | null = null
+    
+    const loadCredits = async () => {
+      try {
+        // First try to hydrate from API/database for authenticated users
+        const hydratedBalance = await hydrateCredits()
+        console.log('[ScanPage] Hydrated balance from API:', hydratedBalance)
+        setCreditsState(hydratedBalance)
+      } catch (err) {
+        // Fall back to localStorage
+        const stored = getCredits()
+        console.log('[ScanPage] Loaded balance from localStorage:', stored)
+        setCreditsState(stored)
+      } finally {
+        setIsLoadingCredits(false)
+      }
+    }
+
+    loadCredits()
+
+    // Subscribe to credit changes (from other components)
+    unsubscribe = subscribeCredits(() => {
+      const updated = getCredits()
+      console.log('[ScanPage] Credits updated via subscription:', updated)
+      setCreditsState(updated)
+    })
+
+    return () => {
+      if (unsubscribe) unsubscribe()
     }
   }, [])
 
@@ -127,6 +157,7 @@ export default function ScanPage() {
               
               if (payload.creditsRemaining !== undefined) {
                 const newBalance = Math.max(0, payload.creditsRemaining)
+                console.log('[ScanPage] Updating credits from scan response:', { newBalance })
                 setCreditsState(newBalance)
                 setCredits(newBalance)
               }
@@ -237,8 +268,23 @@ export default function ScanPage() {
               </div>
             )}
             {scanError && (
-              <div className="rounded-2xl border border-rose-400/15 bg-rose-500/5 p-3 text-sm text-rose-100">
-                ⚠️ {scanError}
+              <div className="space-y-2">
+                <div className="rounded-2xl border border-rose-400/15 bg-rose-500/5 p-3 text-sm text-rose-100">
+                  ⚠️ {scanError}
+                </div>
+                {scanError.toLowerCase().includes('chatgpt') || scanError.toLowerCase().includes('http 403') || scanError.toLowerCase().includes('access denied') ? (
+                  <div className="rounded-2xl border border-amber-400/15 bg-amber-500/5 p-3 text-sm text-amber-100">
+                    💡 <strong>Tip:</strong> Some sites like ChatGPT use bot detection. Try scanning a public portfolio, blog, or company site instead. Any site accessible to the public without login should work.
+                  </div>
+                ) : scanError.toLowerCase().includes('timeout') ? (
+                  <div className="rounded-2xl border border-amber-400/15 bg-amber-500/5 p-3 text-sm text-amber-100">
+                    💡 <strong>Tip:</strong> The site took too long to respond. Try again with a faster, more responsive website.
+                  </div>
+                ) : scanError.toLowerCase().includes('invalid') || scanError.toLowerCase().includes('valid http or https') ? (
+                  <div className="rounded-2xl border border-amber-400/15 bg-amber-500/5 p-3 text-sm text-amber-100">
+                    💡 <strong>Tip:</strong> Make sure your URL starts with http:// or https:// (e.g., <code className="font-mono">https://example.com</code>)
+                  </div>
+                ) : null}
               </div>
             )}
             {!isScanning && !scanError && findings.length === 0 && (

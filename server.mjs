@@ -9354,17 +9354,48 @@ const server = http.createServer(async (req, res) => {
     if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Only http and https URLs are allowed.')
 
     const base = parsed.origin
-    const html = await fetch(normalizedUrl, {
-      method: 'GET',
-      headers: { 'User-Agent': 'AlphaScan/1.0', Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
-      signal: AbortSignal.timeout(20000),
-      redirect: 'follow',
-    }).then(async response => {
-      if (!response.ok) throw new Error(`Target responded with HTTP ${response.status}.`)
-      return await response.text()
-    }).catch(error => {
-      throw new Error(error instanceof Error ? error.message : 'Could not fetch the target website.')
-    })
+    let html
+    try {
+      const response = await fetch(normalizedUrl, {
+        method: 'GET',
+        headers: { 
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Referer': 'https://www.google.com/'
+        },
+        signal: AbortSignal.timeout(20000),
+        redirect: 'follow',
+      })
+
+      if (response.status === 403) {
+        throw new Error(`Access denied (HTTP 403). The website may be blocking automated scanning. This is common for sites like ChatGPT, which use advanced bot detection.`)
+      }
+      if (response.status === 401) {
+        throw new Error(`Unauthorized (HTTP 401). The website requires authentication to scan.`)
+      }
+      if (!response.ok) {
+        throw new Error(`Target responded with HTTP ${response.status}. The website may not be accessible or may be blocking scanners.`)
+      }
+
+      html = await response.text()
+      
+      if (!html || html.length === 0) {
+        throw new Error('Received empty response from the target website.')
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not fetch the target website.'
+      if (message.includes('AbortSignal') || message.includes('timeout')) {
+        throw new Error('Scan timed out. The website may be unresponsive or too slow to scan. Try again with a faster site.')
+      }
+      if (message.includes('fetch failed') || message.includes('ECONNREFUSED')) {
+        throw new Error('Failed to connect to the target website. Check that the URL is correct and the site is online.')
+      }
+      if (message.includes('CORS') || message.includes('cross-origin')) {
+        throw new Error('CORS policy prevents scanning. This is typically a website security measure.')
+      }
+      throw new Error(message)
+    }
 
     const severePatterns = [
       { regex: /sk_live_[A-Za-z0-9]+/gi, label: 'Live secret key exposed in HTML', code: 'SECRET_LEAK', messageType: 'live' },
