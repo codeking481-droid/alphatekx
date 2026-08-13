@@ -15,6 +15,7 @@ const primary = [
   ['Running Automation', '/active-automations', ListChecks],
   ['History', '/history', History],
   ['Media Library', '/media-library', FolderOpen],
+  ['Market', '/market', FolderOpen],
 ] as const
 
 const secondary = [
