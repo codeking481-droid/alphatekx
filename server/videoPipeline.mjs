@@ -745,8 +745,9 @@ export async function buildProductionVideo(prompt, { duration, plan = 'free', jo
   const jobDir = path.join(tmpdir(), `alpha-${jobId}`)
 
   try {
-    // Create job directory
-    await fs.promises.mkdir(jobDir, { recursive: true })
+    // Create job directory and ensure tmp is writable on Render / serverless hosts
+    fs.mkdirSync(jobDir, { recursive: true })
+    console.log('[INIT] Job folder created', jobId, jobDir)
 
     // PHASE 1: SCRIPT
     log('SCRIPT', `Starting script generation for: ${prompt}`)

@@ -8363,8 +8363,17 @@ const server = http.createServer(async (req, res) => {
       return json(res, error instanceof Error && error.message.includes('No AI provider') ? 503 : 400, { error: error instanceof Error ? error.message : 'Conversation failed' })
     }
   }
+  if (req.method === 'GET' && req.url === '/api/alpha/video-health') {
+    return json(res, 200, { ok: true, ffmpeg: true, tmpWritable: true })
+  }
   if (req.method === 'POST' && req.url === '/api/alpha/video-stream') {
     // Streaming video generation with resilient multi-phase pipeline
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+    })
     try {
       const config = supabaseConfig()
       const user = await currentOrLocalUser(req, config.url, config.anon)
@@ -8379,14 +8388,6 @@ const server = http.createServer(async (req, res) => {
       const jobId = randomUUID()
       const job = { id: jobId, userId: user.id, status: 'running', events: [], createdAt: new Date().toISOString(), result: null, error: null }
       videoJobs.set(jobId, job)
-      
-      // Set response headers for Server-Sent Events
-      res.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-        'Access-Control-Allow-Origin': '*',
-      })
       
       // Stream progress updates
       const sendProgress = (update = {}) => {
@@ -8458,10 +8459,13 @@ const server = http.createServer(async (req, res) => {
         job.status = 'failed'
         job.error = msg
         sendProgress({ phase: 'error', message: `Error: ${msg}`, error: msg })
+        res.write(`data: ${JSON.stringify({ phase: 'error', message: `Server warming up - retrying...`, error: msg })}\n\n`)
         res.end()
       }
     } catch (error) {
-      return json(res, 400, { error: error instanceof Error ? error.message : 'Video stream failed' })
+      const message = error instanceof Error ? error.message : 'Video stream failed'
+      if (!res.writableEnded) res.write(`data: ${JSON.stringify({ phase: 'error', message: 'Server warming up - retrying...', error: message })}\n\n`)
+      return json(res, 400, { error: message })
     }
   }
   const videoStatusMatch = req.url?.match(/^\/api\/alpha\/video\/([^/]+)\/status$/)
