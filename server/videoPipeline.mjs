@@ -41,6 +41,64 @@ function ffmpegBinary() {
   return binary
 }
 
+/**
+ * Get the temp directory for job storage
+ * Supports TMP_DIR env var override for Render/serverless environments
+ */
+function getTempDirectory() {
+  // Try environment override first
+  const envTmp = process.env.TMP_DIR || process.env.TEMP_DIR || ''
+  if (envTmp.trim()) {
+    log('INIT', `Using TMP_DIR from environment: ${envTmp}`)
+    return envTmp.trim()
+  }
+  
+  // Fallback to system tmpdir
+  const systemTmp = tmpdir()
+  if (!systemTmp) throw new Error('System tmpdir() returned empty value')
+  
+  log('INIT', `Using system tmpdir: ${systemTmp}`)
+  return systemTmp
+}
+
+/**
+ * Create and validate a job directory with proper error handling
+ */
+function createJobDirectory(jobId) {
+  if (!jobId) throw new Error('jobId is required')
+  
+  try {
+    const baseDir = getTempDirectory()
+    const jobDir = path.join(baseDir, `alpha-${jobId}`)
+    
+    log('INIT', `Creating job directory: ${jobDir}`)
+    
+    // Create directory with recursive flag
+    fs.mkdirSync(jobDir, { recursive: true })
+    
+    // Verify directory exists and is accessible
+    if (!fs.existsSync(jobDir)) {
+      throw new Error(`Directory exists check failed after creation: ${jobDir}`)
+    }
+    
+    // Test write permissions
+    const testFile = path.join(jobDir, '.write-test')
+    try {
+      fs.writeFileSync(testFile, 'tmp-writable-test')
+      fs.unlinkSync(testFile)
+    } catch (writeErr) {
+      throw new Error(`Directory is not writable: ${jobDir} - ${writeErr instanceof Error ? writeErr.message : writeErr}`)
+    }
+    
+    log('INIT', `Job directory ready: ${jobDir} (writable)`)
+    return jobDir
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    log('ERROR', `Failed to create job directory for ${jobId}: ${message}`)
+    throw new Error(`Job directory setup failed: ${message}`)
+  }
+}
+
 function getFontPath() {
   const fontPaths = [
     '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
@@ -57,10 +115,11 @@ function getFontPath() {
   return fontPaths[0]
 }
 
-async function runFfmpeg(args, cwd = tmpdir()) {
+async function runFfmpeg(args, cwd = null) {
   const binary = ffmpegBinary()
+  const workDir = cwd || getTempDirectory()
   const result = spawnSync(binary, args, {
-    cwd,
+    cwd: workDir,
     encoding: 'utf8',
     windowsHide: true,
     maxBuffer: 20 * 1024 * 1024,
@@ -741,23 +800,20 @@ export function streamProgress(callback, step, message, extra = {}) {
 /**=== MAIN PIPELINE ===*/
 
 export async function buildProductionVideo(prompt, { duration, plan = 'free', jobId, onProgress }) {
+  if (!jobId) throw new Error('jobId parameter is required')
+  if (!prompt) throw new Error('prompt parameter is required')
+  
   const planConfig = getPlanConfig(plan)
-  const jobDir = path.join(tmpdir(), `alpha-${jobId}`)
-
+  
   try {
-    // Create job directory and ensure tmp is writable on Render / serverless hosts
-    fs.mkdirSync(jobDir, { recursive: true })
+    // Create and validate job directory with proper error handling
+    const jobDir = createJobDirectory(jobId)
+    
+    log('INIT', `Starting video generation for job ${jobId}`)
     console.log('[INIT] Job folder created', jobId, jobDir)
     
-    // Verify tmp directory is writable by writing a test file
-    const testFile = path.join(jobDir, '.write-test')
-    fs.writeFileSync(testFile, 'tmp-writable-test')
-    fs.unlinkSync(testFile)
+    // Verify tmp directory is writable
     console.log('[INIT] Tmp directory is writable, proceeding with video generation')
-    
-    if (!fs.existsSync(jobDir)) {
-      throw new Error(`Job directory not accessible: ${jobDir}`)
-    }
 
     // PHASE 1: SCRIPT
     log('SCRIPT', `Starting script generation for: ${prompt}`)
