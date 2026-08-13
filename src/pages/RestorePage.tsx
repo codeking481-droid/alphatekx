@@ -1,17 +1,24 @@
-import { useState } from 'react'
-import { ArrowRight, Film, UploadCloud, Wand2, Video, Zap } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { Film, UploadCloud, Wand2, Video, Zap } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 const modes = ['Heal Broken', 'Short to Long', 'Long to Short'] as const
 
 export default function RestorePage() {
   const navigate = useNavigate()
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [mode, setMode] = useState<(typeof modes)[number]>('Heal Broken')
   const [isDragging, setIsDragging] = useState(false)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [progress, setProgress] = useState(18)
   const [isRunning, setIsRunning] = useState(false)
 
   const handleRestore = () => {
+    if (!selectedFile) {
+      fileInputRef.current?.click()
+      return
+    }
+
     setIsRunning(true)
     const interval = window.setInterval(() => {
       setProgress((current) => {
@@ -26,6 +33,14 @@ export default function RestorePage() {
     }, 500)
   }
 
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null
+    setSelectedFile(file)
+    if (file) {
+      setProgress(18)
+    }
+  }
+
   return (
     <main className="mx-auto w-full max-w-6xl px-4 py-10 text-white sm:px-6 lg:py-14">
       <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -37,21 +52,27 @@ export default function RestorePage() {
       </header>
 
       <section className="mt-8 rounded-[30px] border border-white/10 bg-[#0F1013] p-5 shadow-[0_28px_70px_rgba(0,0,0,0.18)]">
+        <input ref={fileInputRef} type="file" accept="video/*" className="hidden" onChange={handleFileChange} />
         <div
           className={`relative rounded-[28px] border border-dashed p-5 transition ${isDragging ? 'border-cyan-300 bg-cyan-500/5' : 'border-white/10 bg-white/[0.02]'}`}
+          onClick={() => fileInputRef.current?.click()}
           onDragOver={(event) => { event.preventDefault(); setIsDragging(true) }}
           onDragLeave={() => setIsDragging(false)}
-          onDrop={(event) => { event.preventDefault(); setIsDragging(false) }}
+          onDrop={(event) => { event.preventDefault(); setIsDragging(false); const file = event.dataTransfer.files?.[0] ?? null; if (file) setSelectedFile(file) }}
         >
           <div className="flex flex-col items-center justify-center gap-4 py-8 text-center">
             <span className="grid size-16 place-items-center rounded-2xl bg-cyan-500/10 text-cyan-300 shadow-[0_18px_34px_rgba(34,211,238,0.16)]">
               <UploadCloud size={32} />
             </span>
             <div>
-              <p className="text-xl font-black text-white">Drop a broken video</p>
-              <p className="mt-2 text-sm text-slate-400">MP4, MOV, or WebM — no style-learning required.</p>
+              <p className="text-xl font-black text-white">{selectedFile ? 'Video selected for restoration' : 'Drop a broken video'}</p>
+              <p className="mt-2 text-sm text-slate-400">
+                {selectedFile ? selectedFile.name : 'MP4, MOV, or WebM — no style-learning required.'}
+              </p>
             </div>
-            <button type="button" className="btn-primary">Choose file</button>
+            <button type="button" className="btn-primary" onClick={(event) => { event.stopPropagation(); fileInputRef.current?.click() }}>
+              {selectedFile ? 'Choose another file' : 'Choose file'}
+            </button>
           </div>
         </div>
       </section>
