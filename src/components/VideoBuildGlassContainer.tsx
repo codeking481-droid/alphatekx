@@ -1,5 +1,5 @@
 import { Check, Download, Film, LoaderCircle } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 type VideoEvent = {
   step?: number
@@ -29,6 +29,8 @@ const PLAN_CONFIG = {
 } as const
 
 const MAX_WARMUP_RETRIES = 3
+const HEALTH_CHECK_TIMEOUT = 10000 // 10 seconds
+const WARMUP_RETRY_DELAY = 5000 // 5 seconds
 
 export default function VideoBuildGlassContainer({ prompt, plan = 'free', totalScenes, duration, onClose }: Props) {
   const planConfig = PLAN_CONFIG[plan]
@@ -39,45 +41,78 @@ export default function VideoBuildGlassContainer({ prompt, plan = 'free', totalS
   const [finalUrl, setFinalUrl] = useState('')
   const [error, setError] = useState('')
   const [retryCount, setRetryCount] = useState(0)
+  const isMountedRef = useRef(true)
+  const retryTimerRef = useRef<ReturnType<typeof window.setTimeout> | undefined>()
   console.log('[GLASS] Init', { prompt, plan, totalScenes: effectiveTotalScenes })
 
   useEffect(() => {
+    isMountedRef.current = true
     let cancelled = false
-    let retryTimer: ReturnType<typeof window.setTimeout> | undefined
     const controller = new AbortController()
+    const timeoutId = window.setTimeout(() => {
+      if (!cancelled) controller.abort()
+    }, HEALTH_CHECK_TIMEOUT)
 
-    const start = async () => {
+    const performHealthCheck = async (): Promise<boolean> => {
       try {
-        setRunning(true)
-        setError('')
-
-        // Health check before mounting the SSE stream.
-        const health = await fetch('/api/alpha/video-health', {
+        const response = await fetch('/api/alpha/video-health', {
           method: 'GET',
           headers: { Accept: 'application/json' },
           signal: controller.signal,
         })
 
-        if (!health.ok) {
-          throw new Error('Server warming up - retrying...')
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}))
+          throw new Error(data.error || 'Health check failed')
         }
 
+        const data = await response.json()
+        if (!data.ok) {
+          throw new Error(data.error || 'Server not ready')
+        }
+
+        return true
+      } catch (err) {
+        if (err instanceof Error) {
+          console.error('[GLASS] Health check failed:', err.message)
+        }
+        throw err
+      }
+    }
+
+    const start = async () => {
+      try {
+        if (!isMountedRef.current) return
+        if (!prompt) return
+
+        // Perform health check with proper timeout
+        console.log('[GLASS] Checking server health...')
+        if (!isMountedRef.current) return
+        setRunning(true)
+        setError('')
+        
+        await performHealthCheck()
+        
+        if (!isMountedRef.current) return
+        console.log('[GLASS] Health check passed, starting video stream...')
+
+        const streamController = new AbortController()
         const response = await fetch('/api/alpha/video-stream', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
           body: JSON.stringify({ prompt, plan, duration: effectiveDuration }),
-          signal: controller.signal,
+          signal: streamController.signal,
         })
 
         if (!response.ok || !response.body) {
-          throw new Error('Server warming up - retrying...')
+          throw new Error(`Stream failed: ${response.status} ${response.statusText}`)
         }
 
         const reader = response.body.getReader()
         const decoder = new TextDecoder()
         let pending = ''
 
-        while (!cancelled) {
+        while (!cancelled && isMountedRef.current) {
           const { value, done } = await reader.read()
           if (done) break
 
@@ -91,39 +126,51 @@ export default function VideoBuildGlassContainer({ prompt, plan = 'free', totalS
 
             try {
               const event = JSON.parse(line.slice(6)) as VideoEvent
-              setEvents(current => [...current.slice(-49), event])
+              if (isMountedRef.current) {
+                setEvents(current => [...current.slice(-49), event])
+              }
 
               if (event.finalVideoUrl) {
-                setFinalUrl(event.finalVideoUrl)
-                setRunning(false)
+                if (isMountedRef.current) {
+                  setFinalUrl(event.finalVideoUrl)
+                  setRunning(false)
+                }
                 return
               }
 
               if (event.phase === 'error') {
                 const message = event.message || 'Video generation failed.'
-                setError(`Building failed: ${message}`)
-                setRunning(false)
+                if (isMountedRef.current) {
+                  setError(`Building failed: ${message}`)
+                  setRunning(false)
+                }
                 return
               }
             } catch {
-              // Ignore incomplete SSE packets and keep retrying cleanly.
+              // Ignore incomplete SSE packets
             }
           }
         }
       } catch (cause) {
-        if (cancelled) return
+        if (cancelled || !isMountedRef.current) return
 
         const message = cause instanceof Error ? cause.message : 'Building failed: Video generation could not start.'
-        const isWarmup = /warming up|retrying|health|fetch/i.test(message)
+        const isWarmup = /warming up|retrying|health|timeout|abort|network|fetch/i.test(message)
+        const currentRetries = retryCount
 
-        if (isWarmup && retryCount < MAX_WARMUP_RETRIES) {
-          setError('Server warming up - retrying...')
-          setRunning(true)
-          retryTimer = window.setTimeout(() => {
-            if (!cancelled) {
+        console.error('[GLASS] Error:', message, { isWarmup, currentRetries, maxRetries: MAX_WARMUP_RETRIES })
+
+        if (isWarmup && currentRetries < MAX_WARMUP_RETRIES) {
+          if (isMountedRef.current) {
+            setError(`Server warming up... (attempt ${currentRetries + 1}/${MAX_WARMUP_RETRIES})`)
+            setRunning(true)
+          }
+          retryTimerRef.current = window.setTimeout(() => {
+            if (!cancelled && isMountedRef.current) {
+              console.log('[GLASS] Auto-retrying after warmup delay...')
               setRetryCount(value => value + 1)
             }
-          }, 5000)
+          }, WARMUP_RETRY_DELAY)
           return
         }
 
@@ -131,8 +178,10 @@ export default function VideoBuildGlassContainer({ prompt, plan = 'free', totalS
           ? 'Building failed: the server did not respond in time. Please retry.'
           : `Building failed: ${message}`
 
-        setError(friendlyMessage)
-        setRunning(false)
+        if (isMountedRef.current) {
+          setError(friendlyMessage)
+          setRunning(false)
+        }
         console.error('[GLASS] Init error', cause)
       }
     }
@@ -141,8 +190,10 @@ export default function VideoBuildGlassContainer({ prompt, plan = 'free', totalS
 
     return () => {
       cancelled = true
+      isMountedRef.current = false
       controller.abort()
-      if (retryTimer) window.clearTimeout(retryTimer)
+      clearTimeout(timeoutId)
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
     }
   }, [prompt, plan, effectiveDuration, retryCount])
 
@@ -177,11 +228,13 @@ export default function VideoBuildGlassContainer({ prompt, plan = 'free', totalS
   const statusMessage = error || latest?.message || 'Server ready, building video...'
 
   const retryStudio = () => {
+    console.log('[GLASS] Manual retry triggered')
+    if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
     setError('')
     setFinalUrl('')
     setEvents([])
     setRunning(true)
-    setRetryCount(value => value + 1)
+    setRetryCount(0) // Reset to 0 for a fresh retry attempt
   }
 
   return (
@@ -256,13 +309,13 @@ export default function VideoBuildGlassContainer({ prompt, plan = 'free', totalS
           {statusMessage}
         </div>
 
-        {error && (
+        {error && !running && (
           <button
             type="button"
             onClick={retryStudio}
-            className="mt-3 min-h-11 w-full rounded-xl border border-violet-400/40 bg-violet-500/10 px-4 text-sm font-semibold text-violet-100 transition hover:bg-violet-500/20"
+            className="mt-3 min-h-11 w-full rounded-xl border border-violet-400/40 bg-violet-500/10 px-4 text-sm font-semibold text-violet-100 transition hover:bg-violet-500/20 active:scale-95"
           >
-            Retry
+            🔄 Retry
           </button>
         )}
 

@@ -8364,24 +8364,52 @@ const server = http.createServer(async (req, res) => {
     }
   }
   if (req.method === 'GET' && req.url === '/api/alpha/video-health') {
-    return json(res, 200, { ok: true, ffmpeg: true, tmpWritable: true })
+    try {
+      // Test tmp directory writeability
+      const tmpTestDir = path.join(tmpdir(), `health-check-${Date.now()}`)
+      fs.mkdirSync(tmpTestDir, { recursive: true })
+      const testFile = path.join(tmpTestDir, 'write-test.tmp')
+      fs.writeFileSync(testFile, 'health-check')
+      fs.unlinkSync(testFile)
+      fs.rmdirSync(tmpTestDir)
+      
+      console.log('[HEALTH] All checks passed')
+      return json(res, 200, { ok: true, ffmpeg: true, tmpWritable: true, timestamp: new Date().toISOString() })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Health check failed'
+      console.error('[HEALTH] Check failed:', message)
+      return json(res, 503, { ok: false, error: message })
+    }
   }
   if (req.method === 'POST' && req.url === '/api/alpha/video-stream') {
-    // Streaming video generation with resilient multi-phase pipeline
+    // Set SSE headers FIRST, before any other logic
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
       'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST',
+      'Access-Control-Allow-Headers': 'Content-Type',
     })
+    
     try {
       const config = supabaseConfig()
       const user = await currentOrLocalUser(req, config.url, config.anon)
-      if (!user) return json(res, 401, { error: 'Authentication required' })
+      if (!user) {
+        res.write(`data: ${JSON.stringify({ phase: 'error', message: 'Authentication required', error: 'Unauthorized' })}
+
+`)
+        res.end()
+        return
+      }
       
       const body = await readBody(req)
       const prompt = String(body.prompt || '').trim()
-      if (!prompt) return json(res, 400, { error: 'Prompt required' })
+      if (!prompt) {
+        res.write(`data: ${JSON.stringify({ phase: 'error', message: 'Prompt is required', error: 'Bad request' })}\n\n`)
+        res.end()
+        return
+      }
       
       const plan = String(body.plan || 'free').toLowerCase()
       const planConfig = videoPipeline.getPlanConfig(plan)
