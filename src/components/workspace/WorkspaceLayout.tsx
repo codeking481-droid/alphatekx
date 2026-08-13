@@ -1,5 +1,5 @@
 import { useEffect, useState, type PropsWithChildren } from 'react'
-import { Code2, FolderOpen, HelpCircle, History, ListChecks, LogOut, Menu, Settings, ShieldCheck, Sparkles, X } from 'lucide-react'
+import { Atom, FolderOpen, HelpCircle, History, ListChecks, LogOut, Menu, Settings, ShieldCheck, Sparkles, X } from 'lucide-react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { getCredits, hydrateCredits, subscribeCredits } from '../../lib/creditStore'
 import { useAuth } from '../../lib/auth'
@@ -11,6 +11,7 @@ import { useAgentExecutor } from '../../lib/agents/useAgentExecutor'
 const ONBOARDING_KEY = 'alphatekx:workspace-onboarding'
 
 const primary = [
+  ['Agen', '/agen', Atom],
   ['Automate', '/automations', Sparkles],
   ['Running Automation', '/active-automations', ListChecks],
   ['History', '/history', History],
@@ -41,7 +42,7 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
   // Wake the durable scheduler whenever an authenticated workspace is open.
   // This catches overdue work after a sleeping web service starts again.
   useAgentExecutor()
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(() => typeof window !== 'undefined' ? window.innerWidth >= 1024 : true)
   const [credits, setCredits] = useState(getCredits())
   const [plan, setPlan] = useState('free')
   const [running, setRunning] = useState(runningAgentsCount())
@@ -52,9 +53,16 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
   const isAdmin = isAdminUser(user)
 
   useEffect(() => {
+    const syncSidebar = () => {
+      if (window.innerWidth >= 1024) setOpen(true)
+    }
+    syncSidebar()
+    window.addEventListener('resize', syncSidebar)
+
     const unsubscribeCredits = subscribeCredits(() => setCredits(getCredits()))
     const unsubscribeAgents = subscribeAgents(() => setRunning(runningAgentsCount()))
     return () => {
+      window.removeEventListener('resize', syncSidebar)
       unsubscribeCredits()
       unsubscribeAgents()
     }
@@ -82,22 +90,22 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
     ping(); const timer = window.setInterval(ping, 60_000); return () => window.clearInterval(timer)
   }, [user, session?.access_token])
 
-  const isHome = location.pathname === '/dashboard'
+  const isHome = location.pathname === '/agen' || location.pathname === '/dashboard' || location.pathname === '/onboarding'
   const toggleSidebar = () => setOpen((prev) => !prev)
 
   return <div className="workspace-living-bg relative flex h-[100dvh] w-full min-h-0 flex-col overflow-hidden text-white">
     <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center justify-between border-b border-white/10 bg-[#111214]/90 px-4 backdrop-blur-2xl">
-      <button onClick={toggleSidebar} className="grid size-10 place-items-center rounded-xl border border-white/10 bg-white/[0.02] text-white transition hover:bg-white/[0.04]" aria-label={open ? 'Close menu' : 'Open menu'}><Menu size={18}/></button>
-      <NavLink to="/dashboard" className="text-sm font-black tracking-[.14em] text-white">ALPHATEKX</NavLink>
+      <button onClick={toggleSidebar} className="grid size-10 place-items-center rounded-xl border border-white/10 bg-white/[0.02] text-white transition hover:bg-white/[0.04] lg:hidden" aria-label={open ? 'Close menu' : 'Open menu'}><Menu size={18}/></button>
+      <NavLink to="/agen" className="text-sm font-black tracking-[.14em] text-white">ALPHATEKX</NavLink>
       <button onClick={() => navigate('/settings?tab=billing')} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-sm font-semibold text-white transition hover:bg-white/[0.04]">
         <span className="inline-block h-2.5 w-2.5 rounded-full bg-[#F5C518]" />
         <span className={!isAdmin && needsCreditTopUp(credits) ? 'text-[#F5C518]' : 'text-white'}>{isAdmin ? 'Admin' : `${credits} Credits`}</span>
       </button>
     </header>
-    {open && <button className="fixed inset-0 z-40 bg-black/40 transition-opacity duration-200 backdrop-blur-[1px]" onClick={() => setOpen(false)} aria-label="Close menu"/>}
+    {open && <button className="fixed inset-0 z-40 bg-black/40 transition-opacity duration-200 backdrop-blur-[1px] lg:hidden" onClick={() => setOpen(false)} aria-label="Close menu"/>}
     <aside className={`fixed inset-y-0 left-0 z-50 flex w-[284px] max-w-[82vw] flex-col border-r border-white/10 bg-[#111214]/95 text-white shadow-[0_12px_45px_rgba(0,0,0,0.42)] backdrop-blur-2xl transition-transform duration-200 ease-out ${open ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
       <div className="flex h-[72px] items-center justify-between px-5">
-        <NavLink to="/dashboard" onClick={() => setOpen(false)} className="flex items-center gap-3">
+        <NavLink to="/agen" onClick={() => setOpen(false)} className="flex items-center gap-3">
           <span className="grid size-9 place-items-center rounded-xl bg-white text-sm font-black text-[#0B0B0C]">A</span>
           <span><strong className="block text-sm font-black tracking-[.12em]">ALPHATEKX</strong><small className="block text-[10px] font-medium text-[#8A8A93]">Alpha restoration</small></span>
         </NavLink>

@@ -30,8 +30,8 @@ const loader = <div className="workspace-living-bg grid min-h-screen place-items
 const suspended = (page: ReactNode) => <Suspense fallback={loader}>{page}</Suspense>
 const protectedPage = (page: ReactNode) => suspended(<ProtectedPage>{suspended(page)}</ProtectedPage>)
 
-// Backward-compatible aliases and retired product routes redirect to the dashboard.
-const toDashboard = <Navigate to="/dashboard" replace />
+// Backward-compatible aliases and retired product routes redirect to the Alpha HQ.
+const toDashboard = <Navigate to="/agen" replace />
 const toSettings = <Navigate to="/settings" replace />
 const toAutomations = <Navigate to="/automations" replace />
 
@@ -56,6 +56,7 @@ export default function App() {
       <Route path="/auth" element={suspended(<AuthRoute />)} />
 
       {/* Core authenticated product */}
+      <Route path="/agen" element={protectedPage(<Home />)} />
       <Route path="/dashboard" element={protectedPage(<Home />)} />
       <Route path="/onboarding" element={protectedPage(<Home />)} />
       <Route path="/scan" element={protectedPage(<ScanPage />)} />
