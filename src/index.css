@@ -5,15 +5,16 @@
 @tailwind utilities;
 
 :root {
-  --bg: #0B0B0C;
-  --card: #151519;
-  --card-border: #24242A;
+  --bg: #0A0A0A;
+  --card: rgba(18, 18, 20, 0.96);
+  --card-soft: rgba(25, 25, 28, 0.9);
+  --card-border: rgba(255, 255, 255, 0.08);
   --text: #FFFFFF;
-  --text-muted: #8A8A93;
+  --text-muted: #9AA0A6;
   --accent: #FFFFFF;
-  --accent-text: #000000;
-  --accent-2: #6E56FF;
-  --success: #1CE783;
+  --accent-text: #0A0A0A;
+  --accent-2: #7C5CFF;
+  --success: #34D399;
   --credits: #F5C518;
   --background: var(--bg);
   --foreground: var(--text);
@@ -89,22 +90,24 @@ body, button, input, textarea {
 .primary-button,
 .btn-alpha,
 .solar-action {
-  border: 1px solid var(--card-border);
-  background: var(--accent);
-  color: var(--accent-text);
-  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: #111111;
+  color: #FFFFFF;
+  border-radius: 9999px;
   min-height: 48px;
-  padding: 0 20px;
+  padding: 12px 24px;
   font-size: 14px;
-  font-weight: 600;
-  transition: background 150ms ease, border-color 150ms ease, transform 150ms ease;
+  font-weight: 700;
+  transition: background 150ms ease, border-color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
+  box-shadow: 0 8px 22px rgba(0,0,0,0.18);
 }
 .btn-primary:hover,
 .primary-button:hover,
 .btn-alpha:hover,
 .solar-action:hover {
-  background: #F0F0F0;
+  background: #1A1A1A;
   transform: translateY(-1px);
+  box-shadow: 0 12px 28px rgba(124,92,255,0.18);
 }
 
 .luxury-card,
@@ -114,20 +117,22 @@ body, button, input, textarea {
 .glass-card,
 .modal-content {
   border: 1px solid var(--card-border);
-  background: var(--card);
-  border-radius: 20px;
-  box-shadow: none;
+  background: linear-gradient(180deg, rgba(20,20,22,0.98), rgba(12,12,14,0.96));
+  border-radius: 24px;
+  box-shadow: 0 18px 54px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.02);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  transition: background 150ms ease, border-color 150ms ease;
+  transition: background 150ms ease, border-color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
 }
 .luxury-card:hover,
 .card:hover,
 .platform-card:hover,
 .settings-card:hover,
 .glass-card:hover {
-  background: #1A1A1F;
-  border-color: rgba(255,255,255,0.1);
+  background: linear-gradient(180deg, rgba(25,25,28,0.99), rgba(16,16,18,0.98));
+  border-color: rgba(124,92,255,0.28);
+  transform: translateY(-2px);
+  box-shadow: 0 24px 66px rgba(124,92,255,0.13), 0 18px 54px rgba(0,0,0,0.2);
 }
 
 .workspace-living-bg {

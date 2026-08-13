@@ -26,7 +26,7 @@ const cards = [
     description: 'Paste a broken app link and get a clean risk report for leaks, secrets, env issues, and slow pages — no live touch, no silent rebuilds.',
     button: 'Scan, Don\'t Touch',
     inputLabel: 'Paste link',
-    route: '/dashboard',
+    route: '/scan',
     output: 'Report-only audit with real-time findings and zero site changes.',
   },
   {
@@ -48,7 +48,7 @@ const cards = [
     description: 'Launch a restored app, template, or edit into the marketplace with pricing built for the restoration economy.',
     button: 'Put For Sale',
     inputLabel: 'Upload app, video, or template',
-    route: '/settings?tab=billing',
+    route: '/market',
     output: 'List at $19 / $49 / $99 and turn restored work into revenue.',
   },
 ] as const
@@ -176,7 +176,7 @@ export default function Home() {
         <div className="text-center">
           <span className="mx-auto grid size-16 place-items-center rounded-2xl bg-[#6D28D9] text-white shadow-[0_18px_40px_rgba(109,40,217,.3)]"><Sparkles size={29}/></span>
           <p className="mt-7 text-xs font-black uppercase tracking-[.2em] text-violet-300">Welcome to Alpha</p>
-          <h1 className="mt-4 text-4xl font-black tracking-[-.05em] text-white sm:text-6xl">Where Broken Things Are Restored, Not Built</h1>
+          <h1 className="mt-4 text-4xl font-black tracking-[-.05em] text-white sm:text-6xl">Welcome to Alpha — Where Broken Things Are Restored, Not Built</h1>
           <p className="mx-auto mt-5 max-w-3xl text-lg font-semibold leading-8 text-slate-400">No style-learning, only restoration — heal broken to world-class.</p>
         </div>
 
