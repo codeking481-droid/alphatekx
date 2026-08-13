@@ -71,7 +71,19 @@ async function executeProviderWithHealing(user, provider, actionName, params = {
 }
 import * as mediaLibrary from './server/mediaLibraryService.mjs'
 import * as videoPipeline from './server/videoPipeline.mjs'
-import * as proVideoWorkflow from './server/pro-video-workflow.mjs'
+// Lazy load pro-video-workflow to avoid sharp/canvas native deps at startup
+let proVideoWorkflow = null
+const loadProVideoWorkflow = async () => {
+  if (!proVideoWorkflow) {
+    try {
+      proVideoWorkflow = await import('./server/pro-video-workflow.mjs')
+    } catch (err) {
+      console.warn('[Phase 1] Pro video workflow unavailable (sharp/canvas not installed):', err.message)
+      proVideoWorkflow = {}
+    }
+  }
+  return proVideoWorkflow
+}
 import * as moneyLoop from './server/moneyLoopService.mjs'
 import * as eliteBuilder from './server/eliteBuilderService.mjs'
 import { claimPendingAction, createPendingAction, finishPendingAction, listPendingActions } from './server/ceoPendingActions.mjs'
@@ -9507,9 +9519,19 @@ API_SECRET=FAKE_SECRET_VALUE_12345`)
         'Access-Control-Allow-Origin': '*',
       }
 
-      if (currentCount >= 1) {
+      // SCAN COSTS 3 CREDITS
+      const SCAN_COST = 3
+      const user = currentOrLocalUser(req)
+      const userCredits = await getUserCredits(user, supabaseConfig())
+      
+      if (currentCount >= 1 || userCredits < SCAN_COST) {
         res.writeHead(402, { 'Content-Type': 'application/json' })
-        return res.end(JSON.stringify({ error: 'Free scan limit reached for today. Add card to continue restoring.', paywall: true }))
+        return res.end(JSON.stringify({ 
+          error: `Free scan limit reached. You need ${Math.max(0, SCAN_COST - userCredits)} more credits to scan. Get 100 credits for $49/mo.`, 
+          paywall: true,
+          creditsNeeded: SCAN_COST,
+          creditsAvailable: userCredits
+        }))
       }
 
       scanQuotaByDay.set(`${quotaKey}:${dayKey}`, currentCount + 1)
@@ -9543,13 +9565,18 @@ API_SECRET=FAKE_SECRET_VALUE_12345`)
         await new Promise(resolve => setTimeout(resolve, 280))
       }
 
+      // DEDUCT CREDITS AFTER SUCCESSFUL SCAN
+      await spendUserCredits(user, SCAN_COST, { type: 'scan', url: targetUrl })
+      const remainingCredits = userCredits - SCAN_COST
+
       emit({
         type: 'done',
         score: results.score,
         risk: results.risk,
         totalFindings: results.totalFindings,
         scannedUrl: results.scannedUrl,
-        summary: `Scan complete: ${results.risk.toLowerCase()} with ${results.totalFindings} findings.`
+        creditsRemaining: remainingCredits,
+        summary: `Scan complete: ${results.risk.toLowerCase()} with ${results.totalFindings} findings. (${remainingCredits} credits remaining)`
       })
       res.end()
       return
