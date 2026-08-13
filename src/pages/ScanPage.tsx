@@ -2,6 +2,17 @@ import { useEffect, useMemo, useState } from 'react'
 import { ArrowRight, Download, FileText, Radar, ShieldCheck, Sparkles } from 'lucide-react'
 import { getCredits, setCredits } from '../lib/creditStore'
 
+const SCAN_PHASES = [
+  'Validating target URL...',
+  'Fetching public HTML and metadata...',
+  'Analyzing HTML for secrets...',
+  'Checking sensitive file paths...',
+  'Inspecting internal links...',
+  'Evaluating page performance...',
+  'Scanning SEO metadata...',
+  'Generating security verdict...',
+]
+
 export default function ScanPage() {
   const [url, setUrl] = useState('https://example-app.com')
   const [isScanning, setIsScanning] = useState(false)
@@ -10,6 +21,7 @@ export default function ScanPage() {
   const [score, setScore] = useState(92)
   const [status, setStatus] = useState('Ready for inspection')
   const [credits, setCreditsState] = useState(10)
+  const [scanError, setScanError] = useState<string | null>(null)
 
   const scoreTone = useMemo(() => {
     if (score >= 80) return 'text-emerald-300'
@@ -26,8 +38,14 @@ export default function ScanPage() {
   }, [])
 
   const handleScan = async () => {
+    if (!url.trim()) {
+      setScanError('Please enter a valid URL')
+      return
+    }
+
     setIsScanning(true)
-    setStatus('Scanning secrets...')
+    setScanError(null)
+    setStatus('Validating target URL...')
     setProgress(12)
     setFindings([])
 
@@ -35,67 +53,96 @@ export default function ScanPage() {
       const response = await fetch('/api/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url: url.trim() }),
       })
 
-      if (!response.ok && response.status === 402) {
+      // Handle payment required (insufficient credits)
+      if (response.status === 402) {
         const errorData = await response.json().catch(() => ({ error: 'Insufficient credits' }))
-        setStatus(errorData.error || 'Insufficient credits')
+        setScanError(errorData.error || 'Insufficient credits. Each scan costs 3 credits.')
+        setStatus('Ready for inspection')
         setIsScanning(false)
         setProgress(0)
         return
       }
 
+      // Handle other errors
       if (!response.ok) {
-        throw new Error('Scan failed')
+        const errorData = await response.json().catch(() => ({ error: 'Scan failed' }))
+        const errorMessage = errorData.error || `Scan failed (HTTP ${response.status})`
+        setScanError(errorMessage)
+        setStatus('Ready for inspection')
+        setIsScanning(false)
+        setProgress(0)
+        return
       }
 
+      // Handle streaming response
       const reader = response.body?.getReader()
       if (!reader) {
-        throw new Error('No stream available')
+        setScanError('No response stream available')
+        setStatus('Ready for inspection')
+        setIsScanning(false)
+        setProgress(0)
+        return
       }
+
       const decoder = new TextDecoder()
       let buffer = ''
 
       while (true) {
         const { value, done } = await reader.read()
         if (done) break
+
         buffer += decoder.decode(value, { stream: true })
         const parts = buffer.split('\n\n')
         buffer = parts.pop() || ''
+
         for (const part of parts) {
           const lines = part.split('\n').filter(Boolean)
           const event = lines.find((line) => line.startsWith('data:'))
           if (!event) continue
-          const payload = JSON.parse(event.replace(/^data:\s*/, ''))
-          if (payload.type === 'progress') {
-            setProgress(Number(payload.progress || 0))
-            setStatus(payload.message || 'Scanning...')
-          }
-          if (payload.type === 'finding') {
-            setFindings((current) => [{
-              id: payload.id || `${payload.code}-${current.length}`,
-              severity: payload.severity || 'info',
-              label: payload.title || 'Finding',
-              detail: payload.detail || '',
-            }, ...current])
-          }
-          if (payload.type === 'done') {
-            setStatus(`Scan complete`)
-            setScore(Number(payload.score || 72))
-            if (payload.creditsRemaining !== undefined) {
-              const newBalance = Math.max(0, payload.creditsRemaining)
-              setCreditsState(newBalance)
-              setCredits(newBalance)
+
+          try {
+            const payload = JSON.parse(event.replace(/^data:\s*/, ''))
+
+            if (payload.type === 'progress') {
+              setProgress(Number(payload.progress || 0))
+              setStatus(payload.message || 'Scanning...')
             }
-            setIsScanning(false)
+
+            if (payload.type === 'finding') {
+              setFindings((current) => [{
+                id: payload.id || `${payload.code}-${current.length}`,
+                severity: payload.severity || 'info',
+                label: payload.title || 'Finding',
+                detail: payload.detail || '',
+              }, ...current])
+            }
+
+            if (payload.type === 'done') {
+              setStatus('Scan complete')
+              setProgress(100)
+              setScore(Number(payload.score || 72))
+              
+              if (payload.creditsRemaining !== undefined) {
+                const newBalance = Math.max(0, payload.creditsRemaining)
+                setCreditsState(newBalance)
+                setCredits(newBalance)
+              }
+              
+              setIsScanning(false)
+            }
+          } catch (parseError) {
+            console.warn('Failed to parse payload:', parseError)
           }
         }
       }
     } catch (error) {
       setIsScanning(false)
       const errorMsg = error instanceof Error ? error.message : 'Scan failed'
-      setStatus(`Error: ${errorMsg}`)
+      setScanError(`Error: ${errorMsg}`)
+      setStatus('Ready for inspection')
     }
   }
 
@@ -106,9 +153,20 @@ export default function ScanPage() {
           <p className="text-[10px] font-black uppercase tracking-[0.22em] text-violet-300">Alpha scan</p>
           <h1 className="mt-3 text-3xl font-black tracking-[-0.06em] text-white sm:text-4xl">Scan My Link — Report Only</h1>
         </div>
-        <button type="button" onClick={handleScan} className="btn-primary">
-          Scan, Don&apos;t Touch
-        </button>
+        <div className="flex items-center gap-4">
+          <div className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-4 py-2">
+            <div className="text-xs font-black uppercase tracking-[0.12em] text-emerald-300">{credits} Credits</div>
+            <div className="text-[10px] text-emerald-200/70">3 per scan</div>
+          </div>
+          <button 
+            type="button" 
+            onClick={handleScan}
+            disabled={isScanning || !url.trim()}
+            className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isScanning ? 'Scanning...' : 'Scan, Don\'t Touch'}
+          </button>
+        </div>
       </header>
 
       <section className="mt-8 rounded-[28px] border border-white/10 bg-[#111214] p-4 shadow-[0_28px_70px_rgba(0,0,0,0.2)] sm:p-5">
@@ -118,11 +176,18 @@ export default function ScanPage() {
             id="scan-url"
             value={url}
             onChange={(event) => setUrl(event.target.value)}
+            onKeyPress={(event) => event.key === 'Enter' && handleScan()}
             placeholder="https://example-app.com"
-            className="min-h-[52px] flex-1 rounded-full border border-white/10 bg-black/20 px-5 text-sm text-white placeholder:text-slate-500 outline-none"
+            disabled={isScanning}
+            className="min-h-[52px] flex-1 rounded-full border border-white/10 bg-black/20 px-5 text-sm text-white placeholder:text-slate-500 outline-none disabled:opacity-50 disabled:cursor-not-allowed"
           />
-          <button type="button" onClick={handleScan} className="btn-primary min-w-[180px]">
-            Scan, Don&apos;t Touch
+          <button 
+            type="button" 
+            onClick={handleScan} 
+            disabled={isScanning || !url.trim()}
+            className="btn-primary min-w-[180px] disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isScanning ? 'Scanning...' : 'Scan, Don\'t Touch'}
           </button>
         </div>
       </section>
@@ -162,12 +227,21 @@ export default function ScanPage() {
           </div>
 
           <div className="mt-5 space-y-3">
-            {isScanning && scanSecrets.map((item, index) => (
-              <div key={item} className="rounded-2xl border border-emerald-400/15 bg-emerald-500/5 p-3 text-sm text-emerald-100 transition-all" style={{ opacity: 0.4 + index * 0.2 }}>
-                {item}
+            {isScanning && (
+              <div className="space-y-2">
+                {SCAN_PHASES.slice(0, Math.ceil((progress / 100) * SCAN_PHASES.length)).map((phase, index) => (
+                  <div key={phase} className="rounded-2xl border border-emerald-400/15 bg-emerald-500/5 p-3 text-sm text-emerald-100 transition-all" style={{ opacity: 0.4 + (index / SCAN_PHASES.length) * 0.6 }}>
+                    ✓ {phase}
+                  </div>
+                ))}
               </div>
-            ))}
-            {!isScanning && findings.length === 0 && (
+            )}
+            {scanError && (
+              <div className="rounded-2xl border border-rose-400/15 bg-rose-500/5 p-3 text-sm text-rose-100">
+                ⚠️ {scanError}
+              </div>
+            )}
+            {!isScanning && !scanError && findings.length === 0 && (
               <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-4 text-sm text-slate-400">No findings yet. Run the scan to inspect the target for leaks and performance risks.</div>
             )}
             {!isScanning && findings.map((finding) => (
@@ -193,10 +267,11 @@ export default function ScanPage() {
               <span className={`text-3xl font-black ${scoreTone}`}>{score}</span>
               <span className="text-sm text-slate-400">out of 100</span>
             </div>
+            <div className="mt-3 text-xs text-slate-400">Credits remaining: <span className="text-emerald-300 font-black">{credits}</span></div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button type="button" className="btn-primary">Download PDF Report</button>
-            <button type="button" className="btn-primary">Save to History</button>
+            <button type="button" disabled className="btn-primary opacity-50 cursor-not-allowed">Download PDF Report</button>
+            <button type="button" disabled className="btn-primary opacity-50 cursor-not-allowed">Save to History</button>
           </div>
         </div>
 

@@ -9508,14 +9508,6 @@ API_SECRET=FAKE_SECRET_VALUE_12345`)
       const body = await readBody(req)
       const targetUrl = String(body.url || '').trim()
       
-      const resHeaders = {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache, no-transform',
-        'Connection': 'keep-alive',
-        'X-Accel-Buffering': 'no',
-        'Access-Control-Allow-Origin': '*',
-      }
-
       // SCAN COSTS 3 CREDITS
       const SCAN_COST = 3
       const user = currentOrLocalUser(req)
@@ -9534,6 +9526,28 @@ API_SECRET=FAKE_SECRET_VALUE_12345`)
           creditsNeeded: SCAN_COST,
           creditsAvailable: userCredits
         }))
+      }
+
+      // Validate URL early before streaming
+      if (!targetUrl) {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        return res.end(JSON.stringify({ error: 'Missing URL' }))
+      }
+      
+      try {
+        new URL(targetUrl)
+      } catch {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        return res.end(JSON.stringify({ error: 'Please enter a valid http or https URL.' }))
+      }
+
+      // NOW safe to write streaming headers
+      const resHeaders = {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-transform',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no',
+        'Access-Control-Allow-Origin': '*',
       }
 
       res.writeHead(200, resHeaders)
@@ -9565,17 +9579,28 @@ API_SECRET=FAKE_SECRET_VALUE_12345`)
         await new Promise(resolve => setTimeout(resolve, 280))
       }
 
-      // DEDUCT CREDITS AFTER SUCCESSFUL SCAN (Phase 1: show deduction without persistence)
+      // DEDUCT CREDITS AFTER SUCCESSFUL SCAN
       const remainingCredits = userCredits - SCAN_COST
       
-      // Try to persist if user is authenticated, but don't block on failure for Phase 1
-      try {
-        const actualCredits = await getUserCredits(user, supabaseConfig())
-        if (actualCredits > 0) {
-          await spendUserCredits(user, SCAN_COST, { type: 'scan', url: targetUrl })
+      // Persist credit deduction if user is authenticated
+      if (user && user.id && user.id !== 'anonymous') {
+        try {
+          const deductResult = await spendUserCredits(user, SCAN_COST, { 
+            type: 'scan', 
+            url: targetUrl,
+            reason: `Security scan for ${targetUrl}`
+          })
+          if (deductResult) {
+            console.log(`[Scan] Credits deducted for user ${user.id}: -${SCAN_COST} credits`)
+          } else {
+            console.warn(`[Scan] Failed to deduct credits for user ${user.id}`)
+          }
+        } catch (err) {
+          console.error('[Scan] Credit deduction error:', err instanceof Error ? err.message : err)
+          // Don't block the response if credit deduction fails - user still got the scan
         }
-      } catch (err) {
-        console.warn('[Phase 1] Credit deduction skipped (local user or DB error):', err instanceof Error ? err.message : err)
+      } else {
+        console.log('[Scan] Local/anonymous user - credits not persisted')
       }
 
       emit({
@@ -9590,9 +9615,15 @@ API_SECRET=FAKE_SECRET_VALUE_12345`)
       res.end()
       return
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Scan failed.'
-      res.writeHead(400, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ error: message }))
+      if (!res.headersSent) {
+        const message = error instanceof Error ? error.message : 'Scan failed.'
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: message }))
+      } else {
+        // Headers already sent, just write error to stream
+        res.write(`event: error\ndata: ${JSON.stringify({ error: error instanceof Error ? error.message : 'Scan failed' })}\n\n`)
+        res.end()
+      }
       return
     }
   }
