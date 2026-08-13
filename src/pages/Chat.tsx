@@ -119,7 +119,7 @@ function ChatWidget({ message }: { message: GeneralChatMessage }) {
         const componentData = JSON.parse(componentMatch[1])
         return (
           <div className="mt-3 w-full max-w-4xl">
-            <VideoBuildGlassContainer prompt={componentData.prompt} duration={componentData.duration || 600} />
+            <VideoBuildGlassContainer prompt={componentData.prompt} plan="free" totalScenes={6} duration={componentData.duration || 600} />
           </div>
         )
       }
