@@ -17,28 +17,6 @@ export default function ScanPage() {
   const [score, setScore] = useState(92)
   const [status, setStatus] = useState('Ready for inspection')
 
-  useEffect(() => {
-    if (!isScanning) return
-    const interval = window.setInterval(() => {
-      setProgress((current) => {
-        const next = Math.min(current + 9, 100)
-        if (next >= 100) {
-          setIsScanning(false)
-          setStatus('Scan complete')
-          setScore(68)
-          setFindings([
-            { id: '1', label: 'Secret leak', detail: 'Detected sk_live_ value exposed in frontend bundle.', severity: 'critical' },
-            { id: '2', label: 'Broken env ref', detail: 'Missing NEXT_PUBLIC_API_BASE_URL fallback.', severity: 'warning' },
-            { id: '3', label: 'SEO gap', detail: 'Meta description missing on landing page.', severity: 'info' },
-          ])
-        }
-        return next
-      })
-    }, 400)
-
-    return () => window.clearInterval(interval)
-  }, [isScanning])
-
   const scoreTone = useMemo(() => {
     if (score >= 80) return 'text-emerald-300'
     if (score >= 60) return 'text-amber-300'
