@@ -9428,6 +9428,69 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // Test fixtures for scanning validation - DO NOT EXPOSE IN PRODUCTION
+  if (req.method === 'GET' && req.url === '/test-safe') {
+    res.writeHead(200, { 'Content-Type': 'text/html' })
+    return res.end(`<!DOCTYPE html>
+<html>
+<head>
+  <title>Safe Page</title>
+  <meta charset="utf-8">
+</head>
+<body>
+  <h1>This is a Safe Website</h1>
+  <p>No sensitive information is exposed on this page.</p>
+  <script>
+    // Regular application code
+    const apiUrl = "https://api.example.com";
+    const appName = "MyApp";
+  </script>
+</body>
+</html>`)
+  }
+
+  if (req.method === 'GET' && req.url === '/test-leaked') {
+    res.writeHead(200, { 'Content-Type': 'text/html' })
+    return res.end(`<!DOCTYPE html>
+<html>
+<head>
+  <title>Leaked Secrets Page</title>
+  <meta charset="utf-8">
+</head>
+<body>
+  <h1>Website with Exposed Secrets</h1>
+  <p>WARNING: This page intentionally contains exposed test values for validation only.</p>
+  <script>
+    // Exposed key value used only for validation, not a real secret.
+    const stripeKey = "FAKE_STRIPE_KEY_12345abcdefg";
+
+    // Exposed key value used only for validation, not a real secret.
+    const awsAccessKey = "FAKE_AWS_ACCESS_KEY_12345";
+
+    // Exposed key value used only for validation, not a real secret.
+    const googleApiKey = "FAKE_GOOGLE_API_KEY_1234567890abcdef";
+  </script>
+</body>
+</html>`)
+  }
+
+  if (req.method === 'GET' && req.url === '/test-leaked/.env') {
+    res.writeHead(200, { 'Content-Type': 'text/plain' })
+    return res.end(`STRIPE_KEY=FAKE_STRIPE_KEY_12345abcdefg
+AWS_ACCESS_KEY=FAKE_AWS_ACCESS_KEY_12345
+DATABASE_URL=postgresql://user:password@localhost/db
+API_SECRET=FAKE_SECRET_VALUE_12345`)
+  }
+
+  if (req.method === 'GET' && req.url === '/test-leaked/config.json') {
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    return res.end(JSON.stringify({
+      apiKey: "FAKE_GOOGLE_API_KEY_1234567890abcdef",
+      stripeSecret: "FAKE_STRIPE_KEY_12345abcdefg",
+      databasePassword: "FAKE_DATABASE_PASSWORD_123"
+    }, null, 2))
+  }
+
   if (req.method === 'POST' && req.url === '/api/scan') {
     try {
       const body = await readBody(req)
