@@ -4,6 +4,7 @@ import { supabase } from './supabase'
 const STORAGE_PREFIX = 'alphatekx_credits:'
 const EVENT = 'alphatekx:credits-change'
 const CURRENT_USER_KEY = 'alphatekx:current-user-id'
+const SESSION_ANONYMOUS_KEY = `${STORAGE_PREFIX}session-${Date.now()}`
 
 function getStoredUserId() {
   try {
@@ -20,13 +21,29 @@ function getStoredUserId() {
 
 function getStorageKey() {
   const userId = getStoredUserId()
-  return userId ? `${STORAGE_PREFIX}${userId}` : `${STORAGE_PREFIX}anonymous`
+  if (userId) {
+    return `${STORAGE_PREFIX}${userId}`
+  }
+  // For anonymous users, check if we have a session key already
+  const sessionKey = localStorage.getItem('alphatekx:session-key')
+  if (sessionKey) {
+    return sessionKey
+  }
+  // Create a new session key for this anonymous session
+  const newKey = `${STORAGE_PREFIX}anonymous-${Math.random().toString(36).slice(2)}`
+  localStorage.setItem('alphatekx:session-key', newKey)
+  return newKey
 }
 
 export function getCredits() {
   const key = getStorageKey()
-  const parsed = Number(localStorage.getItem(key) ?? String(DEFAULT_CREDIT_BALANCE))
-  return Number.isFinite(parsed) ? parsed : DEFAULT_CREDIT_BALANCE
+  const stored = localStorage.getItem(key)
+  const parsed = Number(stored ?? String(DEFAULT_CREDIT_BALANCE))
+  const result = Number.isFinite(parsed) ? parsed : DEFAULT_CREDIT_BALANCE
+  if (stored) {
+    console.log('[creditStore] Loading credits:', { key, stored, result })
+  }
+  return result
 }
 
 export async function spendCredits(amount: number) {
@@ -65,7 +82,13 @@ export async function spendCredits(amount: number) {
 }
 
 export function addCredits(amount: number) { setCredits(getCredits() + amount) }
-export function setCredits(credits: number) { const key = getStorageKey(); localStorage.setItem(key, String(Math.max(0, credits))); window.dispatchEvent(new Event(EVENT)) }
+export function setCredits(credits: number) { 
+  const key = getStorageKey()
+  const value = String(Math.max(0, credits))
+  console.log('[creditStore] Saving credits:', { key, value, credits })
+  localStorage.setItem(key, value)
+  window.dispatchEvent(new Event(EVENT)) 
+}
 
 export async function hydrateCredits() {
   if (!supabase) return getCredits()
