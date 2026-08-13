@@ -309,120 +309,93 @@ export default function Agents() {
     return <GuidedCommandCentre platform={guidedPlatform} creating={creating} notice={notice} onComplete={message => void send(message)} onBack={() => navigate('/dashboard')} />
   }
 
-  return <main className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden bg-[radial-gradient(circle_at_50%_-20%,rgba(109,40,217,.10),transparent_38%),#0A0A0B]">
-    <div className="mx-auto flex h-full min-h-0 w-full max-w-none flex-1 flex-col px-0 sm:max-w-6xl sm:px-4 sm:py-3 lg:px-6">
-      <header className="hidden">
-        <p className="text-xs font-medium uppercase tracking-[.24em] text-white/60">Run your automations 24/7</p>
-        <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-5xl">Turn Your Ideas Into Reality</h1>
-        <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-[#8A8A93] sm:text-base">Tell Alpha what you want done. It will plan an automation that keeps working even when you are offline.</p>
+  return (
+    <main className="mx-auto min-h-[calc(100dvh-8rem)] w-full max-w-6xl px-4 py-10 text-white sm:px-6 lg:py-14">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-violet-300">Restoration automation</p>
+          <h1 className="mt-3 text-3xl font-black tracking-[-0.06em] text-white sm:text-4xl">Build the next restoration workflow</h1>
+        </div>
+        <button
+          type="button"
+          onClick={() => navigate('/active-automations')}
+          className="inline-flex min-h-11 items-center justify-center rounded-xl border border-violet-400/20 bg-violet-500/10 px-4 text-sm font-black text-violet-200 transition hover:bg-violet-500/15"
+        >
+          View running work
+        </button>
       </header>
 
-      {success && !conversation ? <section className="my-auto rounded-none border-0 bg-[#111214] p-6 text-center shadow-none sm:rounded-[1.75rem] sm:border sm:border-white/10 sm:p-10 sm:shadow-[0_30px_90px_rgba(0,0,0,0.35)]" aria-live="polite">
-        <CheckCircle2 className="mx-auto text-[#1CE783]" size={34}/>
-        <h2 className="mt-4 text-xl font-semibold text-white">{success.message || 'Automation created successfully.'}</h2>
-        <div className="mx-auto mt-6 flex max-w-xl flex-col justify-center gap-2 sm:flex-row">
-          {success.id && <button onClick={() => navigate(`/active-automations/${success.id}`)} className="flex min-h-12 items-center justify-center gap-2 rounded-xl btn-primary px-5 text-sm">Visit Automation<ArrowRight size={16}/></button>}
-          <button onClick={startNew} className="min-h-12 rounded-xl border border-white/10 px-5 text-sm font-semibold text-white">Create another</button>
-          <Link to="/connected-apps" className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-white/10 px-5 text-sm font-semibold text-white"><Plug size={16}/>Connected Apps</Link>
-        </div>
-      </section> : <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-none bg-[#0D0E11]/95 sm:rounded-[1.75rem] sm:border sm:border-white/[0.07] sm:shadow-[0_24px_80px_rgba(0,0,0,.30)]">
-        <div className="absolute right-3 top-3 z-20 sm:right-6">{conversation && <button onClick={startNew} className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-xs font-semibold text-[#8A8A93] hover:text-white">New chat</button>}</div>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain scroll-smooth px-3 py-3 [scrollbar-gutter:stable] sm:px-6 sm:py-6" aria-live="polite">
-          {videoPrompt && <div className="mx-auto w-full max-w-3xl"><VideoBuildGlassContainer prompt={videoPrompt} plan="free" totalScenes={6} duration={600} onClose={() => { setVideoPrompt(''); setNotice('') }}/></div>}
-          {!conversation ? (
-            <div className="mx-auto flex h-full max-w-4xl flex-col items-center justify-center px-2 py-6 text-center">
-              <span className="grid size-12 place-items-center rounded-2xl border border-white/10 bg-white/[0.02] text-white"><Sparkles size={22}/></span>
-              <p className="mt-5 text-[10px] font-black uppercase tracking-[0.22em] text-[#8A8A93]">Command centre</p>
-              <h1 className="mt-3 text-3xl font-black tracking-[-0.05em] text-white sm:text-4xl">What do you want Alpha to do?</h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-[#8A8A93]">{agents.length === 0 ? 'Describe an outcome. Alpha will build the plan, ask only the missing details, and wait for your approval.' : 'Ask for a post, a campaign, or a premium visual. Keep it simple and specific.'}</p>
+      <section className="mt-8 grid gap-4 md:grid-cols-3">
+        {[
+          { title: 'SCAN MY LINK', details: 'Report-only diagnostics for broken apps and leaks.', accent: 'from-violet-600 to-purple-500', action: () => navigate('/dashboard') },
+          { title: 'RESTORE MY VIDEO', details: 'Recover rough footage into polished editing output.', accent: 'from-cyan-500 to-blue-500', action: () => navigate('/active-automations') },
+          { title: 'SELL MY WORK', details: 'Turn restored work into a product and pricing plan.', accent: 'from-amber-400 to-orange-500', action: () => navigate('/settings?tab=billing') },
+        ].map((card) => (
+          <button
+            key={card.title}
+            type="button"
+            onClick={card.action}
+            className="group rounded-[28px] border border-violet-400/20 bg-[linear-gradient(180deg,rgba(17,18,20,0.9),rgba(12,13,18,0.92))] p-5 text-left shadow-[0_28px_65px_rgba(15,23,42,0.18)] transition hover:-translate-y-1 hover:border-violet-300/40"
+          >
+            <span className={`inline-flex rounded-2xl bg-gradient-to-r ${card.accent} p-3 text-white`}>
+              <Sparkles size={20} />
+            </span>
+            <p className="mt-5 text-[10px] font-black uppercase tracking-[0.18em] text-violet-300">{card.title}</p>
+            <h2 className="mt-2 text-2xl font-black text-white">{card.title === 'SCAN MY LINK' ? 'Audit' : card.title === 'RESTORE MY VIDEO' ? 'Repair' : 'Monetize'}</h2>
+            <p className="mt-3 text-sm leading-6 text-slate-300">{card.details}</p>
+            <span className="mt-5 inline-flex items-center gap-2 text-sm font-black text-violet-200">Open flow <ArrowRight size={16} /></span>
+          </button>
+        ))}
+      </section>
 
-              <div className="mt-6 w-full max-w-3xl rounded-[1.5rem] border border-white/10 bg-[#17171B] p-4 text-left sm:p-5">
-                <div className={`flex items-center gap-3 rounded-2xl border p-3 ${linkedInReady ? 'border-[#1CE783]/30 bg-[#1CE783]/[0.04]' : 'border-[#F5C518]/30 bg-[#F5C518]/[0.04]'}`}>
-                  <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-[#0A66C2] text-white"><Linkedin size={21}/></span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-black text-white">LinkedIn <span className="ml-1 text-[10px] font-black uppercase tracking-[0.18em] text-white/70">Native</span></p>
-                    <p className={`mt-0.5 text-xs font-medium ${linkedInReady ? 'text-[#1CE783]' : 'text-[#F5C518]'}`}>{linkedInReady ? 'Connected · Publishing ready' : linkedIn?.connected ? 'Reconnect required for publishing access' : 'Not connected yet'}</p>
-                  </div>
-                  {linkedInReady ? <CheckCircle2 className="shrink-0 text-[#1CE783]" size={19}/> : <button onClick={() => void startLinkedInAuth(session?.access_token, '/dashboard?linkedin=connected').catch(error => setNotice(error instanceof Error ? error.message : 'LinkedIn connection failed'))} className="flex min-h-10 shrink-0 items-center gap-1 rounded-xl border border-white/10 px-3 text-xs font-semibold text-white">Connect <ExternalLink size={13}/></button>}
-                </div>
-              </div>
-
-              <div className="mt-5 flex w-full max-w-3xl snap-x gap-2 overflow-x-auto px-1 pb-2 sm:flex-wrap sm:justify-center sm:overflow-visible" aria-label="Suggested prompts">
-                {examples.slice(0, 3).map(example => (
-                  <button key={example.title} onClick={() => { setInput(example.prompt); window.setTimeout(() => composer.current?.focus(), 0) }} className="group inline-flex shrink-0 snap-start items-center gap-2 rounded-full border border-white/10 bg-white/[0.025] px-3.5 py-2.5 text-xs font-semibold text-white transition hover:bg-white/[0.05]">
-                    {example.title.includes('image') ? <Image size={14} className="text-white"/> : <Sparkles size={14} className="text-white"/>}
-                    {example.title}
-                  </button>
-                ))}
-              </div>
+      <section className="mt-8 grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
+        <div className="rounded-[28px] border border-white/10 bg-[#0d0f12] p-5 shadow-[0_28px_65px_rgba(15,23,42,0.18)]">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Saved restoration flows</p>
+              <h2 className="mt-2 text-xl font-black text-white">Recent automations</h2>
             </div>
-          ) : (
-            <div className="mx-auto w-full max-w-3xl space-y-7 px-1 pb-4 sm:px-2">
-              {conversation.messages?.map((message, index) => <div key={`${message.ts}-${index}`} className={message.role === 'user' ? 'ml-auto max-w-[88%] sm:max-w-[75%]' : 'max-w-full'}>
-                <div className={message.role === 'user' ? 'rounded-3xl rounded-br-lg bg-white px-4 py-3 text-sm leading-6 text-[#0B0B0C] sm:px-5' : 'text-sm leading-7 text-white'}>
-                  {message.role === 'alpha' && <p className="mb-1.5 text-xs font-black uppercase tracking-[.12em] text-[#8A8A93]">Alpha</p>}
-                  <ReactMarkdown components={{ img: props => <figure className="mt-3"><img {...props} className="max-h-[420px] w-full rounded-2xl border border-white/10 object-contain" loading="lazy"/>{props.src&&<a href={props.src} download="alphatekx-image" target="_blank" rel="noreferrer" className="mt-2 inline-flex min-h-10 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] px-3 text-xs font-semibold text-white"><Download size={14}/>Save image</a>}</figure>, p: props => <p {...props} className="whitespace-pre-wrap"/> }}>{message.text}</ReactMarkdown>
-                </div>
-              </div>)}
-              {creating && <div className="flex items-center gap-2 text-sm text-[#8A8A93]"><LoaderCircle className="animate-spin" size={16}/>Alpha is thinking…</div>}
-              {pendingAgent && conversation && ['awaiting_content_review', 'awaiting_approval', 'ready_to_create'].includes(conversation.conversationStage) && <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 sm:p-5" aria-label="Automation approval in chat">
-                <p className="text-xs font-black uppercase tracking-[.16em] text-[#8A8A93]">Plan ready in chat</p>
-                <p className="mt-2 text-sm font-bold text-white">{pendingAgent.name || 'Your automation'}</p>
-                <p className="mt-1 text-xs leading-5 text-[#8A8A93]">Review Alpha's messages above. One approval publishes an immediate post or activates the confirmed schedule.</p>
-                <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                  <button type="button" onClick={() => void send('approve')} disabled={creating} className="min-h-11 inline-flex items-center justify-center gap-2 rounded-xl btn-primary px-5 text-sm disabled:opacity-50">
-                    {creating ? <><LoaderCircle className="animate-spin" size={16}/> Working…</> : (pendingAgent.campaign?.meta?.publishingMode === 'once_now' ? 'Approve & publish now' : 'Approve & activate')}
-                  </button>
-                  {conversation.conversationStage === 'awaiting_content_review' && <button type="button" onClick={() => void send('regenerate')} disabled={creating} className="min-h-11 inline-flex items-center justify-center rounded-xl border border-white/10 px-5 text-sm font-semibold text-white disabled:opacity-50">{creating ? <><LoaderCircle className="animate-spin" size={16}/> Working…</> : 'Regenerate in chat'}</button>}
-                </div>
-              </div>}
-              <div ref={messageEnd}/>
-            </div>
-          )}
-        </div>
-        {needsConnection && <div className="mx-4 mb-3 rounded-xl border border-[#F5C518]/30 bg-[#F5C518]/[0.04] p-4 text-sm sm:mx-6"><p className="text-white">{needsConnection} needs to be connected before Alpha can publish.</p><Link to={`/connected-apps?platform=${encodeURIComponent(needsConnection)}&returnTo=${encodeURIComponent(`/automations?resume=${conversation?.id || ''}`)}`} className="mt-3 inline-flex min-h-10 items-center rounded-lg bg-white px-4 text-xs font-semibold text-[#0B0B0C]">Connect {needsConnection}</Link></div>}
-        {notice && <div role="status" aria-live="polite" className={`mx-4 mb-3 flex items-center justify-between gap-3 rounded-xl border p-3 text-sm font-semibold sm:mx-6 ${noticeClasses(notice)}`}><span className="flex items-center gap-2">{/\b(queued|reviewing|continuing|processing|thinking|working|preparing)\b/i.test(notice) && <span className="size-2 shrink-0 animate-pulse rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,.9)]"/>}{notice}</span><button onClick={() => setNotice('')} aria-label="Dismiss notification"><X size={16}/></button></div>}
-        <div className="shrink-0 border-t border-white/[0.06] bg-[#0D0E11]/95 px-3 pb-[max(.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-2xl sm:px-6 sm:pb-5">
-          <label htmlFor="automation-request" className="sr-only">{conversation ? 'Answer Alpha' : 'Message Alpha'}</label>
-          <div className="mx-auto flex max-w-3xl items-end gap-2 rounded-[1.65rem] border border-white/[0.08] bg-[#18191E] p-2.5 shadow-[0_14px_40px_rgba(0,0,0,0.38)] focus-within:border-white/15">
-            <button type="button" onClick={toggleVoice} disabled={creating} className={`grid h-12 w-12 shrink-0 place-items-center rounded-full border transition ${listening ? 'border-emerald-300/50 bg-emerald-400/15 text-emerald-200 shadow-[0_0_24px_rgba(52,211,153,.18)]' : 'border-white/10 bg-white/[.04] text-white/70 hover:bg-white/[.08] hover:text-white'} disabled:opacity-40`} aria-label={listening ? 'Stop voice input' : 'Speak to Alpha'} title={listening ? 'Stop listening' : 'Speak to Alpha'}>
-              {listening ? <MicOff size={19}/> : <Mic size={19}/>}
-            </button>
-            <textarea
-              id="automation-request"
-              ref={composer}
-              value={input}
-              onChange={event => {
-                setInput(event.target.value)
-                event.currentTarget.style.height = 'auto'
-                event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 160)}px`
-              }}
-              onKeyDown={event => {
-                if (event.key === 'Enter' && !event.shiftKey) {
-                  event.preventDefault()
-                  void send()
-                }
-              }}
-              rows={1}
-              maxLength={10000}
-              placeholder="Message Alpha…"
-              className="max-h-40 min-h-[48px] w-full resize-none overflow-y-auto rounded-2xl border-none bg-transparent px-3 py-3 text-base leading-6 text-white outline-none placeholder:text-[#8A8A93] focus:ring-0"
-            />
-            <button
-              onClick={() => void send()}
-              disabled={!input.trim() || creating}
-              className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-white text-[#0B0B0C] transition hover:bg-[#F0F0F0] disabled:bg-white/10 disabled:text-[#8A8A93]"
-              aria-label="Send request"
-            >
-              {creating ? <LoaderCircle className="animate-spin" size={18}/> : <Send size={18}/>}            
-            </button>
+            <span className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-slate-300">{agents.length} total</span>
           </div>
-          <p className="mx-auto mt-2 max-w-3xl text-center text-[10px] font-semibold text-[#8A8A93]">Review every plan before approval.</p>
-        </div>
-      </section>}
-    </div>
 
-  </main>
+          <div className="mt-5 space-y-3">
+            {agents.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-violet-400/20 bg-violet-500/5 p-5 text-sm text-slate-300">
+                Start from the dashboard and create your first restoration workflow.
+              </div>
+            ) : (
+              agents.slice(0, 4).map((agent) => (
+                <button
+                  key={agent.id}
+                  type="button"
+                  onClick={() => navigate(`/active-automations/${agent.id}`)}
+                  className="w-full rounded-2xl border border-white/10 bg-white/[0.02] p-4 text-left transition hover:border-violet-300/30 hover:bg-white/[0.04]"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-black text-white">{agent.name || 'Untitled restoration flow'}</p>
+                      <p className="mt-1 text-xs text-slate-400">{agent.status || 'Ready'} · {agent.plan || 'Restoration plan'}</p>
+                    </div>
+                    <ArrowRight size={16} className="text-violet-300" />
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-[28px] border border-violet-400/20 bg-violet-500/8 p-5 shadow-[0_28px_65px_rgba(15,23,42,0.14)]">
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-violet-300">What happens next</p>
+          <h2 className="mt-3 text-xl font-black text-white">A simple restoration loop</h2>
+          <div className="mt-5 space-y-3 text-sm text-slate-300">
+            <div className="rounded-2xl border border-white/10 bg-black/10 p-3"><span className="mr-2 font-black text-white">1.</span>Paste a broken link or upload a messy file.</div>
+            <div className="rounded-2xl border border-white/10 bg-black/10 p-3"><span className="mr-2 font-black text-white">2.</span>Alpha audits the damage and maps a safe repair plan.</div>
+            <div className="rounded-2xl border border-white/10 bg-black/10 p-3"><span className="mr-2 font-black text-white">3.</span>Approve the fix and publish or sell the restored result.</div>
+          </div>
+        </div>
+      </section>
+    </main>
+  )
 }
 
 type GuidedPlan = {

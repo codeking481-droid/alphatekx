@@ -23,30 +23,33 @@ const cards = [
     subtitle: 'Report Only',
     icon: Link2,
     accent: 'from-violet-600 to-purple-500',
-    description: 'Paste a broken app link and get a PDF report covering API leaks, secret keys, broken envs, and performance issues — no live-touch, no silent rebuilds.',
+    description: 'Paste a broken app link and get a clean risk report for leaks, secrets, env issues, and slow pages — no live touch, no silent rebuilds.',
     button: 'Scan, Don\'t Touch',
     inputLabel: 'Paste link',
-    output: 'PDF report of API leak, secret key, broken env, performance — report only, no touch link — more control',
+    route: '/dashboard',
+    output: 'Report-only audit with real-time findings and zero site changes.',
   },
   {
     title: 'RESTORE MY VIDEO',
     subtitle: 'Heal My Broken Video',
     icon: Video,
     accent: 'from-cyan-500 to-blue-500',
-    description: 'Upload unedited, broken, or shaky footage. Alpha rebuilds the edit into polished world-class output with voice-over, trimming, pacing, and long-to-short or short-to-long conversion.',
+    description: 'Upload shaky or unfinished footage and let Alpha restore the cut, pacing, and polish into a presentation-ready story.',
     button: 'Restore to World-Class',
     inputLabel: 'Upload unedited / broken / shaky video',
-    output: 'Editor heals the cut, adds voice-over, and restores quality to MrBeast / IShowSpeed / Malva level without learning your style the slow way.',
+    route: '/automations',
+    output: 'Clean cuts, audio polish, and strong pacing without the slow learning curve.',
   },
   {
     title: 'SELL MY WORK',
     subtitle: 'Market',
     icon: ImageUp,
     accent: 'from-amber-400 to-orange-500',
-    description: 'Upload a restored app, edited video, or template and list it for sale. Set a price and publish to the marketplace for buyers.',
+    description: 'Launch a restored app, template, or edit into the marketplace with pricing built for the restoration economy.',
     button: 'Put For Sale',
     inputLabel: 'Upload app, video, or template',
-    output: 'List for sale at $19 / $49 pricing and grow the restoration economy without a generic builder workflow.',
+    route: '/settings?tab=billing',
+    output: 'List at $19 / $49 / $99 and turn restored work into revenue.',
   },
 ] as const
 
@@ -181,11 +184,37 @@ export default function Home() {
           {cards.map((card) => {
             const Icon = card.icon
             const isActive = active === card.title
+            const handleCardClick = () => {
+              setActive(card.title)
+              if (card.title === 'SCAN MY LINK') {
+                void scanLink()
+                return
+              }
+              if (card.route) {
+                navigate(card.route)
+              }
+            }
             return (
-              <div key={card.title} className={`rounded-[28px] border border-violet-400/20 bg-[#101114] p-5 shadow-[0_22px_60px_rgba(15,23,42,.18)] transition-all ${isActive ? 'ring-2 ring-violet-400/50' : ''}`}>
-                <div className={`inline-flex rounded-full bg-gradient-to-r ${card.accent} p-3 text-white`}>
-                  <Icon size={22} />
+              <div
+                key={card.title}
+                role="button"
+                tabIndex={0}
+                onClick={handleCardClick}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    handleCardClick()
+                  }
+                }}
+                className={`group cursor-pointer rounded-[30px] border border-violet-400/20 bg-[linear-gradient(180deg,rgba(16,17,20,0.94),rgba(12,13,18,0.92))] p-5 shadow-[0_28px_80px_rgba(15,23,42,.18)] transition-all duration-300 hover:-translate-y-1 hover:border-violet-300/40 hover:shadow-[0_30px_90px_rgba(109,40,217,.18)] focus:outline-none focus:ring-2 focus:ring-violet-400/60 ${isActive ? 'ring-2 ring-violet-400/50' : ''}`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className={`inline-flex rounded-2xl bg-gradient-to-r ${card.accent} p-3 text-white shadow-[0_18px_40px_rgba(109,40,217,0.28)]`}>
+                    <Icon size={22} />
+                  </div>
+                  <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-slate-300">Alpha</span>
                 </div>
+
                 <div className="mt-5">
                   <p className="text-[10px] font-black uppercase tracking-[.18em] text-violet-300">{card.title}</p>
                   <h2 className="mt-2 text-2xl font-black text-white">{card.subtitle}</h2>
@@ -197,7 +226,8 @@ export default function Home() {
                   {card.title === 'SCAN MY LINK' ? (
                     <input
                       value={scanUrl}
-                      onChange={event => setScanUrl(event.target.value)}
+                      onChange={(event) => setScanUrl(event.target.value)}
+                      onClick={(event) => event.stopPropagation()}
                       placeholder="https://example-app.com"
                       className="mt-2 w-full min-h-[52px] rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder:text-slate-500 outline-none ring-0"
                     />
@@ -210,12 +240,13 @@ export default function Home() {
 
                 <button
                   type="button"
-                  onClick={() => {
+                  onClick={(event) => {
+                    event.stopPropagation()
                     setActive(card.title)
                     if (card.title === 'SCAN MY LINK') {
                       void scanLink()
-                    } else {
-                      navigate('/automations')
+                    } else if (card.route) {
+                      navigate(card.route)
                     }
                   }}
                   className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#6D28D9] px-4 text-sm font-black text-white shadow-[0_15px_35px_rgba(109,40,217,.28)] transition hover:-translate-y-0.5 hover:bg-[#5B21B6]"
