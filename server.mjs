@@ -9301,6 +9301,18 @@ const server = http.createServer(async (req, res) => {
     return { id, severity, title, detail, code }
   }
 
+  function buildSecretMessage(matchType) {
+    const labels = {
+      api: 'We found an API key in the page source.',
+      live: 'We found a live secret key in the page source.',
+      aws: 'We found an AWS access key in the page source.',
+      google: 'We found a Google API key in the page source.',
+      default: 'We found a likely secret value in the page source.'
+    }
+    const summary = labels[matchType] || labels.default
+    return `${summary} Anyone with access to the public page could copy it. Move it to a secure server-only environment and remove it from the front-end code.`
+  }
+
   async function safeHead(url) {
     try {
       const response = await fetch(url, {
@@ -9343,16 +9355,17 @@ const server = http.createServer(async (req, res) => {
     })
 
     const severePatterns = [
-      { regex: /sk_live_[A-Za-z0-9]+/gi, label: 'Live secret key exposed in HTML', code: 'SECRET_LEAK' },
-      { regex: /pk_live_[A-Za-z0-9]+/gi, label: 'Live publish key exposed in HTML', code: 'SECRET_LEAK' },
-      { regex: /AKIA[0-9A-Z]{16}/g, label: 'AWS access key exposed in HTML', code: 'SECRET_LEAK' },
-      { regex: /openai\s*[:=][\s\"']*sk-[A-Za-z0-9]+/gi, label: 'OpenAI key exposed in HTML', code: 'SECRET_LEAK' },
-      { regex: /AIza[0-9A-Za-z\-_]{35}/g, label: 'Google API key exposed in HTML', code: 'SECRET_LEAK' },
+      { regex: /sk_live_[A-Za-z0-9]+/gi, label: 'Live secret key exposed in HTML', code: 'SECRET_LEAK', messageType: 'live' },
+      { regex: /pk_live_[A-Za-z0-9]+/gi, label: 'Live publish key exposed in HTML', code: 'SECRET_LEAK', messageType: 'api' },
+      { regex: /AKIA[0-9A-Z]{16}/g, label: 'AWS access key exposed in HTML', code: 'SECRET_LEAK', messageType: 'aws' },
+      { regex: /openai\s*[:=][\s\"']*sk-[A-Za-z0-9]+/gi, label: 'OpenAI key exposed in HTML', code: 'SECRET_LEAK', messageType: 'api' },
+      { regex: /AIza[0-9A-Za-z\-_]{35}/g, label: 'Google API key exposed in HTML', code: 'SECRET_LEAK', messageType: 'google' },
+      { regex: /(?:api[_-]?key|client[_-]?secret|secret[_-]?key|access[_-]?token)[\s:'"=]+[A-Za-z0-9_\-]{16,}/gi, label: 'Possible secret value exposed in source', code: 'SECRET_LEAK', messageType: 'api' },
     ]
 
     for (const pattern of severePatterns) {
       if (pattern.regex.test(html)) {
-        findings.push(scanFinding(`secret-${pattern.code}-${Math.random().toString(16).slice(2, 8)}`, 'critical', 'Leaked secret detected', `${pattern.label}. This is a real risk and should be revoked immediately.`, pattern.code))
+        findings.push(scanFinding(`secret-${pattern.code}-${Math.random().toString(16).slice(2, 8)}`, 'critical', 'API key or secret found', buildSecretMessage(pattern.messageType), pattern.code))
       }
       pattern.regex.lastIndex = 0
     }
@@ -9378,7 +9391,7 @@ const server = http.createServer(async (req, res) => {
       } catch {}
     }
     if (brokenLinks.length) {
-      findings.push(scanFinding(`broken-links-${brokenLinks.length}`, 'warning', 'Broken internal links found', `${brokenLinks.length} internal links are returning an error or 404.`, 'BROKEN_LINKS'))
+      findings.push(scanFinding(`broken-links-${brokenLinks.length}`, 'warning', 'Broken pages found', `We found ${brokenLinks.length} internal page links returning an error or a 404. Visitors may get stuck on dead pages.`, 'BROKEN_LINKS'))
     }
 
     const imageMatches = [...html.matchAll(/<img\s[^>]*src=["']([^"']+)["'][^>]*>/gi)].map(match => match[1]).filter(Boolean)
@@ -9400,7 +9413,7 @@ const server = http.createServer(async (req, res) => {
     if (!ogImage) seoIssues.push('Missing OG image')
     if (!h1) seoIssues.push('Missing H1 heading')
     if (seoIssues.length) {
-      findings.push(scanFinding(`seo-${seoIssues.length}`, 'info', 'SEO gap identified', seoIssues.join('; '), 'SEO'))
+      findings.push(scanFinding(`seo-${seoIssues.length}`, 'info', 'Search page is missing basics', `This page is missing a few important SEO details: ${seoIssues.join(', ')}. That can make it harder for people to find it in search results.`, 'SEO'))
     }
 
     const finalScore = Math.max(0, Math.min(100, 100 - findings.reduce((score, item) => score + (item.severity === 'critical' ? 30 : item.severity === 'warning' ? 12 : 6), 0)))
