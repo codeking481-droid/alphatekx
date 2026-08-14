@@ -183,11 +183,11 @@ export default function Auth() {
   const bonusMessage = result?.isAdmin
     ? 'Administrator access is active.'
     : result?.reason === 'bonus_unlocked' || result?.reason === 'google_credit_ready'
-      ? 'Welcome! Your 10 free credits are ready.'
+      ? 'Welcome! Your 1 credit is ready.'
       : result?.claimed
-        ? 'Welcome! 10 free credits unlocked.'
+        ? 'Welcome! Your 1 credit is ready.'
         : result?.reason === 'device_already_claimed' || result?.reason === 'already_claimed'
-          ? 'This device already claimed the 10-credit bonus. One bonus per human.'
+          ? 'This device already claimed the 1-credit default. One credit per account.'
           : 'Your signup is being finalized.'
 
   return (
@@ -215,7 +215,7 @@ export default function Auth() {
               disabled={blocked}
               className="flex min-h-[48px] w-full items-center justify-center gap-3 rounded-xl border-2 border-violet-400/20 bg-violet-500/10 px-4 font-black text-white shadow-[0_10px_25px_rgba(15,23,42,.07)] transition hover:border-violet-300 hover:bg-violet-500/10 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {pending ? <LoaderCircle className="animate-spin" size={18}/> : <><Chrome size={19} className="text-violet-300"/> Sign in with Google <span className="text-xs text-slate-400">ΓÇö 10 free credits</span></>}
+              {pending ? <LoaderCircle className="animate-spin" size={18}/> : <><Chrome size={19} className="text-violet-300"/> Sign in with Google</>}
             </button>
 
             <div className="relative">
@@ -273,7 +273,7 @@ export default function Auth() {
           )}
 
           <p className="mt-7 text-center text-[11px] font-semibold leading-5 text-slate-400">
-            One 10-credit signup bonus per device or Google identity.
+            Every account starts with 1 credit and uses it only when a scan is confirmed.
           </p>
         </div>
       </div>

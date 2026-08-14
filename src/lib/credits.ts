@@ -1,1 +1,1 @@
-export const DEFAULT_CREDIT_BALANCE = 0
+export const DEFAULT_CREDIT_BALANCE = 1

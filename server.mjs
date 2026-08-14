@@ -4512,7 +4512,7 @@ async function verifyDeviceBonus(req, res) {
   }
   if (!claimResponse.ok) return json(res, 500, { error: `Human verification claim failed (${claimResponse.status}). Your Google credit is safe.` })
   try {
-    const result = await setProfileMinimumCredits(user, config, 10)
+    const result = await setProfileMinimumCredits(user, config, 1)
     return json(res, 200, { ok: true, success: true, claimed: true, reason: 'bonus_unlocked', credits: result.credits, creditsAdded: result.added, isAdmin: false })
   } catch (error) {
     await fetch(`${config.url}/rest/v1/device_claims?fingerprint_hash=eq.${encodeURIComponent(fingerprintHash)}&google_sub=eq.${encodeURIComponent(googleSub)}`, {
