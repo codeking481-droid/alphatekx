@@ -29,7 +29,7 @@ const MODEL_ENV_VARS = {
 
 const DEFAULT_MODELS = {
   openai: 'gpt-4o-mini',
-  groq: 'llama-3.3-70b-versatile',
+  groq: 'openai/gpt-oss-120b',
   qwen: 'qwen3.7-plus',
   kimi: 'kimi-k3',
   minimax: 'MiniMax-M3',
