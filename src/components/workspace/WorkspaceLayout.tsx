@@ -1,5 +1,5 @@
 import { useEffect, useState, type PropsWithChildren } from 'react'
-import { Atom, FolderOpen, HelpCircle, History, ListChecks, LogOut, Menu, Settings, ShieldCheck, Sparkles, X } from 'lucide-react'
+import { Atom, FolderOpen, HelpCircle, History, LogOut, Menu, Settings, ShieldCheck, Sparkles, X } from 'lucide-react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { getCredits, hydrateCredits, subscribeCredits } from '../../lib/creditStore'
 import { useAuth } from '../../lib/auth'
@@ -13,7 +13,6 @@ const ONBOARDING_KEY = 'alphatekx:workspace-onboarding'
 const primary = [
   ['Agen', '/agen', Atom],
   ['Automate', '/automations', Sparkles],
-  ['Running Automation', '/active-automations', ListChecks],
   ['History', '/history', History],
   ['Media Library', '/media-library', FolderOpen],
   ['Market', '/market', FolderOpen],
@@ -115,7 +114,7 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
       <nav className="flex-1 overflow-y-auto px-3 pb-3">
         <p className={`mb-2 px-3 pt-4 text-[10px] font-black uppercase tracking-[.18em] text-[#8A8A93] ${!open ? 'hidden' : ''}`}>Workspace</p>
         <div className="space-y-1">
-          {primary.map(([label, to, Icon]) => <NavLink key={label} to={to} title={label} onClick={() => setOpen(false)} className={({ isActive }) => `group relative flex min-h-11 items-center gap-3 rounded-xl px-3 text-[13px] font-semibold transition ${isActive ? 'bg-white/[0.04] text-white' : 'text-[#8A8A93] hover:bg-white/[.02] hover:text-white'} ${!open ? 'justify-center px-2' : ''}`}><span className={`grid size-8 shrink-0 place-items-center rounded-lg ${location.pathname.startsWith(to) ? 'bg-white/[0.06] text-white' : 'text-[#8A8A93] group-hover:text-white'}`}><Icon size={17}/></span>{open && <span className="min-w-0 flex-1 truncate">{label}</span>}{open && label === 'Running Automation' && running > 0 && <span className="rounded-full bg-white/[0.04] px-2 py-0.5 text-[10px] font-black text-white">{running}</span>}{location.pathname.startsWith(to) && open && <i className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-white"/>}</NavLink>)}
+          {primary.map(([label, to, Icon]) => <NavLink key={label} to={to} title={label} onClick={() => setOpen(false)} className={({ isActive }) => `group relative flex min-h-11 items-center gap-3 rounded-xl px-3 text-[13px] font-semibold transition ${isActive ? 'bg-white/[0.04] text-white' : 'text-[#8A8A93] hover:bg-white/[.02] hover:text-white'} ${!open ? 'justify-center px-2' : ''}`}><span className={`grid size-8 shrink-0 place-items-center rounded-lg ${location.pathname.startsWith(to) ? 'bg-white/[0.06] text-white' : 'text-[#8A8A93] group-hover:text-white'}`}><Icon size={17}/></span>{open && <span className="min-w-0 flex-1 truncate">{label}</span>}{location.pathname.startsWith(to) && open && <i className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-white"/>}</NavLink>)}
         </div>
         <p className={`mb-2 mt-6 px-3 text-[10px] font-black uppercase tracking-[.18em] text-[#8A8A93] ${!open ? 'hidden' : ''}`}>Account</p>
         <div className="space-y-1">

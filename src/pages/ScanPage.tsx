@@ -19,10 +19,12 @@ export default function ScanPage() {
   const [progress, setProgress] = useState(0)
   const [findings, setFindings] = useState<Array<{ id: string; label: string; detail: string; severity: 'critical' | 'warning' | 'info' }>>([])
   const [score, setScore] = useState(92)
+  const [risk, setRisk] = useState('Low risk')
+  const [scannedUrl, setScannedUrl] = useState('')
   const [status, setStatus] = useState('Ready for inspection')
   const [credits, setCreditsState] = useState(() => {
     // Initialize from creditStore on mount
-    return getCredits() || 10
+    return getCredits() || 3
   })
   const [scanError, setScanError] = useState<string | null>(null)
   const [isLoadingCredits, setIsLoadingCredits] = useState(false)
@@ -154,6 +156,8 @@ export default function ScanPage() {
               setStatus('Scan complete')
               setProgress(100)
               setScore(Number(payload.score || 72))
+              setRisk(String(payload.risk || 'Medium risk'))
+              setScannedUrl(String(payload.scannedUrl || ''))
               
               if (payload.creditsRemaining !== undefined) {
                 const newBalance = Math.max(0, payload.creditsRemaining)
@@ -316,7 +320,68 @@ export default function ScanPage() {
             <div className="mt-3 text-xs text-slate-400">Credits remaining: <span className="text-emerald-300 font-black">{credits}</span></div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button type="button" disabled className="btn-primary opacity-50 cursor-not-allowed">Download PDF Report</button>
+            <button 
+              type="button" 
+              onClick={async () => {
+                if (findings.length === 0) {
+                  alert('Run a scan first to generate a report')
+                  return
+                }
+                try {
+                  const { jsPDF } = await import('jspdf')
+                  const doc = new jsPDF()
+                  
+                  // Title
+                  doc.setFontSize(20)
+                  doc.text('Security Scan Report', 20, 20)
+                  
+                  // Date and URL
+                  doc.setFontSize(10)
+                  doc.text(`Date: ${new Date().toLocaleDateString()}`, 20, 32)
+                  doc.text(`URL: ${scannedUrl}`, 20, 40)
+                  
+                  // Score and Risk
+                  doc.setFontSize(14)
+                  doc.text(`Score: ${score}/100`, 20, 52)
+                  doc.text(`Risk Level: ${risk}`, 20, 62)
+                  
+                  // Findings Section
+                  doc.setFontSize(12)
+                  doc.text('Findings:', 20, 76)
+                  
+                  let yPos = 86
+                  doc.setFontSize(9)
+                  
+                  for (const finding of findings) {
+                    const severity = finding.severity.toUpperCase()
+                    doc.text(`[${severity}] ${finding.label}`, 20, yPos)
+                    yPos += 6
+                    
+                    const lines = doc.splitTextToSize(finding.detail, 170)
+                    for (const line of lines) {
+                      doc.text(line, 22, yPos)
+                      yPos += 5
+                    }
+                    yPos += 3
+                    
+                    if (yPos > 270) {
+                      doc.addPage()
+                      yPos = 20
+                    }
+                  }
+                  
+                  doc.save(`scan-report-${new Date().toISOString().split('T')[0]}.pdf`)
+                } catch (error) {
+                  console.error('PDF download error:', error)
+                  alert('Failed to download PDF. Please try again.')
+                }
+              }}
+              disabled={findings.length === 0}
+              className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Download size={16} className="inline mr-2" />
+              Download PDF Report
+            </button>
             <button type="button" disabled className="btn-primary opacity-50 cursor-not-allowed">Save to History</button>
           </div>
         </div>

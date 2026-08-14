@@ -99,7 +99,14 @@ export async function hydrateCredits() {
     if (res.ok) {
       const data = await res.json().catch(() => ({}))
       const balance = Number(data.credits)
-      if (Number.isFinite(balance)) { setCredits(balance); return balance }
+      if (Number.isFinite(balance)) {
+        // Only update if balance actually changed to prevent glittering
+        const currentBalance = getCredits()
+        if (balance !== currentBalance) {
+          setCredits(balance)
+        }
+        return balance
+      }
     }
   } catch {}
   return getCredits()
