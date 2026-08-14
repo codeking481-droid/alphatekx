@@ -9341,7 +9341,6 @@ const server = http.createServer(async (req, res) => {
 
   async function runScanFromUrl(targetUrl) {
     const findings = []
-    const fetchedAt = Date.now()
     const normalizedUrl = String(targetUrl || '').trim()
     if (!normalizedUrl) throw new Error('Missing URL')
 
@@ -9354,184 +9353,207 @@ const server = http.createServer(async (req, res) => {
     if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Only http and https URLs are allowed.')
 
     const base = parsed.origin
-    let html
+    const fetchStartedAt = Date.now()
+    let html = ''
+    let finalUrl = normalizedUrl
+    let responseStatus = 0
+
     try {
       const response = await fetch(normalizedUrl, {
         method: 'GET',
-        headers: { 
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36',
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
           'Accept-Language': 'en-US,en;q=0.9',
-          'Referer': 'https://www.google.com/'
+          'Referer': 'https://alphatekx.name.ng/'
         },
-        signal: AbortSignal.timeout(20000),
+        signal: AbortSignal.timeout(25000),
         redirect: 'follow',
       })
-
+      responseStatus = response.status
+      finalUrl = response.url || normalizedUrl
       if (response.status === 403) {
-        throw new Error(`Access denied (HTTP 403). The website may be blocking automated scanning. This is common for sites like ChatGPT, which use advanced bot detection.`)
+        throw new Error('Access denied (HTTP 403). The site may be blocking automated scan traffic.')
       }
       if (response.status === 401) {
-        throw new Error(`Unauthorized (HTTP 401). The website requires authentication to scan.`)
+        throw new Error('Unauthorized (HTTP 401). This endpoint requires authentication.')
       }
       if (!response.ok) {
-        throw new Error(`Target responded with HTTP ${response.status}. The website may not be accessible or may be blocking scanners.`)
+        throw new Error(`Target responded with HTTP ${response.status}.`)
       }
 
       html = await response.text()
-      
-      if (!html || html.length === 0) {
-        throw new Error('Received empty response from the target website.')
+      if (!html || html.trim().length === 0) {
+        throw new Error('Received an empty HTML response from the target site.')
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not fetch the target website.'
       if (message.includes('AbortSignal') || message.includes('timeout')) {
-        throw new Error('Scan timed out. The website may be unresponsive or too slow to scan. Try again with a faster site.')
+        throw new Error('Scan timed out. The website may be unresponsive or too slow to scan.')
       }
-      if (message.includes('fetch failed') || message.includes('ECONNREFUSED')) {
-        throw new Error('Failed to connect to the target website. Check that the URL is correct and the site is online.')
-      }
-      if (message.includes('CORS') || message.includes('cross-origin')) {
-        throw new Error('CORS policy prevents scanning. This is typically a website security measure.')
+      if (message.includes('fetch failed') || message.includes('ECONNREFUSED') || message.includes('ENOTFOUND')) {
+        throw new Error('Failed to reach the site. Please check the URL and that the site is online.')
       }
       throw new Error(message)
     }
 
-    const severePatterns = [
+    const title = (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1]?.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() || ''
+    const metaDescription = (html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["'][^>]*>/i) || [])[1] || (html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']description["'][^>]*>/i) || [])[1] || ''
+    const h1Matches = [...html.matchAll(/<h1\b[^>]*>([\s\S]*?)<\/h1>/gi)].map(match => match[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()).filter(Boolean)
+    const h2Matches = [...html.matchAll(/<h2\b[^>]*>([\s\S]*?)<\/h2>/gi)].map(match => match[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()).filter(Boolean)
+    const h3Matches = [...html.matchAll(/<h3\b[^>]*>([\s\S]*?)<\/h3>/gi)].map(match => match[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()).filter(Boolean)
+    const imgMatches = [...html.matchAll(/<img\b[^>]*src=["']([^"']+)["'][^>]*>/gi)].map(match => match[1]).filter(Boolean)
+    const anchorLinks = [...html.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>/gi)].map(match => match[1]).filter(Boolean)
+    const externalLinks = anchorLinks.filter(link => {
+      try {
+        const resolved = new URL(link, base)
+        return resolved.origin !== base
+      } catch {
+        return false
+      }
+    })
+    const internalLinks = anchorLinks.filter(link => {
+      try {
+        const resolved = new URL(link, base)
+        return resolved.origin === base
+      } catch {
+        return false
+      }
+    })
+    const plainText = html.replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+    const ttfbMs = Math.max(0, Date.now() - fetchStartedAt)
+
+    const secretPatterns = [
       { regex: /sk_live_[A-Za-z0-9]+/gi, label: 'Live secret key exposed in HTML', code: 'SECRET_LEAK', messageType: 'live' },
       { regex: /pk_live_[A-Za-z0-9]+/gi, label: 'Live publish key exposed in HTML', code: 'SECRET_LEAK', messageType: 'api' },
       { regex: /AKIA[0-9A-Z]{16}/g, label: 'AWS access key exposed in HTML', code: 'SECRET_LEAK', messageType: 'aws' },
-      { regex: /openai\s*[:=][\s\"']*sk-[A-Za-z0-9]+/gi, label: 'OpenAI key exposed in HTML', code: 'SECRET_LEAK', messageType: 'api' },
+      { regex: /openai\s*[:=][\s"']*sk-[A-Za-z0-9]+/gi, label: 'OpenAI API key exposed in HTML', code: 'SECRET_LEAK', messageType: 'api' },
       { regex: /AIza[0-9A-Za-z\-_]{35}/g, label: 'Google API key exposed in HTML', code: 'SECRET_LEAK', messageType: 'google' },
       { regex: /(?:api[_-]?key|client[_-]?secret|secret[_-]?key|access[_-]?token)[\s:'"=]+[A-Za-z0-9_\-]{16,}/gi, label: 'Possible secret value exposed in source', code: 'SECRET_LEAK', messageType: 'api' },
     ]
 
-    for (const pattern of severePatterns) {
+    for (const pattern of secretPatterns) {
       if (pattern.regex.test(html)) {
-        findings.push(scanFinding(`secret-${pattern.code}-${Math.random().toString(16).slice(2, 8)}`, 'critical', 'API key or secret found', buildSecretMessage(pattern.messageType), pattern.code))
+        findings.push(scanFinding(`secret-${pattern.code}-${Math.random().toString(16).slice(2, 8)}`, 'critical', pattern.label, buildSecretMessage(pattern.messageType), pattern.code))
       }
       pattern.regex.lastIndex = 0
     }
 
-    const sensitivePaths = ['/.env', '/config.json', '/.git']
+    const sensitivePaths = ['/.env', '/config.json', '/.git', '/.env.local', '/.env.example', '/web.config']
     for (const sensitivePath of sensitivePaths) {
       const headResult = await safeHead(new URL(sensitivePath, base).toString())
       if (headResult && headResult.ok && headResult.status < 500) {
-        findings.push(scanFinding(`exposed-${sensitivePath.replace(/\W+/g, '-')}`, 'critical', 'Sensitive file exposed', `The target exposes ${sensitivePath} and is readable without approval.`, 'EXPOSED_PATH'))
+        findings.push(scanFinding(`exposed-${sensitivePath.replace(/\W+/g, '-')}`, 'critical', `Sensitive file exposed: ${sensitivePath}`, `The sensitive file ${sensitivePath} is accessible without authentication. This could expose configuration, secrets, or source code.`, 'EXPOSED_PATH'))
       }
     }
 
-    const anchorLinks = [...html.matchAll(/<a\s[^>]*href=["']([^"']+)["'][^>]*>/gi)].slice(0, 20).map(match => match[1]).filter(Boolean)
     const brokenLinks = []
-    for (const link of anchorLinks) {
+    for (const link of internalLinks.slice(0, 12)) {
       try {
         const resolved = new URL(link, base)
-        if (resolved.origin !== base) continue
-        const response = await fetch(resolved.toString(), { method: 'HEAD', redirect: 'manual', headers: { 'User-Agent': 'AlphaScan/1.0' }, signal: AbortSignal.timeout(8000) })
+        const response = await fetch(resolved.toString(), {
+          method: 'HEAD',
+          redirect: 'manual',
+          headers: { 'User-Agent': 'AlphaScan/1.0' },
+          signal: AbortSignal.timeout(8000),
+        })
         if (response.status === 404 || response.status >= 500) {
           brokenLinks.push({ href: resolved.toString(), status: response.status })
         }
       } catch {}
     }
-    if (brokenLinks.length) {
-      findings.push(scanFinding(`broken-links-${brokenLinks.length}`, 'warning', 'Broken pages found', `We found ${brokenLinks.length} internal page links returning an error or a 404. Visitors may get stuck on dead pages.`, 'BROKEN_LINKS'))
+    if (brokenLinks.length > 0) {
+      findings.push(scanFinding(`broken-links-${brokenLinks.length}`, 'warning', `${brokenLinks.length} broken internal link(s)`, `Found ${brokenLinks.length} internal link(s) returning 404 or server errors. This degrades user experience and SEO.`, 'BROKEN_LINKS'))
     }
 
-    const imageMatches = [...html.matchAll(/<img\s[^>]*src=["']([^"']+)["'][^>]*>/gi)].map(match => match[1]).filter(Boolean)
-    const totalImageBytes = Math.max(0, imageMatches.length * 180000)
-    const lazyCount = [...html.matchAll(/<img\s[^>]*loading=["']lazy["'][^>]*>/gi)].length
-    const ttfbMs = Math.max(80, Date.now() - fetchedAt)
-    const performanceSeverity = totalImageBytes > 600000 || ttfbMs > 2500 || lazyCount === 0 ? 'warning' : 'info'
-    if (performanceSeverity !== 'info') {
-      findings.push(scanFinding(`performance-${ttfbMs}`, performanceSeverity, 'Performance issue detected', `Initial load looks slow: ~${ttfbMs}ms to render and ${imageMatches.length} images discovered. Lazy loading is ${lazyCount === 0 ? 'missing' : 'present'} for some assets.`, 'PERFORMANCE'))
+    if (ttfbMs > 2500) {
+      findings.push(scanFinding(`performance-${ttfbMs}`, 'warning', `Slow server response: ${ttfbMs}ms`, `The server took ${ttfbMs}ms to respond. Aim for under 1000ms for better user experience and SEO rankings.`, 'PERFORMANCE'))
+    } else if (ttfbMs > 1000) {
+      findings.push(scanFinding(`performance-${ttfbMs}`, 'info', `Server response time: ${ttfbMs}ms`, `Response time is acceptable at ${ttfbMs}ms, but can be optimized below 1000ms for better performance.`, 'PERFORMANCE'))
     }
 
-    const title = (html.match(/<title[^>]*>(.*?)<\/title>/is) || [])[1]
-    const description = (html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["'][^>]*>/is) || [])[1] || (html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']description["'][^>]*>/is) || [])[1]
-    const ogImage = (html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["'][^>]*>/is) || [])[1]
-    const h1 = (html.match(/<h1[^>]*>(.*?)<\/h1>/is) || [])[1]
-    const seoIssues = []
-    if (!title) seoIssues.push('Missing title tag')
-    if (!description) seoIssues.push('Missing meta description')
-    if (!ogImage) seoIssues.push('Missing OG image')
-    if (!h1) seoIssues.push('Missing H1 heading')
-    if (seoIssues.length) {
-      findings.push(scanFinding(`seo-${seoIssues.length}`, 'info', 'Search page is missing basics', `This page is missing a few important SEO details: ${seoIssues.join(', ')}. That can make it harder for people to find it in search results.`, 'SEO'))
+    if (imgMatches.length > 0 && imgMatches.length > 20) {
+      findings.push(scanFinding(`images-${imgMatches.length}`, 'info', `Page loads ${imgMatches.length} images`, `This page references ${imgMatches.length} images. Optimize with lazy loading and responsive images to improve page speed.`, 'IMAGE_COUNT'))
+    } else if (imgMatches.length === 0) {
+      findings.push(scanFinding('seo-images', 'info', 'No images found on page', 'The page has no images. Adding relevant images can improve engagement and SEO.', 'SEO_IMAGES'))
     }
 
-    const finalScore = Math.max(0, Math.min(100, 100 - findings.reduce((score, item) => score + (item.severity === 'critical' ? 30 : item.severity === 'warning' ? 12 : 6), 0)))
-    const risk = finalScore >= 80 ? 'Low risk' : finalScore >= 60 ? 'Moderate risk' : finalScore >= 40 ? 'High risk' : 'Critical risk'
+    // Real heading analysis
+    if (h1Matches.length === 0) {
+      findings.push(scanFinding('seo-h1', 'warning', 'Missing H1 heading', 'The page must have exactly one H1 heading for proper SEO structure. Add a single H1 that accurately describes the page topic.', 'SEO_H1'))
+    } else if (h1Matches.length > 1) {
+      findings.push(scanFinding('seo-h1-multiple', 'info', `Found ${h1Matches.length} H1 headings`, `Page has ${h1Matches.length} H1 headings: "${h1Matches.slice(0, 2).join('", "')}". Best practice is to use only one H1 per page.`, 'SEO_H1'))
+    } else {
+      findings.push(scanFinding('seo-h1-good', 'info', `H1 found: "${h1Matches[0]}"`, `Page has appropriate H1 heading. Consider ensuring all subheadings (H2-H6) are properly nested.`, 'SEO_H1'))
+    }
+
+    // Real title analysis
+    if (!title) {
+      findings.push(scanFinding('seo-title', 'warning', 'Missing or empty title tag', 'Add a descriptive title tag (50-60 characters) for better search visibility and browser tab display.', 'SEO_TITLE'))
+    } else if (title.length < 30) {
+      findings.push(scanFinding('seo-title-short', 'info', `Title is short: "${title}"`, `Title is ${title.length} characters. Consider expanding to 50-60 characters to include relevant keywords.`, 'SEO_TITLE'))
+    } else if (title.length > 60) {
+      findings.push(scanFinding('seo-title-long', 'info', `Title may be truncated: "${title.substring(0, 57)}..."`, `Title is ${title.length} characters, which may be truncated in search results. Consider shortening to 50-60 characters.`, 'SEO_TITLE'))
+    } else {
+      findings.push(scanFinding('seo-title-good', 'info', `Title: "${title}"`, 'Title tag looks good.', 'SEO_TITLE'))
+    }
+
+    // Real meta description analysis
+    if (!metaDescription) {
+      findings.push(scanFinding('seo-description', 'info', 'Missing meta description', 'Add a meta description (150-160 characters) to improve search click-through rates.', 'SEO_DESCRIPTION'))
+    } else if (metaDescription.length < 120) {
+      findings.push(scanFinding('seo-description-short', 'info', `Description is short: "${metaDescription}"`, `Meta description is ${metaDescription.length} characters. Expand to 150-160 for better search visibility.`, 'SEO_DESCRIPTION'))
+    } else {
+      findings.push(scanFinding('seo-description-good', 'info', `Meta description: "${metaDescription.substring(0, 50)}..."`, 'Meta description looks good.', 'SEO_DESCRIPTION'))
+    }
+
+    // Real content analysis
+    if (plainText.length < 120) {
+      findings.push(scanFinding('seo-content', 'warning', `Very thin content: ${plainText.length} characters`, `The page has only ${plainText.length} visible characters. Add substantial content (at least 300 characters) for SEO and user engagement.`, 'SEO_CONTENT'))
+    } else if (plainText.length < 300) {
+      findings.push(scanFinding('seo-content-light', 'info', `Light content: ${plainText.length} characters`, `Page has ${plainText.length} visible characters. Consider adding more substantial content (300+ characters) for better SEO.`, 'SEO_CONTENT'))
+    } else {
+      findings.push(scanFinding('seo-content-good', 'info', `Good content length: ${plainText.length} characters`, `Page has adequate content. Ensure it's well-structured with headings and relevant keywords.`, 'SEO_CONTENT'))
+    }
+
+    // Real heading hierarchy analysis
+    const totalHeadings = h1Matches.length + h2Matches.length + h3Matches.length
+    if (totalHeadings > 0) {
+      findings.push(scanFinding('seo-headings', 'info', `${totalHeadings} total headings found`, `Page structure: ${h1Matches.length}×H1, ${h2Matches.length}×H2, ${h3Matches.length}×H3. Ensure proper hierarchy (H1→H2→H3).`, 'SEO_HEADINGS'))
+    }
+
+    // Real link analysis
+    if (externalLinks.length === 0) {
+      findings.push(scanFinding('seo-external-links', 'info', 'No external links found', 'Linking to authoritative external sources can improve SEO credibility.', 'SEO_LINKS'))
+    }
+
+    const issueWeight = findings.reduce((score, item) => score + (item.severity === 'critical' ? 28 : item.severity === 'warning' ? 12 : 3), 0)
+    const finalScore = Math.max(0, Math.min(100, 100 - issueWeight))
+    const risk = finalScore >= 85 ? 'Low risk' : finalScore >= 70 ? 'Moderate risk' : finalScore >= 50 ? 'High risk' : 'Critical risk'
 
     return {
       findings,
       score: finalScore,
       risk,
       totalFindings: findings.length,
-      scannedUrl: normalizedUrl,
+      scannedUrl: finalUrl,
+      title: title || '(No title found)',
+      metaDescription,
+      h1Count: h1Matches.length,
+      h2Count: h2Matches.length,
+      h3Count: h3Matches.length,
+      imageCount: imgMatches.length,
+      internalLinkCount: internalLinks.length,
+      externalLinkCount: externalLinks.length,
+      contentLength: plainText.length,
+      ttfbMs,
+      rootDomain: new URL(finalUrl).hostname,
+      responseStatus,
     }
-  }
-
-  // Test fixtures for scanning validation - DO NOT EXPOSE IN PRODUCTION
-  if (req.method === 'GET' && req.url === '/test-safe') {
-    res.writeHead(200, { 'Content-Type': 'text/html' })
-    return res.end(`<!DOCTYPE html>
-<html>
-<head>
-  <title>Safe Page</title>
-  <meta charset="utf-8">
-</head>
-<body>
-  <h1>This is a Safe Website</h1>
-  <p>No sensitive information is exposed on this page.</p>
-  <script>
-    // Regular application code
-    const apiUrl = "https://api.example.com";
-    const appName = "MyApp";
-  </script>
-</body>
-</html>`)
-  }
-
-  if (req.method === 'GET' && req.url === '/test-leaked') {
-    res.writeHead(200, { 'Content-Type': 'text/html' })
-    return res.end(`<!DOCTYPE html>
-<html>
-<head>
-  <title>Leaked Secrets Page</title>
-  <meta charset="utf-8">
-</head>
-<body>
-  <h1>Website with Exposed Secrets</h1>
-  <p>WARNING: This page intentionally contains exposed test values for validation only.</p>
-  <script>
-    // Exposed key value used only for validation, not a real secret.
-    const stripeKey = "FAKE_STRIPE_KEY_12345abcdefg";
-
-    // Exposed key value used only for validation, not a real secret.
-    const awsAccessKey = "FAKE_AWS_ACCESS_KEY_12345";
-
-    // Exposed key value used only for validation, not a real secret.
-    const googleApiKey = "FAKE_GOOGLE_API_KEY_1234567890abcdef";
-  </script>
-</body>
-</html>`)
-  }
-
-  if (req.method === 'GET' && req.url === '/test-leaked/.env') {
-    res.writeHead(200, { 'Content-Type': 'text/plain' })
-    return res.end(`STRIPE_KEY=FAKE_STRIPE_KEY_12345abcdefg
-AWS_ACCESS_KEY=FAKE_AWS_ACCESS_KEY_12345
-DATABASE_URL=postgresql://user:password@localhost/db
-API_SECRET=FAKE_SECRET_VALUE_12345`)
-  }
-
-  if (req.method === 'GET' && req.url === '/test-leaked/config.json') {
-    res.writeHead(200, { 'Content-Type': 'application/json' })
-    return res.end(JSON.stringify({
-      apiKey: "FAKE_GOOGLE_API_KEY_1234567890abcdef",
-      stripeSecret: "FAKE_STRIPE_KEY_12345abcdefg",
-      databasePassword: "FAKE_DATABASE_PASSWORD_123"
-    }, null, 2))
   }
 
   if (req.method === 'POST' && req.url === '/api/scan') {
@@ -9539,20 +9561,19 @@ API_SECRET=FAKE_SECRET_VALUE_12345`)
       const body = await readBody(req)
       const targetUrl = String(body.url || '').trim()
       
-      // SCAN COSTS 3 CREDITS
       const SCAN_COST = 3
       const user = currentOrLocalUser(req)
       let userCredits = await getUserCredits(user, supabaseConfig())
-      
-      // PHASE 1: Give new users 10 starting credits
+
+      // New users follow the 3-credit rule; preserve the real available balance when it exists.
       if (userCredits === 0) {
-        userCredits = 10
+        userCredits = 3
       }
-      
+
       if (userCredits < SCAN_COST) {
         res.writeHead(402, { 'Content-Type': 'application/json' })
-        return res.end(JSON.stringify({ 
-          error: `You need ${SCAN_COST - userCredits} more credits. Get 100 credits for $49/mo.`, 
+        return res.end(JSON.stringify({
+          error: `You need ${SCAN_COST - userCredits} more credit${SCAN_COST - userCredits === 1 ? '' : 's'} to run this scan. Add credits to continue.`,
           paywall: true,
           creditsNeeded: SCAN_COST,
           creditsAvailable: userCredits
