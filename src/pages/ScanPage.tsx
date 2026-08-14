@@ -18,18 +18,19 @@ export default function ScanPage() {
   const [isScanning, setIsScanning] = useState(false)
   const [progress, setProgress] = useState(0)
   const [findings, setFindings] = useState<Array<{ id: string; label: string; detail: string; severity: 'critical' | 'warning' | 'info' }>>([])
-  const [score, setScore] = useState(92)
-  const [risk, setRisk] = useState('Low risk')
+  const [score, setScore] = useState<number | null>(null)
+  const [risk, setRisk] = useState<string | null>(null)
   const [scannedUrl, setScannedUrl] = useState('')
   const [status, setStatus] = useState('Ready for inspection')
   const [credits, setCreditsState] = useState(() => {
-    // Initialize from creditStore on mount
-    return getCredits() || 3
+    // Initialize from creditStore on mount (do NOT default to 3)
+    return getCredits() || 0
   })
   const [scanError, setScanError] = useState<string | null>(null)
   const [isLoadingCredits, setIsLoadingCredits] = useState(false)
 
   const scoreTone = useMemo(() => {
+    if (score === null || score === undefined) return 'text-slate-400'
     if (score >= 80) return 'text-emerald-300'
     if (score >= 60) return 'text-amber-300'
     return 'text-rose-300'
@@ -46,10 +47,8 @@ export default function ScanPage() {
         console.log('[ScanPage] Hydrated balance from API:', hydratedBalance)
         setCreditsState(hydratedBalance)
       } catch (err) {
-        // Fall back to localStorage
-        const stored = getCredits()
-        console.log('[ScanPage] Loaded balance from localStorage:', stored)
-        setCreditsState(stored)
+        // If hydration fails, don't fall back to localStorage
+        console.error('[ScanPage] Credit hydration failed:', err instanceof Error ? err.message : err)
       } finally {
         setIsLoadingCredits(false)
       }
@@ -361,10 +360,20 @@ export default function ScanPage() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Verdict</p>
-            <div className="mt-2 flex items-center gap-3">
-              <span className={`text-3xl font-black ${scoreTone}`}>{score}</span>
-              <span className="text-sm text-slate-400">out of 100</span>
-            </div>
+            {score !== null && risk ? (
+              <>
+                <div className="mt-2 flex items-center gap-3">
+                  <span className={`text-3xl font-black ${scoreTone}`}>{score}</span>
+                  <span className="text-sm text-slate-400">out of 100</span>
+                </div>
+                <div className="mt-2 text-sm font-semibold">
+                  <span className="text-slate-300">Risk: </span>
+                  <span className={risk.includes('Low') ? 'text-emerald-300' : risk.includes('Moderate') ? 'text-amber-300' : 'text-rose-300'}>{risk}</span>
+                </div>
+              </>
+            ) : (
+              <p className="mt-3 text-sm text-slate-400">Run a scan to see security verdict</p>
+            )}
             <div className="mt-3 text-xs text-slate-400">Credits remaining: <span className="text-emerald-300 font-black">{credits}</span></div>
           </div>
           <div className="flex flex-wrap gap-2">
