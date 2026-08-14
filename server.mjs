@@ -7366,7 +7366,7 @@ function serveStatic(req, res) {
   try { pathname = decodeURIComponent(new URL(req.url || '/', 'http://localhost').pathname) } catch {}
   if (pathname.split('/').includes('..') || /%2e/i.test(req.url || '')) return json(res, 404, { error: 'Not found' })
 
-  const sensitivePathPattern = /(?:^|\/)(?:\.git(?:\/.*)?|\.env(?:\.[A-Za-z0-9_.-]+)?|config\.json|web\.config|\.htaccess|\.npmrc|\.env\.example|\.env\.local)(?:$|\/)/i
+  const sensitivePathPattern = /(?:^|\/)(?:\.git(?:\/.*)?|\.env(?:\.[A-Za-z0-9_.-]+)?|config\.json|web\.config|\.htaccess|\.npmrc|\.env\.example|\.env\.local|phpinfo\.php|backup\.sql)(?:$|\/)/i
   if (sensitivePathPattern.test(pathname)) {
     res.writeHead(403, { 'Content-Type': 'application/json', 'X-Content-Type-Options': 'nosniff' })
     return res.end(JSON.stringify({ error: 'Forbidden' }))
