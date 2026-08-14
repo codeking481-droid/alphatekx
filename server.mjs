@@ -4,11 +4,13 @@ import path from 'node:path'
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { schedule } from 'node-cron'
+import { chromium } from 'playwright'
 
 import { fallbackAlphaBuilder } from './alphaFallback.mjs'
 import { extractPlan, isPlatformPrompt } from './server/alphaPlatformBuilder.mjs'
 import { buildPreviewProject, servePreviewBuild } from './server/previewBuild.mjs'
 import { marketplaceHandler, fulfillMarketplaceOrder } from './server/marketplace.mjs'
+import { fixExposedFile } from './server/sshRemediation.mjs'
 import { getRecords, getRecord, createRecord, updateRecord, deleteRecord, appEntitiesMigrationSql } from './server/appData.mjs'
 import { createAlphaBrain } from './server/alphaBrain.mjs'
 import { supabaseServiceHeaders } from './server/supabaseHeaders.mjs'
@@ -89,6 +91,7 @@ import * as eliteBuilder from './server/eliteBuilderService.mjs'
 import { claimPendingAction, createPendingAction, finishPendingAction, listPendingActions } from './server/ceoPendingActions.mjs'
 import { scheduledCreditCost } from './server/schedulePricing.mjs'
 import generatePostHandler from './api/ai/generate-post.mjs'
+import { createHybridScanner } from './scanner-hybrid.mjs'
 
 function loadEnv() {
   for (const filename of ['.env.local', '.env']) {
@@ -9407,276 +9410,8 @@ const server = http.createServer(async (req, res) => {
     return `${userId || 'anonymous'}:${ip}`
   }
 
-  function scanFinding(id, severity, title, detail, code) {
-    return { id, severity, title, detail, code }
-  }
+  const runScanFromUrl = createHybridScanner(chromium)
 
-  function buildSecretMessage(matchType) {
-    const labels = {
-      api: 'We found an API key in the page source.',
-      live: 'We found a live secret key in the page source.',
-      aws: 'We found an AWS access key in the page source.',
-      google: 'We found a Google API key in the page source.',
-      default: 'We found a likely secret value in the page source.'
-    }
-    const summary = labels[matchType] || labels.default
-    return `${summary} Anyone with access to the public page could copy it. Move it to a secure server-only environment and remove it from the front-end code.`
-  }
-
-  async function safeHead(url) {
-    try {
-      const response = await fetch(url, {
-        method: 'HEAD',
-        redirect: 'manual',
-        headers: { 'User-Agent': 'AlphaScan/1.0' },
-        signal: AbortSignal.timeout(8000),
-      })
-      return { ok: response.ok, status: response.status, url: response.url }
-    } catch {
-      return null
-    }
-  }
-
-  async function runScanFromUrl(targetUrl) {
-    const findings = []
-    const securityFindings = []
-    const normalizedUrl = String(targetUrl || '').trim()
-    if (!normalizedUrl) throw new Error('Missing URL')
-
-    let parsed
-    try {
-      parsed = new URL(normalizedUrl)
-    } catch {
-      throw new Error('Please enter a valid http or https URL.')
-    }
-    if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Only http and https URLs are allowed.')
-
-    const base = parsed.origin
-    const fetchStartedAt = Date.now()
-    let html = ''
-    let finalUrl = normalizedUrl
-    let responseStatus = 0
-
-    try {
-      const response = await fetch(normalizedUrl, {
-        method: 'GET',
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.9',
-          'Referer': 'https://alphatekx.name.ng/'
-        },
-        signal: AbortSignal.timeout(25000),
-        redirect: 'follow',
-      })
-      responseStatus = response.status
-      finalUrl = response.url || normalizedUrl
-      if (response.status === 403) {
-        throw new Error('Access denied (HTTP 403). The site may be blocking automated scan traffic.')
-      }
-      if (response.status === 401) {
-        throw new Error('Unauthorized (HTTP 401). This endpoint requires authentication.')
-      }
-      if (!response.ok) {
-        throw new Error(`Target responded with HTTP ${response.status}.`)
-      }
-
-      html = await response.text()
-      if (!html || html.trim().length === 0) {
-        throw new Error('Received an empty HTML response from the target site.')
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Could not fetch the target website.'
-      if (message.includes('AbortSignal') || message.includes('timeout')) {
-        throw new Error('Scan timed out. The website may be unresponsive or too slow to scan.')
-      }
-      if (message.includes('fetch failed') || message.includes('ECONNREFUSED') || message.includes('ENOTFOUND')) {
-        throw new Error('Failed to reach the site. Please check the URL and that the site is online.')
-      }
-      throw new Error(message)
-    }
-
-    const title = (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1]?.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() || ''
-    const metaDescription = (html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["'][^>]*>/i) || [])[1] || (html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']description["'][^>]*>/i) || [])[1] || ''
-    const h1Matches = [...html.matchAll(/<h1\b[^>]*>([\s\S]*?)<\/h1>/gi)].map(match => match[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()).filter(Boolean)
-    const h2Matches = [...html.matchAll(/<h2\b[^>]*>([\s\S]*?)<\/h2>/gi)].map(match => match[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()).filter(Boolean)
-    const h3Matches = [...html.matchAll(/<h3\b[^>]*>([\s\S]*?)<\/h3>/gi)].map(match => match[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()).filter(Boolean)
-    const imgMatches = [...html.matchAll(/<img\b[^>]*src=["']([^"']+)["'][^>]*>/gi)].map(match => match[1]).filter(Boolean)
-    const anchorLinks = [...html.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>/gi)].map(match => match[1]).filter(Boolean)
-    const externalLinks = anchorLinks.filter(link => {
-      try {
-        const resolved = new URL(link, base)
-        return resolved.origin !== base
-      } catch {
-        return false
-      }
-    })
-    const internalLinks = anchorLinks.filter(link => {
-      try {
-        const resolved = new URL(link, base)
-        return resolved.origin === base
-      } catch {
-        return false
-      }
-    })
-    const plainText = html.replace(/<script[\s\S]*?<\/script>/gi, ' ')
-      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
-    const ttfbMs = Math.max(0, Date.now() - fetchStartedAt)
-
-    const secretPatterns = [
-      { regex: /sk_live_[A-Za-z0-9]+/gi, label: 'Live secret key exposed in HTML', code: 'SECRET_LEAK', messageType: 'live' },
-      { regex: /pk_live_[A-Za-z0-9]+/gi, label: 'Live publish key exposed in HTML', code: 'SECRET_LEAK', messageType: 'api' },
-      { regex: /AKIA[0-9A-Z]{16}/g, label: 'AWS access key exposed in HTML', code: 'SECRET_LEAK', messageType: 'aws' },
-      { regex: /openai\s*[:=][\s"']*sk-[A-Za-z0-9]+/gi, label: 'OpenAI API key exposed in HTML', code: 'SECRET_LEAK', messageType: 'api' },
-      { regex: /AIza[0-9A-Za-z\-_]{35}/g, label: 'Google API key exposed in HTML', code: 'SECRET_LEAK', messageType: 'google' },
-      { regex: /(?:api[_-]?key|client[_-]?secret|secret[_-]?key|access[_-]?token)[\s:'"=]+[A-Za-z0-9_\-]{16,}/gi, label: 'Possible secret value exposed in source', code: 'SECRET_LEAK', messageType: 'api' },
-    ]
-
-    for (const pattern of secretPatterns) {
-      if (pattern.regex.test(html)) {
-        findings.push(scanFinding(`secret-${pattern.code}-${Math.random().toString(16).slice(2, 8)}`, 'critical', pattern.label, buildSecretMessage(pattern.messageType), pattern.code))
-      }
-      pattern.regex.lastIndex = 0
-    }
-
-    const sensitivePaths = ['/.env', '/.git/config', '/config.json', '/config.php', '/.env.example', '/backup.sql', '/phpinfo.php']
-    for (const sensitivePath of sensitivePaths) {
-      const probeUrl = new URL(sensitivePath, base).toString()
-
-      try {
-        const response = await fetch(probeUrl, {
-          method: 'GET',
-          redirect: 'follow',
-          headers: { 'User-Agent': 'AlphaTekX-Scanner' },
-          signal: AbortSignal.timeout(8000),
-        })
-
-        if (response.status === 200) {
-          const finding = {
-            type: 'security_exposure',
-            severity: 'critical',
-            path: sensitivePath,
-            url: probeUrl,
-            status: response.status,
-            message: `Sensitive file exposed: ${sensitivePath}`,
-          }
-
-          securityFindings.push(finding)
-          findings.push(scanFinding(`exposed-${sensitivePath.replace(/[^a-z0-9]+/gi, '-').replace(/(^-|-$)/g, '')}`, 'critical', `Sensitive file exposed: ${sensitivePath}`, `The file ${sensitivePath} is publicly accessible and should not be exposed. This can reveal secrets, credentials, or application configuration.`, 'EXPOSED_PATH'))
-        }
-      } catch (error) {
-        // Ignore missing or blocked paths and continue scanning the rest.
-      }
-    }
-
-    const brokenLinks = []
-    for (const link of internalLinks.slice(0, 12)) {
-      try {
-        const resolved = new URL(link, base)
-        const response = await fetch(resolved.toString(), {
-          method: 'HEAD',
-          redirect: 'manual',
-          headers: { 'User-Agent': 'AlphaScan/1.0' },
-          signal: AbortSignal.timeout(8000),
-        })
-        if (response.status === 404 || response.status >= 500) {
-          brokenLinks.push({ href: resolved.toString(), status: response.status })
-        }
-      } catch {}
-    }
-    if (brokenLinks.length > 0) {
-      findings.push(scanFinding(`broken-links-${brokenLinks.length}`, 'warning', `${brokenLinks.length} broken internal link(s)`, `Found ${brokenLinks.length} internal link(s) returning 404 or server errors. This degrades user experience and SEO.`, 'BROKEN_LINKS'))
-    }
-
-    if (ttfbMs > 2500) {
-      findings.push(scanFinding(`performance-${ttfbMs}`, 'warning', `Slow server response: ${ttfbMs}ms`, `The server took ${ttfbMs}ms to respond. Aim for under 1000ms for better user experience and SEO rankings.`, 'PERFORMANCE'))
-    } else if (ttfbMs > 1000) {
-      findings.push(scanFinding(`performance-${ttfbMs}`, 'info', `Server response time: ${ttfbMs}ms`, `Response time is acceptable at ${ttfbMs}ms, but can be optimized below 1000ms for better performance.`, 'PERFORMANCE'))
-    }
-
-    if (imgMatches.length > 0 && imgMatches.length > 20) {
-      findings.push(scanFinding(`images-${imgMatches.length}`, 'info', `Page loads ${imgMatches.length} images`, `This page references ${imgMatches.length} images. Optimize with lazy loading and responsive images to improve page speed.`, 'IMAGE_COUNT'))
-    } else if (imgMatches.length === 0) {
-      findings.push(scanFinding('seo-images', 'info', 'No images found on page', 'The page has no images. Adding relevant images can improve engagement and SEO.', 'SEO_IMAGES'))
-    }
-
-    // Real heading analysis
-    if (h1Matches.length === 0) {
-      findings.push(scanFinding('seo-h1', 'warning', 'Missing H1 heading', 'The page must have exactly one H1 heading for proper SEO structure. Add a single H1 that accurately describes the page topic.', 'SEO_H1'))
-    } else if (h1Matches.length > 1) {
-      findings.push(scanFinding('seo-h1-multiple', 'info', `Found ${h1Matches.length} H1 headings`, `Page has ${h1Matches.length} H1 headings: "${h1Matches.slice(0, 2).join('", "')}". Best practice is to use only one H1 per page.`, 'SEO_H1'))
-    } else {
-      findings.push(scanFinding('seo-h1-good', 'info', `H1 found: "${h1Matches[0]}"`, `Page has appropriate H1 heading. Consider ensuring all subheadings (H2-H6) are properly nested.`, 'SEO_H1'))
-    }
-
-    // Real title analysis
-    if (!title) {
-      findings.push(scanFinding('seo-title', 'warning', 'Missing or empty title tag', 'Add a descriptive title tag (50-60 characters) for better search visibility and browser tab display.', 'SEO_TITLE'))
-    } else if (title.length < 30) {
-      findings.push(scanFinding('seo-title-short', 'info', `Title is short: "${title}"`, `Title is ${title.length} characters. Consider expanding to 50-60 characters to include relevant keywords.`, 'SEO_TITLE'))
-    } else if (title.length > 60) {
-      findings.push(scanFinding('seo-title-long', 'info', `Title may be truncated: "${title.substring(0, 57)}..."`, `Title is ${title.length} characters, which may be truncated in search results. Consider shortening to 50-60 characters.`, 'SEO_TITLE'))
-    } else {
-      findings.push(scanFinding('seo-title-good', 'info', `Title: "${title}"`, 'Title tag looks good.', 'SEO_TITLE'))
-    }
-
-    // Real meta description analysis
-    if (!metaDescription) {
-      findings.push(scanFinding('seo-description', 'info', 'Missing meta description', 'Add a meta description (150-160 characters) to improve search click-through rates.', 'SEO_DESCRIPTION'))
-    } else if (metaDescription.length < 120) {
-      findings.push(scanFinding('seo-description-short', 'info', `Description is short: "${metaDescription}"`, `Meta description is ${metaDescription.length} characters. Expand to 150-160 for better search visibility.`, 'SEO_DESCRIPTION'))
-    } else {
-      findings.push(scanFinding('seo-description-good', 'info', `Meta description: "${metaDescription.substring(0, 50)}..."`, 'Meta description looks good.', 'SEO_DESCRIPTION'))
-    }
-
-    // Real content analysis
-    if (plainText.length < 120) {
-      findings.push(scanFinding('seo-content', 'warning', `Very thin content: ${plainText.length} characters`, `The page has only ${plainText.length} visible characters. Add substantial content (at least 300 characters) for SEO and user engagement.`, 'SEO_CONTENT'))
-    } else if (plainText.length < 300) {
-      findings.push(scanFinding('seo-content-light', 'info', `Light content: ${plainText.length} characters`, `Page has ${plainText.length} visible characters. Consider adding more substantial content (300+ characters) for better SEO.`, 'SEO_CONTENT'))
-    } else {
-      findings.push(scanFinding('seo-content-good', 'info', `Good content length: ${plainText.length} characters`, `Page has adequate content. Ensure it's well-structured with headings and relevant keywords.`, 'SEO_CONTENT'))
-    }
-
-    // Real heading hierarchy analysis
-    const totalHeadings = h1Matches.length + h2Matches.length + h3Matches.length
-    if (totalHeadings > 0) {
-      findings.push(scanFinding('seo-headings', 'info', `${totalHeadings} total headings found`, `Page structure: ${h1Matches.length}×H1, ${h2Matches.length}×H2, ${h3Matches.length}×H3. Ensure proper hierarchy (H1→H2→H3).`, 'SEO_HEADINGS'))
-    }
-
-    // Real link analysis
-    if (externalLinks.length === 0) {
-      findings.push(scanFinding('seo-external-links', 'info', 'No external links found', 'Linking to authoritative external sources can improve SEO credibility.', 'SEO_LINKS'))
-    }
-
-    const issueWeight = findings.reduce((score, item) => score + (item.severity === 'critical' ? 28 : item.severity === 'warning' ? 12 : 3), 0)
-    const finalScore = Math.max(0, Math.min(100, 100 - issueWeight))
-    const risk = finalScore >= 85 ? 'Low risk' : finalScore >= 70 ? 'Moderate risk' : finalScore >= 50 ? 'High risk' : 'Critical risk'
-
-    return {
-      findings,
-      securityFindings,
-      score: finalScore,
-      risk,
-      totalFindings: findings.length,
-      scannedUrl: finalUrl,
-      title: title || '(No title found)',
-      metaDescription,
-      h1Count: h1Matches.length,
-      h2Count: h2Matches.length,
-      h3Count: h3Matches.length,
-      imageCount: imgMatches.length,
-      internalLinkCount: internalLinks.length,
-      externalLinkCount: externalLinks.length,
-      contentLength: plainText.length,
-      ttfbMs,
-      rootDomain: new URL(finalUrl).hostname,
-      responseStatus,
-    }
-  }
 
   // ===== NEW CREDIT SYSTEM - Supabase-based, no local files =====
   async function getOrCreateUser(email, ip, fingerprint) {
@@ -9971,6 +9706,12 @@ const server = http.createServer(async (req, res) => {
 
       emit({
         type: 'done',
+        discoveredAPIs: Array.isArray(results.discoveredAPIs) ? results.discoveredAPIs : [],
+        securityFindings: Array.isArray(results.securityFindings) ? results.securityFindings : [],
+        seoFindings: Array.isArray(results.seoFindings) ? results.seoFindings : [],
+        pageTitle: results.pageTitle || '',
+        metaDescription: results.metaDescription || '',
+        totalHeaders: Number(results.totalHeaders || 0),
         score: results.score,
         risk: results.risk,
         totalFindings: results.totalFindings,
@@ -10082,3 +9823,4 @@ if (!process.env.VERCEL) {
     }, 14 * 60 * 1000)
   }
 }
+
