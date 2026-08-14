@@ -135,7 +135,10 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
       </div>
     </aside>
 
-    <main id="workspace-scroll-root" className="relative z-10 min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain scroll-smooth pt-16 [-webkit-overflow-scrolling:touch]">
+    <main
+      id="workspace-scroll-root"
+      className={`relative z-10 min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain scroll-smooth pt-16 transition-[padding] duration-200 [-webkit-overflow-scrolling:touch] ${open ? 'lg:pl-[284px]' : 'lg:pl-[92px]'}`}
+    >
       {isHome && show && (
         <div className="mx-auto w-full max-w-[430px] px-4 pt-6 sm:max-w-3xl">
           <div className="relative rounded-2xl border border-white/10 bg-[#111214] p-5">
