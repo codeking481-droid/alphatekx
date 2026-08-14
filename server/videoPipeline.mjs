@@ -239,7 +239,7 @@ NO markdown, NO code blocks, NO comments. JUST the JSON array.`
           'Authorization': `Bearer ${groqKey}`,
         },
         body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
+          model: 'openai/gpt-oss-120b',
           messages: [{ role: 'user', content: groqPrompt }],
           temperature: 0.6,
           max_tokens: 2500,
