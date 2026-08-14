@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowRight, Download, FileText, Radar, ShieldCheck, Sparkles } from 'lucide-react'
 import { getCredits, setCredits, hydrateCredits, subscribeCredits } from '../lib/creditStore'
+import { useAuth } from '../lib/auth'
 import CreditsExhaustedModal from '../components/CreditsExhaustedModal'
 
 const SCAN_PHASES = [
@@ -15,6 +16,7 @@ const SCAN_PHASES = [
 ]
 
 export default function ScanPage() {
+  const { user, loading: authLoading } = useAuth()
   const [url, setUrl] = useState('https://example-app.com')
   const [isScanning, setIsScanning] = useState(false)
   const [progress, setProgress] = useState(0)
@@ -76,6 +78,13 @@ export default function ScanPage() {
       return
     }
 
+    const activeEmail = String(user?.email || '').trim().toLowerCase()
+    if (authLoading || !activeEmail) {
+      setScanError('Please sign in to continue scanning.')
+      setStatus('Ready for inspection')
+      return
+    }
+
     setIsScanning(true)
     setScanError(null)
     setStatus('Checking credit balance...')
@@ -83,11 +92,10 @@ export default function ScanPage() {
     setFindings([])
 
     try {
-      // First, check credits and email
       const checkResponse = await fetch('/api/check-credits', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: localStorage.getItem('user_email') || '' }),
+        body: JSON.stringify({ email: activeEmail }),
       })
 
       if (!checkResponse.ok) {
@@ -245,10 +253,10 @@ export default function ScanPage() {
           <button 
             type="button" 
             onClick={handleScan}
-            disabled={isScanning || !url.trim()}
+            disabled={isScanning || !url.trim() || authLoading || !user?.email}
             className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isScanning ? 'Scanning...' : 'Scan, Don\'t Touch'}
+            {isScanning ? 'Scanning...' : authLoading ? 'Checking sign-in...' : !user?.email ? 'Sign in to scan' : 'Scan, Don\'t Touch'}
           </button>
         </div>
       </header>
