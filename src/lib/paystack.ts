@@ -1,5 +1,4 @@
 import { supabase } from './supabase'
-import { addCredits, setCredits } from './creditStore'
 
 type Plan = 'starter' | 'pro'
 export type PlanValue = 'free' | Plan | 'credits'
@@ -176,8 +175,6 @@ export async function verifyPaystack(reference: string, packOrPlan: PaymentPack 
   if (!raw.trim()) throw new Error('Payment server returned an empty response. No credits were changed; please retry verification.')
   localStorage.setItem('alphatekx_plan', pack.plan || pack.id)
   localStorage.setItem('alphatekx_freeCount', '0')
-  if (typeof data.credits === 'number') setCredits(data.credits)
-  else if (pack.credits) addCredits(pack.credits)
   return data as { success: true; plan: string; amount: number; credits?: number }
 }
 

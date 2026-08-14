@@ -1207,7 +1207,7 @@ async function runUserWorker(worker, apiKey, prompt) {
 }
 
 const adminEmail = 'iamdan4live@gmail.com'
-const DEFAULT_CREDITS = 3
+const DEFAULT_CREDITS = 1
 const supabaseConfig = () => ({
   url: process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '',
   anon: process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '',

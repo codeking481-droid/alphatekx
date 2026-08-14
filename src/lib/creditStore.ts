@@ -13,8 +13,9 @@ function getStorageKey() {
 export function getCredits() {
   const key = getStorageKey()
   const stored = localStorage.getItem(key)
-  const parsed = Number(stored ?? String(DEFAULT_CREDIT_BALANCE))
-  return Number.isFinite(parsed) ? parsed : DEFAULT_CREDIT_BALANCE
+  if (!stored || stored === '' || stored === 'null') return 0
+  const parsed = Number(stored)
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0
 }
 
 export async function spendCredits(amount: number) {
