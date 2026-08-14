@@ -4,7 +4,7 @@ import { createHmac, randomUUID } from 'node:crypto'
 import { supabaseServiceHeaders } from './supabaseHeaders.mjs'
 
 const adminEmail = 'iamdan4live@gmail.com'
-const DEFAULT_CREDITS = 3
+const DEFAULT_CREDITS = 1
 const dataDir = path.resolve('data')
 const billingDir = path.resolve(dataDir, 'billing')
 const transactionsFile = path.resolve(billingDir, 'transactions.json')
