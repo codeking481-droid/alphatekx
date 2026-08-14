@@ -4670,51 +4670,91 @@ function resolvePlanFromBody(body) {
 export async function verifyPaystack(req, res) {
   applyCors(req, res)
   const config = supabaseConfig()
+  
   if ((req.method || '').toUpperCase() === 'GET') {
     try {
       const requestUrl = new URL(req.url || '/', publicAppUrl())
       const reference = String(requestUrl.searchParams.get('reference') || requestUrl.searchParams.get('ref') || '')
       if (!reference) return json(res, 400, { error: 'Missing payment reference.' })
-      const result = await billing.verifyPayment('paystack', reference, config)
-      if (!result.ok) return json(res, 400, { error: result.message || 'Verification failed', reference, success: false })
-      return json(res, 200, { success: true, verified: true, credits: result.balance, plan: result.plan || 'free', amount: result.amount || 0, reference: result.reference || reference })
+      
+      // For GET, just verify the transaction was recorded
+      const creditsUser = await currentOrLocalUser(req, config.url, config.anon)
+      const email = creditsUser?.email || ''
+      const balance = email ? await getUserCreditBalance(email) : 0
+      return json(res, 200, { success: true, verified: true, credits: balance, reference })
     } catch (err) {
       return json(res, 500, { error: err instanceof Error ? err.message : String(err), success: false })
     }
   }
+
   try {
     const body = await readBody(req)
     const reference = String(body.reference || '')
     if (!reference) return json(res, 400, { error: 'Missing payment reference.' })
 
+    // Get email from auth or request body
+    let userEmail = body.email ? String(body.email).trim().toLowerCase() : null
+    if (!userEmail) {
+      const authUser = await currentOrLocalUser(req, config.url, config.anon)
+      userEmail = authUser?.email || null
+    }
+    if (!userEmail) return json(res, 401, { error: 'Email required for payment verification' })
+
+    // Dev mode - mock payment
     const devMode = process.env.NODE_ENV !== 'production' && !process.env.PAYSTACK_SECRET_KEY
     if (devMode) {
-      const user = await currentOrLocalUser(req, config.url, config.anon)
-      if (!user) return json(res, 401, { error: 'Authentication required.' })
-      const planId = body.planId || (body.plan === 'pro' ? 'pro_early_access' : body.plan === 'starter' ? 'pro_early_access' : null)
-      const packId = body.packId
-      if (planId) {
-        const result = await billing.setPlan(user, planId, config)
-        return json(res, 200, { verified: true, plan: result.plan, credits: result.remaining, amount: 0, mock: true })
+      const creditsToAdd = Number(body.creditsToAdd || 3) // Default to 3 credits (Starter pack)
+      const added = await addCredits(userEmail, creditsToAdd, 'dev-' + reference, `Dev payment: ${creditsToAdd} credits`)
+      if (added) {
+        const newBalance = await getUserCreditBalance(userEmail)
+        return json(res, 200, { verified: true, credits: newBalance, amount: 0, mock: true, reference })
+      } else {
+        return json(res, 400, { error: 'Could not add credits', mock: true })
       }
-      const bodyCredits = Number(body.credits || 0)
-      const bodyAmount = Number(body.amount || 0)
-      const bodyCurrency = String(body.currency || body.currency_code || 'NGN').trim().toUpperCase()
-      let pack = packId ? billing.getCreditPack(packId) : null
-      if (!pack && bodyCredits) {
-        pack = billing.CREDIT_PACKS.find(p => p.credits === bodyCredits && String(p.currency || '').toUpperCase() === bodyCurrency && p.amountKobo === bodyAmount)
-          || billing.CREDIT_PACKS.find(p => p.credits === bodyCredits && String(p.currency || '').toUpperCase() === bodyCurrency)
-          || billing.CREDIT_PACKS.find(p => p.credits === bodyCredits)
-      }
-      if (!pack) pack = billing.CREDIT_PACKS[0]
-      const result = await billing.addCredits(user, pack.credits, config, { reference: 'dev-' + reference, type: 'purchase', reason: `Dev purchase: ${pack.label}`, metadata: { packId: pack.id, mock: true } })
-      return json(res, 200, { verified: true, credits: result.remaining, plan: 'free', amount: pack.amountKobo, mock: true })
     }
 
-    const result = await billing.verifyPayment('paystack', reference, config)
-    if (!result.ok) return json(res, 400, { error: result.message || 'Verification failed' })
-    return json(res, 200, { verified: true, credits: result.balance, plan: result.plan || 'free', amount: result.amount || 0, reference: result.reference || reference })
-  } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Verification failed.' }) }
+    // Production mode - verify with real Paystack API
+    const paystackSecret = process.env.PAYSTACK_SECRET_KEY
+    if (!paystackSecret) return json(res, 400, { error: 'Paystack not configured' })
+
+    const verifyUrl = `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`
+    const verifyResponse = await fetch(verifyUrl, {
+      headers: { Authorization: `Bearer ${paystackSecret}` },
+    })
+    const verifyData = await verifyResponse.json()
+
+    if (!verifyData.status || verifyData.data?.status !== 'success') {
+      return json(res, 400, { error: 'Payment verification failed', reference })
+    }
+
+    const transaction = verifyData.data
+    if (transaction.currency !== 'NGN') {
+      return json(res, 400, { error: 'Invalid currency. NGN required.', reference })
+    }
+
+    // Map amount to credits (kobo amounts)
+    const amountKobo = Number(transaction.amount) || 0
+    let creditsToAdd = 0
+    
+    if (amountKobo === 2_850_000) creditsToAdd = 3       // Starter: ₦28,500 → 3 credits
+    else if (amountKobo === 7_350_000) creditsToAdd = 15  // Creator: ₦73,500 → 15 credits
+    else if (amountKobo === 14_850_000) creditsToAdd = 50 // Agency: ₦148,500 → 50 credits
+    else {
+      console.warn(`[Paystack] Unknown amount: ${amountKobo} kobo for reference ${reference}`)
+      return json(res, 400, { error: 'Payment amount does not match any credit pack', reference })
+    }
+
+    // Add credits to user account
+    const added = await addCredits(userEmail, creditsToAdd, reference, `Paystack payment: ${creditsToAdd} credits`)
+    if (added) {
+      const newBalance = await getUserCreditBalance(userEmail)
+      return json(res, 200, { verified: true, credits: newBalance, amount: amountKobo, reference })
+    } else {
+      return json(res, 400, { error: 'Could not add credits to account', reference })
+    }
+  } catch (error) {
+    return json(res, 500, { error: error instanceof Error ? error.message : 'Verification failed.' })
+  }
 }
 
 export async function purchaseMarketplace(req, res) {
@@ -9156,6 +9196,19 @@ const server = http.createServer(async (req, res) => {
   }
   const paymentVerifyPath = new URL(req.url || '/', 'http://localhost').pathname
   if (['GET', 'POST'].includes(req.method || '') && (paymentVerifyPath === '/api/paystack/verify' || paymentVerifyPath === '/api/verify-paystack')) return verifyPaystack(req, res)
+  if (req.method === 'POST' && req.url === '/api/check-credits') {
+    try {
+      const body = await readBody(req)
+      let userEmail = body.email ? String(body.email).trim().toLowerCase() : null
+      if (!userEmail) {
+        const authUser = await currentOrLocalUser(req, supabaseConfig().url, supabaseConfig().anon)
+        userEmail = authUser?.email || null
+      }
+      if (!userEmail) return json(res, 401, { error: 'Email required' })
+      const balance = await getUserCreditBalance(userEmail)
+      return json(res, 200, { credits: balance, email: userEmail })
+    } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Check failed' }) }
+  }
   if (req.method === 'POST' && req.url === '/api/marketplace/purchase') return purchaseMarketplace(req, res)
   if (req.method === 'POST' && req.url === '/api/missions/build') return buildMissionFiles(req, res)
   if (req.method === 'GET' && req.url?.startsWith('/api/projects/check-availability')) {
@@ -9556,27 +9609,189 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // ===== NEW CREDIT SYSTEM - Supabase-based, no local files =====
+  async function getOrCreateUser(email, ip, fingerprint) {
+    const config = supabaseConfig()
+    const headers = supabaseServiceHeaders(config.serviceKey)
+    
+    try {
+      // Check if email exists
+      const existing = await fetch(`${config.url}/rest/v1/users?email=eq.${encodeURIComponent(email)}`, {
+        headers,
+      }).then(r => r.json())
+      
+      if (existing && existing.length > 0) {
+        return existing[0] // Return existing user
+      }
+
+      // Email is new. Check if IP or fingerprint was used for free trial
+      if (ip || fingerprint) {
+        const ipMatches = ip ? await fetch(`${config.url}/rest/v1/users?ip=eq.${encodeURIComponent(ip)}&free_trial_used=eq.true`, { headers }).then(r => r.json()) : []
+        const fpMatches = fingerprint ? await fetch(`${config.url}/rest/v1/users?fingerprint=eq.${encodeURIComponent(fingerprint)}&free_trial_used=eq.true`, { headers }).then(r => r.json()) : []
+        
+        if ((ipMatches && ipMatches.length > 0) || (fpMatches && fpMatches.length > 0)) {
+          return null // Free trial already used on this device
+        }
+      }
+
+      // Create new user with 1 free trial credit
+      const newUser = { email, ip: ip || null, fingerprint: fingerprint || null, credits: 1, has_paid: false, free_trial_used: true }
+      const created = await fetch(`${config.url}/rest/v1/users`, {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
+        body: JSON.stringify(newUser),
+      }).then(r => r.json())
+
+      if (created && created.length > 0) {
+        await recordTransaction(email, 'free_trial', 1, 0, 1, null, 'Free trial credit')
+        return created[0]
+      }
+      return null
+    } catch (err) {
+      console.error('[Credit] getOrCreateUser error:', err instanceof Error ? err.message : err)
+      return null
+    }
+  }
+
+  async function getUserCreditBalance(email) {
+    if (!email) return 0
+    const config = supabaseConfig()
+    const headers = supabaseServiceHeaders(config.serviceKey)
+    
+    try {
+      const users = await fetch(`${config.url}/rest/v1/users?email=eq.${encodeURIComponent(email)}&select=credits`, { headers }).then(r => r.json())
+      return (users && users.length > 0) ? (Number(users[0].credits) || 0) : 0
+    } catch {
+      return 0
+    }
+  }
+
+  async function deductCredit(email) {
+    if (!email) return false
+    const config = supabaseConfig()
+    const headers = supabaseServiceHeaders(config.serviceKey)
+    
+    try {
+      const users = await fetch(`${config.url}/rest/v1/users?email=eq.${encodeURIComponent(email)}&select=credits`, { headers }).then(r => r.json())
+      if (!users || users.length === 0) return false
+      
+      const currentCredits = Number(users[0].credits) || 0
+      if (currentCredits <= 0) return false
+      
+      const newCredits = currentCredits - 1
+      const updated = await fetch(`${config.url}/rest/v1/users?email=eq.${encodeURIComponent(email)}`, {
+        method: 'PATCH',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credits: newCredits }),
+      }).then(r => r.json())
+      
+      if (updated && updated.length > 0) {
+        await recordTransaction(email, 'scan', 0, 1, newCredits, null, 'Scan deduction')
+        return true
+      }
+      return false
+    } catch (err) {
+      console.error('[Credit] deductCredit error:', err instanceof Error ? err.message : err)
+      return false
+    }
+  }
+
+  async function addCredits(email, amountToAdd, paystackRef, reason = 'Payment') {
+    if (!email || amountToAdd <= 0) return false
+    const config = supabaseConfig()
+    const headers = supabaseServiceHeaders(config.serviceKey)
+    
+    try {
+      const users = await fetch(`${config.url}/rest/v1/users?email=eq.${encodeURIComponent(email)}&select=credits,has_paid`, { headers }).then(r => r.json())
+      if (!users || users.length === 0) return false
+      
+      const currentCredits = Number(users[0].credits) || 0
+      const newCredits = currentCredits + amountToAdd
+      
+      const updated = await fetch(`${config.url}/rest/v1/users?email=eq.${encodeURIComponent(email)}`, {
+        method: 'PATCH',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credits: newCredits, has_paid: true }),
+      }).then(r => r.json())
+      
+      if (updated && updated.length > 0) {
+        await recordTransaction(email, 'paystack_payment', amountToAdd, 0, newCredits, paystackRef, reason)
+        return true
+      }
+      return false
+    } catch (err) {
+      console.error('[Credit] addCredits error:', err instanceof Error ? err.message : err)
+      return false
+    }
+  }
+
+  async function recordTransaction(email, type, creditsAdded, creditsDeducted, balanceAfter, paystackRef, reason) {
+    const config = supabaseConfig()
+    const headers = supabaseServiceHeaders(config.serviceKey)
+    
+    try {
+      const transaction = {
+        email,
+        type,
+        credits_added: creditsAdded,
+        credits_deducted: creditsDeducted,
+        balance_after: balanceAfter,
+        paystack_reference: paystackRef || null,
+        reason,
+      }
+      await fetch(`${config.url}/rest/v1/transactions`, {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify(transaction),
+      })
+    } catch {
+      // Log to console but don't block
+      console.error('[Credit] recordTransaction failed for:', email)
+    }
+  }
+
   if (req.method === 'POST' && req.url === '/api/scan') {
     try {
       const body = await readBody(req)
       const targetUrl = String(body.url || '').trim()
       
-      const SCAN_COST = 3
-      const user = currentOrLocalUser(req)
-      let userCredits = await getUserCredits(user, supabaseConfig())
-
-      // New users follow the 3-credit rule; preserve the real available balance when it exists.
-      if (userCredits === 0) {
-        userCredits = 3
+      // Get user email from auth or body
+      let userEmail = body.email ? String(body.email).trim().toLowerCase() : null
+      if (!userEmail) {
+        const authUser = await currentOrLocalUser(req, supabaseConfig().url, supabaseConfig().anon)
+        userEmail = authUser?.email || null
+      }
+      if (!userEmail) {
+        res.writeHead(401, { 'Content-Type': 'application/json' })
+        return res.end(JSON.stringify({ error: 'Email required for scan' }))
       }
 
-      if (userCredits < SCAN_COST) {
+      // Get client IP and fingerprint (use user's provided fingerprint or generate one)
+      const clientIp = getClientIp(req)
+      const clientFingerprint = body.fingerprint ? String(body.fingerprint).slice(0, 255) : null
+
+      // Get or create user with free trial rules
+      let user = await getOrCreateUser(userEmail, clientIp, clientFingerprint)
+      if (user === null) {
+        // User email is new but IP/fingerprint already used free trial
+        res.writeHead(403, { 'Content-Type': 'application/json' })
+        return res.end(JSON.stringify({ 
+          error: 'Free trial already used on this device. Please pay to continue.',
+          blockedByFreeTrial: true 
+        }))
+      }
+
+      // Check credit balance (need at least 1 credit)
+      let userCredits = await getUserCreditBalance(userEmail)
+      
+      if (userCredits < 1) {
         res.writeHead(402, { 'Content-Type': 'application/json' })
         return res.end(JSON.stringify({
-          error: `You need ${SCAN_COST - userCredits} more credit${SCAN_COST - userCredits === 1 ? '' : 's'} to run this scan. Add credits to continue.`,
+          error: 'No credits available. Purchase credits to scan.',
           paywall: true,
-          creditsNeeded: SCAN_COST,
-          creditsAvailable: userCredits
+          creditsNeeded: 1,
+          creditsAvailable: userCredits,
+          pricingUrl: '/pricing'
         }))
       }
 
@@ -9631,29 +9846,11 @@ const server = http.createServer(async (req, res) => {
         await new Promise(resolve => setTimeout(resolve, 280))
       }
 
-      // DEDUCT CREDITS AFTER SUCCESSFUL SCAN
-      const remainingCredits = userCredits - SCAN_COST
+      // DEDUCT 1 CREDIT AFTER SUCCESSFUL SCAN - Using Supabase, not local
+      const deducted = await deductCredit(userEmail)
+      const remainingCredits = deducted ? (userCredits - 1) : userCredits
       
-      // Persist credit deduction if user is authenticated
-      if (user && user.id && user.id !== 'anonymous') {
-        try {
-          const deductResult = await spendUserCredits(user, SCAN_COST, { 
-            type: 'scan', 
-            url: targetUrl,
-            reason: `Security scan for ${targetUrl}`
-          })
-          if (deductResult) {
-            console.log(`[Scan] Credits deducted for user ${user.id}: -${SCAN_COST} credits`)
-          } else {
-            console.warn(`[Scan] Failed to deduct credits for user ${user.id}`)
-          }
-        } catch (err) {
-          console.error('[Scan] Credit deduction error:', err instanceof Error ? err.message : err)
-          // Don't block the response if credit deduction fails - user still got the scan
-        }
-      } else {
-        console.log('[Scan] Local/anonymous user - credits not persisted')
-      }
+      console.log(`[Scan] User ${userEmail}: ${userCredits} credits → ${remainingCredits} credits (deducted: ${deducted})`)
 
       emit({
         type: 'done',

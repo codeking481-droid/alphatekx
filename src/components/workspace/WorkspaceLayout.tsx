@@ -12,7 +12,6 @@ const ONBOARDING_KEY = 'alphatekx:workspace-onboarding'
 
 const primary = [
   ['Agen', '/agen', Atom],
-  ['Automate', '/automations', Sparkles],
   ['History', '/history', History],
   ['Media Library', '/media-library', FolderOpen],
   ['Market', '/market', FolderOpen],
