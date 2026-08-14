@@ -9654,38 +9654,58 @@ const server = http.createServer(async (req, res) => {
   }
 
   async function getUserCreditBalance(email) {
-    if (!email) return 0
+    if (!email) return 1 // Default to 1 credit for new users
     const config = supabaseConfig()
-    const headers = supabaseServiceHeaders(config.serviceKey)
+    if (!config.url || !config.service) return 1
+    const headers = supabaseServiceHeaders(config.service)
     
     try {
-      const users = await fetch(`${config.url}/rest/v1/users?email=eq.${encodeURIComponent(email)}&select=credits`, { headers }).then(r => r.json())
-      return (users && users.length > 0) ? (Number(users[0].credits) || 0) : 0
-    } catch {
-      return 0
+      // Query the profiles table which is the correct source of truth for credits
+      const profiles = await fetch(`${config.url}/rest/v1/profiles?email=eq.${encodeURIComponent(email.toLowerCase())}&select=id,credits`, { headers }).then(r => r.json())
+      if (profiles && Array.isArray(profiles) && profiles.length > 0) {
+        const credits = Number(profiles[0].credits)
+        return Number.isFinite(credits) ? Math.max(0, credits) : 1
+      }
+      // If profile doesn't exist yet, return 1 (default new user credit)
+      return 1
+    } catch (err) {
+      console.error('[Credit] getUserCreditBalance error:', err instanceof Error ? err.message : err)
+      return 1
     }
   }
 
   async function deductCredit(email) {
     if (!email) return false
     const config = supabaseConfig()
-    const headers = supabaseServiceHeaders(config.serviceKey)
+    if (!config.url || !config.service) return false
+    const headers = supabaseServiceHeaders(config.service)
     
     try {
-      const users = await fetch(`${config.url}/rest/v1/users?email=eq.${encodeURIComponent(email)}&select=credits`, { headers }).then(r => r.json())
-      if (!users || users.length === 0) return false
+      // Query the profiles table for the correct credits
+      const profiles = await fetch(`${config.url}/rest/v1/profiles?email=eq.${encodeURIComponent(email.toLowerCase())}&select=id,credits`, { headers }).then(r => r.json())
+      if (!profiles || !Array.isArray(profiles) || profiles.length === 0) {
+        // Create profile with 1 credit if it doesn't exist
+        const created = await fetch(`${config.url}/rest/v1/profiles`, {
+          method: 'POST',
+          headers: { ...headers, 'Content-Type': 'application/json', Prefer: 'return=representation' },
+          body: JSON.stringify({ email: email.toLowerCase(), credits: 1, plan: 'free' }),
+        })
+        if (!created.ok) return false
+        return true // First credit is available
+      }
       
-      const currentCredits = Number(users[0].credits) || 0
+      const currentCredits = Number(profiles[0].credits) || 0
       if (currentCredits <= 0) return false
       
       const newCredits = currentCredits - 1
-      const updated = await fetch(`${config.url}/rest/v1/users?email=eq.${encodeURIComponent(email)}`, {
+      const userId = profiles[0].id
+      const updated = await fetch(`${config.url}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`, {
         method: 'PATCH',
         headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({ credits: newCredits }),
-      }).then(r => r.json())
+      })
       
-      if (updated && updated.length > 0) {
+      if (updated.ok) {
         await recordTransaction(email, 'scan', 0, 1, newCredits, null, 'Scan deduction')
         return true
       }
@@ -9699,22 +9719,36 @@ const server = http.createServer(async (req, res) => {
   async function addCredits(email, amountToAdd, paystackRef, reason = 'Payment') {
     if (!email || amountToAdd <= 0) return false
     const config = supabaseConfig()
-    const headers = supabaseServiceHeaders(config.serviceKey)
+    if (!config.url || !config.service) return false
+    const headers = supabaseServiceHeaders(config.service)
     
     try {
-      const users = await fetch(`${config.url}/rest/v1/users?email=eq.${encodeURIComponent(email)}&select=credits,has_paid`, { headers }).then(r => r.json())
-      if (!users || users.length === 0) return false
+      // Query the profiles table for the correct credits
+      let profiles = await fetch(`${config.url}/rest/v1/profiles?email=eq.${encodeURIComponent(email.toLowerCase())}&select=id,credits`, { headers }).then(r => r.json())
       
-      const currentCredits = Number(users[0].credits) || 0
+      if (!profiles || !Array.isArray(profiles) || profiles.length === 0) {
+        // Create profile if it doesn't exist
+        const created = await fetch(`${config.url}/rest/v1/profiles`, {
+          method: 'POST',
+          headers: { ...headers, 'Content-Type': 'application/json', Prefer: 'return=representation' },
+          body: JSON.stringify({ email: email.toLowerCase(), credits: amountToAdd, plan: 'free' }),
+        }).then(r => r.json())
+        if (!created || !Array.isArray(created) || created.length === 0) return false
+        await recordTransaction(email, 'paystack_payment', amountToAdd, 0, amountToAdd, paystackRef, reason)
+        return true
+      }
+      
+      const userId = profiles[0].id
+      const currentCredits = Number(profiles[0].credits) || 0
       const newCredits = currentCredits + amountToAdd
       
-      const updated = await fetch(`${config.url}/rest/v1/users?email=eq.${encodeURIComponent(email)}`, {
+      const updated = await fetch(`${config.url}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`, {
         method: 'PATCH',
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ credits: newCredits, has_paid: true }),
-      }).then(r => r.json())
+        body: JSON.stringify({ credits: newCredits, purchased_credits: (Number(profiles[0].purchased_credits) || 0) + amountToAdd }),
+      })
       
-      if (updated && updated.length > 0) {
+      if (updated.ok) {
         await recordTransaction(email, 'paystack_payment', amountToAdd, 0, newCredits, paystackRef, reason)
         return true
       }

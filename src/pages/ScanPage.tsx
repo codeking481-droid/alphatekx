@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowRight, Download, FileText, Radar, ShieldCheck, Sparkles } from 'lucide-react'
 import { getCredits, setCredits, hydrateCredits, subscribeCredits } from '../lib/creditStore'
+import CreditsExhaustedModal from '../components/CreditsExhaustedModal'
 
 const SCAN_PHASES = [
   'Validating target URL...',
@@ -28,6 +29,7 @@ export default function ScanPage() {
   })
   const [scanError, setScanError] = useState<string | null>(null)
   const [isLoadingCredits, setIsLoadingCredits] = useState(false)
+  const [showCreditsExhaustedModal, setShowCreditsExhaustedModal] = useState(false)
 
   const scoreTone = useMemo(() => {
     if (score === null || score === undefined) return 'text-slate-400'
@@ -102,7 +104,7 @@ export default function ScanPage() {
       const currentCredits = checkData.credits || 0
 
       if (currentCredits < 1) {
-        setScanError('No credits available. Purchase credits to continue scanning.')
+        setShowCreditsExhaustedModal(true)
         setStatus('Ready for inspection')
         setIsScanning(false)
         setProgress(0)
@@ -458,6 +460,11 @@ export default function ScanPage() {
           </div>
         </div>
       </section>
+      
+      <CreditsExhaustedModal 
+        open={showCreditsExhaustedModal} 
+        onClose={() => setShowCreditsExhaustedModal(false)}
+      />
     </main>
   )
 }

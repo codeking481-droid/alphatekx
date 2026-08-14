@@ -54,7 +54,9 @@ export default function App() {
       <Routes>
       <Route path="/" element={<LandingRoute />} />
       <Route path="/about" element={<About />} />
-      <Route path="/auth" element={suspended(<AuthRoute />)} />
+      <Route path="/auth" element={<Navigate to="/" replace />} />
+      <Route path="/login" element={<Navigate to="/" replace />} />
+      <Route path="/signup" element={<Navigate to="/" replace />} />
 
       {/* Core authenticated product */}
       <Route path="/agen" element={protectedPage(<Home />)} />

@@ -1,6 +1,6 @@
 create extension if not exists pgcrypto;
 
-create table if not exists public.profiles (id uuid primary key references auth.users(id) on delete cascade, email text not null default '', credits integer not null default 0 check (credits >= 0), plan text not null default 'free', revenue numeric not null default 0 check (revenue >= 0), display_name text not null default '', created_at timestamptz not null default now());
+create table if not exists public.profiles (id uuid primary key references auth.users(id) on delete cascade, email text not null default '', credits integer not null default 1 check (credits >= 0), plan text not null default 'free', revenue numeric not null default 0 check (revenue >= 0), display_name text not null default '', created_at timestamptz not null default now());
 alter table public.profiles add column if not exists revenue numeric not null default 0 check (revenue >= 0);
 alter table public.profiles add column if not exists display_name text not null default '';
 alter table public.profiles add column if not exists last_active_at timestamptz not null default now();

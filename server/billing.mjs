@@ -75,10 +75,10 @@ export const PLANS = {
 
 export const CREDIT_PACKS = [
   { id: 'test_100', credits: 100, amountKobo: 10000, currency: 'NGN', label: 'Test purchase', description: 'Test payment for ₦100' },
-  // Video monthly subscription packs (use plan ids when subscribing)
-  { id: 'video_19', credits: 0, amountKobo: 1900, currency: 'USD', label: '$19 Video Monthly', description: '10 videos / month, up to 5 mins each', type: 'subscription', planId: 'video_19' },
-  { id: 'video_49', credits: 0, amountKobo: 4900, currency: 'USD', label: '$49 Video Monthly', description: '30 videos / month, up to 8 mins each + scheduler', type: 'subscription', planId: 'video_49' },
-  { id: 'video_99', credits: 0, amountKobo: 9900, currency: 'USD', label: '$99 Video Monthly', description: 'Unlimited videos, up to 12 mins + Vault', type: 'subscription', planId: 'video_99' },
+  // Video monthly subscription packs with credit grants
+  { id: 'video_19', credits: 3, amountKobo: 1900, currency: 'USD', label: '$19 Video Monthly', description: '10 videos / month, up to 5 mins each, 3 credits', type: 'subscription', planId: 'video_19' },
+  { id: 'video_49', credits: 15, amountKobo: 4900, currency: 'USD', label: '$49 Video Monthly', description: '30 videos / month, up to 8 mins each + scheduler, 15 credits', type: 'subscription', planId: 'video_49' },
+  { id: 'video_99', credits: 50, amountKobo: 9900, currency: 'USD', label: '$99 Video Monthly', description: 'Unlimited videos, up to 12 mins + Vault, 50 credits', type: 'subscription', planId: 'video_99' },
 ]
 
 // Video-specific plan entries (explicit)

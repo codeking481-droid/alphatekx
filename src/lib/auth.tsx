@@ -335,6 +335,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
     setSession(null)
     setLocalUser(null)
     setProfile(null)
+    if (typeof window !== 'undefined') {
+      window.location.replace('/')
+    }
   }
 
   const value = useMemo<AuthValue>(() => ({ session, user, profile, loading, configured: isSupabaseConfigured, refreshProfile, signOut, localSignIn }), [session, user, profile, loading, refreshProfile])
