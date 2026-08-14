@@ -14,9 +14,9 @@ export type PaymentPack = {
 }
 
 export const PACKS: PaymentPack[] = [
-  { id: 'starter', label: 'Starter Pack', amountKobo: 500000, credits: 500, plan: 'starter' },
-  { id: 'pro', label: 'Pro Pack', amountKobo: 1_500_000, credits: 2500, plan: 'pro' },
-  { id: 'credits', label: 'Credit Booster', amountKobo: 200_000, credits: 100 },
+  { id: 'starter', label: 'Starter (₦28,500)', amountKobo: 2_850_000, credits: 3, currency: 'NGN' },
+  { id: 'creator', label: 'Creator (₦73,500) - MOST POPULAR', amountKobo: 7_350_000, credits: 15, currency: 'NGN', plan: 'creator' },
+  { id: 'agency', label: 'Agency (₦148,500)', amountKobo: 14_850_000, credits: 50, currency: 'NGN', plan: 'agency' },
 ]
 
 const PAYSTACK_CALLBACK_URL = 'https://alphatekx.name.ng/dashboard'
