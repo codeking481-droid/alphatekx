@@ -1185,6 +1185,19 @@ function isAdminAuthUser(user) {
   return configured.has(email)
 }
 
+function isAdminEmailAddress(email) {
+  const normalized = normalizedAuthEmail(email)
+  if (!normalized) return false
+  if (productAdminEmails.has(normalized)) return true
+  const configured = new Set(
+    String(process.env.SUPER_ADMIN_EMAILS || '')
+      .split(',')
+      .map(normalizedAuthEmail)
+      .filter(Boolean),
+  )
+  return configured.has(normalized)
+}
+
 async function runUserWorker(worker, apiKey, prompt) {
   const provider = String(worker.provider || '').toLowerCase()
   const model = String(worker.model || '').trim().slice(0, 100)
@@ -9611,12 +9624,24 @@ const server = http.createServer(async (req, res) => {
 
   // ===== NEW CREDIT SYSTEM - Supabase-based, no local files =====
   async function getOrCreateUser(email, ip, fingerprint) {
+    const normalizedEmail = normalizedAuthEmail(email)
+    if (isAdminEmailAddress(normalizedEmail)) {
+      return {
+        id: `admin-${normalizedEmail}`,
+        email: normalizedEmail,
+        credits: 999999,
+        has_paid: true,
+        free_trial_used: false,
+        plan: 'admin',
+      }
+    }
+
     const config = supabaseConfig()
     const headers = supabaseServiceHeaders(config.serviceKey)
     
     try {
       // Check if email exists
-      const existing = await fetch(`${config.url}/rest/v1/users?email=eq.${encodeURIComponent(email)}`, {
+      const existing = await fetch(`${config.url}/rest/v1/users?email=eq.${encodeURIComponent(normalizedEmail)}`, {
         headers,
       }).then(r => r.json())
       
@@ -9635,7 +9660,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       // Create new user with 1 free trial credit
-      const newUser = { email, ip: ip || null, fingerprint: fingerprint || null, credits: 1, has_paid: false, free_trial_used: true }
+      const newUser = { email: normalizedEmail, ip: ip || null, fingerprint: fingerprint || null, credits: 1, has_paid: false, free_trial_used: true }
       const created = await fetch(`${config.url}/rest/v1/users`, {
         method: 'POST',
         headers: { ...headers, 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
@@ -9643,7 +9668,7 @@ const server = http.createServer(async (req, res) => {
       }).then(r => r.json())
 
       if (created && created.length > 0) {
-        await recordTransaction(email, 'free_trial', 1, 0, 1, null, 'Free trial credit')
+        await recordTransaction(normalizedEmail, 'free_trial', 1, 0, 1, null, 'Free trial credit')
         return created[0]
       }
       return null
@@ -9654,14 +9679,16 @@ const server = http.createServer(async (req, res) => {
   }
 
   async function getUserCreditBalance(email) {
-    if (!email) return 1 // Default to 1 credit for new users
+    const normalizedEmail = normalizedAuthEmail(email)
+    if (!normalizedEmail) return 1 // Default to 1 credit for new users
+    if (isAdminEmailAddress(normalizedEmail)) return 999999
     const config = supabaseConfig()
     if (!config.url || !config.service) return 1
     const headers = supabaseServiceHeaders(config.service)
     
     try {
       // Query the profiles table which is the correct source of truth for credits
-      const profiles = await fetch(`${config.url}/rest/v1/profiles?email=eq.${encodeURIComponent(email.toLowerCase())}&select=id,credits`, { headers }).then(r => r.json())
+      const profiles = await fetch(`${config.url}/rest/v1/profiles?email=eq.${encodeURIComponent(normalizedEmail)}&select=id,credits`, { headers }).then(r => r.json())
       if (profiles && Array.isArray(profiles) && profiles.length > 0) {
         const credits = Number(profiles[0].credits)
         return Number.isFinite(credits) ? Math.max(0, credits) : 1
