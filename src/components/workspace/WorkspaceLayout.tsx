@@ -100,8 +100,7 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
         <span className={!isAdmin && needsCreditTopUp(credits) ? 'text-[#F5C518]' : 'text-white'}>{isAdmin ? 'Admin' : `${credits} Credits`}</span>
       </button>
     </header>
-    {open && <button className="fixed inset-0 z-40 bg-black/40 transition-opacity duration-200 backdrop-blur-[1px] lg:hidden" onClick={() => setOpen(false)} aria-label="Close menu"/>}
-    {!open && <button className="fixed left-4 top-[86px] z-40 grid size-11 place-items-center rounded-xl border border-white/10 bg-[#111214]/90 text-white shadow-lg transition hover:bg-white/[0.04] lg:left-5" onClick={() => setOpen(true)} aria-label="Open menu"><Menu size={18}/></button>}
+    {open && <button className="fixed inset-0 z-40 bg-black/40 transition-opacity duration-200 backdrop-blur-[1px]" onClick={() => setOpen(false)} aria-label="Close menu"/>}
     <aside className={`fixed inset-y-0 left-0 z-50 flex max-w-[82vw] flex-col border-r border-white/10 bg-[#111214]/95 text-white shadow-[0_12px_45px_rgba(0,0,0,0.42)] backdrop-blur-2xl transition-all duration-200 ease-out ${open ? 'w-[284px] translate-x-0' : '-translate-x-full w-[284px]'}`}>
       <div className="flex h-[72px] items-center justify-between px-3">
         <NavLink to="/agen" onClick={() => setOpen(false)} className="flex items-center gap-3 overflow-hidden">

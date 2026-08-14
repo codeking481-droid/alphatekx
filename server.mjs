@@ -9197,6 +9197,31 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && req.url === '/api/paystack/webhook') {
     try { return await paystackWebhookHandler(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Webhook failed' }) }
   }
+  if (req.method === 'POST' && req.url === '/api/fix-exposure') {
+    try {
+      const body = await readBody(req)
+      const payload = {
+        path: String(body.path || '').trim(),
+        severity: String(body.severity || 'critical'),
+        source: String(body.source || 'unknown'),
+      }
+
+      console.log('[fix-exposure] received payload:', payload)
+
+      await new Promise((resolve) => setTimeout(resolve, 1500))
+
+      return json(res, 200, {
+        success: true,
+        message: 'Restoration deployment simulated successfully.',
+      })
+    } catch (error) {
+      console.error('[fix-exposure] error:', error instanceof Error ? error.message : error)
+      return json(res, 500, {
+        success: false,
+        error: error instanceof Error ? error.message : 'Restoration deployment failed.',
+      })
+    }
+  }
   if (req.method === 'POST' && req.url === '/api/contact') {
     try { return await handleContactRequest(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Contact request failed' }) }
   }
@@ -9414,6 +9439,7 @@ const server = http.createServer(async (req, res) => {
 
   async function runScanFromUrl(targetUrl) {
     const findings = []
+    const securityFindings = []
     const normalizedUrl = String(targetUrl || '').trim()
     if (!normalizedUrl) throw new Error('Missing URL')
 
@@ -9516,11 +9542,33 @@ const server = http.createServer(async (req, res) => {
       pattern.regex.lastIndex = 0
     }
 
-    const sensitivePaths = ['/.env', '/config.json', '/.git', '/.env.local', '/.env.example', '/web.config']
+    const sensitivePaths = ['/.env', '/.git/config', '/config.json', '/config.php', '/.env.example', '/backup.sql', '/phpinfo.php']
     for (const sensitivePath of sensitivePaths) {
-      const headResult = await safeHead(new URL(sensitivePath, base).toString())
-      if (headResult && headResult.ok && headResult.status < 500) {
-        findings.push(scanFinding(`exposed-${sensitivePath.replace(/\W+/g, '-')}`, 'critical', `Sensitive file exposed: ${sensitivePath}`, `The sensitive file ${sensitivePath} is accessible without authentication. This could expose configuration, secrets, or source code.`, 'EXPOSED_PATH'))
+      const probeUrl = new URL(sensitivePath, base).toString()
+
+      try {
+        const response = await fetch(probeUrl, {
+          method: 'GET',
+          redirect: 'follow',
+          headers: { 'User-Agent': 'AlphaTekX-Scanner' },
+          signal: AbortSignal.timeout(8000),
+        })
+
+        if (response.status === 200) {
+          const finding = {
+            type: 'security_exposure',
+            severity: 'critical',
+            path: sensitivePath,
+            url: probeUrl,
+            status: response.status,
+            message: `Sensitive file exposed: ${sensitivePath}`,
+          }
+
+          securityFindings.push(finding)
+          findings.push(scanFinding(`exposed-${sensitivePath.replace(/[^a-z0-9]+/gi, '-').replace(/(^-|-$)/g, '')}`, 'critical', `Sensitive file exposed: ${sensitivePath}`, `The file ${sensitivePath} is publicly accessible and should not be exposed. This can reveal secrets, credentials, or application configuration.`, 'EXPOSED_PATH'))
+        }
+      } catch (error) {
+        // Ignore missing or blocked paths and continue scanning the rest.
       }
     }
 
@@ -9610,6 +9658,7 @@ const server = http.createServer(async (req, res) => {
 
     return {
       findings,
+      securityFindings,
       score: finalScore,
       risk,
       totalFindings: findings.length,
