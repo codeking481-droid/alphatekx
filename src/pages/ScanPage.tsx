@@ -239,240 +239,235 @@ export default function ScanPage() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-4 py-10 text-white sm:px-6 lg:py-14">
-      <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-violet-300">Alpha scan</p>
-          <h1 className="mt-3 text-3xl font-black tracking-[-0.06em] text-white sm:text-4xl">Scan My Link — Report Only</h1>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-4 py-2">
-            <div className="text-xs font-black uppercase tracking-[0.12em] text-emerald-300">{credits} Credits</div>
-            <div className="text-[10px] text-emerald-200/70">3 per scan</div>
-          </div>
-          <button 
-            type="button" 
-            onClick={handleScan}
-            disabled={isScanning || !url.trim() || authLoading || !user?.email}
-            className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isScanning ? 'Scanning...' : authLoading ? 'Checking sign-in...' : !user?.email ? 'Sign in to scan' : 'Scan, Don\'t Touch'}
-          </button>
-        </div>
-      </header>
-
-      <section className="mt-8 rounded-[28px] border border-white/10 bg-[#111214] p-4 shadow-[0_28px_70px_rgba(0,0,0,0.2)] sm:p-5">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center">
-          <label className="sr-only" htmlFor="scan-url">Website URL</label>
-          <input
-            id="scan-url"
-            value={url}
-            onChange={(event) => setUrl(event.target.value)}
-            onKeyPress={(event) => event.key === 'Enter' && handleScan()}
-            placeholder="https://example-app.com"
-            disabled={isScanning}
-            className="min-h-[52px] flex-1 rounded-full border border-white/10 bg-black/20 px-5 text-sm text-white placeholder:text-slate-500 outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-          />
-          <button 
-            type="button" 
-            onClick={handleScan} 
-            disabled={isScanning || !url.trim()}
-            className="btn-primary min-w-[180px] disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isScanning ? 'Scanning...' : 'Scan, Don\'t Touch'}
-          </button>
-        </div>
-      </section>
-
-      <section className="mt-8 grid gap-5 lg:grid-cols-2">
-        <div className="rounded-[30px] border border-white/10 bg-[#0E0F12] p-4 shadow-[0_26px_70px_rgba(0,0,0,0.18)]">
-          <div className="relative overflow-hidden rounded-[24px] border border-emerald-400/20 bg-[#07120e] p-3">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(52,211,153,0.12),transparent_50%)]" />
-            <div className="relative h-[340px] overflow-hidden rounded-[18px] border border-white/10 bg-[#0a1111]">
-              <div className="flex h-full items-center justify-center">
-                <div className="text-center">
-                  <div className="mx-auto mb-4 grid size-14 place-items-center rounded-full border border-emerald-400/30 bg-emerald-500/10 text-emerald-300">
-                    <Radar size={26} />
-                  </div>
-                  <p className="text-xl font-black text-white">{url || 'example-app.com'}</p>
-                  <p className="mt-2 text-sm text-slate-400">Smart scan visual</p>
-                </div>
-              </div>
-              <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-emerald-400/10 to-transparent" />
-              <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-emerald-500/15 to-transparent" />
-              <div
-                className="absolute left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-emerald-300 to-transparent shadow-[0_0_18px_rgba(52,211,153,0.9)] transition-all duration-300"
-                style={{ top: `${Math.min(progress, 100)}%` }}
-              />
-              <div className="absolute inset-0 opacity-30" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px)', backgroundSize: '100% 18px' }} />
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-[30px] border border-white/10 bg-[#0E0F12] p-4 shadow-[0_26px_70px_rgba(0,0,0,0.18)]">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-violet-300">Live findings</p>
-              <h2 className="mt-2 text-xl font-black text-white">{status}</h2>
-            </div>
-            <div className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-1 text-xs font-black text-emerald-300">{progress}%</div>
-          </div>
-
-          <div className="mt-5 space-y-3">
-            {isScanning && (
-              <div className="space-y-2">
-                {SCAN_PHASES.slice(0, Math.ceil((progress / 100) * SCAN_PHASES.length)).map((phase, index) => (
-                  <div key={phase} className="rounded-2xl border border-emerald-400/15 bg-emerald-500/5 p-3 text-sm text-emerald-100 transition-all" style={{ opacity: 0.4 + (index / SCAN_PHASES.length) * 0.6 }}>
-                    ✓ {phase}
-                  </div>
-                ))}
-              </div>
-            )}
-            {scanError && (
-              <div className="space-y-2">
-                <div className="rounded-2xl border border-rose-400/15 bg-rose-500/5 p-3 text-sm text-rose-100">
-                  ⚠️ {scanError}
-                </div>
-                {scanError.toLowerCase().includes('chatgpt') || scanError.toLowerCase().includes('http 403') || scanError.toLowerCase().includes('access denied') ? (
-                  <div className="rounded-2xl border border-amber-400/15 bg-amber-500/5 p-3 text-sm text-amber-100">
-                    💡 <strong>Tip:</strong> Some sites like ChatGPT use bot detection. Try scanning a public portfolio, blog, or company site instead. Any site accessible to the public without login should work.
-                  </div>
-                ) : scanError.toLowerCase().includes('timeout') ? (
-                  <div className="rounded-2xl border border-amber-400/15 bg-amber-500/5 p-3 text-sm text-amber-100">
-                    💡 <strong>Tip:</strong> The site took too long to respond. Try again with a faster, more responsive website.
-                  </div>
-                ) : scanError.toLowerCase().includes('invalid') || scanError.toLowerCase().includes('valid http or https') ? (
-                  <div className="rounded-2xl border border-amber-400/15 bg-amber-500/5 p-3 text-sm text-amber-100">
-                    💡 <strong>Tip:</strong> Make sure your URL starts with http:// or https:// (e.g., <code className="font-mono">https://example.com</code>)
-                  </div>
-                ) : null}
-              </div>
-            )}
-            {!isScanning && !scanError && findings.length === 0 && (
-              <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-4 text-sm text-slate-400">No findings yet. Run the scan to inspect the target for leaks and performance risks.</div>
-            )}
-            {!isScanning && findings.map((finding) => (
-              <div key={finding.id} className="rounded-2xl border border-white/10 bg-white/[0.02] p-3">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-black text-white">{finding.label}</p>
-                  <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${finding.severity === 'critical' ? 'bg-rose-500/10 text-rose-300' : finding.severity === 'warning' ? 'bg-amber-500/10 text-amber-300' : 'bg-sky-500/10 text-sky-300'}`}>
-                    {finding.severity}
-                  </span>
-                </div>
-                <p className="mt-2 text-sm text-slate-300">{finding.detail}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="mt-8 rounded-[30px] border border-white/10 bg-[#0D0E12] p-5 shadow-[0_26px_70px_rgba(0,0,0,0.18)]">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <main className="w-full px-4 pb-10 pt-4 text-white sm:px-6 lg:px-8">
+      <div className="mx-auto w-full max-w-[1500px] rounded-[28px] border border-violet-300/20 bg-[radial-gradient(circle_at_top,_rgba(123,92,255,0.38),_rgba(17,19,31,0.9)_36%,_rgba(2,6,14,1)_72%)] p-3 shadow-[0_32px_120px_rgba(76,29,149,0.28)] ring-1 ring-white/5 backdrop-blur-sm sm:p-5">
+        <header className="flex flex-col gap-4 rounded-[18px] border border-violet-300/20 bg-[#171922]/80 px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] md:flex-row md:items-center md:justify-between md:px-6">
           <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Verdict</p>
-            {score !== null && risk ? (
-              <>
-                <div className="mt-2 flex items-center gap-3">
-                  <span className={`text-3xl font-black ${scoreTone}`}>{score}</span>
-                  <span className="text-sm text-slate-400">out of 100</span>
-                </div>
-                <div className="mt-2 text-sm font-semibold">
-                  <span className="text-slate-300">Risk: </span>
-                  <span className={risk.includes('Low') ? 'text-emerald-300' : risk.includes('Moderate') ? 'text-amber-300' : 'text-rose-300'}>{risk}</span>
-                </div>
-              </>
-            ) : (
-              <p className="mt-3 text-sm text-slate-400">Run a scan to see security verdict</p>
-            )}
-            <div className="mt-3 text-xs text-slate-400">Credits remaining: <span className="text-emerald-300 font-black">{credits}</span></div>
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-violet-300">Alpha scan</p>
+            <h1 className="mt-2 text-3xl font-black tracking-[-0.06em] text-white sm:text-4xl">Scan My Link — Report Only</h1>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <button 
-              type="button" 
-              onClick={async () => {
-                if (findings.length === 0) {
-                  alert('Run a scan first to generate a report')
-                  return
-                }
-                try {
-                  const { jsPDF } = await import('jspdf')
-                  const doc = new jsPDF()
-                  
-                  // Title
-                  doc.setFontSize(20)
-                  doc.text('Security Scan Report', 20, 20)
-                  
-                  // Date and URL
-                  doc.setFontSize(10)
-                  doc.text(`Date: ${new Date().toLocaleDateString()}`, 20, 32)
-                  doc.text(`URL: ${scannedUrl}`, 20, 40)
-                  
-                  // Score and Risk
-                  doc.setFontSize(14)
-                  doc.text(`Score: ${score}/100`, 20, 52)
-                  doc.text(`Risk Level: ${risk}`, 20, 62)
-                  
-                  // Findings Section
-                  doc.setFontSize(12)
-                  doc.text('Findings:', 20, 76)
-                  
-                  let yPos = 86
-                  doc.setFontSize(9)
-                  
-                  for (const finding of findings) {
-                    const severity = finding.severity.toUpperCase()
-                    doc.text(`[${severity}] ${finding.label}`, 20, yPos)
-                    yPos += 6
-                    
-                    const lines = doc.splitTextToSize(finding.detail, 170)
-                    for (const line of lines) {
-                      doc.text(line, 22, yPos)
-                      yPos += 5
-                    }
-                    yPos += 3
-                    
-                    if (yPos > 270) {
-                      doc.addPage()
-                      yPos = 20
-                    }
-                  }
-                  
-                  doc.save(`scan-report-${new Date().toISOString().split('T')[0]}.pdf`)
-                } catch (error) {
-                  console.error('PDF download error:', error)
-                  alert('Failed to download PDF. Please try again.')
-                }
-              }}
-              disabled={findings.length === 0}
-              className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+          <div className="flex items-center gap-3 self-start md:self-auto">
+            <div className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-2">
+              <div className="text-xs font-black uppercase tracking-[0.12em] text-emerald-300">{credits} Credits</div>
+              <div className="text-[10px] text-emerald-200/70">3 per scan</div>
+            </div>
+            <button
+              type="button"
+              onClick={handleScan}
+              disabled={isScanning || !url.trim() || authLoading || !user?.email}
+              className="rounded-full bg-gradient-to-r from-violet-500 to-indigo-500 px-4 py-2.5 text-sm font-black text-white shadow-[0_18px_38px_rgba(109,40,217,0.4)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <Download size={16} className="inline mr-2" />
-              Download PDF Report
+              {isScanning ? 'Scanning...' : authLoading ? 'Checking sign-in...' : !user?.email ? 'Sign in to scan' : 'Scan, Don\'t Touch'}
             </button>
-            <button type="button" disabled className="btn-primary opacity-50 cursor-not-allowed">Save to History</button>
           </div>
-        </div>
+        </header>
 
-        <div className="mt-5 grid gap-4 md:grid-cols-3">
-          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
-            <div className="flex items-center gap-2 text-sm font-black text-white"><ShieldCheck size={16} className="text-emerald-300" /> Security</div>
-            <p className="mt-2 text-sm text-slate-300">Secret key and env detection</p>
+        <section className="mt-6 rounded-[22px] border border-violet-300/20 bg-[#111522]/70 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:p-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center">
+            <label className="sr-only" htmlFor="scan-url">Website URL</label>
+            <input
+              id="scan-url"
+              value={url}
+              onChange={(event) => setUrl(event.target.value)}
+              onKeyPress={(event) => event.key === 'Enter' && handleScan()}
+              placeholder="https://example-app.com"
+              disabled={isScanning}
+              className="min-h-[52px] flex-1 rounded-full border border-violet-200/15 bg-black/20 px-5 text-sm text-white placeholder:text-slate-500 outline-none ring-0 transition focus:border-violet-300/40 disabled:cursor-not-allowed disabled:opacity-50"
+            />
+            <button
+              type="button"
+              onClick={handleScan}
+              disabled={isScanning || !url.trim()}
+              className="rounded-full bg-[#1a1c2d] px-5 py-3 text-sm font-black text-white ring-1 ring-violet-300/20 transition hover:bg-[#1f2133] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isScanning ? 'Scanning...' : 'Scan, Don\'t Touch'}
+            </button>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
-            <div className="flex items-center gap-2 text-sm font-black text-white"><Sparkles size={16} className="text-violet-300" /> Performance</div>
-            <p className="mt-2 text-sm text-slate-300">Slow render and asset bottlenecks</p>
+        </section>
+
+        <section className="mt-8 grid gap-5 xl:grid-cols-[1.3fr_0.9fr]">
+          <div className="rounded-[28px] border border-violet-200/20 bg-[#0b0d14]/80 p-4 shadow-[0_20px_60px_rgba(0,0,0,0.22)]">
+            <div className="relative overflow-hidden rounded-[22px] border border-emerald-400/20 bg-[#07120e] p-3">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(52,211,153,0.12),transparent_52%)]" />
+              <div className="relative h-[420px] overflow-hidden rounded-[18px] border border-white/10 bg-[#0a1111]">
+                <div className="flex h-full items-center justify-center">
+                  <div className="text-center">
+                    <div className="mx-auto mb-4 grid size-16 place-items-center rounded-full border border-emerald-400/30 bg-emerald-500/10 text-emerald-300">
+                      <Radar size={28} />
+                    </div>
+                    <p className="text-xl font-black text-white">{url || 'example-app.com'}</p>
+                    <p className="mt-2 text-sm text-slate-400">Smart scan visual</p>
+                  </div>
+                </div>
+                <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-emerald-400/10 to-transparent" />
+                <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-emerald-500/15 to-transparent" />
+                <div
+                  className="absolute left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-emerald-300 to-transparent shadow-[0_0_18px_rgba(52,211,153,0.9)] transition-all duration-300"
+                  style={{ top: `${Math.min(progress, 100)}%` }}
+                />
+                <div className="absolute inset-0 opacity-30" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px)', backgroundSize: '100% 18px' }} />
+              </div>
+            </div>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
-            <div className="flex items-center gap-2 text-sm font-black text-white"><FileText size={16} className="text-amber-300" /> SEO</div>
-            <p className="mt-2 text-sm text-slate-300">Metadata, crawlability, and broken links</p>
+
+          <div className="rounded-[28px] border border-violet-200/20 bg-[#0b0d14]/80 p-4 shadow-[0_20px_60px_rgba(0,0,0,0.22)]">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-violet-300">Live findings</p>
+                <h2 className="mt-2 text-xl font-black text-white">{status}</h2>
+              </div>
+              <div className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-1 text-xs font-black text-emerald-300">{progress}%</div>
+            </div>
+
+            <div className="mt-5 space-y-3">
+              {isScanning && (
+                <div className="space-y-2">
+                  {SCAN_PHASES.slice(0, Math.ceil((progress / 100) * SCAN_PHASES.length)).map((phase, index) => (
+                    <div key={phase} className="rounded-2xl border border-emerald-400/15 bg-emerald-500/5 p-3 text-sm text-emerald-100 transition-all" style={{ opacity: 0.4 + (index / SCAN_PHASES.length) * 0.6 }}>
+                      ✓ {phase}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {scanError && (
+                <div className="space-y-2">
+                  <div className="rounded-2xl border border-rose-400/15 bg-rose-500/5 p-3 text-sm text-rose-100">
+                    ⚠️ {scanError}
+                  </div>
+                  {scanError.toLowerCase().includes('chatgpt') || scanError.toLowerCase().includes('http 403') || scanError.toLowerCase().includes('access denied') ? (
+                    <div className="rounded-2xl border border-amber-400/15 bg-amber-500/5 p-3 text-sm text-amber-100">
+                      💡 <strong>Tip:</strong> Some sites like ChatGPT use bot detection. Try scanning a public portfolio, blog, or company site instead. Any site accessible to the public without login should work.
+                    </div>
+                  ) : scanError.toLowerCase().includes('timeout') ? (
+                    <div className="rounded-2xl border border-amber-400/15 bg-amber-500/5 p-3 text-sm text-amber-100">
+                      💡 <strong>Tip:</strong> The site took too long to respond. Try again with a faster, more responsive website.
+                    </div>
+                  ) : scanError.toLowerCase().includes('invalid') || scanError.toLowerCase().includes('valid http or https') ? (
+                    <div className="rounded-2xl border border-amber-400/15 bg-amber-500/5 p-3 text-sm text-amber-100">
+                      💡 <strong>Tip:</strong> Make sure your URL starts with http:// or https:// (e.g., <code className="font-mono">https://example.com</code>)
+                    </div>
+                  ) : null}
+                </div>
+              )}
+              {!isScanning && !scanError && findings.length === 0 && (
+                <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-4 text-sm text-slate-400">No findings yet. Run the scan to inspect the target for leaks and performance risks.</div>
+              )}
+              {!isScanning && findings.map((finding) => (
+                <div key={finding.id} className="rounded-2xl border border-white/10 bg-white/[0.02] p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-black text-white">{finding.label}</p>
+                    <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${finding.severity === 'critical' ? 'bg-rose-500/10 text-rose-300' : finding.severity === 'warning' ? 'bg-amber-500/10 text-amber-300' : 'bg-sky-500/10 text-sky-300'}`}>
+                      {finding.severity}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-sm text-slate-300">{finding.detail}</p>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      </section>
-      
-      <CreditsExhaustedModal 
-        open={showCreditsExhaustedModal} 
-        onClose={() => setShowCreditsExhaustedModal(false)}
-      />
+        </section>
+
+        <section className="mt-8 rounded-[30px] border border-violet-200/20 bg-[#0c0e15]/80 p-5 shadow-[0_20px_60px_rgba(0,0,0,0.22)]">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Verdict</p>
+              {score !== null && risk ? (
+                <>
+                  <div className="mt-2 flex items-center gap-3">
+                    <span className={`text-3xl font-black ${scoreTone}`}>{score}</span>
+                    <span className="text-sm text-slate-400">out of 100</span>
+                  </div>
+                  <div className="mt-2 text-sm font-semibold">
+                    <span className="text-slate-300">Risk: </span>
+                    <span className={risk.includes('Low') ? 'text-emerald-300' : risk.includes('Moderate') ? 'text-amber-300' : 'text-rose-300'}>{risk}</span>
+                  </div>
+                </>
+              ) : (
+                <p className="mt-3 text-sm text-slate-400">Run a scan to see security verdict</p>
+              )}
+              <div className="mt-3 text-xs text-slate-400">Credits remaining: <span className="text-emerald-300 font-black">{credits}</span></div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={async () => {
+                  if (findings.length === 0) {
+                    alert('Run a scan first to generate a report')
+                    return
+                  }
+                  try {
+                    const { jsPDF } = await import('jspdf')
+                    const doc = new jsPDF()
+
+                    doc.setFontSize(20)
+                    doc.text('Security Scan Report', 20, 20)
+                    doc.setFontSize(10)
+                    doc.text(`Date: ${new Date().toLocaleDateString()}`, 20, 32)
+                    doc.text(`URL: ${scannedUrl}`, 20, 40)
+                    doc.setFontSize(14)
+                    doc.text(`Score: ${score}/100`, 20, 52)
+                    doc.text(`Risk Level: ${risk}`, 20, 62)
+                    doc.setFontSize(12)
+                    doc.text('Findings:', 20, 76)
+
+                    let yPos = 86
+                    doc.setFontSize(9)
+
+                    for (const finding of findings) {
+                      const severity = finding.severity.toUpperCase()
+                      doc.text(`[${severity}] ${finding.label}`, 20, yPos)
+                      yPos += 6
+
+                      const lines = doc.splitTextToSize(finding.detail, 170)
+                      for (const line of lines) {
+                        doc.text(line, 22, yPos)
+                        yPos += 5
+                      }
+                      yPos += 3
+
+                      if (yPos > 270) {
+                        doc.addPage()
+                        yPos = 20
+                      }
+                    }
+
+                    doc.save(`scan-report-${new Date().toISOString().split('T')[0]}.pdf`)
+                  } catch (error) {
+                    console.error('PDF download error:', error)
+                    alert('Failed to download PDF. Please try again.')
+                  }
+                }}
+                disabled={findings.length === 0}
+                className="rounded-full bg-gradient-to-r from-violet-500 to-indigo-500 px-4 py-2.5 text-sm font-black text-white shadow-[0_18px_38px_rgba(109,40,217,0.4)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Download size={16} className="mr-2 inline" />
+                Download PDF Report
+              </button>
+              <button type="button" disabled className="rounded-full border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm font-black text-white opacity-60">Save to History</button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 md:grid-cols-3">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+              <div className="flex items-center gap-2 text-sm font-black text-white"><ShieldCheck size={16} className="text-emerald-300" /> Security</div>
+              <p className="mt-2 text-sm text-slate-300">Secret key and env detection</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+              <div className="flex items-center gap-2 text-sm font-black text-white"><Sparkles size={16} className="text-violet-300" /> Performance</div>
+              <p className="mt-2 text-sm text-slate-300">Slow render and asset bottlenecks</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+              <div className="flex items-center gap-2 text-sm font-black text-white"><FileText size={16} className="text-amber-300" /> SEO</div>
+              <p className="mt-2 text-sm text-slate-300">Metadata, crawlability, and broken links</p>
+            </div>
+          </div>
+        </section>
+
+        <CreditsExhaustedModal
+          open={showCreditsExhaustedModal}
+          onClose={() => setShowCreditsExhaustedModal(false)}
+        />
+      </div>
     </main>
   )
 }
