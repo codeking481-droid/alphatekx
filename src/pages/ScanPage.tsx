@@ -77,21 +77,67 @@ export default function ScanPage() {
 
     setIsScanning(true)
     setScanError(null)
-    setStatus('Validating target URL...')
-    setProgress(12)
+    setStatus('Checking credit balance...')
+    setProgress(5)
     setFindings([])
 
     try {
-      const response = await fetch('/api/scan', {
+      // First, check credits and email
+      const checkResponse = await fetch('/api/check-credits', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: url.trim() }),
+        body: JSON.stringify({ email: localStorage.getItem('user_email') || '' }),
+      })
+
+      if (!checkResponse.ok) {
+        const errorData = await checkResponse.json().catch(() => ({ error: 'Authentication required' }))
+        setScanError(errorData.error || 'Please log in to scan')
+        setStatus('Ready for inspection')
+        setIsScanning(false)
+        setProgress(0)
+        return
+      }
+
+      const checkData = await checkResponse.json()
+      const userEmail = checkData.email
+      const currentCredits = checkData.credits || 0
+
+      if (currentCredits < 1) {
+        setScanError('No credits available. Purchase credits to continue scanning.')
+        setStatus('Ready for inspection')
+        setIsScanning(false)
+        setProgress(0)
+        return
+      }
+
+      // Now run the scan with email
+      setStatus('Validating target URL...')
+      setProgress(12)
+
+      const scanResponse = await fetch('/api/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: url.trim(),
+          email: userEmail,
+          fingerprint: localStorage.getItem('device_fingerprint') || '',
+        }),
       })
 
       // Handle payment required (insufficient credits)
-      if (response.status === 402) {
-        const errorData = await response.json().catch(() => ({ error: 'Insufficient credits' }))
-        setScanError(errorData.error || 'Insufficient credits. Each scan costs 3 credits.')
+      if (scanResponse.status === 402) {
+        const errorData = await scanResponse.json().catch(() => ({ error: 'Insufficient credits' }))
+        setScanError(errorData.error || 'Insufficient credits. Purchase more to continue.')
+        setStatus('Ready for inspection')
+        setIsScanning(false)
+        setProgress(0)
+        return
+      }
+
+      // Handle free trial already used on device
+      if (scanResponse.status === 403) {
+        const errorData = await scanResponse.json().catch(() => ({ error: 'Access denied' }))
+        setScanError(errorData.error || 'Free trial already used on this device. Please purchase credits.')
         setStatus('Ready for inspection')
         setIsScanning(false)
         setProgress(0)
@@ -99,9 +145,9 @@ export default function ScanPage() {
       }
 
       // Handle other errors
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Scan failed' }))
-        const errorMessage = errorData.error || `Scan failed (HTTP ${response.status})`
+      if (!scanResponse.ok) {
+        const errorData = await scanResponse.json().catch(() => ({ error: 'Scan failed' }))
+        const errorMessage = errorData.error || `Scan failed (HTTP ${scanResponse.status})`
         setScanError(errorMessage)
         setStatus('Ready for inspection')
         setIsScanning(false)
@@ -110,7 +156,7 @@ export default function ScanPage() {
       }
 
       // Handle streaming response
-      const reader = response.body?.getReader()
+      const reader = scanResponse.body?.getReader()
       if (!reader) {
         setScanError('No response stream available')
         setStatus('Ready for inspection')
@@ -159,11 +205,13 @@ export default function ScanPage() {
               setRisk(String(payload.risk || 'Medium risk'))
               setScannedUrl(String(payload.scannedUrl || ''))
               
+              // Update credits from backend response (do NOT use localStorage)
               if (payload.creditsRemaining !== undefined) {
                 const newBalance = Math.max(0, payload.creditsRemaining)
-                console.log('[ScanPage] Updating credits from scan response:', { newBalance })
+                console.log('[ScanPage] Credits updated from scan: ', newBalance)
                 setCreditsState(newBalance)
-                setCredits(newBalance)
+                // Store in localStorage for UI consistency only, backend is source of truth
+                localStorage.setItem('user_credits', String(newBalance))
               }
               
               setIsScanning(false)
