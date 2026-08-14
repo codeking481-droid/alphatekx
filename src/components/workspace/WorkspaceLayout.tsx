@@ -40,7 +40,7 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
   // Wake the durable scheduler whenever an authenticated workspace is open.
   // This catches overdue work after a sleeping web service starts again.
   useAgentExecutor()
-  const [open, setOpen] = useState(() => typeof window !== 'undefined' ? window.innerWidth >= 1024 : true)
+  const [open, setOpen] = useState(false)
   const [credits, setCredits] = useState(getCredits())
   const [plan, setPlan] = useState('free')
   const [running, setRunning] = useState(runningAgentsCount())
@@ -52,7 +52,7 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
 
   useEffect(() => {
     const syncSidebar = () => {
-      if (window.innerWidth >= 1024) setOpen(true)
+      setOpen(false)
     }
     syncSidebar()
     window.addEventListener('resize', syncSidebar)
@@ -102,7 +102,7 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
     </header>
     {open && <button className="fixed inset-0 z-40 bg-black/40 transition-opacity duration-200 backdrop-blur-[1px] lg:hidden" onClick={() => setOpen(false)} aria-label="Close menu"/>}
     {!open && <button className="fixed left-4 top-[86px] z-40 grid size-11 place-items-center rounded-xl border border-white/10 bg-[#111214]/90 text-white shadow-lg transition hover:bg-white/[0.04] lg:left-5" onClick={() => setOpen(true)} aria-label="Open menu"><Menu size={18}/></button>}
-    <aside className={`fixed inset-y-0 left-0 z-50 flex max-w-[82vw] flex-col border-r border-white/10 bg-[#111214]/95 text-white shadow-[0_12px_45px_rgba(0,0,0,0.42)] backdrop-blur-2xl transition-all duration-200 ease-out ${open ? 'w-[284px] translate-x-0' : '-translate-x-full w-[92px] lg:translate-x-0'} ${!open && 'lg:w-[92px]'} lg:translate-x-0`}>
+    <aside className={`fixed inset-y-0 left-0 z-50 flex max-w-[82vw] flex-col border-r border-white/10 bg-[#111214]/95 text-white shadow-[0_12px_45px_rgba(0,0,0,0.42)] backdrop-blur-2xl transition-all duration-200 ease-out ${open ? 'w-[284px] translate-x-0' : '-translate-x-full w-[284px]'}`}>
       <div className="flex h-[72px] items-center justify-between px-3">
         <NavLink to="/agen" onClick={() => setOpen(false)} className="flex items-center gap-3 overflow-hidden">
           <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-white text-sm font-black text-[#0B0B0C]">A</span>
@@ -137,7 +137,7 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
 
     <main
       id="workspace-scroll-root"
-      className={`relative z-10 min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain scroll-smooth pt-16 transition-[padding] duration-200 [-webkit-overflow-scrolling:touch] ${open ? 'lg:pl-[284px]' : 'lg:pl-[92px]'}`}
+      className={`relative z-10 min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain scroll-smooth pt-16 transition-[padding] duration-200 [-webkit-overflow-scrolling:touch] ${open ? 'lg:pl-[284px]' : 'lg:pl-0'}`}
     >
       {isHome && show && (
         <div className="mx-auto w-full max-w-[430px] px-4 pt-6 sm:max-w-3xl">
