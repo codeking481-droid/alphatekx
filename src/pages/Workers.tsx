@@ -7,7 +7,7 @@ import { supabase } from '../lib/supabase'
 import type { Worker, WorkerRole } from '../lib/types'
 
 const roles: WorkerRole[] = ['coding', 'research', 'marketing', 'support', 'sales', 'business']
-const defaultModels = { openai: 'gpt-4o-mini', groq: 'llama-3.3-70b-versatile', anthropic: 'claude-3-5-sonnet-latest', gemini: 'gemini-2.5-flash' } as const
+const defaultModels = { openai: 'gpt-4o-mini', groq: 'openai/gpt-oss-120b', anthropic: 'claude-3-5-sonnet-latest', gemini: 'gemini-2.5-flash' } as const
 
 export default function Workers() {
   const initial = getWorkers()

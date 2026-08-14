@@ -312,13 +312,13 @@ async function callProvider(name, messages, builder = false, jsonMode = false, m
       const body = { model, messages, ...responseFormat, ...(modern ? { max_completion_tokens: maxTokens } : { temperature, max_tokens: maxTokens }) }
       data = await fetchJson('https://api.openai.com/v1/chat/completions', { method: 'POST', headers, body: JSON.stringify(body) }, timeout)
     } else if (name === 'groq') {
-      const model = modelOverride || process.env.GROQ_MODEL || 'llama-3.1-8b-instant'
+      const model = modelOverride || process.env.GROQ_MODEL || 'openai/gpt-oss-120b'
       try {
         data = await fetchJson('https://api.groq.com/openai/v1/chat/completions', { method: 'POST', headers, body: JSON.stringify({ model, messages, temperature, max_tokens: maxTokens, ...responseFormat }) }, timeout)
       } catch (err) {
         const msg = String(err?.message || err)
-        if (/tokens per day|rate limit reached/i.test(msg) && model !== 'llama-3.1-8b-instant') {
-          data = await fetchJson('https://api.groq.com/openai/v1/chat/completions', { method: 'POST', headers, body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages, temperature, max_tokens: maxTokens, ...responseFormat }) }, timeout)
+        if (/tokens per day|rate limit reached/i.test(msg) && model !== 'openai/gpt-oss-120b') {
+          data = await fetchJson('https://api.groq.com/openai/v1/chat/completions', { method: 'POST', headers, body: JSON.stringify({ model: 'openai/gpt-oss-120b', messages, temperature, max_tokens: maxTokens, ...responseFormat }) }, timeout)
         } else {
           throw err
         }
@@ -1118,7 +1118,7 @@ Return ONLY the JSON object, no markdown, no commentary.`
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${groqKey}` },
       body: JSON.stringify({
         ...requestBody,
-        model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+        model: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
       }),
     })
     return makeResult(data.choices?.[0]?.message?.content || '')
@@ -1202,7 +1202,7 @@ async function runUserWorker(worker, apiKey, prompt) {
     return { text: (data.candidates?.[0]?.content?.parts || []).map(item => item.text || '').join('\n').trim(), provider }
   }
   const endpoint = provider === 'groq' ? 'https://api.groq.com/openai/v1/chat/completions' : 'https://api.openai.com/v1/chat/completions'
-  const data = await fetchJson(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }, body: JSON.stringify({ model: model || (provider === 'groq' ? 'llama-3.3-70b-versatile' : 'gpt-4o-mini'), messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }], max_tokens: 1800, temperature: 0.4 }) })
+  const data = await fetchJson(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }, body: JSON.stringify({ model: model || (provider === 'groq' ? 'openai/gpt-oss-120b' : 'gpt-4o-mini'), messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }], max_tokens: 1800, temperature: 0.4 }) })
   return { text: String(data.choices?.[0]?.message?.content || '').trim(), provider }
 }
 
@@ -7579,7 +7579,7 @@ async function freeBuilderCompletion(messages) {
         method: 'POST',
         headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: process.env.GROQ_BUILDER_MODEL || 'llama-3.3-70b-versatile',
+          model: process.env.GROQ_BUILDER_MODEL || 'openai/gpt-oss-120b',
           messages,
           temperature: 0.7,
           max_tokens: 6000,
@@ -9244,7 +9244,7 @@ const server = http.createServer(async (req, res) => {
       minimax: process.env.MINIMAX_MODEL || 'MiniMax-M3',
       flatkey: process.env.FLATKEY_MODEL || 'gpt-4o',
       openai: process.env.OPENAI_MODEL || 'gpt-4o',
-      groq: process.env.GROQ_MODEL || 'llama-3.1-8b-instant',
+      groq: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
     }
     return json(res, 200, { configured, order, models, defaultOrder: DEFAULT_PROVIDER_ORDER })
   }

@@ -75,7 +75,7 @@ export async function generatePost({ topic, goal, audience, tone, length, platfo
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const response = await groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
+      model: 'openai/gpt-oss-120b',
       messages: [
         { role: 'system', content: 'You are AlphaTekX, a world-class viral content writer for African and global audiences. Write polished social copy that is ready to publish.' },
         { role: 'user', content: prompt },

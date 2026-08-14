@@ -123,7 +123,7 @@ async function buildVideoPlan(prompt, duration, aspectRatio) {
     }
     return out
   }
-  const model = String(process.env.GROQ_MODEL || 'llama-3.3-70b').trim()
+  const model = String(process.env.GROQ_MODEL || 'openai/gpt-oss-120b').trim()
   const targetWords = duration <= 120 ? 300 : duration <= 300 ? 750 : duration <= 480 ? 1200 : 1800
   const system = `You are an expert video director and writer. Produce a detailed director plan for a ${Math.round(duration/60)}-minute faceless emotional stock video. Respond with valid JSON only.`
   const user = `Prompt: ${cleanPrompt}\nAspect ratio: ${aspectRatio}\nTarget duration seconds: ${duration}\nTarget word count for narration: ${targetWords}\nBreak the video into ${clipCount} clips of ${clipDuration} seconds each. For each clip produce an object with: {keyword, emotion, effect, duration:20, text} where effect contains keywords like 'shake','glow','slow','fast','rumble' if applicable. Return a JSON array of ${clipCount} clip objects.`
@@ -347,7 +347,7 @@ async function generateSearchVariations(topic, clipDescription) {
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${groqKey}` },
-      body: JSON.stringify({ model: 'llama-3.3-70b', messages: [{ role: 'user', content: prompt }], temperature: 0.5, max_tokens: 100 }),
+      body: JSON.stringify({ model: 'openai/gpt-oss-120b', messages: [{ role: 'user', content: prompt }], temperature: 0.5, max_tokens: 100 }),
     })
     if (response.ok) {
       const data = await response.json()
@@ -887,7 +887,7 @@ async function enhanceImagePrompt(topic, platform = 'linkedin') {
   const system = `You are a premium commercial visual director. Convert a topic into one precise ${cleanPlatform} campaign image prompt. Describe a single clear subject, environment, composition, camera angle, lighting, materials, and restrained brand palette. Require photorealistic editorial quality, sharp focus, natural anatomy, and clean negative space. Never request typography, logos, watermarks, UI screenshots, or duplicated subjects.`
   const user = `topic = "${cleanTopic}"`
   const key = String(process.env.GROQ_API_KEY || process.env.GROQ_API_KEY_1 || '')
-  const model = String(process.env.GROQ_MODEL || 'llama-3.3-70b-versatile').trim()
+  const model = String(process.env.GROQ_MODEL || 'openai/gpt-oss-120b').trim()
 
   if (key) {
     try {

@@ -55,7 +55,7 @@ Make this post unique from other days. Specific, useful, human. Africa/Lagos fri
           false,
           false,
           maxTokens,
-          process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+          process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
         )
         content = String(result?.data?.choices?.[0]?.message?.content || '').trim()
       } catch (err) {
@@ -82,7 +82,7 @@ Make this post unique from other days. Specific, useful, human. Africa/Lagos fri
             false,
             false,
             maxTokens,
-            process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+            process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
           )
           content = String(fix?.data?.choices?.[0]?.message?.content || content).trim()
         } else {
@@ -133,7 +133,7 @@ Make this post unique from other days. Specific, useful, human. Africa/Lagos fri
 async function directGroq(system, user, maxTokens) {
   const key = process.env.GROQ_API_KEY || process.env.GROQ_API_KEY_1 || ''
   if (!key) throw new Error('GROQ_API_KEY not configured')
-  const model = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'
+  const model = process.env.GROQ_MODEL || 'openai/gpt-oss-120b'
   const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: {
