@@ -7,6 +7,7 @@ type ScanningOverlayProps = {
   message: string
   soundEnabled: boolean
   onToggleSound: () => void
+  inline?: boolean
 }
 
 type Grain = {
@@ -34,7 +35,7 @@ function createGrain(width: number, height: number, seeded = false): Grain {
   }
 }
 
-export default function ScanningOverlay({ active, target, progress, message, soundEnabled, onToggleSound }: ScanningOverlayProps) {
+export default function ScanningOverlay({ active, target, progress, message, soundEnabled, onToggleSound, inline = false }: ScanningOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
@@ -134,6 +135,36 @@ export default function ScanningOverlay({ active, target, progress, message, sou
 
   if (!active) {
     return <audio ref={audioRef} src="/sounds/filter-sand.mp3" preload="auto" className="hidden" />
+  }
+
+  if (inline) {
+    return (
+      <div className="relative w-full overflow-hidden rounded-[28px] border border-violet-400/20 bg-[#0A0A14] shadow-[0_40px_120px_rgba(76,29,149,0.35)]">
+        <audio ref={audioRef} src="/sounds/filter-sand.mp3" preload="auto" className="hidden" />
+        <canvas ref={canvasRef} className="absolute inset-x-0 top-0 h-[200px] w-full opacity-90" />
+        <div className="relative px-6 pb-8 pt-10 text-center sm:px-8">
+          <p className="text-[10px] font-black uppercase tracking-[0.32em] text-violet-300">Alpha is sifting your site</p>
+          <h2 className="mt-4 break-all text-2xl font-black tracking-[-0.04em] text-white">{target}</h2>
+          <p className="mt-3 min-h-[24px] text-sm text-slate-300">{message}</p>
+
+          <div className="mt-6 h-2 overflow-hidden rounded-full bg-white/5">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-violet-500 via-indigo-400 to-cyan-400 transition-[width] duration-500"
+              style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
+            />
+          </div>
+          <div className="mt-3 text-xs font-black tracking-[0.18em] text-slate-400">{Math.round(progress)}%</div>
+
+          <button
+            type="button"
+            onClick={onToggleSound}
+            className="mt-6 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-slate-300 transition hover:border-violet-300/40 hover:text-white"
+          >
+            {soundEnabled ? 'Sound on' : 'Sound off'}
+          </button>
+        </div>
+      </div>
+    )
   }
 
   return (

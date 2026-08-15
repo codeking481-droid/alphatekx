@@ -522,6 +522,7 @@ export default function ScanPage() {
         message={status}
         soundEnabled={soundEnabled}
         onToggleSound={() => setSoundEnabled((current) => !current)}
+        inline
       />
       <div className="mx-auto w-full max-w-[1500px] rounded-[28px] border border-violet-300/20 bg-[radial-gradient(circle_at_top,_rgba(123,92,255,0.38),_rgba(17,19,31,0.9)_36%,_rgba(2,6,14,1)_72%)] p-3 shadow-[0_32px_120px_rgba(76,29,149,0.28)] ring-1 ring-white/5 backdrop-blur-sm sm:p-5">
         <header className="flex flex-col gap-4 rounded-[18px] border border-violet-300/20 bg-[#171922]/80 px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] md:flex-row md:items-center md:justify-between md:px-6">
