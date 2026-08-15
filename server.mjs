@@ -90,7 +90,7 @@ import * as eliteBuilder from './server/eliteBuilderService.mjs'
 import { claimPendingAction, createPendingAction, finishPendingAction, listPendingActions } from './server/ceoPendingActions.mjs'
 import { scheduledCreditCost } from './server/schedulePricing.mjs'
 import generatePostHandler from './api/ai/generate-post.mjs'
-import { createHybridScanner } from './scanner-hybrid.mjs'
+import { runRealScan, createScanId, evidenceDirFor, loadStoredReport } from './server/scanner/realScanner.mjs'
 
 function loadEnv() {
   for (const filename of ['.env.local', '.env']) {
@@ -9409,7 +9409,6 @@ const server = http.createServer(async (req, res) => {
     return `${userId || 'anonymous'}:${ip}`
   }
 
-  const runScanFromUrl = createHybridScanner(chromium)
 
 
   // ===== NEW CREDIT SYSTEM - Supabase-based, no local files =====
@@ -9673,50 +9672,41 @@ const server = http.createServer(async (req, res) => {
         res.write(`event: update\ndata: ${JSON.stringify(payload)}\n\n`)
       }
 
-      emit({ type: 'progress', progress: 12, message: 'Validating target URL...' })
-      await new Promise(resolve => setTimeout(resolve, 180))
+      const scanId = createScanId()
+      emit({ type: 'started', scanId, url: targetUrl })
 
-      emit({ type: 'progress', progress: 26, message: 'Fetching public HTML and metadata...' })
-      const results = await runScanFromUrl(targetUrl)
-
-      for (let index = 0; index < results.findings.length; index += 1) {
-        const finding = results.findings[index]
-        emit({
-          type: 'finding',
-          id: finding.id,
-          severity: finding.severity,
-          title: finding.title,
-          detail: finding.detail,
-          code: finding.code,
-        })
-        emit({
-          type: 'progress',
-          progress: Math.min(95, 40 + ((index + 1) / Math.max(1, results.findings.length)) * 50),
-          message: finding.title,
-        })
-        await new Promise(resolve => setTimeout(resolve, 280))
-      }
+      const results = await runRealScan(targetUrl, {
+        scanId,
+        onEvent: (event) => {
+          if (event.type === 'finding') {
+            emit({ ...event.finding, findingType: event.finding.type, type: 'finding', scanId })
+            return
+          }
+          emit({ ...event, scanId })
+        },
+      })
 
       // DEDUCT 1 CREDIT AFTER SUCCESSFUL SCAN - Using Supabase, not local
       const deducted = await deductCredit(userEmail)
       const remainingCredits = deducted ? (userCredits - 1) : userCredits
-      
+
       console.log(`[Scan] User ${userEmail}: ${userCredits} credits → ${remainingCredits} credits (deducted: ${deducted})`)
 
       emit({
         type: 'done',
-        discoveredAPIs: Array.isArray(results.discoveredAPIs) ? results.discoveredAPIs : [],
-        securityFindings: Array.isArray(results.securityFindings) ? results.securityFindings : [],
-        seoFindings: Array.isArray(results.seoFindings) ? results.seoFindings : [],
-        pageTitle: results.pageTitle || '',
-        metaDescription: results.metaDescription || '',
-        totalHeaders: Number(results.totalHeaders || 0),
+        scanId,
+        reportUrl: `/report/${scanId}`,
+        engine: results.engine,
+        pageTitle: results.pageTitle,
+        screenshot: results.screenshot ? `/api/scan/evidence/${scanId}/${results.screenshot}` : null,
+        discoveredEndpoints: results.discoveredEndpoints,
+        counts: results.counts,
         score: results.score,
         risk: results.risk,
         totalFindings: results.totalFindings,
         scannedUrl: results.scannedUrl,
         creditsRemaining: Math.max(0, remainingCredits),
-        summary: `Scan complete: ${results.risk.toLowerCase()} with ${results.totalFindings} findings. (${Math.max(0, remainingCredits)} credits remaining)`
+        summary: `Scan complete: ${results.risk} risk with ${results.totalFindings} findings. (${Math.max(0, remainingCredits)} credits remaining)`
       })
       res.end()
       return
@@ -9732,6 +9722,33 @@ const server = http.createServer(async (req, res) => {
       }
       return
     }
+  }
+
+  const evidenceMatch = req.method === 'GET' && new URL(req.url || '/', 'http://localhost').pathname.match(/^\/api\/scan\/evidence\/([A-Za-z0-9_-]+)\/([A-Za-z0-9_.-]+\.png)$/)
+  if (evidenceMatch) {
+    const [, scanId, fileName] = evidenceMatch
+    const filePath = path.join(evidenceDirFor(scanId), path.basename(fileName))
+    try {
+      const image = fs.readFileSync(filePath)
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'private, max-age=3600' })
+      return res.end(image)
+    } catch {
+      return json(res, 404, { error: 'Evidence not found' })
+    }
+  }
+
+  const reportMatch = req.method === 'GET' && new URL(req.url || '/', 'http://localhost').pathname.match(/^\/api\/scan\/report\/([A-Za-z0-9_-]+)$/)
+  if (reportMatch) {
+    const report = await loadStoredReport(reportMatch[1])
+    if (!report) return json(res, 404, { error: 'Scan report not found' })
+    return json(res, 200, {
+      ...report,
+      screenshot: report.screenshot ? `/api/scan/evidence/${report.scanId}/${report.screenshot}` : null,
+      findings: report.findings.map((finding) => ({
+        ...finding,
+        screenshot: finding.screenshot ? `/api/scan/evidence/${report.scanId}/${finding.screenshot}` : null,
+      })),
+    })
   }
 
   if (req.url?.startsWith('/api/')) return json(res, 404, { error: 'API route not found' })

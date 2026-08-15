@@ -33,3 +33,6 @@ data
 base44/.app.jsonc
 preview-runs/
 build-workspaces/
+
+# AlphaTekX scan evidence (local artifacts)
+.tmp/
