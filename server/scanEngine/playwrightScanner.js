@@ -269,7 +269,7 @@ export function createRestoreScanner({ chromium } = {}) {
     const hostname = parsed.hostname
     const startedAt = Date.now()
 
-    const hardTimeoutMs = Number(process.env.SCANNER_RESTORE_TIMEOUT_MS || 75000)
+    const hardTimeoutMs = Number(process.env.SCANNER_RESTORE_TIMEOUT_MS || 90000)
     const scanBody = (async () => {
       const browser = await chromium.launch({
         headless: true,

@@ -9727,8 +9727,8 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(400, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({ error: message }))
       } else {
-        // Headers already sent, just write error to stream
-        res.write(`event: error\ndata: ${JSON.stringify({ error: error instanceof Error ? error.message : 'Scan failed' })}\n\n`)
+        // Headers already sent, just write error to stream.
+        res.write(`event: error\ndata: ${JSON.stringify({ type: 'error', error: error instanceof Error ? error.message : 'Scan failed' })}\n\n`)
         res.end()
       }
       return
@@ -10178,7 +10178,19 @@ if (!process.env.VERCEL) {
   console.log('  Pexels keys:', !!process.env.PEXELS_API_KEY_1, !!process.env.PEXELS_API_KEY_2, !!process.env.PEXELS_API_KEY_3)
   console.log('  Groq key:', hasGroqKey)
   console.log('  Pollinations key:', !!process.env.POLLINATIONS_API_KEY, '(optional)')
-  
+
+  // Playwright chromium availability — the scanner cannot start without it.
+  try {
+    const execPath = chromium.executablePath()
+    if (execPath && fs.existsSync(execPath)) {
+      console.log('[AlphaTekX] Playwright chromium: OK (' + execPath + ')')
+    } else {
+      console.error('[AlphaTekX] Playwright chromium: NOT FOUND' + (execPath ? ' at ' + execPath : '') + ' — the scanner will fail. Run: npx playwright install chromium')
+    }
+  } catch (err) {
+    console.error('[AlphaTekX] Playwright chromium: unavailable — ' + (err instanceof Error ? err.message : String(err)))
+  }
+
   server.listen(port, () => process.stdout.write(`[AlphaTekX] listening on ${port}\n`))
   schedule('* * * * *', async () => {
     if (schedulerState.isRunning) return

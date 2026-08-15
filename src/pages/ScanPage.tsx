@@ -207,6 +207,8 @@ export default function ScanPage() {
       let buffer = ''
       let lastEventAt = Date.now()
       let staleMessageShown = false
+      let receivedDone = false
+      let receivedError: string | null = null
 
       const staleCheck = () => {
         const elapsedSinceEvent = Date.now() - lastEventAt
@@ -243,6 +245,15 @@ export default function ScanPage() {
           try {
             const payload = JSON.parse(event.replace(/^data:\s*/, ''))
 
+            if (payload.type === 'error' || payload.error) {
+              receivedError = String(payload.error || 'Scan failed')
+              setScanError(receivedError)
+              setStatus('Ready for inspection')
+              setProgress(0)
+              setIsScanning(false)
+              break
+            }
+
             if (payload.type === 'progress') {
               setProgress(Number(payload.progress || 0))
               setStatus(payload.message || 'Scanning...')
@@ -268,6 +279,7 @@ export default function ScanPage() {
             }
 
             if (payload.type === 'done') {
+              receivedDone = true
               setStatus('Scan complete')
               setProgress(100)
               setScore(Number(payload.score ?? 0))
@@ -290,6 +302,15 @@ export default function ScanPage() {
           }
         }
       }
+
+      // Stream ended without a completed scan (server timeout / proxy reset).
+      if (!receivedDone) {
+        if (!receivedError) {
+          setScanError('The scan ended before it finished. Please try again — the site may be blocking automated scanning or the server timed out.')
+          setStatus('Ready for inspection')
+        }
+        setIsScanning(false)
+      }
     } catch (error) {
       setIsScanning(false)
       const errorMsg = error instanceof Error ? error.message : 'Scan failed'
@@ -307,6 +328,21 @@ export default function ScanPage() {
     setProgress(8)
     resetRestoreActions()
 
+    const controller = new AbortController()
+    let abortedByTimeout = false
+    const scanTimeout = setTimeout(() => {
+      abortedByTimeout = true
+      controller.abort()
+    }, 150000)
+    const heartbeat = setInterval(() => {
+      setProgress((current) => Math.min(92, Math.max(current, 25) + 4))
+      setStatus('Still scanning with a real browser — checking 25 sensitive files, JS bundles, git history and live keys. Can take up to ~90s.')
+    }, 3500)
+    const cleanup = () => {
+      clearTimeout(scanTimeout)
+      clearInterval(heartbeat)
+    }
+
     try {
       const checkResponse = await fetch('/api/check-credits', {
         method: 'POST',
@@ -315,6 +351,7 @@ export default function ScanPage() {
       })
       if (!checkResponse.ok) {
         const errorData = await checkResponse.json().catch(() => ({ error: 'Authentication required' }))
+        cleanup()
         setScanError(errorData.error || 'Please log in to scan')
         setStatus('Ready for inspection')
         setIsScanning(false)
@@ -323,6 +360,7 @@ export default function ScanPage() {
       }
       const checkData = await checkResponse.json()
       if ((checkData.credits || 0) < 1) {
+        cleanup()
         setShowCreditsExhaustedModal(true)
         setStatus('Ready for inspection')
         setIsScanning(false)
@@ -341,10 +379,12 @@ export default function ScanPage() {
           email: activeEmail,
           fingerprint: localStorage.getItem('device_fingerprint') || '',
         }),
+        signal: controller.signal,
       })
 
       if (scanResponse.status === 402) {
         const errorData = await scanResponse.json().catch(() => ({ error: 'Insufficient credits' }))
+        cleanup()
         setScanError(errorData.error || 'Insufficient credits. Purchase more to continue.')
         setStatus('Ready for inspection')
         setIsScanning(false)
@@ -353,6 +393,7 @@ export default function ScanPage() {
       }
       if (scanResponse.status === 403) {
         const errorData = await scanResponse.json().catch(() => ({ error: 'Access denied' }))
+        cleanup()
         setScanError(errorData.error || 'Free trial already used on this device. Please purchase credits.')
         setStatus('Ready for inspection')
         setIsScanning(false)
@@ -361,6 +402,7 @@ export default function ScanPage() {
       }
       if (!scanResponse.ok) {
         const errorData = await scanResponse.json().catch(() => ({ error: 'Scan failed' }))
+        cleanup()
         setScanError(errorData.error || `Scan failed (HTTP ${scanResponse.status})`)
         setStatus('Ready for inspection')
         setIsScanning(false)
@@ -369,6 +411,7 @@ export default function ScanPage() {
       }
 
       const data = await scanResponse.json()
+      cleanup()
       setProgress(100)
       setStatus('Scan complete')
       setRestoreScan(data.scan || null)
@@ -386,9 +429,19 @@ export default function ScanPage() {
       }
       setIsScanning(false)
     } catch (error) {
+      cleanup()
       setIsScanning(false)
-      const errorMsg = error instanceof Error ? error.message : 'Scan failed'
-      setScanError(`Error: ${errorMsg}`)
+      setProgress(0)
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        setScanError(
+          abortedByTimeout
+            ? 'The scan took too long and was cancelled. The site may be slow or blocking automated scanning. Please try again.'
+            : 'The scan was cancelled.'
+        )
+      } else {
+        const errorMsg = error instanceof Error ? error.message : 'Scan failed'
+        setScanError(`Error: ${errorMsg}`)
+      }
       setStatus('Ready for inspection')
     }
   }
