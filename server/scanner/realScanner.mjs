@@ -180,13 +180,28 @@ export async function runRealScan(targetUrl, options = {}) {
   const sensitiveUrls = new Set(SENSITIVE_TARGETS.map((target) => new URL(target.path, parsed.origin).toString()))
 
   const hardTimeoutMs = Number(process.env.SCANNER_HARD_TIMEOUT_MS || 75000)
+  const browserTimeoutMs = 25000 // 25 second timeout just for browser launch
+  
+  // Emit started event immediately so frontend knows scan is active
+  emit({ type: 'progress', progress: 1, message: 'Starting scan...' })
+  
   const scan = (async () => {
-    const report = await withContext(async (context) => {
-    const page = await context.newPage()
-    const bodyTasks = []
-    let scannedResponses = 0
+    let contextReady = false
+    const contextTimeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => {
+        if (!contextReady) {
+          reject(new Error('Browser launch timed out after 25s. Playwright may not be installed or the system is under heavy load. Try again in a moment.'))
+        }
+      }, browserTimeoutMs)
+    )
+    
+    const contextPromise = withContext(async (context) => {
+      contextReady = true
+      const page = await context.newPage()
+      const bodyTasks = []
+      let scannedResponses = 0
 
-    context.on('response', (response) => {
+      context.on('response', (response) => {
       const request = response.request()
       const resourceType = request.resourceType()
       if (!['xhr', 'fetch', 'script', 'document'].includes(resourceType)) return
@@ -432,6 +447,11 @@ export async function runRealScan(targetUrl, options = {}) {
       completedAt: new Date().toISOString(),
     }
   })
+
+    const report = await Promise.race([
+      contextPromise,
+      contextTimeoutPromise,
+    ])
 
     await fs.promises.mkdir(evidenceDir, { recursive: true }).catch(() => {})
     await fs.promises.writeFile(path.join(evidenceDir, 'report.json'), JSON.stringify(report, null, 2), 'utf8').catch(() => {})
