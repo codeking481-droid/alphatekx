@@ -1,7 +1,7 @@
 import { lazy, Suspense, type ReactNode } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import ContactUs from './components/ContactUs'
-const Landing = lazy(() => import('./pages/Landing'))
+import Landing from './pages/Landing'
 import About from './pages/About'
 import { AuthProvider } from './lib/auth'
 
@@ -42,7 +42,7 @@ function LandingRoute() {
   if (query.has('error') || query.has('error_code') || query.has('error_description')) {
     return <Navigate to={`/auth${location.search}`} replace />
   }
-  return <AuthProvider>{suspended(<Landing />)}</AuthProvider>
+  return <AuthProvider><Landing /></AuthProvider>
 }
 
 export default function App() {
