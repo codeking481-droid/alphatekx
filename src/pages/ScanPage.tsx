@@ -32,7 +32,7 @@ export default function ScanPage() {
   const [isScanning, setIsScanning] = useState(false)
   const [progress, setProgress] = useState(0)
   const [findings, setFindings] = useState<ScanFinding[]>([])
-  const [soundEnabled, setSoundEnabled] = useState(true)
+  const [soundEnabled, setSoundEnabled] = useState(false)
   const [scanId, setScanId] = useState<string | null>(null)
   const [score, setScore] = useState<number | null>(null)
   const [risk, setRisk] = useState<string | null>(null)
