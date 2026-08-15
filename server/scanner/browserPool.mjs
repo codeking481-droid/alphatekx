@@ -1,6 +1,8 @@
 // Shared Playwright browser pool for the AlphaTekX scanner.
 // One chromium process is reused across scans; each scan leases an isolated context.
 
+import fs from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import { chromium } from 'playwright'
 
 const DEFAULT_MAX_CONTEXTS = Number(process.env.SCANNER_MAX_CONTEXTS || 4)
@@ -30,12 +32,41 @@ function scheduleIdleShutdown() {
   idleTimer.unref?.()
 }
 
+function ensureBrowserInstalled() {
+  try {
+    const execPath = chromium.executablePath()
+    if (execPath && fs.existsSync(execPath)) return true
+  } catch {
+    // Playwright can throw when the browser binary has not been downloaded.
+  }
+
+  const cmd = process.platform === 'win32' ? 'npx.cmd' : 'npx'
+  const result = spawnSync(cmd, ['playwright', 'install', 'chromium'], {
+    cwd: process.cwd(),
+    stdio: 'inherit',
+    env: process.env,
+  })
+
+  if (result.status !== 0) {
+    throw new Error('Playwright Chromium install failed; scanner cannot launch without a browser binary.')
+  }
+
+  const execPath = chromium.executablePath()
+  if (!execPath || !fs.existsSync(execPath)) {
+    throw new Error(`Playwright Chromium still missing after install. Expected executable at ${execPath || 'unknown path'}`)
+  }
+
+  return true
+}
+
 async function getBrowser() {
   if (browserPromise) {
     const cached = await browserPromise.catch(() => null)
     if (cached?.isConnected()) return cached
     browserPromise = null
   }
+
+  ensureBrowserInstalled()
 
   const launch = chromium
     .launch({

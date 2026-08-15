@@ -10,8 +10,6 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 22.11.0
-      - key: PLAYWRIGHT_BROWSERS_PATH
-        value: 0
       - key: PUBLIC_APP_URL
         value: https://alphatekx.name.ng
       - key: VITE_PUBLIC_APP_URL
