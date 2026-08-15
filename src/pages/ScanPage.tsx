@@ -3,24 +3,37 @@ import { ArrowRight, Download, FileText, Radar, ShieldCheck, Sparkles } from 'lu
 import { getCredits, setCredits, hydrateCredits, subscribeCredits } from '../lib/creditStore'
 import { useAuth } from '../lib/auth'
 import CreditsExhaustedModal from '../components/CreditsExhaustedModal'
+import ScanningOverlay from '../components/scan/ScanningOverlay'
 
-const SCAN_PHASES = [
-  'Validating target URL...',
-  'Fetching public HTML and metadata...',
-  'Analyzing HTML for secrets...',
-  'Checking sensitive file paths...',
-  'Inspecting internal links...',
-  'Evaluating page performance...',
-  'Scanning SEO metadata...',
-  'Generating security verdict...',
-]
+type ScanFinding = {
+  id: string
+  label: string
+  detail: string
+  consequence?: string
+  severity: 'critical' | 'high' | 'medium' | 'low' | 'info'
+  url?: string
+  status?: number
+  maskedProof?: string | null
+  lineNumber?: number | null
+  screenshot?: string | null
+}
+
+const SEVERITY_TONE: Record<string, string> = {
+  critical: 'bg-rose-500/10 text-rose-300',
+  high: 'bg-orange-500/10 text-orange-300',
+  medium: 'bg-amber-500/10 text-amber-300',
+  low: 'bg-sky-500/10 text-sky-300',
+  info: 'bg-slate-500/10 text-slate-300',
+}
 
 export default function ScanPage() {
   const { user, loading: authLoading } = useAuth()
   const [url, setUrl] = useState('https://example-app.com')
   const [isScanning, setIsScanning] = useState(false)
   const [progress, setProgress] = useState(0)
-  const [findings, setFindings] = useState<Array<{ id: string; label: string; detail: string; severity: 'critical' | 'warning' | 'info' }>>([])
+  const [findings, setFindings] = useState<ScanFinding[]>([])
+  const [soundEnabled, setSoundEnabled] = useState(true)
+  const [scanId, setScanId] = useState<string | null>(null)
   const [score, setScore] = useState<number | null>(null)
   const [risk, setRisk] = useState<string | null>(null)
   const [scannedUrl, setScannedUrl] = useState('')
@@ -90,6 +103,7 @@ export default function ScanPage() {
     setStatus('Checking credit balance...')
     setProgress(5)
     setFindings([])
+    setScanId(null)
 
     try {
       const checkResponse = await fetch('/api/check-credits', {
@@ -198,19 +212,29 @@ export default function ScanPage() {
               setStatus(payload.message || 'Scanning...')
             }
 
+            if (payload.type === 'started') {
+              setScanId(String(payload.scanId || ''))
+            }
+
             if (payload.type === 'finding') {
               setFindings((current) => [{
-                id: payload.id || `${payload.code}-${current.length}`,
+                id: payload.id || `${payload.findingType || 'finding'}-${current.length}`,
                 severity: payload.severity || 'info',
                 label: payload.title || 'Finding',
-                detail: payload.detail || '',
+                detail: payload.meaning || '',
+                consequence: payload.consequence || '',
+                url: payload.url,
+                status: payload.status,
+                maskedProof: payload.maskedProof ?? null,
+                lineNumber: payload.lineNumber ?? null,
+                screenshot: payload.screenshot ?? null,
               }, ...current])
             }
 
             if (payload.type === 'done') {
               setStatus('Scan complete')
               setProgress(100)
-              setScore(Number(payload.score || 72))
+              setScore(Number(payload.score ?? 0))
               setRisk(String(payload.risk || 'Medium risk'))
               setScannedUrl(String(payload.scannedUrl || ''))
               
@@ -239,7 +263,15 @@ export default function ScanPage() {
   }
 
   return (
-    <main className="w-full px-4 pb-10 pt-4 text-white sm:px-6 lg:px-8">
+    <main className="w-full bg-[#0A0A14] px-4 pb-10 pt-4 text-white sm:px-6 lg:px-8">
+      <ScanningOverlay
+        active={isScanning}
+        target={url}
+        progress={progress}
+        message={status}
+        soundEnabled={soundEnabled}
+        onToggleSound={() => setSoundEnabled((current) => !current)}
+      />
       <div className="mx-auto w-full max-w-[1500px] rounded-[28px] border border-violet-300/20 bg-[radial-gradient(circle_at_top,_rgba(123,92,255,0.38),_rgba(17,19,31,0.9)_36%,_rgba(2,6,14,1)_72%)] p-3 shadow-[0_32px_120px_rgba(76,29,149,0.28)] ring-1 ring-white/5 backdrop-blur-sm sm:p-5">
         <header className="flex flex-col gap-4 rounded-[18px] border border-violet-300/20 bg-[#171922]/80 px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] md:flex-row md:items-center md:justify-between md:px-6">
           <div>
@@ -249,7 +281,7 @@ export default function ScanPage() {
           <div className="flex items-center gap-3 self-start md:self-auto">
             <div className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-2">
               <div className="text-xs font-black uppercase tracking-[0.12em] text-emerald-300">{credits} Credits</div>
-              <div className="text-[10px] text-emerald-200/70">3 per scan</div>
+              <div className="text-[10px] text-emerald-200/70">1 per scan</div>
             </div>
             <button
               type="button"
@@ -320,15 +352,6 @@ export default function ScanPage() {
             </div>
 
             <div className="mt-5 space-y-3">
-              {isScanning && (
-                <div className="space-y-2">
-                  {SCAN_PHASES.slice(0, Math.ceil((progress / 100) * SCAN_PHASES.length)).map((phase, index) => (
-                    <div key={phase} className="rounded-2xl border border-emerald-400/15 bg-emerald-500/5 p-3 text-sm text-emerald-100 transition-all" style={{ opacity: 0.4 + (index / SCAN_PHASES.length) * 0.6 }}>
-                      ✓ {phase}
-                    </div>
-                  ))}
-                </div>
-              )}
               {scanError && (
                 <div className="space-y-2">
                   <div className="rounded-2xl border border-rose-400/15 bg-rose-500/5 p-3 text-sm text-rose-100">
@@ -352,15 +375,30 @@ export default function ScanPage() {
               {!isScanning && !scanError && findings.length === 0 && (
                 <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-4 text-sm text-slate-400">No findings yet. Run the scan to inspect the target for leaks and performance risks.</div>
               )}
-              {!isScanning && findings.map((finding) => (
+              {findings.map((finding) => (
                 <div key={finding.id} className="rounded-2xl border border-white/10 bg-white/[0.02] p-3">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-sm font-black text-white">{finding.label}</p>
-                    <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${finding.severity === 'critical' ? 'bg-rose-500/10 text-rose-300' : finding.severity === 'warning' ? 'bg-amber-500/10 text-amber-300' : 'bg-sky-500/10 text-sky-300'}`}>
+                    <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${SEVERITY_TONE[finding.severity] || SEVERITY_TONE.info}`}>
                       {finding.severity}
                     </span>
                   </div>
+                  {finding.url && (
+                    <p className="mt-2 break-all font-mono text-[11px] text-slate-400">
+                      {finding.url}
+                      {finding.status ? <span className="ml-2 text-emerald-300">{finding.status} OK</span> : null}
+                    </p>
+                  )}
+                  {finding.maskedProof && (
+                    <p className="mt-2 rounded-xl border border-rose-400/20 bg-rose-500/5 px-3 py-2 font-mono text-xs text-rose-200">
+                      {finding.maskedProof}
+                      {finding.lineNumber ? <span className="ml-2 text-rose-300/60">line {finding.lineNumber}</span> : null}
+                    </p>
+                  )}
                   <p className="mt-2 text-sm text-slate-300">{finding.detail}</p>
+                  {finding.consequence && (
+                    <p className="mt-2 text-sm font-semibold text-amber-200/90">{finding.consequence}</p>
+                  )}
                 </div>
               ))}
             </div>
@@ -386,6 +424,7 @@ export default function ScanPage() {
                 <p className="mt-3 text-sm text-slate-400">Run a scan to see security verdict</p>
               )}
               <div className="mt-3 text-xs text-slate-400">Credits remaining: <span className="text-emerald-300 font-black">{credits}</span></div>
+              {scanId && <div className="mt-1 font-mono text-[11px] text-slate-500">Scan ID: {scanId}</div>}
             </div>
             <div className="flex flex-wrap gap-2">
               <button
