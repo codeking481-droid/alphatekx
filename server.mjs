@@ -91,6 +91,7 @@ import { claimPendingAction, createPendingAction, finishPendingAction, listPendi
 import { scheduledCreditCost } from './server/schedulePricing.mjs'
 import generatePostHandler from './api/ai/generate-post.mjs'
 import { createHybridScanner } from './scanner-hybrid.mjs'
+import { createRestoreScanner } from './server/scanEngine/playwrightScanner.js'
 
 function loadEnv() {
   for (const filename of ['.env.local', '.env']) {
@@ -9732,6 +9733,75 @@ const server = http.createServer(async (req, res) => {
       }
       return
     }
+  }
+
+  // ===== The Restore Engine — Step 1: real Playwright scan with 200 OK proof =====
+  if (req.method === 'POST' && req.url === '/api/restore/scan') {
+    try {
+      const body = await readBody(req)
+      const targetUrl = String(body.url || '').trim()
+      let userEmail = body.email ? String(body.email).trim().toLowerCase() : null
+      if (!userEmail) {
+        const authUser = await currentOrLocalUser(req, supabaseConfig().url, supabaseConfig().anon)
+        userEmail = authUser?.email || null
+      }
+      if (!userEmail) return json(res, 401, { error: 'Email required for restore scan' })
+
+      const clientIp = getClientIp(req)
+      const clientFingerprint = body.fingerprint ? String(body.fingerprint).slice(0, 255) : null
+      const user = await getOrCreateUser(userEmail, clientIp, clientFingerprint)
+      if (user === null) {
+        return json(res, 403, { error: 'Free trial already used on this device.', blockedByFreeTrial: true })
+      }
+      const billingUser = { id: user.id, email: user.email || userEmail }
+      const config = supabaseConfig()
+
+      const credits = await getUserCreditBalance(userEmail)
+      if (credits < 1) {
+        return json(res, 402, {
+          error: 'No credits available. Purchase credits to scan.',
+          paywall: true,
+          creditsNeeded: 1,
+          creditsAvailable: credits,
+          pricingUrl: '/pricing',
+        })
+      }
+      try { new URL(targetUrl) } catch {
+        return json(res, 400, { error: 'Please enter a valid http or https URL.' })
+      }
+
+      const restoreScanner = createRestoreScanner({ chromium })
+      const scan = await restoreScanner(targetUrl)
+      const deducted = await deductCredit(userEmail)
+      const creditsRemaining = deducted ? Math.max(0, credits - 1) : credits
+
+      const plan = await billing.restorePlanForUser(billingUser, config)
+      const watching = await billing.canUseRestoreWatching(billingUser, config)
+      return json(res, 200, {
+        ok: true,
+        engine: 'restore-engine-step-1',
+        scan,
+        creditsRemaining,
+        cost: 1,
+        plan: { id: plan.id, name: plan.name, scans: Number(plan.scans), watching: Boolean(plan.watching) },
+        watching: { available: watching.ok, paywall: watching.paywall, reason: watching.reason || null },
+      })
+    } catch (error) {
+      return json(res, 500, { error: error instanceof Error ? error.message : 'Restore scan failed.' })
+    }
+  }
+  if (req.method === 'GET' && req.url?.startsWith('/api/restore/proof/')) {
+    const filename = decodeURIComponent(req.url.slice('/api/restore/proof/'.length))
+    if (!/^[A-Za-z0-9._-]+$/.test(filename)) return json(res, 400, { error: 'Invalid proof filename' })
+    const filePath = path.join(dataDir, 'scan-proof', filename)
+    try {
+      const stat = fs.statSync(filePath)
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': stat.size, 'Cache-Control': 'public, max-age=60' })
+      fs.createReadStream(filePath).pipe(res)
+    } catch {
+      return json(res, 404, { error: 'Proof not found' })
+    }
+    return
   }
 
   if (req.url?.startsWith('/api/')) return json(res, 404, { error: 'API route not found' })

@@ -995,3 +995,56 @@ export async function verifyPaystackWebhook(body, secret) {
 }
 
 registerPaymentProvider('paystack', { initialize: initializePaystack, verify: verifyPaystack, verifyWebhook: verifyPaystackWebhook })
+
+// ===========================================================================
+// The Restore Engine — plan + credit gating for scan/fix/watch.
+// Additive only: these helpers never touch the existing plan/credit flows.
+// ===========================================================================
+
+export const RESTORE_PLANS = {
+  starter: { id: 'restore_starter', name: 'STARTER', priceUsd: 19, scans: 10, fixes: 3, pdf: false, watching: false },
+  pro: { id: 'restore_pro', name: 'PRO', priceUsd: 49, scans: 50, fixes: 20, pdf: true, watching: false },
+  guardian: { id: 'restore_guardian', name: 'GUARDIAN (Always Watching)', priceUsd: 99, scans: Infinity, fixes: Infinity, pdf: true, watching: true },
+}
+
+export function getRestorePlan(id) {
+  const normalized = String(id || '').toLowerCase()
+  if (normalized === 'guardian' || normalized === 'restore_guardian') return RESTORE_PLANS.guardian
+  if (normalized === 'pro' || normalized === 'restore_pro') return RESTORE_PLANS.pro
+  return RESTORE_PLANS.starter
+}
+
+// The Restore Engine is gated by credits AND plan quotas (10/50/∞ scans).
+// Existing paid plans map generously: $49+ unlocks PRO behaviour.
+export async function restorePlanForUser(user, config) {
+  if (!user?.id) return RESTORE_PLANS.starter
+  if (isAdmin(user)) return { ...RESTORE_PLANS.guardian, admin: true }
+  const profile = await readProfile(user, config)
+  const planId = String(profile?.plan || 'free').toLowerCase()
+  if (['guardian', 'restore_guardian', 'video_99'].includes(planId)) return RESTORE_PLANS.guardian
+  if (['pro', 'restore_pro', 'video_49', 'builder_monthly'].includes(planId)) return RESTORE_PLANS.pro
+  return RESTORE_PLANS.starter
+}
+
+export async function restoreScanCost(user, config) {
+  if (isAdmin(user)) return { cost: 0, plan: RESTORE_PLANS.guardian, ok: true }
+  const credits = await getUserCredits(user, config)
+  if (Number(credits) < 1) {
+    return { cost: 1, plan: await restorePlanForUser(user, config), ok: false, reason: 'No credits available. Purchase credits to scan.' }
+  }
+  return { cost: 1, plan: await restorePlanForUser(user, config), ok: true }
+}
+
+// Watching (continuous monitoring every 6h) is a $99 GUARDIAN-only feature.
+// $19 STARTER and $49 PRO users see the paywall instead of the watcher.
+export async function canUseRestoreWatching(user, config) {
+  if (isAdmin(user)) return { ok: true, plan: RESTORE_PLANS.guardian, paywall: false }
+  const plan = await restorePlanForUser(user, config)
+  if (plan.watching) return { ok: true, plan, paywall: false }
+  return {
+    ok: false,
+    plan,
+    paywall: true,
+    reason: 'Always Watching (scan every 6 hours + auto alert + auto-fix) is a GUARDIAN plan feature.',
+  }
+}
