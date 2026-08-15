@@ -91,7 +91,13 @@ import { claimPendingAction, createPendingAction, finishPendingAction, listPendi
 import { scheduledCreditCost } from './server/schedulePricing.mjs'
 import generatePostHandler from './api/ai/generate-post.mjs'
 import { runRealScan, createScanId, evidenceDirFor, loadStoredReport } from './server/scanner/realScanner.mjs'
-import { createRestoreScanner } from './server/scanEngine/playwrightScanner.js'
+import { createRestoreScanner, assertSafeUrl, RAW_SECRETS } from './server/scanEngine/playwrightScanner.js'
+import { aiBuilderHunter } from './server/scanEngine/aiBuilderHunter.js'
+import { gitHistoryScanner } from './server/scanEngine/gitHistoryScanner.js'
+import { liveVerifier } from './server/scanEngine/liveVerifier.js'
+import { calculateRisk } from './server/scanEngine/riskScorer.js'
+import { createProof } from './server/scanEngine/proofEngine.js'
+import { makeFixPlan, runFixPlan } from './server/scanEngine/fixEngine.js'
 
 function loadEnv() {
   for (const filename of ['.env.local', '.env']) {
@@ -9676,6 +9682,8 @@ const server = http.createServer(async (req, res) => {
       const scanId = createScanId()
       emit({ type: 'started', scanId, url: targetUrl })
 
+      console.log(`[Scan ${scanId}] Starting scan for: ${targetUrl} (user: ${userEmail})`)
+
       const results = await runRealScan(targetUrl, {
         scanId,
         onEvent: (event) => {
@@ -9686,6 +9694,8 @@ const server = http.createServer(async (req, res) => {
           emit({ ...event, scanId })
         },
       })
+
+      console.log(`[Scan ${scanId}] Scan completed: ${results.totalFindings} findings, score: ${results.score}`)
 
       // DEDUCT 1 CREDIT AFTER SUCCESSFUL SCAN - Using Supabase, not local
       const deducted = await deductCredit(userEmail)
@@ -9754,7 +9764,7 @@ const server = http.createServer(async (req, res) => {
 
   }
 
-  // ===== The Restore Engine — Step 1: real Playwright scan with 200 OK proof =====
+  // ===== The Restore Engine — full pipeline: Scan → Fear → Fix → Prove → Watch =====
   if (req.method === 'POST' && req.url === '/api/restore/scan') {
     try {
       const body = await readBody(req)
@@ -9774,9 +9784,10 @@ const server = http.createServer(async (req, res) => {
       }
       const billingUser = { id: user.id, email: user.email || userEmail }
       const config = supabaseConfig()
+      const isAdmin = isAdminEmailAddress(userEmail)
 
       const credits = await getUserCreditBalance(userEmail)
-      if (credits < 1) {
+      if (credits < 1 && !isAdmin) {
         return json(res, 402, {
           error: 'No credits available. Purchase credits to scan.',
           paywall: true,
@@ -9785,21 +9796,138 @@ const server = http.createServer(async (req, res) => {
           pricingUrl: '/pricing',
         })
       }
-      try { new URL(targetUrl) } catch {
-        return json(res, 400, { error: 'Please enter a valid http or https URL.' })
+
+      // SSRF guard — admin / local-dev scans may target private hosts.
+      let safeTarget
+      try {
+        safeTarget = assertSafeUrl(targetUrl, { allowPrivate: isAdmin || process.env.SCANNER_ALLOW_PRIVATE === '1' }).toString()
+      } catch (error) {
+        return json(res, 400, { error: error instanceof Error ? error.message : 'Invalid URL' })
       }
 
+      // 1) The real-browser scan (25 sensitive paths + bundles + screenshots).
       const restoreScanner = createRestoreScanner({ chromium })
-      const scan = await restoreScanner(targetUrl)
+      const scan = await restoreScanner(safeTarget, {
+        allowPrivate: isAdmin || process.env.SCANNER_ALLOW_PRIVATE === '1',
+        allowWatching: true,
+      })
+      const candidates = scan[RAW_SECRETS] || []
+
+      // 2) Shared Playwright context for the AI-builder + git-history hunters.
+      let browser = null
+      let aiBuild = { builder: 'unknown', builderConfidence: 0, usesSupabase: false, usesVercel: false, usesNetlify: false, routes: [], evidence: [], leaks: [], error: null }
+      let gitHistory = { repoOwner: '', repoName: '', isPublic: false, commitCount: 0, localGitExposed: false, routes: [], localGitLeaks: [], commitMessagesWithSecrets: [], deletedSecretFiles: [], evidence: [], error: null }
+      let liveSecrets = []
+      let homepageHtml = ''
+      try {
+        browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] })
+        const context = await browser.newContext({ ignoreHTTPSErrors: true, userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36' })
+        try {
+          const homeRes = await context.request.get(safeTarget, { timeout: 10000 })
+          homepageHtml = homeRes.ok() ? await homeRes.text() : ''
+        } catch {
+          homepageHtml = ''
+        }
+        const headers = {}
+        aiBuild = await aiBuilderHunter(safeTarget, { context, headers }).catch(err => ({ ...aiBuild, error: err instanceof Error ? err.message : String(err) }))
+        gitHistory = await gitHistoryScanner(safeTarget, { context, sourceHtml: homepageHtml, headers }).catch(err => ({ ...gitHistory, error: err instanceof Error ? err.message : String(err) }))
+      } finally {
+        await browser?.close().catch(() => {})
+      }
+
+      // 3) Live-key verification (read-only vendor probes, masked output).
+      liveSecrets = await liveVerifier(candidates).catch(() => [])
+
+      // 4) Composite risk scoring.
+      const risk = calculateRisk({
+        exposedPaths: scan.exposedPaths || [],
+        secrets: scan.secrets || [],
+        liveSecrets,
+        gitLeaks: gitHistory.localGitLeaks || [],
+        commitMessages: gitHistory.commitMessagesWithSecrets || [],
+        deletedSecretFiles: gitHistory.deletedSecretFiles || [],
+        builderConfidence: aiBuild.builderConfidence || 0,
+        usesSupabase: Boolean(aiBuild.usesSupabase),
+      })
+
+      // 5) BEFORE proof package (screenshot + findings card + verify QR).
+      const scanId = `rs_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+      const proto = req.headers['x-forwarded-proto'] || 'https'
+      const host = req.headers.host || 'localhost'
+      const verifyUrl = `${proto}://${host}/api/restore/proof/${scanId}/meta.json`
+      const beforeShot = scan.screenshotPath ? path.join(dataDir, 'scan-proof', path.basename(scan.screenshotPath)) : null
+      const proof = await createProof({
+        scanId,
+        targetUrl: safeTarget,
+        screenshotBefore: beforeShot,
+        screenshotAfter: null,
+        secrets: scan.secrets || [],
+        exposedPaths: (scan.exposedPaths || []).length,
+        riskScore: risk.score,
+        verifyUrl,
+        verdict: 'RESOLVED',
+      }).catch(err => ({ scanId, error: err instanceof Error ? err.message : String(err) }))
+
+      // 6) Persist a small meta file so /api/verify/:scanId can re-scan the same target.
+      try {
+        const metaDir = path.join(dataDir, 'scan-proof', scanId)
+        fs.mkdirSync(metaDir, { recursive: true })
+        fs.writeFileSync(path.join(metaDir, 'meta.json'), JSON.stringify({
+          scanId,
+          targetUrl: safeTarget,
+          scannedAt: scan.scannedAt || new Date().toISOString(),
+          cost: 1,
+          verifiedAt: new Date().toISOString(),
+          risk: { score: risk.score, grade: risk.grade, verdict: risk.verdict, consequences: risk.consequences },
+          counts: { exposedPaths: (scan.exposedPaths || []).length, secrets: (scan.secrets || []).length, liveSecrets: liveSecrets.filter(s => s.isLive).length },
+          maskedSecrets: (scan.secrets || []).slice(0, 10).map(s => ({ kind: s.kind, maskedValue: s.maskedValue })),
+          before: { score: risk.score, screenshot: scan.screenshotPath },
+        }, null, 2))
+      } catch { /* meta persistence is best-effort */ }
+
       const deducted = await deductCredit(userEmail)
       const creditsRemaining = deducted ? Math.max(0, credits - 1) : credits
 
       const plan = await billing.restorePlanForUser(billingUser, config)
       const watching = await billing.canUseRestoreWatching(billingUser, config)
+      const fixPlan = await makeFixPlan({
+        user: { plan: plan.id, creditsRemaining },
+        repo: { owner: gitHistory.repoOwner, name: gitHistory.repoName },
+        scanId,
+        targetUrl: safeTarget,
+        gitOwner: gitHistory.repoOwner,
+        gitRepo: gitHistory.repoName,
+      })
+
       return json(res, 200, {
         ok: true,
-        engine: 'restore-engine-step-1',
-        scan,
+        engine: 'restore-engine-v2',
+        scanId,
+        scan: {
+          ...scan,
+          aiBuild: {
+            builder: aiBuild.builder,
+            builderConfidence: aiBuild.builderConfidence,
+            usesSupabase: aiBuild.usesSupabase,
+            usesVercel: aiBuild.usesVercel,
+            usesNetlify: aiBuild.usesNetlify,
+            leaks: (aiBuild.leaks || []).slice(0, 10),
+          },
+          gitHistory: {
+            repoOwner: gitHistory.repoOwner,
+            repoName: gitHistory.repoName,
+            isPublic: gitHistory.isPublic,
+            commitCount: gitHistory.commitCount,
+            localGitExposed: gitHistory.localGitExposed,
+            localGitLeaks: (gitHistory.localGitLeaks || []).slice(0, 10),
+            commitMessagesWithSecrets: (gitHistory.commitMessagesWithSecrets || []).slice(0, 10),
+            deletedSecretFiles: (gitHistory.deletedSecretFiles || []).slice(0, 10),
+          },
+          liveSecrets,
+          risk,
+          proof,
+          fixPlan,
+        },
         creditsRemaining,
         cost: 1,
         plan: { id: plan.id, name: plan.name, scans: Number(plan.scans), watching: Boolean(plan.watching) },
@@ -9808,6 +9936,198 @@ const server = http.createServer(async (req, res) => {
     } catch (error) {
       return json(res, 500, { error: error instanceof Error ? error.message : 'Restore scan failed.' })
     }
+  }
+
+  // ===== Fix Engine: backup branch + redaction commit + redeploy (paid-plan gated) =====
+  if (req.method === 'POST' && req.url === '/api/fix') {
+    try {
+      const body = await readBody(req)
+      const scanId = String(body.scanId || '').trim()
+      let userEmail = body.email ? String(body.email).trim().toLowerCase() : null
+      if (!userEmail) {
+        const authUser = await currentOrLocalUser(req, supabaseConfig().url, supabaseConfig().anon)
+        userEmail = authUser?.email || null
+      }
+      if (!userEmail) return json(res, 401, { error: 'Email required for fix' })
+      const user = await getOrCreateUser(userEmail, getClientIp(req), body.fingerprint ? String(body.fingerprint).slice(0, 255) : null)
+      if (user === null) return json(res, 403, { error: 'Free trial already used on this device.' })
+      const billingUser = { id: user.id, email: user.email || userEmail }
+      const config = supabaseConfig()
+      const isAdmin = isAdminEmailAddress(userEmail)
+
+      if (!scanId) return json(res, 400, { error: 'scanId required. Run a scan first.' })
+
+      const metaDir = path.join(dataDir, 'scan-proof', scanId)
+      let meta = null
+      try {
+        meta = JSON.parse(fs.readFileSync(path.join(metaDir, 'meta.json'), 'utf8'))
+      } catch {
+        return json(res, 404, { error: 'Scan not found. Run a restore scan first.' })
+      }
+
+      const action = await billing.restoreActionCost(billingUser, config, 'fix')
+      if (!action.ok && !isAdmin) {
+        return json(res, 402, { error: action.reason, paywall: true, cost: action.cost, plan: action.plan?.id, creditsNeeded: action.cost })
+      }
+
+      const gitOwner = String(body.gitOwner || meta.repoOwner || '')
+      const gitRepo = String(body.gitRepo || meta.repoName || '')
+      const maskedSecretsLabel = String(body.maskedSecretsLabel || `${meta.counts?.liveSecrets || 0} live secrets`)
+      const plan = await billing.restorePlanForUser(billingUser, config)
+      const creditsRemaining = await getUserCreditBalance(userEmail)
+
+      const fixPlan = await makeFixPlan({
+        user: { plan: plan.id, creditsRemaining },
+        repo: { owner: gitOwner, name: gitRepo },
+        scanId,
+        targetUrl: meta.targetUrl,
+        gitOwner,
+        gitRepo,
+      })
+      const executed = await runFixPlan(fixPlan, { gitOwner, gitRepo, scanId, targetUrl: meta.targetUrl, maskedSecretsLabel })
+
+      let newBalance = creditsRemaining
+      if (executed.status === 'done' && !isAdmin && action.cost > 0) {
+        const spent = await spendUserCredits(billingUser, action.cost, { reason: 'restore-fix', scanId })
+        if (spent) newBalance = Math.max(0, await getUserCreditBalance(userEmail))
+      }
+
+      return json(res, 200, { ok: executed.status === 'done', fix: executed, creditsRemaining: newBalance, cost: action.cost, engine: 'restore-engine-fix' })
+    } catch (error) {
+      return json(res, 500, { error: error instanceof Error ? error.message : 'Fix failed.' })
+    }
+  }
+
+  // ===== Verify Engine: re-scan the same target and produce the AFTER / diff proof =====
+  if (req.method === 'POST' && req.url?.startsWith('/api/verify/')) {
+    try {
+      const scanId = decodeURIComponent(req.url.slice('/api/verify/'.length))
+      if (!/^[A-Za-z0-9_-]{1,64}$/.test(scanId)) return json(res, 400, { error: 'Invalid scanId' })
+
+      const body = await readBody(req)
+      let userEmail = body.email ? String(body.email).trim().toLowerCase() : null
+      if (!userEmail) {
+        const authUser = await currentOrLocalUser(req, supabaseConfig().url, supabaseConfig().anon)
+        userEmail = authUser?.email || null
+      }
+      if (!userEmail) return json(res, 401, { error: 'Email required for verification' })
+      const user = await getOrCreateUser(userEmail, getClientIp(req), body.fingerprint ? String(body.fingerprint).slice(0, 255) : null)
+      if (user === null) return json(res, 403, { error: 'Free trial already used on this device.' })
+      const billingUser = { id: user.id, email: user.email || userEmail }
+      const config = supabaseConfig()
+      const isAdmin = isAdminEmailAddress(userEmail)
+
+      const metaDir = path.join(dataDir, 'scan-proof', scanId)
+      let meta = null
+      try {
+        meta = JSON.parse(fs.readFileSync(path.join(metaDir, 'meta.json'), 'utf8'))
+      } catch {
+        return json(res, 404, { error: 'Scan not found. Run a restore scan first.' })
+      }
+
+      const action = await billing.restoreActionCost(billingUser, config, 'verify')
+      if (!action.ok && !isAdmin) {
+        return json(res, 402, { error: action.reason, paywall: true, cost: action.cost, plan: action.plan?.id, creditsNeeded: action.cost })
+      }
+
+      const restoreScanner = createRestoreScanner({ chromium })
+      const rescan = await restoreScanner(meta.targetUrl, { allowPrivate: isAdmin || process.env.SCANNER_ALLOW_PRIVATE === '1', allowWatching: true })
+      const risk = calculateRisk({
+        exposedPaths: rescan.exposedPaths || [],
+        secrets: rescan.secrets || [],
+        liveSecrets: rescan[RAW_SECRETS] ? await liveVerifier(rescan[RAW_SECRETS] || []).catch(() => []) : [],
+        gitLeaks: [],
+        commitMessages: [],
+        deletedSecretFiles: [],
+        builderConfidence: 0,
+        usesSupabase: false,
+      })
+
+      const proto = req.headers['x-forwarded-proto'] || 'https'
+      const host = req.headers.host || 'localhost'
+      const verifyUrl = `${proto}://${host}/api/restore/proof/${scanId}/meta.json`
+      const afterShot = rescan.screenshotPath ? path.join(dataDir, 'scan-proof', path.basename(rescan.screenshotPath)) : null
+      const verdict = risk.score <= 25 ? 'RESOLVED' : 'STILL EXPOSED'
+      const proof = await createProof({
+        scanId: `${scanId}-after`,
+        targetUrl: meta.targetUrl,
+        screenshotBefore: afterShot,
+        screenshotAfter: null,
+        secrets: rescan.secrets || [],
+        exposedPaths: (rescan.exposedPaths || []).length,
+        riskScore: risk.score,
+        verifyUrl,
+        verdict,
+      }).catch(err => ({ scanId, error: err instanceof Error ? err.message : String(err) }))
+
+      let newBalance = await getUserCreditBalance(userEmail)
+      if (!isAdmin && action.cost > 0) {
+        const spent = await spendUserCredits(billingUser, action.cost, { reason: 'restore-verify', scanId })
+        if (spent) newBalance = Math.max(0, await getUserCreditBalance(userEmail))
+      }
+
+      return json(res, 200, {
+        ok: true,
+        engine: 'restore-engine-verify',
+        scanId,
+        verdict,
+        before: { score: meta.risk?.score || 0, screenshot: meta.before?.screenshot || null },
+        after: { score: risk.score, screenshot: rescan.screenshotPath },
+        proof,
+        exposedPaths: rescan.exposedPaths || [],
+        risk,
+        creditsRemaining: newBalance,
+        cost: action.cost,
+      })
+    } catch (error) {
+      return json(res, 500, { error: error instanceof Error ? error.message : 'Verification failed.' })
+    }
+  }
+
+  // ===== Watcher: GUARDIAN paywall + next-run schedule =====
+  if (req.method === 'POST' && req.url === '/api/watcher') {
+    try {
+      const body = await readBody(req)
+      let userEmail = body.email ? String(body.email).trim().toLowerCase() : null
+      if (!userEmail) {
+        const authUser = await currentOrLocalUser(req, supabaseConfig().url, supabaseConfig().anon)
+        userEmail = authUser?.email || null
+      }
+      if (!userEmail) return json(res, 401, { error: 'Email required' })
+      const user = await getOrCreateUser(userEmail, getClientIp(req), body.fingerprint ? String(body.fingerprint).slice(0, 255) : null)
+      const billingUser = { id: user?.id, email: user?.email || userEmail }
+      const config = supabaseConfig()
+      const watching = await billing.canUseRestoreWatching(billingUser, config)
+      const nextRun = new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString()
+      return json(res, 200, {
+        ok: watching.ok,
+        paywall: watching.paywall,
+        reason: watching.reason || null,
+        plan: watching.plan?.id || 'restore_starter',
+        intervalHours: 6,
+        nextRun,
+        autoFix: Boolean(watching.ok),
+      })
+    } catch (error) {
+      return json(res, 500, { error: error instanceof Error ? error.message : 'Watcher status failed.' })
+    }
+  }
+
+  // ===== Proof assets (per-scan subdirectory + flat legacy screenshots) =====
+  if (req.method === 'GET' && /^\/api\/restore\/proof\/[A-Za-z0-9_-]{1,64}\/[A-Za-z0-9._-]{1,120}$/.test(req.url || '')) {
+    const [scanId, file] = req.url.slice('/api/restore/proof/'.length).split('/')
+    if (!/^[A-Za-z0-9_-]+$/.test(scanId) || !/^[A-Za-z0-9._-]+$/.test(file)) return json(res, 400, { error: 'Invalid proof path' })
+    const filePath = path.join(dataDir, 'scan-proof', scanId, file)
+    try {
+      const stat = fs.statSync(filePath)
+      const contentType = file.endsWith('.png') ? 'image/png' : 'application/json'
+      res.writeHead(200, { 'Content-Type': contentType, 'Content-Length': stat.size, 'Cache-Control': 'public, max-age=60' })
+      fs.createReadStream(filePath).pipe(res)
+    } catch {
+      return json(res, 404, { error: 'Proof not found' })
+    }
+    return
+
   }
   if (req.method === 'GET' && req.url?.startsWith('/api/restore/proof/')) {
     const filename = decodeURIComponent(req.url.slice('/api/restore/proof/'.length))

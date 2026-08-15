@@ -163,6 +163,7 @@ export async function runRealScan(targetUrl, options = {}) {
   let hardTimeoutReached = false
   const emit = (event) => {
     if (hardTimeoutReached) return
+    console.log(`[Scanner ${scanId}] Emitting:`, event.type, event.progress || event.message || '')
     if (typeof options.onEvent === 'function') options.onEvent(event)
   }
   const evidenceDir = evidenceDirFor(scanId)
@@ -182,21 +183,26 @@ export async function runRealScan(targetUrl, options = {}) {
   const hardTimeoutMs = Number(process.env.SCANNER_HARD_TIMEOUT_MS || 75000)
   const browserTimeoutMs = 25000 // 25 second timeout just for browser launch
   
+  console.log(`[Scanner ${scanId}] Starting scan of: ${parsed.toString()}`)
   // Emit started event immediately so frontend knows scan is active
   emit({ type: 'progress', progress: 1, message: 'Starting scan...' })
   
   const scan = (async () => {
     let contextReady = false
+    console.log(`[Scanner ${scanId}] Acquiring browser context...`)
     const contextTimeoutPromise = new Promise((_, reject) =>
       setTimeout(() => {
         if (!contextReady) {
-          reject(new Error('Browser launch timed out after 25s. Playwright may not be installed or the system is under heavy load. Try again in a moment.'))
+          const msg = 'Browser launch timed out after 25s. Playwright may not be installed or the system is under heavy load. Try again in a moment.'
+          console.error(`[Scanner ${scanId}] ${msg}`)
+          reject(new Error(msg))
         }
       }, browserTimeoutMs)
     )
     
     const contextPromise = withContext(async (context) => {
       contextReady = true
+      console.log(`[Scanner ${scanId}] Browser context ready`)
       const page = await context.newPage()
       const bodyTasks = []
       let scannedResponses = 0
@@ -456,6 +462,7 @@ export async function runRealScan(targetUrl, options = {}) {
     await fs.promises.mkdir(evidenceDir, { recursive: true }).catch(() => {})
     await fs.promises.writeFile(path.join(evidenceDir, 'report.json'), JSON.stringify(report, null, 2), 'utf8').catch(() => {})
 
+    console.log(`[Scanner ${scanId}] Scan completed in ${Date.now() - startedAt}ms with ${report.totalFindings || 0} findings`)
     emit({ type: 'progress', progress: 100, message: 'Scan complete' })
     return report
   })()
@@ -465,6 +472,7 @@ export async function runRealScan(targetUrl, options = {}) {
     new Promise((_, reject) =>
       setTimeout(() => {
         hardTimeoutReached = true
+        console.error(`[Scanner ${scanId}] Hard timeout reached after ${Math.round(hardTimeoutMs / 1000)}s`)
         reject(new Error(`Scan timed out after ${Math.round(hardTimeoutMs / 1000)}s. The site is too slow or is blocking automated traffic.`))
       }, hardTimeoutMs)
     ),
