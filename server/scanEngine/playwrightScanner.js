@@ -55,7 +55,7 @@ export function createRestoreScanner({ chromium } = {}) {
       // Real Playwright browser request (same network stack, cookies and UA as
       // a real visit) — unlike page.goto it also handles binary bodies such as
       // /.DS_Store and /backup.zip without treating them as downloads.
-      const response = await context.request.get(probeUrl, { timeout: 15000 })
+      const response = await context.request.get(probeUrl, { timeout: 10000 })
       result.statusCode = response.status()
       result.contentType = String(response.headers()['content-type'] || '').split(';')[0].trim()
       if (response.ok()) {
@@ -94,7 +94,7 @@ export function createRestoreScanner({ chromium } = {}) {
       if (fetched.has(bundleUrl)) continue
       fetched.add(bundleUrl)
       try {
-        const response = await context.request.get(bundleUrl, { timeout: 15000 })
+        const response = await context.request.get(bundleUrl, { timeout: 10000 })
         if (response.ok()) {
           const text = await response.text()
           bundles.push({ url: bundleUrl, bytes: text.length, content: text })
@@ -174,11 +174,16 @@ export function createRestoreScanner({ chromium } = {}) {
       throw new Error('Only http and https URLs are allowed.')
     }
 
-    const baseUrl = parsed.origin
-    const hostname = parsed.hostname
-    const startedAt = Date.now()
+  const baseUrl = parsed.origin
+  const hostname = parsed.hostname
+  const startedAt = Date.now()
 
-    const browser = await chromium.launch({ headless: true })
+  const hardTimeoutMs = Number(process.env.SCANNER_RESTORE_TIMEOUT_MS || 75000)
+  const scanBody = (async () => {
+    const browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled'],
+    })
     try {
       const context = await browser.newContext({
         ignoreHTTPSErrors: true,
@@ -187,20 +192,30 @@ export function createRestoreScanner({ chromium } = {}) {
       })
       const page = await context.newPage()
 
-      // 1) Probe every sensitive path with the real browser.
+      // 1) Probe every sensitive path with the real browser (parallel, bounded).
       const pathResults = []
-      for (const sensitivePath of SENSITIVE_PATHS) {
-        const probeUrl = new URL(sensitivePath, baseUrl).toString()
-        // eslint-disable-next-line no-await-in-loop
-        pathResults.push(await probePath(context, probeUrl))
+      const PROBE_CONCURRENCY = 4
+      let probeCursor = 0
+      async function probeWorker() {
+        while (probeCursor < SENSITIVE_PATHS.length) {
+          const sensitivePath = SENSITIVE_PATHS[probeCursor]
+          probeCursor += 1
+          const probeUrl = new URL(sensitivePath, baseUrl).toString()
+          // eslint-disable-next-line no-await-in-loop
+          pathResults.push(await probePath(context, probeUrl))
+        }
       }
+      await Promise.all(
+        Array.from({ length: Math.min(PROBE_CONCURRENCY, SENSITIVE_PATHS.length) }, () => probeWorker())
+      )
+      pathResults.sort((a, b) => SENSITIVE_PATHS.indexOf(a.path) - SENSITIVE_PATHS.indexOf(b.path))
 
       // 2) Load the homepage (gives us the real status code + title + bundles).
       let statusCode = 0
       let pageTitle = ''
       let finalUrl = normalizedUrl
       try {
-        const homeResponse = await page.goto(normalizedUrl, { waitUntil: 'domcontentloaded', timeout: 60000 })
+        const homeResponse = await page.goto(normalizedUrl, { waitUntil: 'domcontentloaded', timeout: 30000 })
         if (homeResponse) {
           statusCode = homeResponse.status()
           finalUrl = homeResponse.url() || normalizedUrl
@@ -274,7 +289,15 @@ export function createRestoreScanner({ chromium } = {}) {
     } finally {
       await browser.close().catch(() => {})
     }
-  }
+  })()
+
+  return await Promise.race([
+    scanBody,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Restore scan timed out after 75s. The site is too slow or is blocking automated traffic.')), hardTimeoutMs)
+    ),
+  ])
+}
 
   return scanRestoreUrl
 }

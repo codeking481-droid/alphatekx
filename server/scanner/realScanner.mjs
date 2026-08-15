@@ -160,7 +160,11 @@ function riskFrom(score, findings) {
 export async function runRealScan(targetUrl, options = {}) {
   const parsed = normalizeTarget(targetUrl)
   const scanId = options.scanId || createScanId()
-  const emit = typeof options.onEvent === 'function' ? options.onEvent : () => {}
+  let hardTimeoutReached = false
+  const emit = (event) => {
+    if (hardTimeoutReached) return
+    if (typeof options.onEvent === 'function') options.onEvent(event)
+  }
   const evidenceDir = evidenceDirFor(scanId)
   const startedAt = Date.now()
 
@@ -175,7 +179,9 @@ export async function runRealScan(targetUrl, options = {}) {
   // re-reported by the traffic interceptor.
   const sensitiveUrls = new Set(SENSITIVE_TARGETS.map((target) => new URL(target.path, parsed.origin).toString()))
 
-  const report = await withContext(async (context) => {
+  const hardTimeoutMs = Number(process.env.SCANNER_HARD_TIMEOUT_MS || 75000)
+  const scan = (async () => {
+    const report = await withContext(async (context) => {
     const page = await context.newPage()
     const bodyTasks = []
     let scannedResponses = 0
@@ -203,7 +209,10 @@ export async function runRealScan(targetUrl, options = {}) {
 
       bodyTasks.push(
         (async () => {
-          const buffer = await response.body().catch(() => null)
+          const buffer = await Promise.race([
+            response.body(),
+            new Promise((resolve) => setTimeout(() => resolve(null), 5000)),
+          ]).catch(() => null)
           if (!buffer || buffer.byteLength > MAX_BODY_BYTES) return
           const text = buffer.toString('utf8')
           if (!text) return
@@ -301,16 +310,40 @@ export async function runRealScan(targetUrl, options = {}) {
 
     emit({ type: 'progress', progress: 58, message: 'Probing for exposed files...' })
     const probePage = await context.newPage()
-    for (const target of SENSITIVE_TARGETS) {
+    const PROBE_CONCURRENCY = 4
+    let probesDone = 0
+    const exposedProbes = []
+    async function runProbe(target) {
       const probeUrl = new URL(target.path, parsed.origin).toString()
-      const probe = await context.request.get(probeUrl, { failOnStatusCode: false, timeout: 15000, maxRedirects: 0 }).catch(() => null)
-      if (!probe || probe.status() !== 200) continue
-
+      const probe = await context.request
+        .get(probeUrl, { failOnStatusCode: false, timeout: 10000, maxRedirects: 0 })
+        .catch(() => null)
+      probesDone += 1
+      emit({
+        type: 'progress',
+        progress: 58 + Math.round((probesDone / SENSITIVE_TARGETS.length) * 14),
+        message: `Probing ${target.path}...`,
+      })
+      if (!probe || probe.status() !== 200) return
       const body = (await probe.text().catch(() => '')) || ''
-      if (!target.validate(body)) continue
-
+      if (!target.validate(body)) return
+      exposedProbes.push({ target, probeUrl, body, probe })
+    }
+    let probeCursor = 0
+    async function probeWorker() {
+      while (probeCursor < SENSITIVE_TARGETS.length) {
+        const target = SENSITIVE_TARGETS[probeCursor]
+        probeCursor += 1
+        // eslint-disable-next-line no-await-in-loop
+        await runProbe(target)
+      }
+    }
+    await Promise.all(
+      Array.from({ length: Math.min(PROBE_CONCURRENCY, SENSITIVE_TARGETS.length) }, () => probeWorker())
+    )
+    for (const { target, probeUrl, body, probe } of exposedProbes) {
       const screenshot = await probePage
-        .goto(probeUrl, { waitUntil: 'domcontentloaded', timeout: 15000 })
+        .goto(probeUrl, { waitUntil: 'domcontentloaded', timeout: 12000 })
         .then(() => redactSecretsInDom(probePage, body))
         .then(() => captureScreenshot(probePage, evidenceDir, `evidence-${target.path.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '')}`))
         .catch(() => null)
@@ -400,11 +433,22 @@ export async function runRealScan(targetUrl, options = {}) {
     }
   })
 
-  await fs.promises.mkdir(evidenceDir, { recursive: true }).catch(() => {})
-  await fs.promises.writeFile(path.join(evidenceDir, 'report.json'), JSON.stringify(report, null, 2), 'utf8').catch(() => {})
+    await fs.promises.mkdir(evidenceDir, { recursive: true }).catch(() => {})
+    await fs.promises.writeFile(path.join(evidenceDir, 'report.json'), JSON.stringify(report, null, 2), 'utf8').catch(() => {})
 
-  emit({ type: 'progress', progress: 100, message: 'Scan complete' })
-  return report
+    emit({ type: 'progress', progress: 100, message: 'Scan complete' })
+    return report
+  })()
+
+  return await Promise.race([
+    scan,
+    new Promise((_, reject) =>
+      setTimeout(() => {
+        hardTimeoutReached = true
+        reject(new Error(`Scan timed out after ${Math.round(hardTimeoutMs / 1000)}s. The site is too slow or is blocking automated traffic.`))
+      }, hardTimeoutMs)
+    ),
+  ])
 }
 
 export async function loadStoredReport(scanId) {

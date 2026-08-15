@@ -199,10 +199,31 @@ export default function ScanPage() {
 
       const decoder = new TextDecoder()
       let buffer = ''
+      let lastEventAt = Date.now()
+      let staleMessageShown = false
+
+      const staleCheck = () => {
+        const elapsedSinceEvent = Date.now() - lastEventAt
+        if (elapsedSinceEvent > 90000) {
+          throw new Error('The scan stopped responding. Please try again — the site may be blocking automated scanning.')
+        }
+        if (elapsedSinceEvent > 45000 && !staleMessageShown) {
+          staleMessageShown = true
+          setStatus('Still working... the site is responding slowly. Hang tight (up to ~75s).')
+        }
+      }
 
       while (true) {
-        const { value, done } = await reader.read()
+        const { value, done, timedOut } = await Promise.race([
+          reader.read(),
+          new Promise((resolve) => setTimeout(() => resolve({ value: undefined, done: false, timedOut: true }), 5000)),
+        ])
+        if (timedOut) {
+          staleCheck()
+          continue
+        }
         if (done) break
+        lastEventAt = Date.now()
 
         buffer += decoder.decode(value, { stream: true })
         const parts = buffer.split('\n\n')
