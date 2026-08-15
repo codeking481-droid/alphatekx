@@ -4,6 +4,7 @@ import { getCredits, setCredits, hydrateCredits, subscribeCredits } from '../lib
 import { useAuth } from '../lib/auth'
 import CreditsExhaustedModal from '../components/CreditsExhaustedModal'
 import ScanningOverlay from '../components/scan/ScanningOverlay'
+import RestoreEngineWizard from '../components/scan/RestoreEngineWizard'
 
 type ScanFinding = {
   id: string
@@ -49,6 +50,11 @@ export default function ScanPage() {
   const [restoreScan, setRestoreScan] = useState<any | null>(null)
   const [restorePlan, setRestorePlan] = useState<any | null>(null)
   const [restoreWatching, setRestoreWatching] = useState<any | null>(null)
+  const [fixResult, setFixResult] = useState<any | null>(null)
+  const [isFixing, setIsFixing] = useState(false)
+  const [verifyResult, setVerifyResult] = useState<any | null>(null)
+  const [isVerifying, setIsVerifying] = useState(false)
+  const [watcherStatus, setWatcherStatus] = useState<any | null>(null)
 
   const scoreTone = useMemo(() => {
     if (score === null || score === undefined) return 'text-slate-400'
@@ -299,6 +305,7 @@ export default function ScanPage() {
     setRestoreScan(null)
     setStatus('Checking credit balance...')
     setProgress(8)
+    resetRestoreActions()
 
     try {
       const checkResponse = await fetch('/api/check-credits', {
@@ -367,6 +374,7 @@ export default function ScanPage() {
       setRestoreScan(data.scan || null)
       setRestorePlan(data.plan || null)
       setRestoreWatching(data.watching || null)
+      if (data.scanId) setScanId(String(data.scanId))
       setScannedUrl(String(data.scan?.url || targetUrl))
       setScore(data.scan?.score ?? null)
       setRisk(data.scan?.risk ?? null)
@@ -382,6 +390,73 @@ export default function ScanPage() {
       const errorMsg = error instanceof Error ? error.message : 'Scan failed'
       setScanError(`Error: ${errorMsg}`)
       setStatus('Ready for inspection')
+    }
+  }
+
+  const resetRestoreActions = () => {
+    setFixResult(null)
+    setVerifyResult(null)
+    setWatcherStatus(null)
+  }
+
+  const handleRunFix = async () => {
+    if (!scanId || !user?.email) return
+    setIsFixing(true)
+    setScanError(null)
+    try {
+      const response = await fetch('/api/fix', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: String(user.email).trim().toLowerCase(),
+          scanId,
+          maskedSecretsLabel: `${restoreScan?.liveSecrets?.filter((s: any) => s.isLive).length || 0} live secrets`,
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok) setScanError(data.error || 'Fix failed')
+      setFixResult(data.fix || null)
+    } catch (error) {
+      setScanError(`Error: ${error instanceof Error ? error.message : 'Fix failed'}`)
+    } finally {
+      setIsFixing(false)
+    }
+  }
+
+  const handleVerify = async () => {
+    if (!scanId || !user?.email) return
+    setIsVerifying(true)
+    setScanError(null)
+    try {
+      const response = await fetch(`/api/verify/${scanId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: String(user.email).trim().toLowerCase() }),
+      })
+      const data = await response.json()
+      if (!response.ok) setScanError(data.error || 'Verification failed')
+      else setVerifyResult(data)
+    } catch (error) {
+      setScanError(`Error: ${error instanceof Error ? error.message : 'Verification failed'}`)
+    } finally {
+      setIsVerifying(false)
+    }
+  }
+
+  const handleEnableWatcher = async () => {
+    if (!user?.email) return
+    setScanError(null)
+    try {
+      const response = await fetch('/api/watcher', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: String(user.email).trim().toLowerCase() }),
+      })
+      const data = await response.json()
+      setWatcherStatus(data)
+      if (data.paywall) setScanError(data.reason || 'Watching requires the GUARDIAN plan.')
+    } catch (error) {
+      setScanError(`Error: ${error instanceof Error ? error.message : 'Watcher failed'}`)
     }
   }
 
@@ -635,6 +710,26 @@ export default function ScanPage() {
             </div>
           </div>
         </section>
+
+        {mode === 'restore' && (
+          <RestoreEngineWizard
+            scan={restoreScan}
+            scanId={scanId}
+            isScanning={isScanning}
+            progress={progress}
+            status={status}
+            plan={restorePlan}
+            watching={restoreWatching}
+            onRunFix={handleRunFix}
+            isFixing={isFixing}
+            fixResult={fixResult}
+            onVerify={handleVerify}
+            isVerifying={isVerifying}
+            verifyResult={verifyResult}
+            watcherStatus={watcherStatus}
+            onEnableWatcher={handleEnableWatcher}
+          />
+        )}
 
         <section className="mt-8 rounded-[30px] border border-violet-200/20 bg-[#0c0e15]/80 p-5 shadow-[0_20px_60px_rgba(0,0,0,0.22)]">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

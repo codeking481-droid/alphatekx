@@ -37,9 +37,10 @@ function probeStatus(response) {
  * @param {object} deps.context Playwright BrowserContext (for binary-safe requests)
  * @param {object} [deps.probePage] optional page used to read JS bundle bodies
  * @param {object} [deps.headers] default request headers
+ * @param {string} [deps.sourceHtml] homepage HTML already fetched by the caller
  * @param {(pct:number, label:string) => void} [deps.progress] progress callback
  */
-export async function aiBuilderHunter(targetUrl, { context, probePage, headers = {}, progress = () => {} } = {}) {
+export async function aiBuilderHunter(targetUrl, { context, probePage, headers = {}, sourceHtml = '', progress = () => {} } = {}) {
   const origin = new URL(targetUrl).origin
   const evidence = []
   const routes = []
@@ -98,12 +99,12 @@ export async function aiBuilderHunter(targetUrl, { context, probePage, headers =
   const usesNetlify = evidence.some(e => e.path === '/netlify.toml' || e.path === '/_redirects')
 
   const htmlChecks = [
-    { re: /lovable/i, builder: 'lovable', score: 1 },
-    { re: /v0\.dev|v0 user|@v0/i, builder: 'v0', score: 1 },
-    { re: /bolt\.new|bolt\.ai|boltnew/i, builder: 'bolt', score: 1 },
-    { re: /cursor\.com|cursor(?:bot)?/i, builder: 'cursor', score: 1 },
-    { re: /github copilot|copilot(?: ?watch)/i, builder: 'copilot', score: 1 },
-    { re: /replit/i, builder: 'replit', score: 1 },
+    { re: /lovable/i, builder: 'lovable' },
+    { re: /v0\.dev|v0 user|@v0/i, builder: 'v0' },
+    { re: /bolt\.new|bolt\.ai|boltnew/i, builder: 'bolt' },
+    { re: /cursor\.com|cursor(?:bot)?/i, builder: 'cursor' },
+    { re: /github copilot|copilot(?: ?watch)/i, builder: 'copilot' },
+    { re: /replit/i, builder: 'replit' },
   ]
 
   let builder = 'unknown'
@@ -111,12 +112,12 @@ export async function aiBuilderHunter(targetUrl, { context, probePage, headers =
   if (usesSupabase) builderScore += 1
   if (usesVercel) builderScore += 0.5
   if (usesNetlify) builderScore += 0.5
+  const fingerprintText = `${sourceHtml || ''}\n${evidence.map(e => e.path).join(' ')}\n${leaks.map(l => l.source).join(' ')}`
   for (const check of htmlChecks) {
-    if (new RegExp(check.re.source, check.re.flags.includes('i') ? check.re.flags : `${check.re.flags}i`).test(JSON.stringify(evidence.map(e => e.path)) + ' ' + leaks.map(l => l.source).join(' '))) {
-      builderScore += check.score
-      if (check.score > builderScore - check.score || builder === 'unknown') {
-        if (!builder || builderScore >= 1) builder = check.builder
-      }
+    const re = new RegExp(check.re.source, check.re.flags.includes('i') ? check.re.flags : `${check.re.flags}i`)
+    if (re.test(fingerprintText)) {
+      builderScore += 1
+      if (builder === 'unknown') builder = check.builder
     }
   }
 

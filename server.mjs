@@ -9776,6 +9776,17 @@ const server = http.createServer(async (req, res) => {
       }
       if (!userEmail) return json(res, 401, { error: 'Email required for restore scan' })
 
+      const isAdmin = isAdminEmailAddress(userEmail)
+
+      // SSRF guard runs BEFORE any user/credit logic: bad targets are rejected
+      // immediately. Admin / local-dev scans may target private hosts.
+      let safeTarget
+      try {
+        safeTarget = assertSafeUrl(targetUrl, { allowPrivate: isAdmin || process.env.SCANNER_ALLOW_PRIVATE === '1' }).toString()
+      } catch (error) {
+        return json(res, 400, { error: error instanceof Error ? error.message : 'Invalid URL' })
+      }
+
       const clientIp = getClientIp(req)
       const clientFingerprint = body.fingerprint ? String(body.fingerprint).slice(0, 255) : null
       const user = await getOrCreateUser(userEmail, clientIp, clientFingerprint)
@@ -9784,7 +9795,6 @@ const server = http.createServer(async (req, res) => {
       }
       const billingUser = { id: user.id, email: user.email || userEmail }
       const config = supabaseConfig()
-      const isAdmin = isAdminEmailAddress(userEmail)
 
       const credits = await getUserCreditBalance(userEmail)
       if (credits < 1 && !isAdmin) {
@@ -9795,14 +9805,6 @@ const server = http.createServer(async (req, res) => {
           creditsAvailable: credits,
           pricingUrl: '/pricing',
         })
-      }
-
-      // SSRF guard — admin / local-dev scans may target private hosts.
-      let safeTarget
-      try {
-        safeTarget = assertSafeUrl(targetUrl, { allowPrivate: isAdmin || process.env.SCANNER_ALLOW_PRIVATE === '1' }).toString()
-      } catch (error) {
-        return json(res, 400, { error: error instanceof Error ? error.message : 'Invalid URL' })
       }
 
       // 1) The real-browser scan (25 sensitive paths + bundles + screenshots).
@@ -9829,7 +9831,7 @@ const server = http.createServer(async (req, res) => {
           homepageHtml = ''
         }
         const headers = {}
-        aiBuild = await aiBuilderHunter(safeTarget, { context, headers }).catch(err => ({ ...aiBuild, error: err instanceof Error ? err.message : String(err) }))
+        aiBuild = await aiBuilderHunter(safeTarget, { context, headers, sourceHtml: homepageHtml }).catch(err => ({ ...aiBuild, error: err instanceof Error ? err.message : String(err) }))
         gitHistory = await gitHistoryScanner(safeTarget, { context, sourceHtml: homepageHtml, headers }).catch(err => ({ ...gitHistory, error: err instanceof Error ? err.message : String(err) }))
       } finally {
         await browser?.close().catch(() => {})

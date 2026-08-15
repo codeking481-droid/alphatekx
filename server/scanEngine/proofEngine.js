@@ -41,7 +41,7 @@ function buildCard({ title, subtitle, targetUrl, timestamp, rows, accent, footer
 }
 
 async function renderCardSvg(svg) {
-  return sharp(Buffer.from(svg), { density: 144 }).png().toBuffer()
+  return sharp(Buffer.from(svg)).png().resize(1200, null).toBuffer()
 }
 
 /**
@@ -122,20 +122,29 @@ export async function createProof({
   })
 
   const [beforeCard, afterCard, diffCard] = await Promise.all([renderCardSvg(beforeSvg), renderCardSvg(afterSvg), renderCardSvg(diffSvg)])
+  const cardMeta = await sharp(beforeCard).metadata()
+  const cardHeight = cardMeta.height || 320
+
+  async function stackCard(screenshotPath, cardBuffer, outPath) {
+    const shot = sharp(screenshotPath).resize(1200, null, { withoutEnlargement: true }).png()
+    const shotMeta = await shot.clone().metadata()
+    await shot
+      .extend({ top: cardHeight, background: '#0d1117' })
+      .composite([{ input: cardBuffer, top: 0, left: 0 }])
+      .toFile(outPath)
+  }
 
   const proofBefore = path.join(dir, 'proof-before.png')
   const proofAfter = path.join(dir, 'proof-after.png')
   const proofDiff = path.join(dir, 'proof-diff.png')
 
   if (screenshotBefore) {
-    await sharp(screenshotBefore).resize(1200, null, { withoutEnlargement: true }).png()
-      .composite([{ input: beforeCard, gravity: 'south', left: 0, top: 0 }]).toFile(proofBefore)
+    await stackCard(screenshotBefore, beforeCard, proofBefore)
   } else {
     await sharp(beforeCard).toFile(proofBefore)
   }
   if (screenshotAfter) {
-    await sharp(screenshotAfter).resize(1200, null, { withoutEnlargement: true }).png()
-      .composite([{ input: afterCard, gravity: 'south', left: 0, top: 0 }]).toFile(proofAfter)
+    await stackCard(screenshotAfter, afterCard, proofAfter)
   } else {
     await sharp(afterCard).toFile(proofAfter)
   }

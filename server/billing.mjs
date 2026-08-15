@@ -1035,6 +1035,23 @@ export async function restoreScanCost(user, config) {
   return { cost: 1, plan: await restorePlanForUser(user, config), ok: true }
 }
 
+// The Fix Engine (backup branch + redaction commit + redeploy) and the Verify
+// Engine (proof-diff re-scan) are paid-plan actions. GUARDIAN users have no
+// per-action cap; STARTER/PRO deduct from their credit balance.
+export async function restoreActionCost(user, config, action = 'fix') {
+  const costTable = { fix: 20, verify: 3, watch: 0 }
+  const cost = costTable[action] ?? 5
+  if (isAdmin(user)) return { cost: 0, plan: RESTORE_PLANS.guardian, ok: true, reason: 'admin bypass' }
+  const plan = await restorePlanForUser(user, config)
+  if (plan.watching && action === 'watch') return { cost: 0, plan, ok: true, reason: 'GUARDIAN always watching' }
+  if (plan.watching) return { cost: 0, plan, ok: true, reason: 'GUARDIAN unlimited fixes' }
+  const credits = await getUserCredits(user, config)
+  if (Number(credits) < cost) {
+    return { cost, plan, ok: false, reason: `${action} costs ${cost} credits — ${Number(credits)} remaining. Add credits or upgrade.` }
+  }
+  return { cost, plan, ok: true, reason: `${cost} credits will be charged` }
+}
+
 // Watching (continuous monitoring every 6h) is a $99 GUARDIAN-only feature.
 // $19 STARTER and $49 PRO users see the paywall instead of the watcher.
 export async function canUseRestoreWatching(user, config) {
