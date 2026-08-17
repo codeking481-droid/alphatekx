@@ -225,6 +225,28 @@ const STYLE_KEYWORDS = {
 }
 
 /**
+ * Detect the best style key from a user's natural language prompt.
+ */
+export function detectStyleKey(prompt) {
+  const lower = prompt.toLowerCase()
+  let bestMatch = null
+  let bestScore = 0
+
+  for (const [key, keywords] of Object.entries(STYLE_KEYWORDS)) {
+    let score = 0
+    for (const kw of keywords) {
+      if (lower.includes(kw)) score++
+    }
+    if (score > bestScore) {
+      bestScore = score
+      bestMatch = key
+    }
+  }
+
+  return bestMatch || 'minimal'
+}
+
+/**
  * Detect the best style from a user's natural language prompt.
  */
 export function detectStyle(prompt) {

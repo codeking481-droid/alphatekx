@@ -8643,7 +8643,7 @@ const server = http.createServer(async (req, res) => {
         // Route to video edit pipeline
         const { analyzeVideo } = await import('./server/videoAnalyzer.mjs')
         const { executeVideoEdit } = await import('./server/videoEditor.mjs')
-        const { detectStyle } = await import('./server/creatorStyles.mjs')
+        const { detectStyle, detectStyleKey } = await import('./server/creatorStyles.mjs')
 
         sendEvent({ type: 'content', text: 'Detected video. Analyzing...\n\n' })
 
@@ -8710,6 +8710,7 @@ const server = http.createServer(async (req, res) => {
         })
 
         // Detect style from message
+        const styleKey = detectStyleKey(message)
         const style = detectStyle(message)
         sendEvent({
           type: 'thought_step',
@@ -8728,7 +8729,7 @@ const server = http.createServer(async (req, res) => {
         })
 
         // Execute the edit pipeline
-        const editPlan = { ...style, operations: [{ type: 'full_edit', description: `${style.name} style edit` }] }
+        const editPlan = { ...style, styleKey, operations: [{ type: 'full_edit', description: `${style.name} style edit` }], userPrompt: message }
 
         let result
         try {
