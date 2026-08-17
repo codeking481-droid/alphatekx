@@ -121,8 +121,8 @@ export default function Settings() {
 
   const currentPlan = billing ? getPlan(billing.plan) : getPlan('free')
   const visiblePlans = Object.values(PLANS).filter((plan, index, all) => {
-    return all.findIndex(other => other.name === plan.name && other.priceKobo === plan.priceKobo) === index
-  })
+    return all.findIndex(other => other.id === plan.id) === index
+  }).filter(plan => ['free', 'video_19', 'video_49', 'video_99'].includes(plan.id))
 
   const startCheckout = async () => {
     if (!selectedPlan) return

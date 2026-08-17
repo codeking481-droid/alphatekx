@@ -1,5 +1,5 @@
-import { CreditCard, X, Zap } from 'lucide-react'
-import { startPayment } from '../lib/paystack'
+import { X, Zap } from 'lucide-react'
+import { initializeCheckout } from '../lib/payment'
 
 type Props = {
   open: boolean
@@ -9,9 +9,12 @@ type Props = {
 export default function CreditsExhaustedModal({ open, onClose }: Props) {
   if (!open) return null
 
-  const handlePurchase = async (amount: number, plan: string) => {
+  const handlePurchase = async (planId: string) => {
     try {
-      await startPayment(amount, plan)
+      const data = await initializeCheckout('paystack', { type: 'subscription', planId: planId as any })
+      if (data.authorization_url) {
+        window.location.href = data.authorization_url
+      }
     } catch (error) {
       console.error('Payment failed:', error)
       alert(error instanceof Error ? error.message : 'Payment failed. Please try again.')
@@ -36,7 +39,7 @@ export default function CreditsExhaustedModal({ open, onClose }: Props) {
         
         <div className="space-y-3">
           <button 
-            onClick={() => handlePurchase(19, 'video_19')}
+            onClick={() => handlePurchase('video_19')}
             className="w-full rounded-xl bg-indigo-500/20 border border-indigo-400/30 hover:border-indigo-400/60 px-4 py-3 text-left transition-all"
           >
             <div className="flex items-center justify-between mb-1">
@@ -47,7 +50,7 @@ export default function CreditsExhaustedModal({ open, onClose }: Props) {
           </button>
 
           <button 
-            onClick={() => handlePurchase(49, 'video_49')}
+            onClick={() => handlePurchase('video_49')}
             className="w-full rounded-xl bg-purple-500/30 border border-purple-400/50 hover:border-purple-400/80 px-4 py-3 text-left transition-all relative"
           >
             <div className="absolute -top-2 right-3 rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 px-2 py-0.5 text-[10px] font-semibold text-white">
@@ -61,7 +64,7 @@ export default function CreditsExhaustedModal({ open, onClose }: Props) {
           </button>
 
           <button 
-            onClick={() => handlePurchase(99, 'video_99')}
+            onClick={() => handlePurchase('video_99')}
             className="w-full rounded-xl bg-cyan-500/20 border border-cyan-400/30 hover:border-cyan-400/60 px-4 py-3 text-left transition-all"
           >
             <div className="flex items-center justify-between mb-1">

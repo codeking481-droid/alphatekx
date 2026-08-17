@@ -81,11 +81,8 @@ export const CREDIT_PACKS = [
   { id: 'video_99', credits: 50, amountKobo: 9900, currency: 'USD', label: '$99 Video Monthly', description: 'Unlimited videos, up to 12 mins + Vault, 50 credits', type: 'subscription', planId: 'video_99' },
 ]
 
-// Video-specific plan entries (explicit)
-PLANS.video_free = { id: 'video_free', name: 'Free Video', priceKobo: 0, monthlyVideos: 1, videoMaxDurationSec: 2 * 60, features: ['1 video / month, max 2 mins'] }
-PLANS.video_19 = { id: 'video_19', name: '$19 Video', priceKobo: 1900, monthlyVideos: 10, videoMaxDurationSec: 5 * 60, features: ['10 videos / month, max 5 mins'] }
-PLANS.video_49 = { id: 'video_49', name: '$49 Video', priceKobo: 4900, monthlyVideos: 30, videoMaxDurationSec: 8 * 60, schedulerDays: 7, librarianUniqueClips: 84, features: ['30 videos / month, max 8 mins, 7-day scheduler'] }
-PLANS.video_99 = { id: 'video_99', name: '$99 Video', priceKobo: 9900, monthlyVideos: Infinity, videoMaxDurationSec: 12 * 60, vault: true, features: ['Unlimited videos, max 12 mins, Vault & team seats'] }
+// Video-specific plan entries — merged into the full plan definitions above
+PLANS.video_free = { ...PLANS.free, id: 'video_free', name: 'Free', monthlyVideos: 1, videoMaxDurationSec: 2 * 60, features: ['10 credits', '1 active automation', '1 video / month, max 2 mins'] }
 
 export function getPlan(id) { 
   // Map legacy early_founder to video_19
