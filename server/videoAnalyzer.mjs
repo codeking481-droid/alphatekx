@@ -219,46 +219,55 @@ async function extractThumbnails(videoPath, workDir, duration) {
 }
 
 /**
- * Transcribe audio using available transcription service.
- * Tries: OpenAI Whisper API → local whisper fallback → empty.
+ * Transcribe audio using Groq Whisper (primary) or OpenAI Whisper (fallback).
  */
 async function transcribeAudio(videoPath) {
-  // Check if we have OpenAI key
-  const openaiKey = process.env.OPENAI_API_KEY
-  if (!openaiKey) {
-    return { text: '', segments: [], language: null, provider: 'none' }
+  const groqKey = process.env.GROQ_API_KEY_1 || process.env.GROQ_API_KEY || process.env.GROQ_API_KEY_2 || ''
+  const openaiKey = process.env.OPENAI_API_KEY || ''
+  const apiKey = groqKey || openaiKey
+  if (!apiKey) {
+    return { text: '', segments: [], words: [], language: null, provider: 'none' }
   }
 
+  const isGroq = !!groqKey
   const ffmpeg = getFfmpegPath()
   const audioPath = videoPath + '.audio.wav'
 
   try {
-    // Extract audio
+    // Extract audio to WAV
     await execFileAsync(ffmpeg, [
       '-i', videoPath,
       '-vn', '-acodec', 'pcm_s16le', '-ar', '16000', '-ac', '1',
       '-y', audioPath,
     ], { timeout: 60000 })
 
-    // Read audio file
     const audioBuffer = await readFile(audioPath)
 
-    // Call OpenAI Whisper API
     const formData = new FormData()
     formData.append('file', new Blob([audioBuffer], { type: 'audio/wav' }), 'audio.wav')
-    formData.append('model', 'whisper-1')
+    formData.append('model', isGroq ? 'whisper-large-v3-turbo' : 'whisper-1')
     formData.append('response_format', 'verbose_json')
     formData.append('timestamp_granularities[]', 'word')
 
-    const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+    const baseUrl = isGroq ? 'https://api.groq.com/openai' : 'https://api.openai.com/v1'
+    const endpoint = `${baseUrl}/audio/transcriptions`
+
+    console.log(`[TRANSCRIBE] Using ${isGroq ? 'Groq' : 'OpenAI'} Whisper at ${endpoint}`)
+
+    const res = await fetch(endpoint, {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${openaiKey}` },
+      headers: { 'Authorization': `Bearer ${apiKey}` },
       body: formData,
       signal: AbortSignal.timeout(120000),
     })
 
-    if (!res.ok) throw new Error(`Whisper API ${res.status}`)
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => '')
+      throw new Error(`Whisper ${res.status}: ${errBody.slice(0, 200)}`)
+    }
     const data = await res.json()
+
+    console.log(`[TRANSCRIBE] Got ${data.text?.length || 0} chars, ${data.words?.length || 0} words`)
 
     return {
       text: data.text || '',
@@ -273,13 +282,14 @@ async function transcribeAudio(videoPath) {
         word: w.word,
       })),
       language: data.language || null,
-      provider: 'openai-whisper',
+      provider: isGroq ? 'groq-whisper' : 'openai-whisper',
     }
   } catch (err) {
+    console.error(`[TRANSCRIBE] Failed: ${err.message}`)
     return { text: '', segments: [], words: [], language: null, provider: 'none', error: err.message }
   } finally {
     // Cleanup temp audio
-    try { await execFileAsync('rm', ['-f', audioPath]) } catch {}
+    try { await unlink(audioPath) } catch {}
   }
 }
 

@@ -174,7 +174,47 @@ Return ONLY valid JSON.`
     sendEvent({ type: 'thought_step', step: { id: 'kenburns', label: 'Ken Burns failed', icon: 'film', status: 'error', summary: err.message } })
   }
 
-  // ── PHASE 5: Text overlays (bold, animated) ──────────────────────────
+  // ── PHASE 5: Word-level captions (from Groq Whisper transcription) ────
+  sendEvent({ type: 'thought_step', step: { id: 'captions', label: 'Generating captions...', icon: 'plan', status: 'active' } })
+
+  try {
+    const words = analysis.transcription?.words || []
+    if (words.length > 0 && plan.captionStyle && plan.captionStyle !== 'none') {
+      const captionPath = join(workDir, 'captions.mp4')
+      const fontSize = plan.captionFontSize || 48
+      const captionColor = plan.captionColor || 'white'
+
+      // Generate ASS subtitle file with word-level timing
+      const assPath = join(workDir, 'captions.ass')
+      const assContent = generateWordCaptions(words, fontSize, captionColor, plan.captionStyle)
+      await writeFile(assPath, assContent, 'utf-8')
+
+      await execFileAsync(ffmpeg, [
+        '-i', currentPath,
+        '-vf', `ass=${assPath}`,
+        '-c:v', 'libx264', '-preset', 'fast', '-crf', '18',
+        '-c:a', 'copy',
+        '-y', captionPath,
+      ], { timeout: 300000 })
+      currentPath = captionPath
+      log('CAPTIONS', `Burned ${words.length} word captions (${analysis.transcription.provider})`)
+      sendEvent({
+        type: 'thought_step',
+        step: {
+          id: 'captions', label: 'Captions Burned', icon: 'plan', status: 'done',
+          summary: `${words.length} words · ${plan.captionStyle} style · via ${analysis.transcription.provider}`,
+          details: [`Font: ${fontSize}px ${captionColor}`, `First words: "${words.slice(0, 4).map(w => w.word).join(' ')}..."`],
+        },
+      })
+    } else {
+      sendEvent({ type: 'thought_step', step: { id: 'captions', label: 'No transcription', icon: 'plan', status: 'done', summary: words.length === 0 ? 'No words available' : 'Captions disabled' } })
+    }
+  } catch (err) {
+    log('CAPTIONS', `Error: ${err.message}`)
+    sendEvent({ type: 'thought_step', step: { id: 'captions', label: 'Captions failed', icon: 'plan', status: 'error', summary: err.message } })
+  }
+
+  // ── PHASE 6: Text overlays (bold, animated) ──────────────────────────
   sendEvent({ type: 'thought_step', step: { id: 'text', label: 'Adding text overlays...', icon: 'plan', status: 'active' } })
 
   try {
@@ -216,7 +256,7 @@ Return ONLY valid JSON.`
     sendEvent({ type: 'thought_step', step: { id: 'text', label: 'Text failed', icon: 'plan', status: 'error', summary: err.message } })
   }
 
-  // ── PHASE 6: Speed ramps ─────────────────────────────────────────────
+  // ── PHASE 7: Speed ramps ─────────────────────────────────────────────
   sendEvent({ type: 'thought_step', step: { id: 'speed', label: 'Applying speed ramps...', icon: 'plan', status: 'active' } })
 
   try {
@@ -253,7 +293,7 @@ Return ONLY valid JSON.`
     sendEvent({ type: 'thought_step', step: { id: 'speed', label: 'Speed failed', icon: 'plan', status: 'error', summary: err.message } })
   }
 
-  // ── PHASE 7: Final encode (1080p, H.264, faststart) ─────────────────
+  // ── PHASE 8: Final encode (1080p, H.264, faststart) ─────────────────
   sendEvent({ type: 'thought_step', step: { id: 'encode', label: 'Final encode...', icon: 'test', status: 'active' } })
 
   const outputPath = join(workDir, `restored_${editId}.mp4`)
@@ -424,4 +464,82 @@ function formatDuration(seconds) {
   const m = Math.floor(seconds / 60)
   const s = Math.floor(seconds % 60)
   return m > 0 ? `${m}m ${s}s` : `${s}s`
+}
+
+// ── ASS CAPTION GENERATION ────────────────────────────────────────────
+
+function generateWordCaptions(words, fontSize, color, style) {
+  const outlineColor = '&H00000000'
+
+  // Map hex color to ASS BGR format
+  let primaryColor = '&H00FFFFFF' // default white
+  if (color.startsWith('#')) {
+    const hex = color.replace('#', '')
+    const r = parseInt(hex.slice(0, 2), 16)
+    const g = parseInt(hex.slice(2, 4), 16)
+    const b = parseInt(hex.slice(4, 6), 16)
+    primaryColor = `&H00${b.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${r.toString(16).padStart(2, '0')}`.toUpperCase()
+  }
+
+  let header = `[Script Info]
+Title: AlphaTekX Captions
+ScriptType: v4.00+
+PlayResX: 1920
+PlayResY: 1080
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial,${fontSize},${primaryColor},${outlineColor},&H80000000,-1,0,0,0,100,100,0,0,1,3,1,2,10,10,30,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+`
+
+  // Group words into lines of 4-6 words for readability
+  const wordsPerLine = style === 'word_highlight' ? 1 : style === 'word_by_word' ? 1 : 5
+  const lines = []
+
+  for (let i = 0; i < words.length; i += wordsPerLine) {
+    const chunk = words.slice(i, i + wordsPerLine)
+    const start = chunk[0].start
+    const end = chunk[chunk.length - 1].end
+    const text = chunk.map(w => w.word).join(' ')
+    lines.push({ start, end, text, words: chunk })
+  }
+
+  for (const line of lines) {
+    const startFmt = assTime(line.start)
+    const endFmt = assTime(line.end)
+
+    if (style === 'word_highlight') {
+      // Highlight each word with color override
+      const highlighted = line.words.map(w => {
+        return `{\\c&H00D6FF00&}${w.word}{\\c&H00FFFFFF&}`
+      }).join(' ')
+      header += `Dialogue: 0,${startFmt},${endFmt},Default,,0,0,0,,${highlighted}\n`
+    } else if (style === 'word_by_word') {
+      // One word at a time, centered, large
+      for (const w of line.words) {
+        const wStart = assTime(w.start)
+        const wEnd = assTime(w.end)
+        header += `Dialogue: 0,${wStart},${wEnd},Default,,0,0,0,,{\\an5}${w.word.toUpperCase()}\n`
+      }
+    } else if (style === 'bounce') {
+      // Bounce effect with \move
+      header += `Dialogue: 0,${startFmt},${endFmt},Default,,0,0,0,,{\\move(960,640,960,560,0,80)}${line.text}\n`
+    } else {
+      // Default: subtitle style
+      header += `Dialogue: 0,${startFmt},${endFmt},Default,,0,0,0,,${line.text}\n`
+    }
+  }
+
+  return header
+}
+
+function assTime(seconds) {
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = Math.floor(seconds % 60)
+  const cs = Math.floor((seconds % 1) * 100)
+  return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(cs).padStart(2, '0')}`
 }
