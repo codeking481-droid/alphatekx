@@ -1,6 +1,7 @@
 import http from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
+import { tmpdir } from 'node:os'
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { schedule } from 'node-cron'
@@ -8473,6 +8474,125 @@ const server = http.createServer(async (req, res) => {
       return json(res, 503, { ok: false, error: message })
     }
   }
+
+  // Video upload endpoint — accepts multipart form with video file
+  if (req.method === 'POST' && req.url === '/api/alpha/upload-video') {
+    try {
+      const config = supabaseConfig()
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      if (!user) return json(res, 401, { error: 'Authentication required' })
+
+      const chunks = []
+      let totalSize = 0
+      const maxSize = 2 * 1024 * 1024 * 1024 // 2GB
+
+      await new Promise((resolve, reject) => {
+        req.on('data', chunk => {
+          totalSize += chunk.length
+          if (totalSize > maxSize) { reject(new Error('File too large')); return }
+          chunks.push(chunk)
+        })
+        req.on('end', resolve)
+        req.on('error', reject)
+      })
+
+      const body = Buffer.concat(chunks)
+      const contentType = req.headers['content-type'] || ''
+
+      // Parse multipart form data
+      const boundaryMatch = contentType.match(/boundary=(.+)/)
+      if (!boundaryMatch) return json(res, 400, { error: 'Invalid form data' })
+
+      const boundary = boundaryMatch[1]
+      const boundaryBuf = Buffer.from(`--${boundary}`)
+      const parts = []
+      let searchStart = 0
+
+      while (true) {
+        const start = body.indexOf(boundaryBuf, searchStart)
+        if (start === -1) break
+        const nextStart = body.indexOf(boundaryBuf, start + boundaryBuf.length)
+        if (nextStart === -1) break
+        const part = body.subarray(start + boundaryBuf.length, nextStart)
+        parts.push(part)
+        searchStart = nextStart
+      }
+
+      // Find the video file part
+      let fileData = null
+      let fileName = `upload_${Date.now()}.mp4`
+      for (const part of parts) {
+        const headerEnd = part.indexOf('\r\n\r\n')
+        if (headerEnd === -1) continue
+        const header = part.subarray(0, headerEnd).toString()
+        if (header.includes('filename=')) {
+          const nameMatch = header.match(/filename="([^"]+)"/)
+          if (nameMatch) fileName = nameMatch[1]
+          fileData = part.subarray(headerEnd + 4)
+          // Remove trailing \r\n
+          if (fileData.length >= 2 && fileData[fileData.length - 2] === 0x0d && fileData[fileData.length - 1] === 0x0a) {
+            fileData = fileData.subarray(0, fileData.length - 2)
+          }
+          break
+        }
+      }
+
+      if (!fileData) return json(res, 400, { error: 'No video file found in upload' })
+
+      // Save to temp directory
+      const uploadsDir = path.resolve(root, '.tmp', 'uploads')
+      try { fs.mkdirSync(uploadsDir, { recursive: true }) } catch {}
+      const ext = path.extname(fileName) || '.mp4'
+      const savedName = `upload_${Date.now()}${ext}`
+      const savedPath = path.resolve(uploadsDir, savedName)
+      fs.writeFileSync(savedPath, fileData)
+
+      // Return URL that the frontend can use
+      const url = `/api/alpha/video-local/${savedName}`
+      return json(res, 200, { url, name: savedName, size: fileData.length })
+    } catch (err) {
+      console.error('[UPLOAD] Error:', err.message)
+      return json(res, 500, { error: err.message || 'Upload failed' })
+    }
+  }
+
+  // Serve uploaded/processed video files
+  if (req.method === 'GET' && req.url.startsWith('/api/alpha/video-local/')) {
+    const fileName = req.url.split('/api/alpha/video-local/')[1]
+    if (!fileName || fileName.includes('..')) return json(res, 400, { error: 'Invalid path' })
+    const filePath = path.resolve(root, '.tmp', 'uploads', fileName)
+    if (!fs.existsSync(filePath)) return json(res, 404, { error: 'File not found' })
+    const stat = fs.statSync(filePath)
+    const ext = path.extname(fileName).toLowerCase()
+    const mimeTypes = { '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.avi': 'video/x-msvideo', '.mkv': 'video/x-matroska' }
+    res.writeHead(200, {
+      'Content-Type': mimeTypes[ext] || 'video/mp4',
+      'Content-Length': stat.size,
+      'Content-Disposition': `inline; filename="${fileName}"`,
+    })
+    fs.createReadStream(filePath).pipe(res)
+    return
+  }
+
+  // Serve video edit output files
+  if (req.method === 'GET' && req.url.startsWith('/api/alpha/video-output/')) {
+    const fileName = req.url.split('/api/alpha/video-output/')[1]
+    if (!fileName || fileName.includes('..')) return json(res, 400, { error: 'Invalid path' })
+    const filePath = path.resolve(root, '.tmp', 'video-edits', fileName.split('/')[0] || '', fileName)
+    // Also check flat structure
+    const flatPath = path.resolve(root, '.tmp', 'video-edits', fileName)
+    const actualPath = fs.existsSync(filePath) ? filePath : flatPath
+    if (!fs.existsSync(actualPath)) return json(res, 404, { error: 'Output not found' })
+    const stat = fs.statSync(actualPath)
+    res.writeHead(200, {
+      'Content-Type': 'video/mp4',
+      'Content-Length': stat.size,
+      'Content-Disposition': `inline; filename="${fileName}"`,
+    })
+    fs.createReadStream(actualPath).pipe(res)
+    return
+  }
+
   if (req.method === 'POST' && req.url === '/api/alpha/repair') {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
@@ -8514,9 +8634,88 @@ const server = http.createServer(async (req, res) => {
         return result?.result || ''
       }
 
-      if (isVideoRequest(message)) {
-        sendEvent({ type: 'content', text: 'Detected video request. Routing to **Video Resurrector** pipeline...\n\n' })
-        sendEvent({ type: 'done', videoRoute: true })
+      if (isVideoRequest(message) || body.fileUrl) {
+        // Route to video edit pipeline
+        const { analyzeVideo } = await import('./server/videoAnalyzer.mjs')
+        const { executeVideoEdit } = await import('./server/videoEditor.mjs')
+        const { detectStyle } = await import('./server/creatorStyles.mjs')
+
+        sendEvent({ type: 'content', text: 'Detected video. Analyzing...\n\n' })
+
+        // Download video from URL
+        const videoUrl = body.fileUrl
+        const tmpVideoDir = path.resolve(root, '.tmp', 'uploads')
+        try { fs.mkdirSync(tmpVideoDir, { recursive: true }) } catch {}
+        const tmpVideoPath = path.resolve(tmpVideoDir, `upload_${Date.now()}.mp4`)
+
+        try {
+          const videoRes = await fetch(videoUrl)
+          if (!videoRes.ok) throw new Error(`Failed to download video: ${videoRes.status}`)
+          const videoBuffer = Buffer.from(await videoRes.arrayBuffer())
+          fs.writeFileSync(tmpVideoPath, videoBuffer)
+        } catch (err) {
+          sendEvent({ type: 'error', message: `Failed to download video: ${err.message}` })
+          res.end()
+          return
+        }
+
+        // Analyze the video
+        sendEvent({ type: 'thought_step', step: { id: 'analyze', label: 'Analyzing video...', icon: 'test', status: 'active' } })
+        const analysis = await analyzeVideo(tmpVideoPath)
+        sendEvent({
+          type: 'thought_step',
+          step: {
+            id: 'analyze',
+            label: 'Video Analyzed',
+            icon: 'test',
+            status: 'done',
+            summary: `${analysis.metadata?.width}x${analysis.metadata?.height} ${analysis.metadata?.fps}fps, ${analysis.duration?.toFixed(1)}s`,
+            details: [
+              `Codec: ${analysis.metadata?.codec}`,
+              `Quality: ${analysis.quality?.grade} (${analysis.quality?.overall}/100)`,
+              `Scenes: ${analysis.scenes?.length || 0}`,
+              analysis.transcription?.text ? `Transcript: ${analysis.transcription.text.slice(0, 80)}...` : 'No transcript',
+            ],
+          },
+        })
+
+        // Detect style from message
+        const style = detectStyle(message)
+        sendEvent({
+          type: 'thought_step',
+          step: {
+            id: 'style',
+            label: 'Style Detected',
+            icon: 'plan',
+            status: 'done',
+            summary: style.name,
+            details: [
+              `Cuts/min: ${style.cutsPerMinute}`,
+              `Caption: ${style.captionStyle}`,
+              `Color grade: ${style.colorGrade}`,
+            ],
+          },
+        })
+
+        // Execute the edit pipeline
+        const editPlan = { ...style, operations: [{ type: 'full_edit', description: `${style.name} style edit` }] }
+        const result = await executeVideoEdit(tmpVideoPath, analysis, editPlan, sendEvent, llmCall)
+
+        // Build public URL for the output
+        const outputRelPath = path.relative(root, result.outputPath)
+        const outputUrl = `/api/alpha/video-output/${path.basename(result.outputPath)}`
+
+        sendEvent({
+          type: 'video_result',
+          result: {
+            videoUrl: outputUrl,
+            editId: result.editId,
+            plan: result.plan,
+            elapsed: result.elapsed,
+          },
+        })
+
+        sendEvent({ type: 'done' })
         res.end()
         return
       }

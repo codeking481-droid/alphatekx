@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Menu, Send, Square, User, Bot, Sparkles } from 'lucide-react'
+import { Menu, Send, Square, User, Bot, Sparkles, Paperclip, X, Film, Loader2 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import ReactMarkdown from 'react-markdown'
 import ChatAuthWrapper from '../components/auth/ChatAuthWrapper'
@@ -22,6 +22,7 @@ import { supabase } from '../lib/supabase'
 type AlphaMessage = GeneralChatMessage & {
   thoughtSteps?: ThoughtStep[]
   restoreResult?: any
+  videoResult?: { videoUrl: string; editId: string; plan: any; elapsed: string }
   isStreaming?: boolean
 }
 
@@ -56,6 +57,10 @@ function ChatContent() {
   const [input, setInput] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [attachedFile, setAttachedFile] = useState<File | null>(null)
+  const [attachedPreview, setAttachedPreview] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -91,10 +96,31 @@ function ChatContent() {
 
   const handleSend = useCallback(async () => {
     const text = input.trim()
-    if (!text || isGenerating) return
+    if ((!text && !attachedFile) || isGenerating) return
 
+    const sendText = text || (attachedFile ? 'Edit this video to look professional' : '')
     setInput('')
     setIsGenerating(true)
+
+    // Upload file if attached
+    let fileUrl: string | null = null
+    let fileType: string | null = null
+    if (attachedFile) {
+      setUploading(true)
+      fileUrl = await uploadVideo(attachedFile)
+      fileType = attachedFile.type
+      setUploading(false)
+      handleRemoveFile()
+      if (!fileUrl) {
+        updateLastMessage((prev) => ({
+          ...prev,
+          content: 'Upload failed. Please try again.',
+          isStreaming: false,
+        }))
+        setIsGenerating(false)
+        return
+      }
+    }
 
     let thread = activeThread
     if (!thread) {
@@ -105,7 +131,7 @@ function ChatContent() {
     const userMsg: AlphaMessage = {
       id: uid(),
       role: 'user',
-      content: text,
+      content: sendText + (fileUrl ? '\n\n[Video attached]' : ''),
       createdAt: new Date().toISOString(),
     }
 
@@ -136,9 +162,11 @@ function ChatContent() {
           ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         },
         body: JSON.stringify({
-          message: text,
+          message: sendText,
           threadId: thread.id,
           history: messages.slice(-10).map((m) => ({ role: m.role, content: m.content })),
+          fileUrl: fileUrl || undefined,
+          fileType: fileType || undefined,
         }),
         signal: abortRef.current.signal,
       })
@@ -195,6 +223,14 @@ function ChatContent() {
                   scrollToBottom()
                   break
                 }
+                case 'video_result': {
+                  updateLastMessage((prev) => ({
+                    ...prev,
+                    videoResult: event.result,
+                  }))
+                  scrollToBottom()
+                  break
+                }
                 case 'done': {
                   updateLastMessage((prev) => ({ ...prev, isStreaming: false }))
                   break
@@ -239,12 +275,54 @@ function ChatContent() {
       setIsGenerating(false)
       abortRef.current = null
     }
-  }, [input, isGenerating, activeThread, messages, scrollToBottom, updateLastMessage])
+  }, [input, isGenerating, activeThread, messages, scrollToBottom, updateLastMessage, attachedFile])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       void handleSend()
+    }
+  }
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!file.type.startsWith('video/')) {
+      alert('Only video files are supported.')
+      return
+    }
+    if (file.size > 2 * 1024 * 1024 * 1024) {
+      alert('File too large. Maximum 2GB.')
+      return
+    }
+    setAttachedFile(file)
+    const url = URL.createObjectURL(file)
+    setAttachedPreview(url)
+  }
+
+  const handleRemoveFile = () => {
+    setAttachedFile(null)
+    if (attachedPreview) URL.revokeObjectURL(attachedPreview)
+    setAttachedPreview(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  const uploadVideo = async (file: File): Promise<string | null> => {
+    try {
+      const { data: { session } } = await supabase?.auth.getSession() ?? { data: { session: null } }
+      const formData = new FormData()
+      formData.append('video', file)
+      const res = await fetch('/api/alpha/upload-video', {
+        method: 'POST',
+        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+        body: formData,
+      })
+      if (!res.ok) throw new Error(`Upload failed: ${res.status}`)
+      const data = await res.json()
+      return data.url || null
+    } catch (err) {
+      console.error('Upload error:', err)
+      return null
     }
   }
 
@@ -309,7 +387,31 @@ function ChatContent() {
 
             {/* Centered Input */}
             <div className="w-full max-w-[560px]">
+              {/* Attached file preview */}
+              {attachedFile && (
+                <div className="mb-2 flex items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2">
+                  <Film size={16} className="text-[#D6FF00]" />
+                  <span className="flex-1 truncate text-[13px] text-white/70">{attachedFile.name}</span>
+                  <span className="text-[11px] text-white/30">{(attachedFile.size / 1024 / 1024).toFixed(1)}MB</span>
+                  <button onClick={handleRemoveFile} className="text-white/40 hover:text-white"><X size={14} /></button>
+                </div>
+              )}
               <div className="alpha-input-glow group relative flex items-end rounded-2xl border border-white/[0.08] bg-white/[0.03] transition-all duration-300">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="video/*"
+                  className="hidden"
+                  onChange={handleFileSelect}
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isGenerating}
+                  className="mb-2.5 ml-2.5 grid size-8 shrink-0 place-items-center rounded-xl border border-white/[0.08] text-white/30 transition hover:border-[#D6FF00]/30 hover:text-[#D6FF00] disabled:opacity-20 disabled:cursor-not-allowed"
+                  title="Attach video"
+                >
+                  <Paperclip size={14} />
+                </button>
                 <textarea
                   ref={inputRef}
                   value={input}
@@ -325,13 +427,13 @@ function ChatContent() {
                     target.style.height = Math.min(target.scrollHeight, 120) + 'px'
                   }}
                 />
-                {!input && <AnimatedPlaceholder />}
+                {!input && !attachedFile && <AnimatedPlaceholder />}
                 <button
                   onClick={() => void handleSend()}
-                  disabled={!input.trim() || isGenerating}
+                  disabled={(!input.trim() && !attachedFile) || isGenerating || uploading}
                   className="mb-2.5 mr-2.5 grid size-9 shrink-0 place-items-center rounded-xl bg-[#D6FF00] text-black transition hover:bg-[#C2E600] disabled:opacity-20 disabled:cursor-not-allowed"
                 >
-                  {isGenerating ? <Square size={14} /> : <Send size={14} />}
+                  {uploading ? <Loader2 size={14} className="animate-spin" /> : isGenerating ? <Square size={14} /> : <Send size={14} />}
                 </button>
               </div>
             </div>
@@ -395,6 +497,33 @@ function ChatContent() {
                           />
                         )}
 
+                        {/* Video Result */}
+                        {msg.videoResult && (
+                          <div className="mt-3 rounded-2xl border border-[#D6FF00]/20 bg-[#D6FF00]/[0.04] p-4">
+                            <div className="mb-2 flex items-center gap-2">
+                              <Film size={16} className="text-[#D6FF00]" />
+                              <span className="font-syne text-sm font-bold text-white">Video Restored</span>
+                            </div>
+                            <video
+                              controls
+                              className="w-full rounded-xl border border-white/[0.06]"
+                              src={msg.videoResult.videoUrl}
+                            />
+                            <div className="mt-2 flex items-center gap-3 text-[12px] text-white/40">
+                              <span>Style: {msg.videoResult.plan?.style || 'default'}</span>
+                              <span>Edits: {msg.videoResult.plan?.operations || 0}</span>
+                              <span>Took {msg.videoResult.elapsed}s</span>
+                            </div>
+                            <a
+                              href={msg.videoResult.videoUrl}
+                              download
+                              className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-[#D6FF00] px-3 py-1.5 text-[12px] font-bold text-black transition hover:bg-[#C2E600]"
+                            >
+                              Download Restored Video
+                            </a>
+                          </div>
+                        )}
+
                         {/* Streaming indicator */}
                         {msg.isStreaming && !msg.content && (
                           <div className="flex items-center gap-2 py-2">
@@ -417,7 +546,31 @@ function ChatContent() {
       {!isEmpty && (
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-white/[0.04] bg-[#0A0A0A]/90 px-4 py-3 backdrop-blur-xl">
           <div className="mx-auto max-w-[680px]">
+            {/* Attached file preview */}
+            {attachedFile && (
+              <div className="mb-2 flex items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2">
+                <Film size={16} className="text-[#D6FF00]" />
+                <span className="flex-1 truncate text-[13px] text-white/70">{attachedFile.name}</span>
+                <span className="text-[11px] text-white/30">{(attachedFile.size / 1024 / 1024).toFixed(1)}MB</span>
+                <button onClick={handleRemoveFile} className="text-white/40 hover:text-white"><X size={14} /></button>
+              </div>
+            )}
             <div className="alpha-input-glow group relative flex items-end rounded-2xl border border-white/[0.08] bg-white/[0.03] transition-all duration-300">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="video/*"
+                className="hidden"
+                onChange={handleFileSelect}
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isGenerating}
+                className="mb-2 ml-2 grid size-8 shrink-0 place-items-center rounded-xl border border-white/[0.08] text-white/30 transition hover:border-[#D6FF00]/30 hover:text-[#D6FF00] disabled:opacity-20 disabled:cursor-not-allowed"
+                title="Attach video"
+              >
+                <Paperclip size={14} />
+              </button>
               <textarea
                 ref={inputRef}
                 value={input}
@@ -433,13 +586,13 @@ function ChatContent() {
                   target.style.height = Math.min(target.scrollHeight, 100) + 'px'
                 }}
               />
-              {!input && <AnimatedPlaceholder />}
+              {!input && !attachedFile && <AnimatedPlaceholder />}
               <button
                 onClick={() => void handleSend()}
-                disabled={!input.trim() || isGenerating}
+                disabled={(!input.trim() && !attachedFile) || isGenerating || uploading}
                 className="mb-2 mr-2 grid size-8 shrink-0 place-items-center rounded-xl bg-[#D6FF00] text-black transition hover:bg-[#C2E600] disabled:opacity-20 disabled:cursor-not-allowed"
               >
-                {isGenerating ? <Square size={13} /> : <Send size={13} />}
+                {uploading ? <Loader2 size={13} className="animate-spin" /> : isGenerating ? <Square size={13} /> : <Send size={13} />}
               </button>
             </div>
           </div>

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronDown, CheckCircle2, Loader2, Scan, Search, Wrench, FlaskConical, Globe } from 'lucide-react'
+import { ChevronDown, CheckCircle2, Loader2, Scan, Search, Wrench, FlaskConical, Globe, Film } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
 export type TavilySource = {
@@ -12,7 +12,7 @@ export type TavilySource = {
 export type ThoughtStep = {
   id: string
   label: string
-  icon: 'scan' | 'diagnose' | 'plan' | 'test' | 'search'
+  icon: 'scan' | 'diagnose' | 'plan' | 'test' | 'search' | 'film'
   status: 'pending' | 'active' | 'done' | 'error'
   summary?: string
   details?: string[]
@@ -26,6 +26,7 @@ const iconMap = {
   plan: Wrench,
   test: FlaskConical,
   search: Globe,
+  film: Film,
 }
 
 const statusColors = {
