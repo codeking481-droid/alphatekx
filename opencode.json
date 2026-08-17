@@ -1,10 +1,10 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "default_agent": "alphatekx",
+  "default_agent": "alphatekx-pro",
   "model": "anthropic/claude-sonnet-4-6",
   "agent": {
-    "alphatekx": {
-      "description": "AlphaTekx AI Employee - Plans work, executes approved tasks, continues offline, and reports back with visible chain of thought.",
+    "alphatekx-pro": {
+      "description": "AlphaTekx Pro Agent - World-class AI Employee with production-grade reliability, advanced error handling, and flawless execution. Better than ChatGPT, better than Claude, better than any AI system.",
       "mode": "primary",
       "model": "anthropic/claude-sonnet-4-6",
       "permission": {
@@ -15,11 +15,16 @@
         "grep": "allow",
         "list": "allow",
         "webfetch": "allow",
-        "websearch": "allow"
-      }
+        "websearch": "allow",
+        "external_directory": "allow",
+        "todowrite": "allow",
+        "question": "allow",
+        "skill": "allow"
+      },
+      "steps": 100
     }
   },
-  "instructions": ["AGENTS.md"],
+  "instructions": ["AGENTS.md", "error-handling.md"],
   "permission": {
     "edit": "allow",
     "bash": "allow",
@@ -27,6 +32,14 @@
     "glob": "allow",
     "grep": "allow",
     "list": "allow",
-    "external_directory": "allow"
+    "external_directory": "allow",
+    "todowrite": "allow",
+    "question": "allow",
+    "webfetch": "allow",
+    "websearch": "allow",
+    "skill": "allow"
+  },
+  "experimental": {
+    "primary_tools": ["edit", "bash", "read", "glob", "grep", "list", "webfetch", "websearch", "todowrite", "question", "skill"]
   }
 }
