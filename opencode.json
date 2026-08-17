@@ -25,6 +25,9 @@
     }
   },
   "instructions": ["AGENTS.md", "error-handling.md"],
+  "skills": {
+    "paths": [".opencode/skills"]
+  },
   "permission": {
     "edit": "allow",
     "bash": "allow",
