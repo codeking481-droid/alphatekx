@@ -9,13 +9,14 @@ import { promisify } from 'node:util'
 import { readFile, writeFile, unlink, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import ffmpegPath from 'ffmpeg-static'
 import { detectStyle, buildFFmpegFilters } from './creatorStyles.mjs'
 
 const execFileAsync = promisify(execFile)
 const TMP_DIR = join(process.cwd(), '.tmp', 'video-edits')
 
 function getFfmpegPath() {
-  try { return require('ffmpeg-static') } catch { return 'ffmpeg' }
+  return ffmpegPath || 'ffmpeg'
 }
 
 /**
@@ -328,10 +329,16 @@ Create a JSON edit plan with:
 
 Return ONLY valid JSON.`
 
-  const result = await llmCall([
-    { role: 'system', content: system },
-    { role: 'user', content: userPrompt || 'Edit this video to look professional' },
-  ])
+  let result = {}
+  try {
+    result = await llmCall([
+      { role: 'system', content: system },
+      { role: 'user', content: userPrompt || 'Edit this video to look professional' },
+    ])
+  } catch (err) {
+    console.error('[VIDEO] LLM plan generation failed, using style defaults:', err.message)
+    // Return defaults based on detected style
+  }
 
   return {
     style: result.style || 'minimal',

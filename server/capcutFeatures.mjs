@@ -7,11 +7,12 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import ffmpegPath from 'ffmpeg-static'
 
 const execFileAsync = promisify(execFile)
 
 function getFfmpegPath() {
-  try { return require('ffmpeg-static') } catch { return 'ffmpeg' }
+  return ffmpegPath || 'ffmpeg'
 }
 
 /**
@@ -95,18 +96,13 @@ export async function detectBeats(videoPath, sensitivity = 0.6) {
 export async function autoReframeVertical(videoPath, outputPath) {
   const ffmpeg = getFfmpegPath()
 
-  // Get video dimensions first
-  const ffprobe = getFfmpegPath().replace('ffmpeg', 'ffprobe').replace(/ffmpeg\.exe$/, 'ffprobe.exe')
-  const { stdout } = await execFileAsync(ffprobe, [
-    '-v', 'quiet', '-print_format', 'json', '-show_streams', videoPath,
-  ], { timeout: 10000 })
+  // Get video dimensions using ffmpeg -i (no ffprobe needed)
+  const { stderr } = await execFileAsync(ffmpeg, ['-i', videoPath], { timeout: 10000 }).catch(e => ({ stderr: e.stderr || '' }))
+  const videoMatch = (stderr || '').match(/Video:.*?(\d+)x(\d+)/)
+  if (!videoMatch) throw new Error('Could not detect video dimensions')
 
-  const data = JSON.parse(stdout)
-  const videoStream = data.streams?.find(s => s.codec_type === 'video')
-  if (!videoStream) throw new Error('No video stream found')
-
-  const w = videoStream.width
-  const h = videoStream.height
+  const w = parseInt(videoMatch[1])
+  const h = parseInt(videoMatch[2])
 
   // If already vertical, just copy
   if (h >= w * 1.5) {
@@ -291,7 +287,6 @@ export async function addZoomPunch(videoPath, timestamps, outputPath, opts = {})
  * Uses ASS subtitles with bounce animation.
  */
 export async function addBounceCaptions(videoPath, words, outputPath, opts = {}) {
-  const { readFile: rf, writeFile: wf } = await import('node:fs/promises')
   const fontSize = opts.fontSize || 56
   const color = opts.color || '#D6FF00'
 
@@ -325,7 +320,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   }
 
   const assPath = outputPath.replace('.mp4', '.ass')
-  await wf(assPath, ass, 'utf-8')
+  await writeFile(assPath, ass, 'utf-8')
 
   await execFileAsync(ffmpeg, [
     '-i', videoPath,

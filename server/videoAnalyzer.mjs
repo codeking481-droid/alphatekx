@@ -9,18 +9,20 @@ import { promisify } from 'node:util'
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import ffmpegPath from 'ffmpeg-static'
 
 const execFileAsync = promisify(execFile)
 const TMP_DIR = join(process.cwd(), '.tmp', 'video-analysis')
 
 function getFfmpegPath() {
-  try { return require('ffmpeg-static') } catch { return 'ffmpeg' }
+  return ffmpegPath || 'ffmpeg'
 }
 
 function getFfprobePath() {
   const ffmpeg = getFfmpegPath()
   if (ffmpeg === 'ffmpeg') return 'ffprobe'
-  return ffmpeg.replace('ffmpeg', 'ffprobe').replace(/ffmpeg\.exe$/, 'ffprobe.exe')
+  // ffmpeg-static doesn't ship ffprobe — return ffmpeg and use -i for probing
+  return ffmpeg
 }
 
 /**
@@ -88,49 +90,65 @@ export async function analyzeVideo(videoPath, opts = {}) {
 }
 
 /**
- * Extract video metadata using ffprobe.
+ * Extract video metadata using ffmpeg -i (works without ffprobe).
  */
 async function extractMetadata(videoPath) {
-  const ffprobe = getFfprobePath()
-  const { stdout } = await execFileAsync(ffprobe, [
-    '-v', 'quiet',
-    '-print_format', 'json',
-    '-show_format',
-    '-show_streams',
-    videoPath,
-  ], { timeout: 30000 })
+  const ffmpeg = getFfmpegPath()
 
-  const data = JSON.parse(stdout)
-  const videoStream = data.streams?.find(s => s.codec_type === 'video')
-  const audioStream = data.streams?.find(s => s.codec_type === 'audio')
+  // ffmpeg -i outputs format info to stderr
+  const { stderr } = await execFileAsync(ffmpeg, ['-i', videoPath], { timeout: 30000 }).catch(e => ({ stderr: e.stderr || '' }))
+
+  const info = stderr || ''
+
+  // Parse Duration
+  const durMatch = info.match(/Duration:\s*(\d+):(\d+):(\d+\.?\d*)/)
+  const duration = durMatch ? parseInt(durMatch[1]) * 3600 + parseInt(durMatch[2]) * 60 + parseFloat(durMatch[3]) : 0
+
+  // Parse video stream info
+  const videoMatch = info.match(/Video:\s*(\w+).*?(\d+)x(\d+).*?(\d+\.?\d*)\s*(?:fps|tbr)/)
+  const codec = videoMatch?.[1] || 'unknown'
+  const width = videoMatch ? parseInt(videoMatch[2]) : 0
+  const height = videoMatch ? parseInt(videoMatch[3]) : 0
+  const fps = videoMatch ? parseFloat(videoMatch[4]) : 0
+
+  // Parse audio stream info
+  const audioMatch = info.match(/Audio:\s*(\w+)/)
+  const hasAudio = !!audioMatch
+  const audioCodec = audioMatch?.[1] || null
+
+  // Parse bitrate
+  const bitrateMatch = info.match(/bitrate:\s*(\d+)\s*kb\/s/)
+  const bitrate = bitrateMatch ? parseInt(bitrateMatch[1]) * 1000 : 0
+
+  // Parse format
+  const formatMatch = info.match(/Duration.*?encoder/i)
+  const sizeMatch = info.match(/size=\s*(\d+)\s*kB/)
+  const size = sizeMatch ? parseInt(sizeMatch[1]) * 1024 : 0
+
+  // Parse pixel format
+  const pixMatch = info.match(/Video:.*?,\s*(\w+)/)
+  const pixelFormat = pixMatch?.[1] || 'unknown'
+
+  // Parse aspect ratio
+  const arMatch = info.match(/(\d+:\d+)\s*\[/)
+  const aspectRatio = arMatch?.[1] || `${width}:${height}`
 
   return {
-    duration: parseFloat(data.format?.duration) || 0,
-    size: parseInt(data.format?.size) || 0,
-    bitrate: parseInt(data.format?.bit_rate) || 0,
-    format: data.format?.format_name || 'unknown',
-    width: videoStream?.width || 0,
-    height: videoStream?.height || 0,
-    fps: parseFps(videoStream?.r_frame_rate || '0/1'),
-    codec: videoStream?.codec_name || 'unknown',
-    pixelFormat: videoStream?.pix_fmt || 'unknown',
-    hasAudio: !!audioStream,
-    audioCodec: audioStream?.codec_name || null,
-    audioSampleRate: audioStream?.sample_rate || null,
-    audioChannels: audioStream?.channels || 0,
-    aspectRatio: videoStream?.display_aspect_ratio || 'unknown',
+    duration,
+    size: size || 0,
+    bitrate,
+    format: 'unknown',
+    width,
+    height,
+    fps,
+    codec,
+    pixelFormat,
+    hasAudio,
+    audioCodec,
+    audioSampleRate: null,
+    audioChannels: 0,
+    aspectRatio,
   }
-}
-
-function parseFps(fpsStr) {
-  if (!fpsStr || fpsStr === '0/1') return 0
-  const parts = fpsStr.split('/')
-  if (parts.length === 2) {
-    const num = parseFloat(parts[0])
-    const den = parseFloat(parts[1])
-    return den > 0 ? Math.round(num / den * 100) / 100 : 0
-  }
-  return parseFloat(fpsStr) || 0
 }
 
 /**

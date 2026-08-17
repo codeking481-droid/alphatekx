@@ -8574,20 +8574,25 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
-  // Serve video edit output files
+  // Serve video edit output files — supports /{editId}/{filename} paths
   if (req.method === 'GET' && req.url.startsWith('/api/alpha/video-output/')) {
-    const fileName = req.url.split('/api/alpha/video-output/')[1]
-    if (!fileName || fileName.includes('..')) return json(res, 400, { error: 'Invalid path' })
-    const filePath = path.resolve(root, '.tmp', 'video-edits', fileName.split('/')[0] || '', fileName)
-    // Also check flat structure
-    const flatPath = path.resolve(root, '.tmp', 'video-edits', fileName)
-    const actualPath = fs.existsSync(filePath) ? filePath : flatPath
+    const urlPath = req.url.split('/api/alpha/video-output/')[1]
+    if (!urlPath || urlPath.includes('..')) return json(res, 400, { error: 'Invalid path' })
+    const parts = urlPath.split('/')
+    let actualPath = ''
+    if (parts.length >= 2) {
+      // /{editId}/{filename}
+      actualPath = path.resolve(root, '.tmp', 'video-edits', parts[0], parts[1])
+    } else {
+      // Try flat
+      actualPath = path.resolve(root, '.tmp', 'video-edits', parts[0])
+    }
     if (!fs.existsSync(actualPath)) return json(res, 404, { error: 'Output not found' })
     const stat = fs.statSync(actualPath)
     res.writeHead(200, {
       'Content-Type': 'video/mp4',
       'Content-Length': stat.size,
-      'Content-Disposition': `inline; filename="${fileName}"`,
+      'Content-Disposition': `inline; filename="${path.basename(actualPath)}"`,
     })
     fs.createReadStream(actualPath).pipe(res)
     return
@@ -8642,22 +8647,47 @@ const server = http.createServer(async (req, res) => {
 
         sendEvent({ type: 'content', text: 'Detected video. Analyzing...\n\n' })
 
-        // Download video from URL
-        const videoUrl = body.fileUrl
-        const tmpVideoDir = path.resolve(root, '.tmp', 'uploads')
-        try { fs.mkdirSync(tmpVideoDir, { recursive: true }) } catch {}
-        const tmpVideoPath = path.resolve(tmpVideoDir, `upload_${Date.now()}.mp4`)
+        // Resolve the local file path directly — no HTTP fetch needed
+        const fileUrl = body.fileUrl || ''
+        let tmpVideoPath = ''
 
-        try {
-          const videoRes = await fetch(videoUrl)
-          if (!videoRes.ok) throw new Error(`Failed to download video: ${videoRes.status}`)
-          const videoBuffer = Buffer.from(await videoRes.arrayBuffer())
-          fs.writeFileSync(tmpVideoPath, videoBuffer)
-        } catch (err) {
-          sendEvent({ type: 'error', message: `Failed to download video: ${err.message}` })
+        if (fileUrl.startsWith('/api/alpha/video-local/')) {
+          // Local upload path — resolve to actual disk path
+          const fileName = fileUrl.split('/api/alpha/video-local/')[1]
+          tmpVideoPath = path.resolve(root, '.tmp', 'uploads', fileName)
+        } else if (fileUrl.startsWith('http://') || fileUrl.startsWith('https://')) {
+          // External URL — download it
+          const tmpVideoDir = path.resolve(root, '.tmp', 'uploads')
+          try { fs.mkdirSync(tmpVideoDir, { recursive: true }) } catch {}
+          tmpVideoPath = path.resolve(tmpVideoDir, `upload_${Date.now()}.mp4`)
+          try {
+            const controller = new AbortController()
+            const timer = setTimeout(() => controller.abort(), 120000)
+            const videoRes = await fetch(fileUrl, { signal: controller.signal })
+            clearTimeout(timer)
+            if (!videoRes.ok) throw new Error(`Failed to download video: ${videoRes.status}`)
+            const videoBuffer = Buffer.from(await videoRes.arrayBuffer())
+            fs.writeFileSync(tmpVideoPath, videoBuffer)
+          } catch (err) {
+            sendEvent({ type: 'error', message: `Failed to download video: ${err.message}` })
+            res.end()
+            return
+          }
+        } else {
+          sendEvent({ type: 'error', message: 'No video file path provided' })
           res.end()
           return
         }
+
+        // Verify the file exists
+        if (!fs.existsSync(tmpVideoPath)) {
+          sendEvent({ type: 'error', message: `Video file not found on server: ${path.basename(tmpVideoPath)}` })
+          res.end()
+          return
+        }
+
+        const fileSizeMB = (fs.statSync(tmpVideoPath).size / 1024 / 1024).toFixed(1)
+        console.log(`[VIDEO] Processing ${path.basename(tmpVideoPath)} (${fileSizeMB} MB)`)
 
         // Analyze the video
         sendEvent({ type: 'thought_step', step: { id: 'analyze', label: 'Analyzing video...', icon: 'test', status: 'active' } })
@@ -8699,11 +8729,29 @@ const server = http.createServer(async (req, res) => {
 
         // Execute the edit pipeline
         const editPlan = { ...style, operations: [{ type: 'full_edit', description: `${style.name} style edit` }] }
-        const result = await executeVideoEdit(tmpVideoPath, analysis, editPlan, sendEvent, llmCall)
 
-        // Build public URL for the output
-        const outputRelPath = path.relative(root, result.outputPath)
-        const outputUrl = `/api/alpha/video-output/${path.basename(result.outputPath)}`
+        let result
+        try {
+          result = await executeVideoEdit(tmpVideoPath, analysis, editPlan, sendEvent, llmCall)
+        } catch (editErr) {
+          console.error('[VIDEO] Edit pipeline error:', editErr.message)
+          sendEvent({ type: 'error', message: `Video edit failed: ${editErr.message}` })
+          res.end()
+          return
+        }
+
+        // Build public URL for the output — find the actual output file
+        let outputUrl = ''
+        if (fs.existsSync(result.outputPath)) {
+          // Output is in .tmp/video-edits/{editId}/restored_{editId}.mp4
+          const editId = result.editId
+          outputUrl = `/api/alpha/video-output/${editId}/${path.basename(result.outputPath)}`
+        } else {
+          console.error('[VIDEO] Output file not found:', result.outputPath)
+          sendEvent({ type: 'error', message: 'Output file was not generated' })
+          res.end()
+          return
+        }
 
         sendEvent({
           type: 'video_result',
