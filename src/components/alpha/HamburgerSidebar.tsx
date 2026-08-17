@@ -1,11 +1,29 @@
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, MessageSquare, CreditCard, Trash2, Clock } from 'lucide-react'
-import { getChatThreads, deleteChatThread, subscribeChatHistory, hydrateChatHistory, type ChatThread } from '../../lib/chatHistoryStore'
-import { useAuth } from '../../lib/auth'
-import { useNavigate } from 'react-router-dom'
 
 type Tab = 'history' | 'billing'
+
+type ChatThread = {
+  id: string
+  title: string
+  messages: Array<{ role: string; content: string }>
+  updatedAt: string
+}
+
+function getChatThreads(): ChatThread[] {
+  try {
+    const data = localStorage.getItem('alphatekx-threads')
+    return data ? JSON.parse(data) : []
+  } catch {
+    return []
+  }
+}
+
+function deleteChatThread(id: string) {
+  const threads = getChatThreads().filter((t) => t.id !== id)
+  localStorage.setItem('alphatekx-threads', JSON.stringify(threads))
+}
 
 export default function HamburgerSidebar({
   open,
@@ -20,18 +38,11 @@ export default function HamburgerSidebar({
 }) {
   const [tab, setTab] = useState<Tab>('history')
   const [threads, setThreads] = useState<ChatThread[]>([])
-  const { user, profile } = useAuth()
-  const navigate = useNavigate()
+  const [credits] = useState(3)
 
   useEffect(() => {
-    void hydrateChatHistory()
-  }, [])
-
-  useEffect(() => {
-    const unsub = subscribeChatHistory(() => setThreads(getChatThreads()))
     setThreads(getChatThreads())
-    return unsub
-  }, [])
+  }, [open])
 
   const handleDelete = (id: string, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -43,7 +54,6 @@ export default function HamburgerSidebar({
     <AnimatePresence>
       {open && (
         <>
-          {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -53,7 +63,6 @@ export default function HamburgerSidebar({
             onClick={onClose}
           />
 
-          {/* Sidebar */}
           <motion.aside
             initial={{ x: '-100%' }}
             animate={{ x: 0 }}
@@ -61,7 +70,6 @@ export default function HamburgerSidebar({
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
             className="fixed inset-y-0 left-0 z-50 flex w-[300px] max-w-[85vw] flex-col border-r border-white/[0.06] bg-[#0D0D0D]"
           >
-            {/* Header */}
             <div className="flex h-14 items-center justify-between border-b border-white/[0.06] px-4">
               <span className="font-syne text-sm font-bold tracking-wide text-white">
                 ALPHATEKX
@@ -74,7 +82,6 @@ export default function HamburgerSidebar({
               </button>
             </div>
 
-            {/* Tabs */}
             <div className="flex border-b border-white/[0.06]">
               {([
                 ['history', 'History', MessageSquare],
@@ -95,7 +102,6 @@ export default function HamburgerSidebar({
               ))}
             </div>
 
-            {/* Content */}
             <div className="flex-1 overflow-y-auto alpha-chat-scroll">
               {tab === 'history' && (
                 <div className="p-3">
@@ -124,9 +130,11 @@ export default function HamburgerSidebar({
                             <MessageSquare size={12} className="text-white/30" />
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className={`truncate text-[13px] font-semibold ${
-                              activeThreadId === thread.id ? 'text-[#D6FF00]' : 'text-white/70'
-                            }`}>
+                            <p
+                              className={`truncate text-[13px] font-semibold ${
+                                activeThreadId === thread.id ? 'text-[#D6FF00]' : 'text-white/70'
+                              }`}
+                            >
                               {thread.title}
                             </p>
                             <div className="mt-1 flex items-center gap-2 text-[10px] text-white/20">
@@ -151,29 +159,20 @@ export default function HamburgerSidebar({
 
               {tab === 'billing' && (
                 <div className="p-4">
-                  {/* Current Plan */}
                   <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
                     <p className="text-[10px] font-bold uppercase tracking-widest text-white/30">Current Plan</p>
-                    <p className="mt-2 text-lg font-bold text-white capitalize">{profile?.plan || 'Free'}</p>
+                    <p className="mt-2 text-lg font-bold text-white">Free</p>
                   </div>
 
-                  {/* Credits */}
                   <div className="mt-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
                     <p className="text-[10px] font-bold uppercase tracking-widest text-white/30">Credits</p>
-                    <p className="mt-2 text-2xl font-bold text-[#D6FF00]">{profile?.credits ?? 0}</p>
-                    <p className="mt-1 text-[11px] text-white/30">Remaining credits</p>
+                    <p className="mt-2 text-2xl font-bold text-[#D6FF00]">{credits}</p>
+                    <p className="mt-1 text-[11px] text-white/30">Restorations remaining</p>
                   </div>
 
-                  {/* Upgrade Button */}
-                  <button
-                    onClick={() => {
-                      navigate('/billing')
-                      onClose()
-                    }}
-                    className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#D6FF00] px-4 py-3 text-[13px] font-bold text-black transition hover:bg-[#C2E600]"
-                  >
+                  <button className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#D6FF00] px-4 py-3 text-[13px] font-bold text-black transition hover:bg-[#C2E600]">
                     <CreditCard size={14} />
-                    Manage Billing
+                    Buy More Credits
                   </button>
                 </div>
               )}

@@ -4,13 +4,16 @@
  *
  * PHASES:
  * 1. SCAN - Classify the request, extract entities
- * 2. DIAGNOSE - Analyze root causes via LLM
- * 3. PLAN - Generate structured repair plan
- * 4. EXECUTE - Apply fixes (code generation, video pipeline routing)
- * 5. VERIFY - Test and collect metrics
+ * 2. WEB SEARCH - Search Tavily for current solutions
+ * 3. DIAGNOSE - Analyze root causes via LLM
+ * 4. PLAN - Generate structured repair plan
+ * 5. EXECUTE - Apply fixes (code generation, video pipeline routing)
+ * 6. VERIFY - Test and collect metrics
  */
 
-const PHASES = ['scan', 'diagnose', 'plan', 'execute', 'test']
+import { searchForFixes } from './tavilySearch.mjs'
+
+const PHASES = ['scan', 'search', 'diagnose', 'plan', 'execute', 'test']
 
 function log(phase, msg) {
   console.log(`[REPAIR:${phase.toUpperCase()}] ${msg}`)
@@ -78,6 +81,41 @@ export async function runRepairPipeline(message, sendEvent, llmCall) {
       step: { id: 'scan', label: 'Scan Failed', icon: 'scan', status: 'error', summary: err.message },
     })
     throw err
+  }
+
+  // PHASE 1.5: WEB SEARCH via Tavily
+  sendEvent({
+    type: 'thought_step',
+    step: { id: 'search', label: 'Searching web for solutions...', icon: 'search', status: 'active' },
+  })
+
+  let webSearch = { results: [], answer: '' }
+  try {
+    const errorContext = (scanResult.errorMessages || []).join(' ') || scanResult.summary || message
+    webSearch = await searchForFixes(errorContext, scanResult.technology)
+    sendEvent({
+      type: 'thought_step',
+      step: {
+        id: 'search',
+        label: 'Web Research Complete',
+        icon: 'search',
+        status: 'done',
+        summary: webSearch.answer ? `Found relevant solutions via web search` : `Searched ${webSearch.results.length} web sources`,
+        details: webSearch.results.map(r => `${r.title} (${Math.round(r.score * 100)}% match)`),
+        tavilySources: webSearch.results.map(r => ({
+          title: r.title,
+          url: r.url,
+          score: r.score,
+          snippet: r.content.slice(0, 200),
+        })),
+      },
+    })
+    log('search', `Found ${webSearch.results.length} web sources`)
+  } catch (err) {
+    sendEvent({
+      type: 'thought_step',
+      step: { id: 'search', label: 'Web Search Skipped', icon: 'search', status: 'done', summary: 'Proceeding with local analysis' },
+    })
   }
 
   // PHASE 2: DIAGNOSE
@@ -217,6 +255,16 @@ export async function runRepairPipeline(message, sendEvent, llmCall) {
  * Run a conversational (non-repair) chat through LLM
  */
 export async function runConversationChat(message, history, sendEvent, llmCall) {
+  // Quick Tavily search for current info
+  let webContext = ''
+  try {
+    const search = await searchForFixes(message)
+    if (search.answer) webContext = `\n\nCurrent web context:\n${search.answer}`
+    if (search.results.length) {
+      webContext += '\n\nRelevant sources:\n' + search.results.slice(0, 3).map(r => `- ${r.title}: ${r.url}`).join('\n')
+    }
+  } catch {}
+
   const systemPrompt = `You are AlphaTekX AI — an expert restoration engineer. You help users fix broken websites, apps, videos, backends, automations, and digital tools.
 
 Be concise, direct, and technical. When a user describes a problem:
@@ -236,7 +284,7 @@ You can help with:
 - Performance optimization (LCP, Core Web Vitals)
 - DNS, SSL, and infrastructure issues
 
-Keep responses under 300 words unless the user asks for detail. Use markdown formatting.`
+Keep responses under 300 words unless the user asks for detail. Use markdown formatting.${webContext}`
 
   const messages = [
     { role: 'system', content: systemPrompt },

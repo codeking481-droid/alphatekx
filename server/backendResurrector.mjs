@@ -2,7 +2,10 @@
  * BACKEND RESURRECTOR
  * Scans a backend/API/database, diagnoses issues, and generates fixes.
  * Streams SSE events for real-time ChainOfThought updates.
+ * Uses Tavily web search for current solutions and error documentation.
  */
+
+import { searchForFixes } from './tavilySearch.mjs'
 
 export function isBackendRequest(message) {
   const lower = message.toLowerCase()
@@ -46,6 +49,40 @@ export async function runBackendResurrector(message, sendEvent, llmCall) {
       step: { id: 'scan', label: 'Scan Failed', icon: 'scan', status: 'error', summary: err.message },
     })
     throw err
+  }
+
+  // PHASE 1.5: WEB SEARCH via Tavily
+  sendEvent({
+    type: 'thought_step',
+    step: { id: 'search', label: 'Searching web for solutions...', icon: 'search', status: 'active' },
+  })
+
+  let webSearch = { results: [], answer: '' }
+  try {
+    const errorContext = (scanResult.errorMessages || []).join(' ') || scanResult.summary || message
+    webSearch = await searchForFixes(errorContext, scanResult.technology)
+    sendEvent({
+      type: 'thought_step',
+      step: {
+        id: 'search',
+        label: 'Web Research Complete',
+        icon: 'search',
+        status: 'done',
+        summary: webSearch.answer ? `Found solutions via web search` : `Searched ${webSearch.results.length} web sources`,
+        details: webSearch.results.map(r => `${r.title} (${Math.round(r.score * 100)}% match)`),
+        tavilySources: webSearch.results.map(r => ({
+          title: r.title,
+          url: r.url,
+          score: r.score,
+          snippet: r.content.slice(0, 200),
+        })),
+      },
+    })
+  } catch (err) {
+    sendEvent({
+      type: 'thought_step',
+      step: { id: 'search', label: 'Web Search Skipped', icon: 'search', status: 'done', summary: 'Proceeding with local analysis' },
+    })
   }
 
   // PHASE 2: DIAGNOSE

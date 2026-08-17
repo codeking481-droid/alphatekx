@@ -1,15 +1,23 @@
 import { useState } from 'react'
-import { ChevronDown, CheckCircle2, Loader2, Scan, Search, Wrench, FlaskConical } from 'lucide-react'
+import { ChevronDown, CheckCircle2, Loader2, Scan, Search, Wrench, FlaskConical, Globe } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
+
+export type TavilySource = {
+  title: string
+  url: string
+  score: number
+  snippet: string
+}
 
 export type ThoughtStep = {
   id: string
   label: string
-  icon: 'scan' | 'diagnose' | 'plan' | 'test'
+  icon: 'scan' | 'diagnose' | 'plan' | 'test' | 'search'
   status: 'pending' | 'active' | 'done' | 'error'
   summary?: string
   details?: string[]
   logs?: string[]
+  tavilySources?: TavilySource[]
 }
 
 const iconMap = {
@@ -17,6 +25,7 @@ const iconMap = {
   diagnose: Search,
   plan: Wrench,
   test: FlaskConical,
+  search: Globe,
 }
 
 const statusColors = {
@@ -39,7 +48,7 @@ export default function ChainOfThought({ steps }: { steps: ThoughtStep[] }) {
   const hasActive = steps.some((s) => s.status === 'active')
 
   return (
-    <div className="my-3 overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.02]">
+    <div className="overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.02]">
       {/* Header */}
       <button
         onClick={() => {
@@ -92,7 +101,6 @@ export default function ChainOfThought({ steps }: { steps: ThoughtStep[] }) {
               className="overflow-hidden"
             >
               <div className={`relative border-t border-white/[0.04] px-4 py-3 ${!isLast ? 'pb-5' : ''}`}>
-                {/* Timeline connector */}
                 {!isLast && (
                   <div className="absolute left-[25px] top-[40px] bottom-0 w-px bg-white/[0.04]" />
                 )}
@@ -133,14 +141,12 @@ export default function ChainOfThought({ steps }: { steps: ThoughtStep[] }) {
                   />
                 </button>
 
-                {/* Summary */}
                 {isOpen && step.summary && (
                   <div className="mt-2 ml-10 text-[12px] leading-relaxed text-white/50">
                     {step.summary}
                   </div>
                 )}
 
-                {/* Details */}
                 {isOpen && step.details && step.details.length > 0 && (
                   <ul className="mt-2 ml-10 space-y-1">
                     {step.details.map((detail, i) => (
@@ -152,7 +158,36 @@ export default function ChainOfThought({ steps }: { steps: ThoughtStep[] }) {
                   </ul>
                 )}
 
-                {/* DeepSeek-style thinking log block */}
+                {/* Tavily Sources */}
+                {isOpen && step.tavilySources && step.tavilySources.length > 0 && (
+                  <div className="mt-3 ml-10 space-y-2">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-[#D6FF00]/40">
+                      Sources via Tavily
+                    </p>
+                    {step.tavilySources.map((source, i) => (
+                      <div
+                        key={i}
+                        className="rounded-lg border border-white/[0.04] bg-black/20 px-3 py-2"
+                      >
+                        <div className="flex items-center justify-between">
+                          <a
+                            href={source.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[11px] font-semibold text-[#D6FF00]/70 hover:text-[#D6FF00]"
+                          >
+                            {source.title}
+                          </a>
+                          <span className="text-[9px] font-bold text-[#D6FF00]/30">
+                            {(source.score * 100).toFixed(0)}% match
+                          </span>
+                        </div>
+                        <p className="mt-1 text-[10px] text-white/30 line-clamp-2">{source.snippet}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {isOpen && step.logs && step.logs.length > 0 && (
                   <div className="mt-3 ml-10">
                     <button

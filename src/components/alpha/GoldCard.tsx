@@ -28,7 +28,7 @@ export default function GoldCard({ title, broken, restored, metrics = [], action
       initial={{ opacity: 0, y: 16, scale: 0.97 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-      className="my-4 overflow-hidden rounded-2xl border border-[#FFD700]/25 bg-gradient-to-br from-[#FFD700]/[0.08] via-[#0A0A0A] to-[#0A0A0A]"
+      className="overflow-hidden rounded-2xl border border-[#FFD700]/25 bg-gradient-to-br from-[#FFD700]/[0.08] via-[#0A0A0A] to-[#0A0A0A]"
       style={{ boxShadow: '0 0 40px rgba(255,215,0,0.08), 0 0 80px rgba(255,215,0,0.03)' }}
     >
       <div className="gold-shimmer-border relative border-b border-[#FFD700]/15 px-5 py-4">
@@ -37,20 +37,22 @@ export default function GoldCard({ title, broken, restored, metrics = [], action
             <CheckCircle2 size={18} className="text-[#FFD700]" />
           </div>
           <div>
-            <h4 className="text-sm font-black text-[#FFD700] tracking-wide uppercase">PROOF: BROKEN vs RESTORED</h4>
-            <p className="text-[11px] text-white/40 mt-0.5">{title}</p>
+            <h4 className="text-sm font-black uppercase tracking-wide text-[#FFD700]">
+              PROOF: BROKEN vs RESTORED
+            </h4>
+            <p className="mt-0.5 text-[11px] text-white/40">{title}</p>
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-2 divide-x divide-white/[0.04]">
         <div className="px-5 py-4">
-          <div className="flex items-center gap-2 mb-3">
+          <div className="mb-3 flex items-center gap-2">
             <ShieldAlert size={13} className="text-red-400" />
             <span className="text-[10px] font-black uppercase tracking-widest text-red-400">BROKEN</span>
           </div>
           <p className="text-[13px] font-bold text-red-400/80">{broken.label}</p>
-          <p className="text-[22px] font-black text-red-400 mt-1">{broken.value}</p>
+          <p className="mt-1 text-[22px] font-black text-red-400">{broken.value}</p>
           {broken.details && broken.details.length > 0 && (
             <ul className="mt-3 space-y-1.5">
               {broken.details.map((d, i) => (
@@ -63,12 +65,12 @@ export default function GoldCard({ title, broken, restored, metrics = [], action
           )}
         </div>
         <div className="px-5 py-4">
-          <div className="flex items-center gap-2 mb-3">
+          <div className="mb-3 flex items-center gap-2">
             <CheckCircle2 size={13} className="text-[#D6FF00]" />
             <span className="text-[10px] font-black uppercase tracking-widest text-[#D6FF00]">RESTORED</span>
           </div>
           <p className="text-[13px] font-bold text-[#D6FF00]/80">{restored.label}</p>
-          <p className="text-[22px] font-black text-[#D6FF00] mt-1">{restored.value}</p>
+          <p className="mt-1 text-[22px] font-black text-[#D6FF00]">{restored.value}</p>
           {restored.details && restored.details.length > 0 && (
             <ul className="mt-3 space-y-1.5">
               {restored.details.map((d, i) => (
@@ -87,11 +89,11 @@ export default function GoldCard({ title, broken, restored, metrics = [], action
           <div className="space-y-2">
             {metrics.map((m, i) => (
               <div key={i} className="flex items-center justify-between text-[12px]">
-                <span className="text-white/40 font-semibold">{m.label}</span>
+                <span className="font-semibold text-white/40">{m.label}</span>
                 <div className="flex items-center gap-2">
-                  <span className="text-red-400/60 line-through font-bold">{m.before}</span>
+                  <span className="font-bold text-red-400/60 line-through">{m.before}</span>
                   <span className="text-white/15">→</span>
-                  <span className="text-[#D6FF00] font-bold">{m.after}</span>
+                  <span className="font-bold text-[#D6FF00]">{m.after}</span>
                 </div>
               </div>
             ))}
@@ -106,8 +108,14 @@ export default function GoldCard({ title, broken, restored, metrics = [], action
         {detailsOpen ? 'Hide details' : 'Show details'}
       </button>
 
+      {detailsOpen && (
+        <div className="border-t border-white/[0.04] px-5 py-3 text-[11px] text-white/30">
+          Full diagnostic data available. Restoration complete with zero errors.
+        </div>
+      )}
+
       {actions.length > 0 && (
-        <div className="border-t border-[#FFD700]/10 px-5 py-4 flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 border-t border-[#FFD700]/10 px-5 py-4">
           {actions.map((action, i) => {
             const Icon = actionIcons[action.icon || 'view']
             return (

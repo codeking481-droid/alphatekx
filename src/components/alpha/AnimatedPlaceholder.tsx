@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react'
 
 const PHRASES = [
-  'Paste a broken URL to resurrect...',
-  'Fix my website crash...',
-  'My backend API is down...',
-  'Restore my video project...',
-  'My site is loading slow...',
-  'Deploy broken, need fix...',
+  'Restore my website...',
+  'Edit my videos...',
+  'Fix my backend...',
+  'My automation stopped...',
 ]
 
 const CYCLE_MS = 3000
@@ -29,7 +27,7 @@ export default function AnimatedPlaceholder() {
 
   return (
     <span
-      className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[15px] font-medium text-white/30 transition-all duration-400 select-none"
+      className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[15px] font-medium text-white/25 transition-all duration-400 select-none"
       style={{
         opacity: visible ? 1 : 0,
         transform: visible ? 'translateY(-50%)' : 'translateY(calc(-50% - 6px))',
