@@ -62,7 +62,7 @@ export default function Auth() {
         clearGoogleSignupPending()
         setGoogleSignupPending(false)
         window.history.replaceState({}, document.title, `${location.pathname}${location.search}`)
-        window.location.replace('/dashboard')
+        window.location.replace('/chat')
       })
       .catch((error) => {
         if (!active) return
@@ -107,7 +107,7 @@ export default function Auth() {
     clearGoogleSignupPending()
     setGoogleSignupPending(false)
     if (window.location.hash) window.history.replaceState({}, document.title, `${location.pathname}${location.search}`)
-    const timer = window.setTimeout(() => window.location.replace('/dashboard'), 0)
+    const timer = window.setTimeout(() => window.location.replace('/chat'), 0)
     return () => window.clearTimeout(timer)
   }, [location.pathname, location.search, session?.access_token])
 
@@ -268,7 +268,7 @@ export default function Auth() {
               {verifying ? <LoaderCircle className="mx-auto animate-spin text-violet-300" size={28}/> : <CheckCircle2 className="mx-auto text-emerald-600" size={30}/>}
               <p className="mt-3 font-black text-white">{verifying ? "Verifying you're humanΓÇª" : bonusMessage}</p>
               {result && <p className="mt-1 text-xs font-bold text-slate-400">Balance: {result.credits ?? 1} credits{result.success ? ' ┬╖ Opening your Command CentreΓÇª' : ''}</p>}
-              {result && !result.success && <button onClick={() => navigate('/dashboard', { replace: true })} className="mt-4 min-h-11 rounded-xl bg-[#6D28D9] px-5 text-sm font-black text-white shadow-[0_10px_24px_rgba(109,40,217,.22)]">Continue to dashboard</button>}
+              {result && !result.success &&               <button onClick={() => navigate('/chat', { replace: true })} className="mt-4 min-h-11 rounded-xl bg-[#6D28D9] px-5 text-sm font-black text-white shadow-[0_10px_24px_rgba(109,40,217,.22)]">Continue to dashboard</button>}
             </div>
           )}
 

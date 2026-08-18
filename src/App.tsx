@@ -1,5 +1,5 @@
 import { lazy, Suspense, type ReactNode } from 'react'
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { Navigate, Route, Routes } from 'react-router-dom'
 import ContactUs from './components/ContactUs'
 import Landing from './pages/Landing'
 import About from './pages/About'
@@ -38,17 +38,12 @@ const toSettings = <Navigate to="/settings" replace />
 const toAutomations = <Navigate to="/automations" replace />
 
 function LandingRoute() {
-  const location = useLocation()
-  const query = new URLSearchParams(location.search)
-  if (query.has('error') || query.has('error_code') || query.has('error_description')) {
-    return <Navigate to={`/auth${location.search}`} replace />
-  }
-  return <AuthProvider><Landing /></AuthProvider>
+  return <Landing />
 }
 
 export default function App() {
   return (
-    <>
+    <AuthProvider>
       <div className="aurora-blob aurora-blob-one" aria-hidden="true"/>
       <div className="aurora-blob aurora-blob-two" aria-hidden="true"/>
       <div className="aurora-blob aurora-blob-three" aria-hidden="true"/>
@@ -112,7 +107,6 @@ export default function App() {
       <Route path="/projects" element={toDashboard} />
       <Route path="/memory" element={toDashboard} />
       <Route path="/brain" element={toDashboard} />
-      <Route path="/chat" element={toDashboard} />
       <Route path="/standards" element={toDashboard} />
       <Route path="/build-start" element={toDashboard} />
       <Route path="/store" element={toDashboard} />
@@ -127,6 +121,6 @@ export default function App() {
       <Route path="*" element={<Navigate to="/chat" replace />} />
       </Routes>
       <ContactUs />
-    </>
+    </AuthProvider>
   )
 }

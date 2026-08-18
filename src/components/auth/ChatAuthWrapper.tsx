@@ -1,6 +1,6 @@
 import type { PropsWithChildren } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
-import { AuthProvider, useAuth } from '../../lib/auth'
+import { useAuth } from '../../lib/auth'
 
 function Gate({ children }: PropsWithChildren) {
   const { user, loading } = useAuth()
@@ -20,9 +20,5 @@ function Gate({ children }: PropsWithChildren) {
 }
 
 export default function ChatAuthWrapper({ children }: PropsWithChildren) {
-  return (
-    <AuthProvider>
-      <Gate>{children}</Gate>
-    </AuthProvider>
-  )
+  return <Gate>{children}</Gate>
 }

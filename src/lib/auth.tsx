@@ -101,10 +101,11 @@ export async function instantGoogleSignup(plan?: string) {
     // ignore localStorage failures
   }
 
-  // Return directly to the protected workspace. AuthProvider is mounted above
-  // the router, so it consumes the Supabase callback before Dashboard renders.
-  // Users must never see the signup form a second time after choosing Google.
-  const redirectTo = `${window.location.origin}/dashboard?oauth=google`
+  // Return directly to the chat workspace. The /chat route loads the AuthProvider
+  // inline, so it must receive the OAuth callback hash fragment before any
+  // redirect strips it. /dashboard immediately redirects to /chat which would
+  // lose the fragment tokens, so we target /chat directly.
+  const redirectTo = `${window.location.origin}/chat?oauth=google`
   let data
   try {
     const result = await supabase.auth.signInWithOAuth({

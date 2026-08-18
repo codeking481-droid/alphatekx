@@ -17,6 +17,7 @@ import {
   type GeneralChatMessage,
 } from '../lib/chatHistoryStore'
 import { useAuth } from '../lib/auth'
+import { supabase } from '../lib/supabase'
 
 type AlphaMessage = GeneralChatMessage & {
   thoughtSteps?: ThoughtStep[]
@@ -122,9 +123,18 @@ function ChatContent() {
 
     try {
       abortRef.current = new AbortController()
+      let authToken = ''
+      try {
+        const { data: { session: activeSession } } = await supabase?.auth.getSession() ?? { data: { session: null } }
+        authToken = activeSession?.access_token || ''
+      } catch {}
+
       const res = await fetch('/api/alpha/repair', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
         body: JSON.stringify({
           message: text,
           threadId: thread.id,
