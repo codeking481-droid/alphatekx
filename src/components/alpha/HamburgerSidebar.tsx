@@ -167,7 +167,7 @@ export default function HamburgerSidebar({
                   {/* Upgrade Button */}
                   <button
                     onClick={() => {
-                      navigate('/settings?tab=billing')
+                      navigate('/billing')
                       onClose()
                     }}
                     className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#D6FF00] px-4 py-3 text-[13px] font-bold text-black transition hover:bg-[#C2E600]"

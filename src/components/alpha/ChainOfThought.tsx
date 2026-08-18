@@ -9,6 +9,7 @@ export type ThoughtStep = {
   status: 'pending' | 'active' | 'done' | 'error'
   summary?: string
   details?: string[]
+  logs?: string[]
 }
 
 const iconMap = {
@@ -18,15 +19,28 @@ const iconMap = {
   test: FlaskConical,
 }
 
+const statusColors = {
+  done: { bg: 'bg-[#D6FF00]/10', text: 'text-[#D6FF00]', border: 'border-[#D6FF00]/20' },
+  active: { bg: 'bg-[#D6FF00]/10', text: 'text-[#D6FF00]', border: 'border-[#D6FF00]/20' },
+  error: { bg: 'bg-red-500/10', text: 'text-red-400', border: 'border-red-500/20' },
+  pending: { bg: 'bg-white/[0.04]', text: 'text-white/30', border: 'border-white/[0.06]' },
+}
+
 export default function ChainOfThought({ steps }: { steps: ThoughtStep[] }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  const [showLogs, setShowLogs] = useState<Record<string, boolean>>({})
 
   const toggle = (id: string) => setExpanded((prev) => ({ ...prev, [id]: !prev[id] }))
+  const toggleLogs = (id: string) => setShowLogs((prev) => ({ ...prev, [id]: !prev[id] }))
 
   if (!steps.length) return null
 
+  const doneCount = steps.filter((s) => s.status === 'done').length
+  const hasActive = steps.some((s) => s.status === 'active')
+
   return (
-    <div className="my-3 rounded-2xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
+    <div className="my-3 overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.02]">
+      {/* Header */}
       <button
         onClick={() => {
           const allExpanded = steps.every((s) => expanded[s.id])
@@ -41,17 +55,17 @@ export default function ChainOfThought({ steps }: { steps: ThoughtStep[] }) {
         className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-white/[0.02]"
       >
         <div className="flex items-center gap-2">
-          {steps.some((s) => s.status === 'active') ? (
+          {hasActive ? (
             <Loader2 size={14} className="animate-spin text-[#D6FF00]" />
           ) : (
             <CheckCircle2 size={14} className="text-[#D6FF00]" />
           )}
           <span className="text-xs font-bold uppercase tracking-widest text-[#D6FF00]">
-            Chain of Thought
+            Thinking
           </span>
         </div>
         <span className="ml-auto text-[10px] font-semibold text-white/30">
-          {steps.filter((s) => s.status === 'done').length}/{steps.length} steps
+          {doneCount}/{steps.length}
         </span>
         <ChevronDown
           size={14}
@@ -62,10 +76,13 @@ export default function ChainOfThought({ steps }: { steps: ThoughtStep[] }) {
         />
       </button>
 
+      {/* Steps */}
       <AnimatePresence>
-        {steps.map((step) => {
+        {steps.map((step, index) => {
           const Icon = iconMap[step.icon]
           const isOpen = expanded[step.id]
+          const colors = statusColors[step.status]
+          const isLast = index === steps.length - 1
           return (
             <motion.div
               key={step.id}
@@ -74,21 +91,18 @@ export default function ChainOfThought({ steps }: { steps: ThoughtStep[] }) {
               transition={{ duration: 0.2, ease: 'easeInOut' }}
               className="overflow-hidden"
             >
-              <div className="border-t border-white/[0.04] px-4 py-3">
+              <div className={`relative border-t border-white/[0.04] px-4 py-3 ${!isLast ? 'pb-5' : ''}`}>
+                {/* Timeline connector */}
+                {!isLast && (
+                  <div className="absolute left-[25px] top-[40px] bottom-0 w-px bg-white/[0.04]" />
+                )}
+
                 <button
                   onClick={() => toggle(step.id)}
                   className="flex w-full items-center gap-3 text-left"
                 >
                   <span
-                    className={`grid size-7 shrink-0 place-items-center rounded-lg ${
-                      step.status === 'done'
-                        ? 'bg-[#D6FF00]/10 text-[#D6FF00]'
-                        : step.status === 'active'
-                          ? 'bg-[#D6FF00]/10 text-[#D6FF00]'
-                          : step.status === 'error'
-                            ? 'bg-red-500/10 text-red-400'
-                            : 'bg-white/[0.04] text-white/30'
-                    }`}
+                    className={`grid size-7 shrink-0 place-items-center rounded-lg ${colors.bg} ${colors.text}`}
                   >
                     {step.status === 'active' ? (
                       <Loader2 size={13} className="animate-spin" />
@@ -119,11 +133,14 @@ export default function ChainOfThought({ steps }: { steps: ThoughtStep[] }) {
                   />
                 </button>
 
+                {/* Summary */}
                 {isOpen && step.summary && (
                   <div className="mt-2 ml-10 text-[12px] leading-relaxed text-white/50">
                     {step.summary}
                   </div>
                 )}
+
+                {/* Details */}
                 {isOpen && step.details && step.details.length > 0 && (
                   <ul className="mt-2 ml-10 space-y-1">
                     {step.details.map((detail, i) => (
@@ -133,6 +150,42 @@ export default function ChainOfThought({ steps }: { steps: ThoughtStep[] }) {
                       </li>
                     ))}
                   </ul>
+                )}
+
+                {/* DeepSeek-style thinking log block */}
+                {isOpen && step.logs && step.logs.length > 0 && (
+                  <div className="mt-3 ml-10">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        toggleLogs(step.id)
+                      }}
+                      className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-white/20 transition hover:text-white/40"
+                    >
+                      <span className={`h-1.5 w-1.5 rounded-full ${showLogs[step.id] ? 'bg-[#D6FF00]' : 'bg-white/20'}`} />
+                      {showLogs[step.id] ? 'Hide' : 'Show'} thinking logs
+                    </button>
+                    <AnimatePresence>
+                      {showLogs[step.id] && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.2 }}
+                          className="overflow-hidden"
+                        >
+                          <div className="mt-2 rounded-xl border border-white/[0.04] bg-black/30 p-3 font-mono text-[11px] leading-relaxed text-white/30">
+                            {step.logs.map((log, i) => (
+                              <div key={i} className="flex gap-2">
+                                <span className="shrink-0 text-white/10">{String(i + 1).padStart(2, '0')}</span>
+                                <span>{log}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
                 )}
               </div>
             </motion.div>

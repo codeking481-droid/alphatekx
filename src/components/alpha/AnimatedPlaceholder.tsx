@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 
 const PHRASES = [
-  'Restore my website...',
-  'Edit my videos...',
-  'Fix my backend...',
-  'My automation stopped...',
+  'Paste a broken URL to resurrect...',
+  'Fix my website crash...',
+  'My backend API is down...',
+  'Restore my video project...',
+  'My site is loading slow...',
+  'Deploy broken, need fix...',
 ]
 
 const CYCLE_MS = 3000

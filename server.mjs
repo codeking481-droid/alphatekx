@@ -73,6 +73,8 @@ async function executeProviderWithHealing(user, provider, actionName, params = {
 import * as mediaLibrary from './server/mediaLibraryService.mjs'
 import * as videoPipeline from './server/videoPipeline.mjs'
 import { runRepairPipeline, runConversationChat, isVideoRequest, isRepairRequest } from './server/repairPipeline.mjs'
+import { runWebsiteResurrector, isWebsiteRequest } from './server/websiteResurrector.mjs'
+import { runBackendResurrector, isBackendRequest } from './server/backendResurrector.mjs'
 // Lazy load pro-video-workflow to avoid sharp/canvas native deps at startup
 let proVideoWorkflow = null
 const loadProVideoWorkflow = async () => {
@@ -8512,6 +8514,17 @@ const server = http.createServer(async (req, res) => {
         sendEvent({ type: 'content', text: 'Detected video request. Routing to **Video Resurrector** pipeline...\n\n' })
         sendEvent({ type: 'done', videoRoute: true })
         res.end()
+        return
+      }
+
+      if (isWebsiteRequest(message)) {
+        const urlMatch = message.match(/https?:\/\/[^\s]+/)
+        await runWebsiteResurrector(urlMatch ? urlMatch[0] : null, message, sendEvent, llmCall)
+        return
+      }
+
+      if (isBackendRequest(message)) {
+        await runBackendResurrector(message, sendEvent, llmCall)
         return
       }
 

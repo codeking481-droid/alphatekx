@@ -5,7 +5,7 @@ import ReactMarkdown from 'react-markdown'
 import ChatAuthWrapper from '../components/auth/ChatAuthWrapper'
 import AnimatedPlaceholder from '../components/alpha/AnimatedPlaceholder'
 import ChainOfThought, { type ThoughtStep } from '../components/alpha/ChainOfThought'
-import RestoredVersionCard, { type RestoreResult } from '../components/alpha/RestoredVersionCard'
+import GoldCard, { type GoldCardProps } from '../components/alpha/GoldCard'
 import HamburgerSidebar from '../components/alpha/HamburgerSidebar'
 import {
   createChatThread,
@@ -21,7 +21,7 @@ import { supabase } from '../lib/supabase'
 
 type AlphaMessage = GeneralChatMessage & {
   thoughtSteps?: ThoughtStep[]
-  restoreResult?: RestoreResult
+  restoreResult?: any
   isStreaming?: boolean
 }
 
@@ -374,7 +374,25 @@ function ChatContent() {
 
                         {/* Restore Result */}
                         {msg.restoreResult && (
-                          <RestoredVersionCard result={msg.restoreResult} />
+                          <GoldCard
+                            title={msg.restoreResult.title || 'Restoration'}
+                            broken={{
+                              label: 'Before',
+                              value: msg.restoreResult.metrics?.[0]?.before || '—',
+                              details: msg.restoreResult.metrics?.map((m: any) => `${m.label}: ${m.before}`) || [],
+                            }}
+                            restored={{
+                              label: 'After',
+                              value: msg.restoreResult.metrics?.[0]?.after || '—',
+                              details: msg.restoreResult.metrics?.map((m: any) => `${m.label}: ${m.after}`) || [],
+                            }}
+                            metrics={msg.restoreResult.metrics?.map((m: any) => ({
+                              label: m.label,
+                              before: m.before,
+                              after: m.after,
+                            })) || []}
+                            toolType={msg.restoreResult.url ? 'website' : 'website'}
+                          />
                         )}
 
                         {/* Streaming indicator */}
