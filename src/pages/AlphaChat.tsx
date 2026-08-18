@@ -14,6 +14,7 @@ import BackupCard from '../components/alpha/restore/BackupCard'
 import FixingCard, { type DiffEntry } from '../components/alpha/restore/FixingCard'
 import GoldProofCard, { type ProofData } from '../components/alpha/restore/GoldProofCard'
 import ActionCard from '../components/alpha/restore/ActionCard'
+import GitHubApplyCard from '../components/alpha/restore/GitHubApplyCard'
 import {
   createChatThread,
   saveChatThread,
@@ -34,6 +35,7 @@ type RestoreCardState = {
   fixing?: { files: string[]; diffs: DiffEntry[]; status: 'start' | 'done'; summary?: string }
   goldproof?: ProofData | null
   action?: { scanId: string; restoredZipUrl?: string | null; rollbackUrl?: string; redeploySteps?: string[]; metrics?: any }
+  github?: boolean
   isRunning?: boolean
 }
 
@@ -397,6 +399,7 @@ function ChatContent() {
             cards.goldproof = event.data
           } else if (cardName === 'action') {
             cards.action = event.data
+            if (event.status === 'done') cards.github = true
           }
           break
         }
@@ -685,6 +688,10 @@ function ChatContent() {
                             {/* Card 7: Action */}
                             {msg.restoreCards.action && (
                               <ActionCard data={msg.restoreCards.action} />
+                            )}
+                            {/* Card 8: GitHub Direct Push */}
+                            {msg.restoreCards.github && msg.restoreCards.action?.scanId && (
+                              <GitHubApplyCard scanId={msg.restoreCards.action.scanId} />
                             )}
                           </div>
                         )}
