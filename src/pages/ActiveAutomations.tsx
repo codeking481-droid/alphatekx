@@ -287,7 +287,7 @@ export default function ActiveAutomations() {
       <button onClick={() => navigate('/active-automations')} className="text-sm font-bold text-violet-300 hover:text-violet-200">← Running Automations</button>
       {notice && <Notice>{notice}</Notice>}
       {selected?.plain_english_error && <div className="mt-5 w-full rounded-xl border border-rose-400/20 bg-rose-500/6 p-3 text-sm font-semibold text-rose-200">{selected.plain_english_error}</div>}
-      {displayStatus(selected) === 'Needs Attention' && /credit/i.test(selected.campaign?.posts?.find(post => post.lastError)?.lastError || '') && <div className="mt-5 rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4 text-sm font-bold text-amber-100">Out of credits - Buy $3 for 20 credits to keep your AI employee working. <Link to="/settings?section=billing" className="underline">Buy credits</Link></div>}
+      {displayStatus(selected) === 'Needs Attention' && /credit/i.test(selected.campaign?.posts?.find(post => post.lastError)?.lastError || '') && <div className="mt-5 rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4 text-sm font-bold text-amber-100">Out of credits - Buy $3 for 20 credits to keep your AI employee working. <Link to="/billing" className="underline">Buy credits</Link></div>}
       <section className="mt-6 rounded-[2rem] border border-white/8 bg-[#0D1322]/70 p-5 shadow-[0_24px_70px_rgba(2,6,23,0.28)] sm:p-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div><p className="eyebrow">{displayStatus(selected)}</p><h1 className="mt-2 text-2xl font-black text-white sm:text-3xl">{selected.name}</h1><p className="mt-2 text-sm font-semibold capitalize text-slate-400">{platformNames(selected)}</p></div>
@@ -375,7 +375,7 @@ export default function ActiveAutomations() {
     </div>
     {visible.some(agent => displayStatus(agent) === 'Needs Attention' && /credit/i.test(agent.campaign?.posts?.find(post => post.lastError)?.lastError || '')) && (
       <div className="mt-5 rounded-2xl border border-[#F5C518]/30 bg-[#F5C518]/[0.04] p-4 text-sm font-bold text-white">
-        Out of credits - Buy $3 for 20 credits to keep your AI employee working. <Link to="/settings?section=billing" className="ml-1 underline">Buy credits</Link>
+        Out of credits - Buy $3 for 20 credits to keep your AI employee working. <Link to="/billing" className="ml-1 underline">Buy credits</Link>
       </div>
     )}
     <div className="mt-7 flex flex-wrap items-center justify-between gap-3">

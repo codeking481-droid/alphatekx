@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, MessageSquare, CreditCard, Trash2, Clock } from 'lucide-react'
+import { useAuth } from '../../lib/auth'
 
 type Tab = 'history' | 'billing'
 
@@ -39,7 +40,9 @@ export default function HamburgerSidebar({
 }) {
   const [tab, setTab] = useState<Tab>('history')
   const [threads, setThreads] = useState<ChatThread[]>([])
-  const [credits] = useState(3)
+  const { profile } = useAuth()
+  const credits = profile?.credits ?? 0
+  const currentPlan = profile?.plan || 'free'
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -163,7 +166,7 @@ export default function HamburgerSidebar({
                 <div className="p-4">
                   <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
                     <p className="text-[10px] font-bold uppercase tracking-widest text-white/30">Current Plan</p>
-                    <p className="mt-2 text-lg font-bold text-white">Free</p>
+                    <p className="mt-2 text-lg font-bold text-white capitalize">{currentPlan}</p>
                   </div>
 
                   <div className="mt-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
@@ -173,7 +176,7 @@ export default function HamburgerSidebar({
                   </div>
 
                   <button
-                    onClick={() => { onClose(); navigate('/settings?tab=billing') }}
+                    onClick={() => { onClose(); navigate('/billing') }}
                     className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#D6FF00] px-4 py-3 text-[13px] font-bold text-black transition hover:bg-[#C2E600]"
                   >
                     <CreditCard size={14} />

@@ -338,7 +338,7 @@ export default function WorkflowPlan({ agent, integrationStatus, credits, isAdmi
       {approveDisabled && <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-300">
         {stillMissing.length > 0 && <p>Fill all missing fields before activating.</p>}
         {missingConnectors.length > 0 && <p>Connect {missingConnectors.join(', ')} in Connected Apps first.</p>}
-        {!canAfford && <p>Not enough credits. You have {credits ?? 0}, this run needs {cost}. <button onClick={() => window.location.href='/settings?tab=billing'} className="ml-1 font-semibold underline text-violet-300">Buy credits</button></p>}
+        {!canAfford && <p>Not enough credits. You have {credits ?? 0}, this run needs {cost}. <button onClick={() => window.location.href='/billing'} className="ml-1 font-semibold underline text-violet-300">Buy credits</button></p>}
       </div>}
 
       <div className="mt-6 flex justify-end gap-3">

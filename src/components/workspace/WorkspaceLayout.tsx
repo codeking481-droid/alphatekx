@@ -95,7 +95,7 @@ export default function WorkspaceLayout({ children }: PropsWithChildren) {
     <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center justify-between border-b border-white/10 bg-[#111214]/90 px-4 backdrop-blur-2xl">
       <button onClick={toggleSidebar} className="grid size-10 place-items-center rounded-xl border border-white/10 bg-white/[0.02] text-white transition hover:bg-white/[0.04]" aria-label={open ? 'Close menu' : 'Open menu'}><Menu size={18}/></button>
       <NavLink to="/agen" className="text-sm font-black tracking-[.14em] text-white">ALPHATEKX</NavLink>
-      <button onClick={() => navigate('/settings?tab=billing')} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-sm font-semibold text-white transition hover:bg-white/[0.04]">
+      <button onClick={() => navigate('/billing')} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-sm font-semibold text-white transition hover:bg-white/[0.04]">
         <span className="inline-block h-2.5 w-2.5 rounded-full bg-[#F5C518]" />
         <span className={!isAdmin && needsCreditTopUp(credits) ? 'text-[#F5C518]' : 'text-white'}>{isAdmin ? 'Admin' : `${credits} Credits`}</span>
       </button>

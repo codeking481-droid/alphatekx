@@ -329,7 +329,7 @@ export default function Agents() {
         {[
           { title: 'SCAN MY LINK', details: 'Report-only diagnostics for broken apps and leaks.', accent: 'from-violet-600 to-purple-500', action: () => navigate('/dashboard') },
           { title: 'RESTORE MY VIDEO', details: 'Recover rough footage into polished editing output.', accent: 'from-cyan-500 to-blue-500', action: () => navigate('/active-automations') },
-          { title: 'SELL MY WORK', details: 'Turn restored work into a product and pricing plan.', accent: 'from-amber-400 to-orange-500', action: () => navigate('/settings?tab=billing') },
+          { title: 'SELL MY WORK', details: 'Turn restored work into a product and pricing plan.', accent: 'from-amber-400 to-orange-500', action: () => navigate('/billing') },
         ].map((card) => (
           <button
             key={card.title}

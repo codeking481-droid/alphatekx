@@ -411,7 +411,7 @@ export default function MatureAutomationWizard({ open, onComplete }: { open: boo
     window.location.href = '/active-automations'
   }
 
-  const handleTopUp = () => { window.location.href = '/settings?tab=billing' }
+  const handleTopUp = () => { window.location.href = '/billing' }
   const handleConnectPlatform = (platformId: string) => {
     window.open(`/connected-apps?platform=${encodeURIComponent(platformId)}&returnTo=${encodeURIComponent(`/automations?wizard=1`)}`, '_blank')
   }
