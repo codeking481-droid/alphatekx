@@ -170,17 +170,17 @@ export default function GitHubApplyCard({ scanId }: { scanId: string }) {
       className="overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.02]"
     >
       {/* Header */}
-      <div className="flex items-center gap-3 border-b border-white/[0.06] px-5 py-3">
-        <div className="grid size-8 place-items-center rounded-lg bg-[#D6FF00]/10">
-          <GitBranch size={14} className="text-[#D6FF00]" />
+      <div className="flex items-center gap-2 border-b border-white/[0.06] px-3 py-2.5 sm:px-5 sm:py-3">
+        <div className="grid size-7 sm:size-8 place-items-center rounded-lg bg-[#D6FF00]/10 shrink-0">
+          <GitBranch size={13} className="text-[#D6FF00]" />
         </div>
-        <div className="flex-1">
-          <h4 className="text-[13px] font-bold text-white">Push Fix to GitHub</h4>
-          <p className="mt-0.5 text-[11px] text-white/30">Connect your repo and push the fix directly to main</p>
+        <div className="flex-1 min-w-0">
+          <h4 className="text-[12px] sm:text-[13px] font-bold text-white">Push Fix to GitHub</h4>
+          <p className="mt-0.5 text-[10px] sm:text-[11px] text-white/30">Connect repo and push fixes directly</p>
         </div>
       </div>
 
-      <div className="px-5 py-4 space-y-4">
+      <div className="space-y-3 px-3 py-3 sm:px-5 sm:py-4">
         {/* Not configured on server */}
         {configured === false && (
           <div className="text-center space-y-3">

@@ -27,53 +27,53 @@ export default function ErrorsCard({ errors, severity, status }: { errors: ScanE
       transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
       className="overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.02]"
     >
-      <div className="flex items-center gap-3 border-b border-white/[0.06] px-5 py-3">
-        <div className={`grid size-8 place-items-center rounded-lg ${errors.length > 0 ? 'bg-red-500/10' : 'bg-[#D6FF00]/10'}`}>
+      <div className="flex items-center gap-2 border-b border-white/[0.06] px-3 py-2.5 sm:px-5 sm:py-3">
+        <div className={`grid size-7 sm:size-8 place-items-center rounded-lg ${errors.length > 0 ? 'bg-red-500/10' : 'bg-[#D6FF00]/10'} shrink-0`}>
           {errors.length > 0 ? (
-            <AlertTriangle size={14} className="text-red-400" />
+            <AlertTriangle size={13} className="text-red-400" />
           ) : (
-            <CheckCircle2 size={14} className="text-[#D6FF00]" />
+            <CheckCircle2 size={13} className="text-[#D6FF00]" />
           )}
         </div>
-        <div className="flex-1">
-          <h4 className="text-[13px] font-bold text-white">Errors Found</h4>
-          <p className="mt-0.5 text-[11px] text-white/30">
+        <div className="flex-1 min-w-0">
+          <h4 className="text-[12px] sm:text-[13px] font-bold text-white">Errors Found</h4>
+          <p className="mt-0.5 text-[10px] sm:text-[11px] text-white/30">
             {errors.length > 0 ? `${errors.length} error${errors.length !== 1 ? 's' : ''} detected` : 'No errors detected'}
           </p>
         </div>
         {severity && severity !== 'unknown' && (
-          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${severityColors[severity] || 'bg-white/[0.06] text-white/40 border-white/[0.08]'}`}>
+          <span className={`rounded-full border px-2 py-0.5 text-[9px] sm:text-[10px] font-bold uppercase shrink-0 ${severityColors[severity] || 'bg-white/[0.06] text-white/40 border-white/[0.08]'}`}>
             {severity}
           </span>
         )}
       </div>
 
       {status === 'start' ? (
-        <div className="flex items-center gap-2 px-5 py-4 text-[12px] text-white/30">
+        <div className="flex items-center gap-2 px-3 py-3 sm:px-5 text-[11px] sm:text-[12px] text-white/30">
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#D6FF00]" />
           Analyzing errors...
         </div>
       ) : (
         <div className="divide-y divide-white/[0.04]">
           {errors.map((err) => (
-            <div key={err.id} className="px-5 py-3">
+            <div key={err.id} className="px-3 py-2.5 sm:px-5 sm:py-3">
               <button
                 onClick={() => setExpanded((p) => ({ ...p, [err.id]: !p[err.id] }))}
-                className="flex w-full items-start gap-3 text-left"
+                className="flex w-full items-start gap-2 text-left sm:gap-3"
               >
-                <span className={`mt-0.5 inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${severityColors[err.severity] || 'bg-white/[0.06] text-white/40'}`}>
+                <span className={`mt-0.5 inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-[8px] sm:text-[9px] font-bold uppercase ${severityColors[err.severity] || 'bg-white/[0.06] text-white/40'}`}>
                   {err.severity}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-[12px] font-bold text-white/80">{err.name}</p>
-                  <p className="mt-0.5 text-[11px] text-white/30">{err.file}</p>
+                  <p className="text-[11px] sm:text-[12px] font-bold text-white/80">{err.name}</p>
+                  <p className="mt-0.5 text-[10px] sm:text-[11px] text-white/30 truncate">{err.file}</p>
                 </div>
               </button>
               {expanded[err.id] && (
                 <motion.p
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
-                  className="mt-2 ml-16 text-[11px] leading-relaxed text-white/40"
+                  className="mt-2 ml-6 text-[10px] sm:text-[11px] leading-relaxed text-white/40 sm:ml-16"
                 >
                   {err.description}
                 </motion.p>
@@ -81,8 +81,8 @@ export default function ErrorsCard({ errors, severity, status }: { errors: ScanE
             </div>
           ))}
           {errors.length === 0 && (
-            <div className="flex items-center gap-2 px-5 py-4 text-[12px] text-[#D6FF00]/60">
-              <CheckCircle2 size={13} />
+            <div className="flex items-center gap-2 px-3 py-3 sm:px-5 text-[11px] sm:text-[12px] text-[#D6FF00]/60">
+              <CheckCircle2 size={12} />
               All clear — no errors found
             </div>
           )}

@@ -60,19 +60,50 @@ export function handlePreviewRoute(req, res) {
   const parsed = new URL(req.url, 'http://localhost')
   const targetUrl = parsed.searchParams.get('url')
   if (!targetUrl) return jsonResponse(res, 400, { error: 'Missing url parameter' })
-  try { new URL(targetUrl) } catch { return jsonResponse(res, 400, { error: 'Invalid URL' }) }
+  let baseUrl
+  try { baseUrl = new URL(targetUrl) } catch { return jsonResponse(res, 400, { error: 'Invalid URL' }) }
 
+  const origin = baseUrl.origin
   const cacheBust = Date.now()
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 15000)
+  const timer = setTimeout(() => controller.abort(), 20000)
 
   fetch(`${targetUrl}${targetUrl.includes('?') ? '&' : '?'}_cb=${cacheBust}`, {
     signal: controller.signal,
-    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 AlphaTekX-Preview/1.0' },
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.5',
+    },
     redirect: 'follow',
   }).then(async (fetchRes) => {
     clearTimeout(timer)
-    const html = await fetchRes.text()
+    const contentType = fetchRes.headers.get('content-type') || ''
+    if (!contentType.includes('text/html') && !contentType.includes('xhtml')) {
+      res.writeHead(fetchRes.status, {
+        'Content-Type': contentType || 'application/octet-stream',
+        'Cache-Control': 'no-cache',
+        'Access-Control-Allow-Origin': '*',
+      })
+      const body = Buffer.from(await fetchRes.arrayBuffer())
+      return res.end(body)
+    }
+
+    let html = await fetchRes.text()
+
+    // Rewrite relative URLs to absolute so the iframe can load CSS/JS/images
+    html = rewriteRelativeUrls(html, origin)
+
+    // Add base tag as fallback
+    if (!html.includes('<base ')) {
+      html = html.replace(/<head([^>]*)>/i, `<head$1><base href="${origin}/">`)
+    }
+
+    // Inject meta viewport for mobile rendering inside iframe
+    if (!html.includes('viewport')) {
+      html = html.replace(/<head([^>]*)>/i, `<head$1><meta name="viewport" content="width=device-width,initial-scale=1">`)
+    }
+
     res.writeHead(200, {
       'Content-Type': 'text/html; charset=utf-8',
       'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -82,8 +113,20 @@ export function handlePreviewRoute(req, res) {
   }).catch((fetchErr) => {
     clearTimeout(timer)
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' })
-    res.end(`<html><body style="background:#0A0A0A;color:#fff;font-family:monospace;padding:40px;text-align:center"><h2>Preview Unavailable</h2><p style="color:#ff6b6b">${fetchErr.name === 'AbortError' ? 'Connection timed out (15s)' : fetchErr.message}</p><p style="color:#666">URL: ${targetUrl}</p></body></html>`)
+    res.end(`<html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="background:#0A0A0A;color:#fff;font-family:monospace;padding:40px;text-align:center"><h2>Preview Unavailable</h2><p style="color:#ff6b6b">${fetchErr.name === 'AbortError' ? 'Connection timed out (20s)' : fetchErr.message}</p><p style="color:#666">URL: ${targetUrl}</p></body></html>`)
   })
+}
+
+function rewriteRelativeUrls(html, origin) {
+  // Rewrite src="...", href="...", action="..." with relative paths to absolute
+  return html
+    // src="/path" or src="path" → src="https://origin/path"
+    .replace(/((?:src|href|action|poster|data-src|data-bg|content)=(["']))\/(?!\/)/g, `$1${origin}/`)
+    .replace(/((?:src|href|action|poster|data-src|data-bg|content)=(["']))(?![a-z]+:)(?!${origin})([^"']*?)\2/g, `$1${origin}/$3$2`)
+    // url(/path) in inline styles
+    .replace(/url\((['"]?)\/(?!\/)/g, `url($1${origin}/`)
+    // srcset="/path"
+    .replace(/(srcset=(["'])\/)(?!\/)/g, `$1${origin}/`)
 }
 
 export function handleRestoreStreamRoute(req, res) {

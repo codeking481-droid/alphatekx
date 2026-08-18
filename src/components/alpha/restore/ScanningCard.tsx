@@ -11,21 +11,21 @@ export default function ScanningCard({ logs, status }: { logs: ScanLog[]; status
       transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
       className="overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.02]"
     >
-      <div className="flex items-center gap-3 border-b border-white/[0.06] px-5 py-3">
-        <div className="grid size-8 place-items-center rounded-lg bg-[#D6FF00]/10">
+      <div className="flex items-center gap-2 border-b border-white/[0.06] px-3 py-2.5 sm:px-5 sm:py-3">
+        <div className="grid size-7 sm:size-8 place-items-center rounded-lg bg-[#D6FF00]/10 shrink-0">
           {status === 'done' ? (
-            <CheckCircle2 size={14} className="text-[#D6FF00]" />
+            <CheckCircle2 size={13} className="text-[#D6FF00]" />
           ) : (
-            <Terminal size={14} className={status === 'start' ? 'animate-pulse text-[#D6FF00]' : 'text-red-400'} />
+            <Terminal size={13} className={status === 'start' ? 'animate-pulse text-[#D6FF00]' : 'text-red-400'} />
           )}
         </div>
-        <h4 className="flex-1 text-[13px] font-bold text-white">AlphaTekX is checking everything...</h4>
+        <h4 className="flex-1 text-[12px] sm:text-[13px] font-bold text-white">Scanning your website...</h4>
         {status === 'start' && (
-          <Loader2 size={13} className="animate-spin text-[#D6FF00]" />
+          <Loader2 size={12} className="animate-spin text-[#D6FF00] shrink-0" />
         )}
       </div>
 
-      <div className="max-h-[320px] overflow-y-auto px-5 py-3 font-mono text-[11px] leading-relaxed alpha-chat-scroll">
+      <div className="max-h-[250px] sm:max-h-[320px] overflow-y-auto px-3 py-2.5 font-mono text-[10px] sm:text-[11px] leading-relaxed alpha-chat-scroll sm:px-5 sm:py-3">
         {logs.length === 0 ? (
           <div className="flex items-center gap-2 text-white/20">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#D6FF00]" />

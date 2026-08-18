@@ -3,29 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, MessageSquare, CreditCard, Trash2, Clock } from 'lucide-react'
 import { useAuth } from '../../lib/auth'
+import { getChatThreads, deleteChatThread, subscribeChatHistory, type ChatThread } from '../../lib/chatHistoryStore'
 
 type Tab = 'history' | 'billing'
-
-type ChatThread = {
-  id: string
-  title: string
-  messages: Array<{ role: string; content: string }>
-  updatedAt: string
-}
-
-function getChatThreads(): ChatThread[] {
-  try {
-    const data = localStorage.getItem('alphatekx-threads')
-    return data ? JSON.parse(data) : []
-  } catch {
-    return []
-  }
-}
-
-function deleteChatThread(id: string) {
-  const threads = getChatThreads().filter((t) => t.id !== id)
-  localStorage.setItem('alphatekx-threads', JSON.stringify(threads))
-}
 
 export default function HamburgerSidebar({
   open,
@@ -46,8 +26,14 @@ export default function HamburgerSidebar({
   const navigate = useNavigate()
 
   useEffect(() => {
-    setThreads(getChatThreads())
+    if (open) setThreads(getChatThreads())
   }, [open])
+
+  useEffect(() => {
+    return subscribeChatHistory(() => {
+      setThreads(getChatThreads())
+    })
+  }, [])
 
   const handleDelete = (id: string, e: React.MouseEvent) => {
     e.stopPropagation()

@@ -1,12 +1,14 @@
 import { motion } from 'framer-motion'
-import { ShieldAlert, CheckCircle2, ArrowRight } from 'lucide-react'
-import { useState } from 'react'
+import { ShieldAlert, CheckCircle2, ArrowRight, Camera, Loader2 } from 'lucide-react'
+import { useState, useEffect } from 'react'
 
 export type ProofData = {
   before: { url: string; status: number; lcp: string; errors: number; tech: string }
   after: { url: string; status: number; lcp: string; errors: number; tech: string; previewUrl: string }
   scanId: string
   fixesCount: number
+  beforeScreenshot?: string
+  afterScreenshot?: string
 }
 
 export default function GoldProofCard({ data }: { data: ProofData }) {
@@ -21,13 +23,13 @@ export default function GoldProofCard({ data }: { data: ProofData }) {
       style={{ boxShadow: '0 0 40px rgba(255,215,0,0.08)' }}
     >
       {/* Header */}
-      <div className="flex items-center gap-3 border-b border-[#FFD700]/15 px-5 py-4">
-        <div className="grid size-10 place-items-center rounded-xl bg-[#FFD700]/10">
-          <CheckCircle2 size={18} className="text-[#FFD700]" />
+      <div className="flex items-center gap-2 border-b border-[#FFD700]/15 px-3 py-3 sm:px-5 sm:py-4">
+        <div className="grid size-8 sm:size-10 place-items-center rounded-xl bg-[#FFD700]/10 shrink-0">
+          <CheckCircle2 size={16} className="text-[#FFD700]" />
         </div>
-        <div>
-          <h4 className="text-sm font-black uppercase tracking-wide text-[#FFD700]">PROOF: BROKEN vs RESTORED</h4>
-          <p className="mt-0.5 text-[11px] text-white/40">{data.fixesCount} fix(es) applied</p>
+        <div className="min-w-0">
+          <h4 className="text-[12px] sm:text-sm font-black uppercase tracking-wide text-[#FFD700]">PROOF: BROKEN vs RESTORED</h4>
+          <p className="mt-0.5 text-[10px] sm:text-[11px] text-white/40">{data.fixesCount} fix(es) applied</p>
         </div>
       </div>
 
@@ -35,94 +37,132 @@ export default function GoldProofCard({ data }: { data: ProofData }) {
       <div className="flex border-b border-white/[0.04]">
         <button
           onClick={() => setTab('broken')}
-          className={`flex flex-1 items-center justify-center gap-2 py-2.5 text-[11px] font-bold uppercase tracking-widest transition ${
+          className={`flex flex-1 items-center justify-center gap-1.5 py-2.5 text-[10px] sm:text-[11px] font-bold uppercase tracking-widest transition ${
             tab === 'broken' ? 'border-b-2 border-red-400 text-red-400' : 'text-white/20 hover:text-white/40'
           }`}
         >
-          <ShieldAlert size={12} />
+          <ShieldAlert size={11} />
           Broken
         </button>
         <button
           onClick={() => setTab('restored')}
-          className={`flex flex-1 items-center justify-center gap-2 py-2.5 text-[11px] font-bold uppercase tracking-widest transition ${
+          className={`flex flex-1 items-center justify-center gap-1.5 py-2.5 text-[10px] sm:text-[11px] font-bold uppercase tracking-widest transition ${
             tab === 'restored' ? 'border-b-2 border-[#D6FF00] text-[#D6FF00]' : 'text-white/20 hover:text-white/40'
           }`}
         >
-          <CheckCircle2 size={12} />
+          <CheckCircle2 size={11} />
           Restored
         </button>
       </div>
 
       {/* Content */}
       {tab === 'broken' ? (
-        <div className="px-5 py-4">
+        <div className="px-3 py-3 sm:px-5 sm:py-4">
           <div className="mb-3 flex items-center gap-2">
-            <ShieldAlert size={13} className="text-red-400" />
-            <span className="text-[10px] font-black uppercase tracking-widest text-red-400">BROKEN</span>
+            <ShieldAlert size={12} className="text-red-400" />
+            <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-red-400">BROKEN</span>
           </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div className="rounded-lg bg-red-500/[0.06] px-3 py-2 text-center">
-              <p className="text-[10px] text-white/30">Status</p>
-              <p className="mt-0.5 text-lg font-black text-red-400">{data.before.status || '---'}</p>
+          <div className="grid grid-cols-3 gap-2 sm:gap-3">
+            <div className="rounded-lg bg-red-500/[0.06] px-2 py-2 text-center sm:px-3">
+              <p className="text-[9px] sm:text-[10px] text-white/30">Status</p>
+              <p className="mt-0.5 text-base sm:text-lg font-black text-red-400">{data.before.status || '---'}</p>
             </div>
-            <div className="rounded-lg bg-red-500/[0.06] px-3 py-2 text-center">
-              <p className="text-[10px] text-white/30">LCP</p>
-              <p className="mt-0.5 text-lg font-black text-red-400">{data.before.lcp}</p>
+            <div className="rounded-lg bg-red-500/[0.06] px-2 py-2 text-center sm:px-3">
+              <p className="text-[9px] sm:text-[10px] text-white/30">LCP</p>
+              <p className="mt-0.5 text-base sm:text-lg font-black text-red-400">{data.before.lcp}</p>
             </div>
-            <div className="rounded-lg bg-red-500/[0.06] px-3 py-2 text-center">
-              <p className="text-[10px] text-white/30">Errors</p>
-              <p className="mt-0.5 text-lg font-black text-red-400">{data.before.errors}</p>
+            <div className="rounded-lg bg-red-500/[0.06] px-2 py-2 text-center sm:px-3">
+              <p className="text-[9px] sm:text-[10px] text-white/30">Errors</p>
+              <p className="mt-0.5 text-base sm:text-lg font-black text-red-400">{data.before.errors}</p>
             </div>
           </div>
-          <div className="mt-3 relative" style={{ pointerEvents: 'none' }}>
-            <iframe
-              src={`/api/preview?url=${encodeURIComponent(data.before.url)}&_cb=${Date.now()}`}
-              sandbox="allow-same-origin allow-scripts"
-              style={{ pointerEvents: 'none', width: '100%', height: '200px', border: 'none', borderRadius: '8px' }}
-              title="Broken preview"
-            />
+          {/* Before screenshot from agent */}
+          <div className="mt-3 overflow-hidden rounded-lg border border-white/[0.06] bg-[#0A0A0A]">
+            {data.beforeScreenshot ? (
+              <img
+                src={data.beforeScreenshot}
+                alt="Before fix"
+                className="w-full object-contain"
+                style={{ maxHeight: '50vw' }}
+              />
+            ) : data.scanId ? (
+              <img
+                src={`/api/restore/screenshots/${data.scanId}/01-homepage.jpg`}
+                alt="Before fix"
+                className="w-full object-contain"
+                style={{ maxHeight: '50vw' }}
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+              />
+            ) : (
+              <div className="flex items-center justify-center py-8">
+                <Camera size={20} className="text-white/10" />
+              </div>
+            )}
           </div>
         </div>
       ) : (
-        <div className="px-5 py-4">
+        <div className="px-3 py-3 sm:px-5 sm:py-4">
           <div className="mb-3 flex items-center gap-2">
-            <CheckCircle2 size={13} className="text-[#D6FF00]" />
-            <span className="text-[10px] font-black uppercase tracking-widest text-[#D6FF00]">RESTORED</span>
+            <CheckCircle2 size={12} className="text-[#D6FF00]" />
+            <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-[#D6FF00]">RESTORED</span>
           </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div className="rounded-lg bg-[#D6FF00]/[0.06] px-3 py-2 text-center">
-              <p className="text-[10px] text-white/30">Status</p>
-              <p className="mt-0.5 text-lg font-black text-[#D6FF00]">{data.after.status}</p>
+          <div className="grid grid-cols-3 gap-2 sm:gap-3">
+            <div className="rounded-lg bg-[#D6FF00]/[0.06] px-2 py-2 text-center sm:px-3">
+              <p className="text-[9px] sm:text-[10px] text-white/30">Status</p>
+              <p className="mt-0.5 text-base sm:text-lg font-black text-[#D6FF00]">{data.after.status}</p>
             </div>
-            <div className="rounded-lg bg-[#D6FF00]/[0.06] px-3 py-2 text-center">
-              <p className="text-[10px] text-white/30">LCP</p>
-              <p className="mt-0.5 text-lg font-black text-[#D6FF00]">{data.after.lcp}</p>
+            <div className="rounded-lg bg-[#D6FF00]/[0.06] px-2 py-2 text-center sm:px-3">
+              <p className="text-[9px] sm:text-[10px] text-white/30">LCP</p>
+              <p className="mt-0.5 text-base sm:text-lg font-black text-[#D6FF00]">{data.after.lcp}</p>
             </div>
-            <div className="rounded-lg bg-[#D6FF00]/[0.06] px-3 py-2 text-center">
-              <p className="text-[10px] text-white/30">Errors</p>
-              <p className="mt-0.5 text-lg font-black text-[#D6FF00]">{data.after.errors}</p>
+            <div className="rounded-lg bg-[#D6FF00]/[0.06] px-2 py-2 text-center sm:px-3">
+              <p className="text-[9px] sm:text-[10px] text-white/30">Errors</p>
+              <p className="mt-0.5 text-base sm:text-lg font-black text-[#D6FF00]">{data.after.errors}</p>
             </div>
           </div>
-          <div className="mt-3 relative" style={{ pointerEvents: 'none' }}>
-            <iframe
-              src={data.after.previewUrl || `/api/preview-fixed?scanId=${data.scanId}`}
-              sandbox="allow-same-origin allow-scripts"
-              style={{ pointerEvents: 'none', width: '100%', height: '200px', border: 'none', borderRadius: '8px' }}
-              title="Restored preview"
-            />
+          {/* After screenshot or fixed preview iframe */}
+          <div className="mt-3 overflow-hidden rounded-lg border border-white/[0.06] bg-[#0A0A0A]">
+            {data.afterScreenshot ? (
+              <img
+                src={data.afterScreenshot}
+                alt="After fix"
+                className="w-full object-contain"
+                style={{ maxHeight: '50vw' }}
+              />
+            ) : data.scanId ? (
+              <img
+                src={`/api/restore/screenshots/${data.scanId}/fixed-homepage.jpg`}
+                alt="After fix"
+                className="w-full object-contain"
+                style={{ maxHeight: '50vw' }}
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+              />
+            ) : data.after.previewUrl ? (
+              <iframe
+                src={data.after.previewUrl}
+                sandbox="allow-same-origin allow-scripts"
+                className="w-full border-none"
+                style={{ height: 200, border: 'none' }}
+                title="Restored preview"
+              />
+            ) : (
+              <div className="flex items-center justify-center py-8">
+                <Camera size={20} className="text-white/10" />
+              </div>
+            )}
           </div>
         </div>
       )}
 
       {/* Metrics Bar */}
-      <div className="border-t border-white/[0.04] px-5 py-3">
+      <div className="border-t border-white/[0.04] px-3 py-2.5 sm:px-5 sm:py-3">
         <div className="space-y-1.5">
           {[
             { label: 'Status', before: `${data.before.status}`, after: `${data.after.status}` },
             { label: 'LCP', before: data.before.lcp, after: data.after.lcp },
             { label: 'Errors', before: String(data.before.errors), after: String(data.after.errors) },
           ].map((m, i) => (
-            <div key={i} className="flex items-center justify-between text-[11px]">
+            <div key={i} className="flex items-center justify-between text-[10px] sm:text-[11px]">
               <span className="font-semibold text-white/30">{m.label}</span>
               <div className="flex items-center gap-2">
                 <span className="font-bold text-red-400/60 line-through">{m.before}</span>

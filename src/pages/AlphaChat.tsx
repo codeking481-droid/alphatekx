@@ -70,6 +70,25 @@ function extractUrl(text: string): string | null {
   return match ? match[0] : null
 }
 
+function isWebsiteRestoreIntent(text: string, url: string | null): boolean {
+  if (!url) return false
+  const lower = text.toLowerCase()
+  const urlLower = url.toLowerCase()
+  const urlIdx = lower.indexOf(urlLower)
+
+  // URL must be prominent (near the start, or message is short)
+  const isUrlProminent = urlIdx !== -1 && (urlIdx < lower.length * 0.5 || lower.length < 80)
+  if (!isUrlProminent) return false
+
+  // Fix/scan/restore intent keywords
+  const hasIntent = /\b(fix|scan|restore|diagnose|audit|repair|heal|resurrect|debug|check|analyze|inspect)\b/i.test(lower)
+
+  // Problem description keywords
+  const hasProblem = /\b(broken|down|error|issue|problem|not.{0,8}work|fail|crash|bug|404|500|dead|missing|blank|white.?screen|not.?load|not.?show)\b/i.test(lower)
+
+  return hasIntent || hasProblem
+}
+
 function uid() {
   return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`
 }
@@ -146,9 +165,9 @@ function ChatContent() {
     setInput('')
     setIsGenerating(true)
 
-    // Detect URL in message for website resurrector
+    // Detect URL in message — only trigger restore when user explicitly asks to fix/scan a website
     const detectedUrl = extractUrl(sendText)
-    const isWebsiteRestore = detectedUrl && /scan|restore|fix|broken|down|no show|not work|error|resurrect/i.test(sendText + ' ' + (detectedUrl || ''))
+    const isWebsiteRestore = isWebsiteRestoreIntent(sendText, detectedUrl)
 
     // Upload file if attached
     let fileUrl: string | null = null
@@ -711,24 +730,16 @@ function ChatContent() {
                           />
                         )}
 
-                        {/* Website Resurrector Cards — stacked vertically below chat */}
+                        {/* Website Resurrector Cards — sequential ordered flow */}
                         {msg.restoreCards && (
                           <div className="mt-3 space-y-3">
-                            {/* Card 1+2: Live Preview + Scanning side-by-side during scan phase */}
-                            {msg.restoreCards.preview && msg.restoreCards.scanning && msg.restoreCards.scanning.status === 'start' ? (
-                              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                                <LivePreviewCard url={msg.restoreCards.preview.url} status={msg.restoreCards.preview.status} compact screenshots={msg.restoreCards.screenshots} scanId={msg.restoreCards.scanId} />
-                                <ScanningCard logs={msg.restoreCards.scanning.logs} status={msg.restoreCards.scanning.status} />
-                              </div>
-                            ) : (
-                              <>
-                                {msg.restoreCards.preview && (
-                                  <LivePreviewCard url={msg.restoreCards.preview.url} status={msg.restoreCards.preview.status} screenshots={msg.restoreCards.screenshots} scanId={msg.restoreCards.scanId} />
-                                )}
-                                {msg.restoreCards.scanning && (
-                                  <ScanningCard logs={msg.restoreCards.scanning.logs} status={msg.restoreCards.scanning.status} />
-                                )}
-                              </>
+                            {/* Card 1: Live Preview — always first, full width */}
+                            {msg.restoreCards.preview && (
+                              <LivePreviewCard url={msg.restoreCards.preview.url} status={msg.restoreCards.preview.status} screenshots={msg.restoreCards.screenshots} scanId={msg.restoreCards.scanId} />
+                            )}
+                            {/* Card 2: Scanning — below preview */}
+                            {msg.restoreCards.scanning && (
+                              <ScanningCard logs={msg.restoreCards.scanning.logs} status={msg.restoreCards.scanning.status} />
                             )}
                             {/* Card 3: Errors Found */}
                             {msg.restoreCards.errors && (
@@ -740,7 +751,7 @@ function ChatContent() {
                             )}
                             {/* Card 5: Fixing */}
                             {msg.restoreCards.fixing && (
-                              <FixingCard files={msg.restoreCards.fixing.files} diffs={msg.restoreCards.fixing.diffs} status={msg.restoreCards.fixing.status} summary={msg.restoreCards.fixing.summary} previewUrl={msg.restoreCards.preview?.url} />
+                              <FixingCard files={msg.restoreCards.fixing.files} diffs={msg.restoreCards.fixing.diffs} status={msg.restoreCards.fixing.status} summary={msg.restoreCards.fixing.summary} />
                             )}
                             {/* Card 6: Gold Proof */}
                             {msg.restoreCards.goldproof && (
