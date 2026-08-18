@@ -1,21 +1,22 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeft, Check, CreditCard, Crown, Zap, ExternalLink } from 'lucide-react'
+import { ArrowLeft, Check, CreditCard, Crown, Zap, Loader2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { supabase } from '../lib/supabase'
 
-type Plan = { id: string; name: string; price: number; credits: number; features: string[]; recommended?: boolean }
+type Plan = { id: string; packId: string; name: string; price: number; credits: number; features: string[]; recommended?: boolean }
 
 const PLANS: Plan[] = [
-  { id: 'free', name: 'Starter', price: 0, credits: 10, features: ['10 repairs/month', 'Website Resurrector', 'Basic chat support'] },
-  { id: 'pro', name: 'Pro', price: 29, credits: 100, features: ['100 repairs/month', 'All Resurrectors', 'Priority support', 'Video restoration'], recommended: true },
-  { id: 'enterprise', name: 'Enterprise', price: 99, credits: 500, features: ['500 repairs/month', 'All Resurrectors', 'Dedicated support', 'Custom integrations', 'SLA guarantee'] },
+  { id: 'video_19', packId: 'video_19', name: 'Healer Starter', price: 19, credits: 400, features: ['400 credits/month', '10 App Scans + Reports', '3 Video Restorations', 'Up to 10 automations'] },
+  { id: 'video_49', packId: 'video_49', name: 'Healer Pro', price: 49, credits: 800, features: ['800 credits/month', '50 Full App Restorations', '25 Video Restorations', '7-day scheduler', 'Up to 30 automations'], recommended: true },
+  { id: 'video_99', packId: 'video_99', name: 'Healer Empire', price: 99, credits: 1200, features: ['1,200 credits/month', 'Unlimited Restorations', 'All video styles', 'Unlimited automations', 'API access + White-label'], recommended: false },
 ]
 
 export default function Billing() {
   const { user, profile } = useAuth()
   const [currentPlan, setCurrentPlan] = useState<string>(profile?.plan || 'free')
   const [credits, setCredits] = useState<number>(profile?.credits ?? 10)
+  const [loadingPlan, setLoadingPlan] = useState<string | null>(null)
 
   useEffect(() => {
     if (profile) {
@@ -24,28 +25,57 @@ export default function Billing() {
     }
   }, [profile])
 
-  const handleUpgrade = async (planId: string) => {
+  const handleUpgrade = async (plan: Plan) => {
     if (!user) return
+    setLoadingPlan(plan.id)
     try {
+      let email = user.email || ''
+      if (!email) {
+        const { data: { session } } = await supabase?.auth.getSession() ?? { data: { session: null } }
+        email = session?.user?.email || ''
+      }
+      if (!email) {
+        const prompted = window.prompt('Enter your email for Paystack checkout:')
+        if (!prompted?.trim()) { setLoadingPlan(null); return }
+        email = prompted.trim()
+      }
+
       const { data: { session } } = await supabase?.auth.getSession() ?? { data: { session: null } }
       const token = session?.access_token
-      const res = await fetch('/api/alpha/billing/upgrade', {
+
+      const res = await fetch('/api/paystack/initialize', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ plan: planId }),
+        body: JSON.stringify({
+          email,
+          type: 'subscription',
+          planId: plan.packId,
+          callback_url: 'https://alphatekx.name.ng/dashboard',
+        }),
       })
       const data = await res.json().catch(() => ({}))
-      if (res.ok && data.checkoutUrl) {
-        window.open(data.checkoutUrl, '_blank')
-      } else if (res.ok) {
-        setCurrentPlan(planId)
-        const plan = PLANS.find(p => p.id === planId)
-        if (plan) setCredits(plan.credits)
+      if (!res.ok) throw new Error(data.error || 'Payment initialization failed')
+
+      const authUrl = String(data.authorization_url || '')
+      if (authUrl) {
+        localStorage.setItem('alphatekx:pending-payment', JSON.stringify({
+          reference: data.reference,
+          email,
+          planId: plan.packId,
+          credits: plan.credits,
+          amountKobo: plan.price * 100,
+          createdAt: Date.now(),
+        }))
+        window.location.assign(authUrl)
       }
-    } catch {}
+    } catch (err: any) {
+      alert(err?.message || 'Payment failed. Please try again.')
+    } finally {
+      setLoadingPlan(null)
+    }
   }
 
   return (
@@ -66,6 +96,7 @@ export default function Billing() {
       <div className="grid gap-6 sm:grid-cols-3">
         {PLANS.map((plan) => {
           const isActive = currentPlan === plan.id
+          const isLoading = loadingPlan === plan.id
           return (
             <div
               key={plan.id}
@@ -79,14 +110,14 @@ export default function Billing() {
             >
               {plan.recommended && (
                 <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-[#FFD700]/20 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-[#FFD700]">
-                  Recommended
+                  Most Popular
                 </div>
               )}
 
               <div className="mb-4 flex items-center gap-2">
-                {plan.id === 'enterprise' ? (
+                {plan.id === 'video_99' ? (
                   <Crown size={18} className="text-[#FFD700]" />
-                ) : plan.id === 'pro' ? (
+                ) : plan.id === 'video_49' ? (
                   <Zap size={18} className="text-[#D6FF00]" />
                 ) : (
                   <CreditCard size={18} className="text-white/30" />
@@ -99,7 +130,7 @@ export default function Billing() {
                 <span className="text-sm text-white/30">/month</span>
               </div>
 
-              <p className="mb-4 text-xs text-white/40">{plan.credits} credits/month</p>
+              <p className="mb-4 text-xs text-white/40">{plan.credits.toLocaleString()} credits/month</p>
 
               <ul className="mb-6 flex-1 space-y-2">
                 {plan.features.map((feature, i) => (
@@ -116,14 +147,19 @@ export default function Billing() {
                 </div>
               ) : (
                 <button
-                  onClick={() => void handleUpgrade(plan.id)}
-                  className={`rounded-xl py-2.5 text-[12px] font-bold transition ${
+                  onClick={() => void handleUpgrade(plan)}
+                  disabled={isLoading}
+                  className={`rounded-xl py-2.5 text-[12px] font-bold transition disabled:opacity-50 ${
                     plan.recommended
                       ? 'bg-[#D6FF00] text-black hover:bg-[#C2E600]'
                       : 'border border-white/[0.08] bg-white/[0.03] text-white/60 hover:bg-white/[0.06]'
                   }`}
                 >
-                  Upgrade to {plan.name}
+                  {isLoading ? (
+                    <span className="inline-flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Redirecting...</span>
+                  ) : (
+                    `Upgrade to ${plan.name}`
+                  )}
                 </button>
               )}
             </div>

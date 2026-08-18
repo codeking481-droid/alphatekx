@@ -4768,15 +4768,30 @@ export async function verifyPaystack(req, res) {
       return json(res, 400, { error: 'Invalid currency. NGN required.', reference })
     }
 
-    // Map amount to credits (kobo amounts)
+    // Map amount to credits (kobo amounts) — supports both USD and NGN packs
     const amountKobo = Number(transaction.amount) || 0
     let creditsToAdd = 0
     
-    if (amountKobo === 2_850_000) creditsToAdd = 3       // Starter: ₦28,500 → 3 credits
-    else if (amountKobo === 7_350_000) creditsToAdd = 15  // Creator: ₦73,500 → 15 credits
-    else if (amountKobo === 14_850_000) creditsToAdd = 50 // Agency: ₦148,500 → 50 credits
+    // USD subscription packs ($19/$49/$99) — credits come from plan metadata
+    // The new billing.mjs handles these via the unified verify flow.
+    // Legacy NGN packs are kept for backwards compatibility:
+    if (amountKobo === 2_850_000) creditsToAdd = 3       // Legacy Starter: ₦28,500 → 3 credits
+    else if (amountKobo === 7_350_000) creditsToAdd = 15  // Legacy Creator: ₦73,500 → 15 credits
+    else if (amountKobo === 14_850_000) creditsToAdd = 50 // Legacy Agency: ₦148,500 → 50 credits
     else {
-      console.warn(`[Paystack] Unknown amount: ${amountKobo} kobo for reference ${reference}`)
+      // For new USD packs, fall through to the billing.mjs unified verify flow
+      console.log(`[Paystack] Legacy verify: amount ${amountKobo} kobo not in legacy packs, attempting unified verify`)
+      try {
+        const config = supabaseConfig()
+        const user = await currentOrLocalUser(req, config.url, config.anon)
+        if (user) {
+          const result = await billing.verifyPayment('paystack', reference, config)
+          if (result.ok) {
+            const newBalance = await getUserCreditBalance(userEmail)
+            return json(res, 200, { verified: true, credits: newBalance, amount: amountKobo, reference })
+          }
+        }
+      } catch {}
       return json(res, 400, { error: 'Payment amount does not match any credit pack', reference })
     }
 

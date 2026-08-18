@@ -352,6 +352,9 @@ async function runPipeline(targetUrl, sendCard, res) {
         // ===== EMIT: FILE MODIFIED =====
         emitFileModified(scanId, file.filename, file.oldContent + ' → ' + file.newContent, sseWriter)
 
+        // Emit preview refresh so frontend reloads the live iframe
+        sendCard({ type: 'preview_refresh', url: targetUrl, filename: file.filename })
+
         // Write fixed file
         const fixedPath = path.join(restoredDir, file.filename)
         try {

@@ -81,7 +81,9 @@ export const PLANS: Record<PlanId, Plan> = {
 }
 
 export const CREDIT_PACKS: CreditPack[] = [
-  // Legacy micro-packs have been retired. Only test and promotional purchases remain.
+  { id: 'video_19', label: 'Healer Starter — $19', credits: 400, amountKobo: 1900, currency: 'USD', description: '10 scans, 3 video restorations, 400 credits/month' },
+  { id: 'video_49', label: 'Healer Pro — $49', credits: 800, amountKobo: 4900, currency: 'USD', description: '50 full restorations, 25 videos, 800 credits/month' },
+  { id: 'video_99', label: 'Healer Empire — $99', credits: 1200, amountKobo: 9900, currency: 'USD', description: 'Unlimited restorations, all styles, 1,200 credits/month' },
   { id: 'test_100', label: 'Test purchase', credits: 100, amountKobo: 10000, currency: 'NGN', description: 'Test payment for ₦100' },
 ]
 

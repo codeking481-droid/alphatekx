@@ -74,11 +74,12 @@ export const PLANS = {
 }
 
 export const CREDIT_PACKS = [
+  // Subscription plans (primary revenue)
+  { id: 'video_19', credits: 400, amountKobo: 1900, currency: 'USD', label: '$19 Healer Starter', description: '10 scans, 3 video restorations, 400 credits/month', type: 'subscription', planId: 'video_19' },
+  { id: 'video_49', credits: 800, amountKobo: 4900, currency: 'USD', label: '$49 Healer Pro', description: '50 full restorations, 25 videos, 800 credits/month', type: 'subscription', planId: 'video_49' },
+  { id: 'video_99', credits: 1200, amountKobo: 9900, currency: 'USD', label: '$99 Healer Empire', description: 'Unlimited restorations, all styles, 1,200 credits/month', type: 'subscription', planId: 'video_99' },
+  // Test pack (development only)
   { id: 'test_100', credits: 100, amountKobo: 10000, currency: 'NGN', label: 'Test purchase', description: 'Test payment for ₦100' },
-  // Video monthly subscription packs with credit grants
-  { id: 'video_19', credits: 3, amountKobo: 1900, currency: 'USD', label: '$19 Video Monthly', description: '10 videos / month, up to 5 mins each, 3 credits', type: 'subscription', planId: 'video_19' },
-  { id: 'video_49', credits: 15, amountKobo: 4900, currency: 'USD', label: '$49 Video Monthly', description: '30 videos / month, up to 8 mins each + scheduler, 15 credits', type: 'subscription', planId: 'video_49' },
-  { id: 'video_99', credits: 50, amountKobo: 9900, currency: 'USD', label: '$99 Video Monthly', description: 'Unlimited videos, up to 12 mins + Vault, 50 credits', type: 'subscription', planId: 'video_99' },
 ]
 
 // Video-specific plan entries — merged into the full plan definitions above

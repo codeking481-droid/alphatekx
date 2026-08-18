@@ -40,7 +40,7 @@ type RestoreCardState = {
   scanning?: { logs: ScanLog[]; status: 'start' | 'done' | 'error' }
   errors?: { errors: ScanError[]; severity: string; status: 'start' | 'done' }
   backup?: { status: 'start' | 'done'; scanId?: string; version?: string }
-  fixing?: { files: string[]; diffs: DiffEntry[]; status: 'start' | 'done'; summary?: string }
+  fixing?: { files: string[]; diffs: DiffEntry[]; status: 'start' | 'done'; summary?: string; _refreshKey?: number }
   goldproof?: ProofData | null
   action?: { scanId: string; restoredZipUrl?: string | null; rollbackUrl?: string; redeploySteps?: string[]; metrics?: any }
   github?: boolean
@@ -454,7 +454,15 @@ function ChatContent() {
               ...cards.fixing,
               diffs: [...(cards.fixing.diffs || []), { filename: event.filename, old: event.old, newContent: event.newContent }],
               files: [...new Set([...(cards.fixing.files || []), event.filename])],
+              _refreshKey: Date.now(),
             }
+          }
+          break
+        }
+        case 'preview_refresh': {
+          // Trigger live preview iframe refresh in FixingCard
+          if (cards.fixing) {
+            cards.fixing = { ...cards.fixing, _refreshKey: Date.now() }
           }
           break
         }
@@ -715,7 +723,7 @@ function ChatContent() {
                             )}
                             {/* Card 5: Fixing */}
                             {msg.restoreCards.fixing && (
-                              <FixingCard files={msg.restoreCards.fixing.files} diffs={msg.restoreCards.fixing.diffs} status={msg.restoreCards.fixing.status} summary={msg.restoreCards.fixing.summary} />
+                              <FixingCard files={msg.restoreCards.fixing.files} diffs={msg.restoreCards.fixing.diffs} status={msg.restoreCards.fixing.status} summary={msg.restoreCards.fixing.summary} previewUrl={msg.restoreCards.preview?.url} />
                             )}
                             {/* Card 6: Gold Proof */}
                             {msg.restoreCards.goldproof && (
