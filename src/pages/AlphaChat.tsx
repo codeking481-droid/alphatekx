@@ -7,6 +7,13 @@ import AnimatedPlaceholder from '../components/alpha/AnimatedPlaceholder'
 import ChainOfThought, { type ThoughtStep } from '../components/alpha/ChainOfThought'
 import GoldCard, { type GoldCardProps } from '../components/alpha/GoldCard'
 import HamburgerSidebar from '../components/alpha/HamburgerSidebar'
+import LivePreviewCard from '../components/alpha/restore/LivePreviewCard'
+import ScanningCard, { type ScanLog } from '../components/alpha/restore/ScanningCard'
+import ErrorsCard, { type ScanError } from '../components/alpha/restore/ErrorsCard'
+import BackupCard from '../components/alpha/restore/BackupCard'
+import FixingCard, { type DiffEntry } from '../components/alpha/restore/FixingCard'
+import GoldProofCard, { type ProofData } from '../components/alpha/restore/GoldProofCard'
+import ActionCard from '../components/alpha/restore/ActionCard'
 import {
   createChatThread,
   saveChatThread,
@@ -19,11 +26,28 @@ import {
 import { useAuth } from '../lib/auth'
 import { supabase } from '../lib/supabase'
 
+type RestoreCardState = {
+  preview?: { url: string; status: 'loading' | 'loaded' | 'error' }
+  scanning?: { logs: ScanLog[]; status: 'start' | 'done' | 'error' }
+  errors?: { errors: ScanError[]; severity: string; status: 'start' | 'done' }
+  backup?: { status: 'start' | 'done'; scanId?: string; version?: string }
+  fixing?: { files: string[]; diffs: DiffEntry[]; status: 'start' | 'done'; summary?: string }
+  goldproof?: ProofData | null
+  action?: { scanId: string; restoredZipUrl?: string | null; rollbackUrl?: string; redeploySteps?: string[]; metrics?: any }
+  isRunning?: boolean
+}
+
 type AlphaMessage = GeneralChatMessage & {
   thoughtSteps?: ThoughtStep[]
   restoreResult?: any
   videoResult?: { videoUrl: string; editId: string; plan: any; elapsed: string }
+  restoreCards?: RestoreCardState
   isStreaming?: boolean
+}
+
+function extractUrl(text: string): string | null {
+  const match = text.match(/https?:\/\/[^\s"'<>]+/)
+  return match ? match[0] : null
 }
 
 function uid() {
@@ -102,6 +126,10 @@ function ChatContent() {
     setInput('')
     setIsGenerating(true)
 
+    // Detect URL in message for website resurrector
+    const detectedUrl = extractUrl(sendText)
+    const isWebsiteRestore = detectedUrl && /scan|restore|fix|broken|down|no show|not work|error|resurrect/i.test(sendText + ' ' + (detectedUrl || ''))
+
     // Upload file if attached
     let fileUrl: string | null = null
     let fileType: string | null = null
@@ -141,12 +169,84 @@ function ChatContent() {
       content: '',
       createdAt: new Date().toISOString(),
       thoughtSteps: [],
+      restoreCards: isWebsiteRestore ? { preview: { url: detectedUrl!, status: 'loading' }, isRunning: true } : undefined,
       isStreaming: true,
     }
 
     setMessages((prev) => [...prev, userMsg, aiMsg])
     scrollToBottom()
 
+    // If website restore detected, start SSE stream
+    if (isWebsiteRestore && detectedUrl) {
+      try {
+        abortRef.current = new AbortController()
+        const streamUrl = `/api/restore/stream?url=${encodeURIComponent(detectedUrl)}`
+        const res = await fetch(streamUrl, { signal: abortRef.current.signal })
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+
+        const reader = res.body?.getReader()
+        if (!reader) throw new Error('No response body')
+
+        const decoder = new TextDecoder()
+        let buffer = ''
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || ''
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const event = JSON.parse(line.slice(6))
+                handleRestoreEvent(event, detectedUrl)
+              } catch {}
+            }
+          }
+        }
+
+        // Mark done
+        updateLastMessage((prev) => ({
+          ...prev,
+          isStreaming: false,
+          restoreCards: { ...prev.restoreCards, isRunning: false },
+        }))
+
+        // Save final state
+        setMessages((prev) => {
+          const last = prev[prev.length - 1]
+          if (last && thread) {
+            const updatedThread: ChatThread = {
+              ...thread,
+              messages: [...thread.messages, userMsg, { ...last, isStreaming: undefined, restoreCards: undefined }],
+              updatedAt: new Date().toISOString(),
+            }
+            saveChatThread(updatedThread)
+            setActiveThread(updatedThread)
+          }
+          return prev
+        })
+      } catch (err: any) {
+        if (err.name !== 'AbortError') {
+          updateLastMessage((prev) => ({
+            ...prev,
+            content: prev.content || `Error: ${err.message}`,
+            isStreaming: false,
+            restoreCards: { ...prev.restoreCards, isRunning: false },
+          }))
+        }
+      } finally {
+        setIsGenerating(false)
+        abortRef.current = null
+      }
+      return
+    }
+
+    // Normal (non-URL) path — existing repair pipeline
     try {
       abortRef.current = new AbortController()
       let authToken = ''
@@ -276,6 +376,64 @@ function ChatContent() {
       abortRef.current = null
     }
   }, [input, isGenerating, activeThread, messages, scrollToBottom, updateLastMessage, attachedFile])
+
+  const handleRestoreEvent = useCallback((event: any, url: string) => {
+    updateLastMessage((prev) => {
+      const cards = { ...(prev.restoreCards || {}) }
+
+      switch (event.type) {
+        case 'card': {
+          const cardName = event.card as keyof RestoreCardState
+          if (cardName === 'preview') break
+          if (cardName === 'scanning') {
+            cards.scanning = { logs: cards.scanning?.logs || [], status: event.status }
+          } else if (cardName === 'errors') {
+            cards.errors = { errors: event.data?.errors || [], severity: event.data?.severity || 'unknown', status: event.status }
+          } else if (cardName === 'backup') {
+            cards.backup = { status: event.status, scanId: event.data?.scanId, version: event.data?.version }
+          } else if (cardName === 'fixing') {
+            cards.fixing = { files: event.data?.files || cards.fixing?.files || [], diffs: cards.fixing?.diffs || [], status: event.status, summary: event.data?.summary }
+          } else if (cardName === 'goldproof') {
+            cards.goldproof = event.data
+          } else if (cardName === 'action') {
+            cards.action = event.data
+          }
+          break
+        }
+        case 'log': {
+          const cardName = event.card as keyof RestoreCardState
+          if (cardName === 'scanning' && cards.scanning) {
+            cards.scanning = { ...cards.scanning, logs: [...cards.scanning.logs, { text: event.text }] }
+          } else if (cardName === 'errors' && cards.errors) {
+            // errors logs are informational, no state change needed
+          }
+          break
+        }
+        case 'diff': {
+          if (cards.fixing) {
+            cards.fixing = {
+              ...cards.fixing,
+              diffs: [...(cards.fixing.diffs || []), { filename: event.filename, old: event.old, newContent: event.newContent }],
+              files: [...new Set([...(cards.fixing.files || []), event.filename])],
+            }
+          }
+          break
+        }
+        case 'done': {
+          cards.isRunning = false
+          cards.preview = { url, status: 'loaded' }
+          break
+        }
+        case 'error': {
+          cards.isRunning = false
+          break
+        }
+      }
+
+      return { ...prev, restoreCards: cards }
+    })
+    scrollToBottom()
+  }, [updateLastMessage, scrollToBottom])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -474,7 +632,7 @@ function ChatContent() {
                           </div>
                         )}
 
-                        {/* Restore Result */}
+                        {/* Restore Result (legacy) */}
                         {msg.restoreResult && (
                           <GoldCard
                             title={msg.restoreResult.title || 'Restoration'}
@@ -495,6 +653,40 @@ function ChatContent() {
                             })) || []}
                             toolType={msg.restoreResult.url ? 'website' : 'website'}
                           />
+                        )}
+
+                        {/* Website Resurrector Cards — stacked vertically below chat */}
+                        {msg.restoreCards && (
+                          <div className="mt-3 space-y-3">
+                            {/* Card 1: Live Preview */}
+                            {msg.restoreCards.preview && (
+                              <LivePreviewCard url={msg.restoreCards.preview.url} status={msg.restoreCards.preview.status} />
+                            )}
+                            {/* Card 2: Scanning Log */}
+                            {msg.restoreCards.scanning && (
+                              <ScanningCard logs={msg.restoreCards.scanning.logs} status={msg.restoreCards.scanning.status} />
+                            )}
+                            {/* Card 3: Errors Found */}
+                            {msg.restoreCards.errors && (
+                              <ErrorsCard errors={msg.restoreCards.errors.errors} severity={msg.restoreCards.errors.severity} status={msg.restoreCards.errors.status} />
+                            )}
+                            {/* Card 4: Backup */}
+                            {msg.restoreCards.backup && (
+                              <BackupCard status={msg.restoreCards.backup.status} scanId={msg.restoreCards.backup.scanId} version={msg.restoreCards.backup.version} />
+                            )}
+                            {/* Card 5: Fixing */}
+                            {msg.restoreCards.fixing && (
+                              <FixingCard files={msg.restoreCards.fixing.files} diffs={msg.restoreCards.fixing.diffs} status={msg.restoreCards.fixing.status} summary={msg.restoreCards.fixing.summary} />
+                            )}
+                            {/* Card 6: Gold Proof */}
+                            {msg.restoreCards.goldproof && (
+                              <GoldProofCard data={msg.restoreCards.goldproof} />
+                            )}
+                            {/* Card 7: Action */}
+                            {msg.restoreCards.action && (
+                              <ActionCard data={msg.restoreCards.action} />
+                            )}
+                          </div>
                         )}
 
                         {/* Video Result */}

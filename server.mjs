@@ -6,8 +6,10 @@ import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, 
 import { fileURLToPath } from 'node:url'
 import { schedule } from 'node-cron'
 import { chromium } from 'playwright'
+import { Groq } from 'groq-sdk'
 
 import { fallbackAlphaBuilder } from './alphaFallback.mjs'
+import { handlePreviewRoute, handleRestoreStreamRoute, handleDownloadRoute, handlePreviewFixedRoute } from './server/websiteRestoreStream.mjs'
 import { extractPlan, isPlatformPrompt } from './server/alphaPlatformBuilder.mjs'
 import { buildPreviewProject, servePreviewBuild } from './server/previewBuild.mjs'
 import { marketplaceHandler, fulfillMarketplaceOrder } from './server/marketplace.mjs'
@@ -10471,6 +10473,20 @@ const server = http.createServer(async (req, res) => {
     }
     return
 
+  }
+
+  // ===== WEBSITE RESURRECTOR: Preview, Stream, Downloads =====
+  if (req.method === 'GET' && req.url?.startsWith('/api/preview') && !req.url?.startsWith('/api/preview-fixed')) {
+    return handlePreviewRoute(req, res)
+  }
+  if (req.method === 'GET' && req.url?.startsWith('/api/restore/stream')) {
+    return handleRestoreStreamRoute(req, res)
+  }
+  if (req.method === 'GET' && req.url?.startsWith('/api/download/')) {
+    return handleDownloadRoute(req, res)
+  }
+  if (req.method === 'GET' && req.url?.startsWith('/api/preview-fixed')) {
+    return handlePreviewFixedRoute(req, res)
   }
 
   if (req.url?.startsWith('/api/')) return json(res, 404, { error: 'API route not found' })

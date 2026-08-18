@@ -22,8 +22,8 @@ export default function CreditsExhaustedModal({ open, onClose }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0A0F1E]/80 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-md rounded-2xl border border-violet-400/20 bg-[#1A1A1A] p-6 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0A0F1E]/80 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-md rounded-2xl border border-violet-400/20 bg-[#1A1A1A] p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="grid size-10 place-items-center rounded-lg bg-amber-500/20">

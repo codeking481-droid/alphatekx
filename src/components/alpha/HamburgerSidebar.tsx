@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, MessageSquare, CreditCard, Trash2, Clock } from 'lucide-react'
 
@@ -39,6 +40,7 @@ export default function HamburgerSidebar({
   const [tab, setTab] = useState<Tab>('history')
   const [threads, setThreads] = useState<ChatThread[]>([])
   const [credits] = useState(3)
+  const navigate = useNavigate()
 
   useEffect(() => {
     setThreads(getChatThreads())
@@ -170,7 +172,10 @@ export default function HamburgerSidebar({
                     <p className="mt-1 text-[11px] text-white/30">Restorations remaining</p>
                   </div>
 
-                  <button className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#D6FF00] px-4 py-3 text-[13px] font-bold text-black transition hover:bg-[#C2E600]">
+                  <button
+                    onClick={() => { onClose(); navigate('/settings?tab=billing') }}
+                    className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#D6FF00] px-4 py-3 text-[13px] font-bold text-black transition hover:bg-[#C2E600]"
+                  >
                     <CreditCard size={14} />
                     Buy More Credits
                   </button>
