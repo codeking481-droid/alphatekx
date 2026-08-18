@@ -577,7 +577,7 @@ async function editSceneClip(inputPath, outputPath, scene, jobDir, resolution = 
   // Add text overlay if present
   if (text) {
     try {
-      const fontPath = getFontPath()
+      const fontPath = getFontPath().replace(/\\/g, '/')
       const textEscaped = text.replace(/'/g, "'\\''")
       // White bold text with black outline box
       const drawText = `drawtext=fontfile='${fontPath}':text='${textEscaped}':fontsize=72:fontcolor=white:borderw=3:bordercolor=black:box=1:boxcolor=black@0.7:boxborderw=8:x=(w-text_w)/2:y=(h-text_h)/2-80:enable='between(t,0.2,${Math.max(0.5, duration - 0.5)})'`

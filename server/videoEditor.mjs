@@ -12,13 +12,23 @@ import path from 'node:path'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import ffmpegPath from 'ffmpeg-static'
-import { detectStyle, buildFFmpegFilters } from './creatorStyles.mjs'
+import { buildFFmpegFilters } from './creatorStyles.mjs'
 
 const execFileAsync = promisify(execFile)
 const TMP_DIR = join(process.cwd(), '.tmp', 'video-edits')
 
 function getFfmpegPath() {
   return ffmpegPath || 'ffmpeg'
+}
+
+async function ffprobeAsync(filePath) {
+  const ffmpeg = getFfmpegPath()
+  try {
+    const { stderr } = await execFileAsync(ffmpeg, ['-i', filePath], { timeout: 15000 })
+    return stderr
+  } catch (err) {
+    return err.stderr || ''
+  }
 }
 
 function log(phase, msg) {
@@ -188,16 +198,19 @@ Return ONLY valid JSON.`
   sendEvent({ type: 'thought_step', step: { id: 'effects', label: 'Applying effects...', icon: 'film', status: 'active' } })
 
   try {
-    const filters = buildFFmpegFilters(plan)
+    let filters = buildFFmpegFilters(plan)
 
     // MrBeast color grade: bright, vibrant, saturated (the "larger than life" look)
     const grade = plan.colorGrade || plan.name || 'custom'
     if (grade === 'mrbeast' || grade === 'viral') {
+      // Remove any existing eq/unsharp from buildFFmpegFilters to avoid double-application
+      filters = filters.filter(f => !f.startsWith('eq=') && !f.startsWith('unsharp='))
       filters.push('eq=brightness=0.06:saturation=1.5:contrast=1.2:gamma=1.1')
       filters.push('unsharp=5:5:1.5:5:5:0')
       sendEvent({ type: 'thought_step', step: { id: 'effects-grade', label: 'MrBeast Color Grade', icon: 'film', status: 'done', summary: 'Bright + saturated + vibrant' } })
     } else if (grade === 'malva' || grade === 'cinematic') {
       // Malva: heavy saturation + vignette + slight warmth
+      filters = filters.filter(f => !f.startsWith('eq=') && !f.startsWith('unsharp=') && !f.startsWith('noise='))
       filters.push('eq=saturation=1.8:contrast=1.3:brightness=0.05')
       filters.push('vignette=PI/4:mode=forward')
       filters.push('unsharp=5:5:1.0:5:5:0')
@@ -254,9 +267,16 @@ Return ONLY valid JSON.`
       const maxZoom = grade === 'mrbeast' || grade === 'viral' ? 1.12 : 1.08
       const zoomExpr = `z='min(1+${zoomRate}*on,${maxZoom})'`
       const fps = 30
+      // Get actual duration of current video (may have been shortened by silence removal)
+      let currentDuration = duration
+      try {
+        const probeInfo = await ffprobeAsync(currentPath)
+        const match = probeInfo.match(/Duration:\s*(\d+):(\d+):(\d+)\.(\d+)/)
+        if (match) currentDuration = parseInt(match[1]) * 3600 + parseInt(match[2]) * 60 + parseInt(match[3]) + parseInt(match[4]) / 100
+      } catch {}
       await execFileAsync(ffmpeg, [
         '-i', currentPath,
-        '-vf', `zoompan=${zoomExpr}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${Math.round(duration * fps)}:s=1920x1080:fps=${fps}`,
+        '-vf', `zoompan=${zoomExpr}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${Math.round(currentDuration * fps)}:s=1920x1080:fps=${fps}`,
         '-c:v', 'libx264', '-preset', 'fast', '-crf', '18',
         '-c:a', 'copy',
         '-y', kbPath,
@@ -274,11 +294,19 @@ Return ONLY valid JSON.`
 
   // ── PHASE 4.5: Zoom Punches (MrBeast pattern interrupts — digital zoom on key moments) ──
   const zoomPunches = plan.zoomPunches || []
-  if (zoomPunches.length > 0 && duration > 5) {
+  // Clamp zoom punch times to actual current video duration
+  let actualDuration = duration
+  try {
+    const probeInfo2 = await ffprobeAsync(currentPath)
+    const match2 = probeInfo2.match(/Duration:\s*(\d+):(\d+):(\d+)\.(\d+)/)
+    if (match2) actualDuration = parseInt(match2[1]) * 3600 + parseInt(match2[2]) * 60 + parseInt(match2[3]) + parseInt(match2[4]) / 100
+  } catch {}
+  const clampedPunches = zoomPunches.filter(zp => (zp.time || 0) < actualDuration - 1)
+  if (clampedPunches.length > 0 && actualDuration > 5) {
     sendEvent({ type: 'thought_step', step: { id: 'zoompunch', label: 'Adding zoom punches...', icon: 'film', status: 'active' } })
     try {
       // Build zoom punch filter: scale up at specific timestamps
-      const zoomFilters = zoomPunches.map(zp => {
+      const zoomFilters = clampedPunches.map(zp => {
         const scale = Math.min(Math.max(zp.scale || 1.3, 1.1), 1.5)
         const start = zp.time || 0
         const dur = zp.duration || 0.5
@@ -323,7 +351,7 @@ Return ONLY valid JSON.`
 
       await execFileAsync(ffmpeg, [
         '-i', currentPath,
-        '-vf', `ass=${assPath}`,
+        '-vf', `ass='${assPath.replace(/\\/g, '/').replace(/'/g, "\\'")}'`,
         '-c:v', 'libx264', '-preset', 'fast', '-crf', '18',
         '-c:a', 'copy',
         '-y', captionPath,
@@ -358,7 +386,7 @@ Return ONLY valid JSON.`
       const borderColor = plan.textShadowColor || 'black'
 
       const drawtextFilters = overlays.map(t => {
-        const escaped = t.text.replace(/'/g, "\\'").replace(/:/g, "\\:").replace(/\\/g, '\\\\')
+        const escaped = t.text.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/:/g, "\\:")
         const fadeIn = Math.min(0.15, (t.duration || 1) * 0.2)
         return `drawtext=text='${escaped}':fontsize=${fontSize}:fontcolor=${fontColor}:borderw=5:bordercolor=${borderColor}:x=(w-text_w)/2:y=(h-text_h)/2:enable='between(t,${t.time},${t.time + (t.duration || 2)})':alpha='if(between(t,${t.time},${t.time + fadeIn}),min(1,(t-${t.time})/${fadeIn}),if(between(t,${t.time + (t.duration || 2) - fadeIn},${t.time + (t.duration || 2)}),max(0,(${t.time + (t.duration || 2)}-t)/${fadeIn}),1))'`
       })

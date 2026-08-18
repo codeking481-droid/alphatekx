@@ -222,7 +222,7 @@ function ChatContent() {
     if (isWebsiteRestore && detectedUrl) {
       try {
         abortRef.current = new AbortController()
-        const streamUrl = `/api/restore/stream?url=${encodeURIComponent(detectedUrl)}&intent=scan&message=${encodeURIComponent(userText)}`
+        const streamUrl = `/api/restore/stream?url=${encodeURIComponent(detectedUrl)}&intent=scan&message=${encodeURIComponent(sendText)}`
         const res = await fetch(streamUrl, { signal: abortRef.current.signal })
 
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -503,12 +503,13 @@ function ChatContent() {
         }
         case 'fixprompt': {
           cards.isRunning = false
+          const summary = event.scanSummary || event
           cards.fixprompt = {
             scanId: event.scanId || '',
-            url: event.url || url,
-            errorsFound: event.errorsFound || 0,
-            severity: event.severity || 'unknown',
-            summary: event.summary || '',
+            url: summary.url || url,
+            errorsFound: summary.errorsFound || 0,
+            severity: summary.severity || 'unknown',
+            summary: summary.summary || '',
           }
           break
         }
@@ -529,6 +530,7 @@ function ChatContent() {
       const cards = { ...(prev.restoreCards || {}) }
       cards.fixprompt = undefined
       cards.fixing = { files: [], diffs: [], status: 'start' }
+      cards.isRunning = true
       return { ...prev, restoreCards: cards }
     })
     scrollToBottom()
@@ -562,10 +564,15 @@ function ChatContent() {
       }
     } catch (err: any) {
       if (err.name !== 'AbortError') {
-        updateLastMessage((prev) => ({
-          ...prev,
-          content: prev.content || `Fix failed: ${err.message}`,
-        }))
+        updateLastMessage((prev) => {
+          const cards = { ...(prev.restoreCards || {}) }
+          cards.isRunning = false
+          return {
+            ...prev,
+            content: prev.content || `Fix failed: ${err.message}`,
+            restoreCards: cards,
+          }
+        })
       }
     } finally {
       setIsGenerating(false)

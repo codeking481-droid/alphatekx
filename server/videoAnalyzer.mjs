@@ -52,6 +52,10 @@ export async function analyzeVideo(videoPath, opts = {}) {
   try {
     result.metadata = await extractMetadata(videoPath)
     result.duration = result.metadata.duration || 0
+    result.resolution = result.metadata.width && result.metadata.height ? `${result.metadata.width}x${result.metadata.height}` : 'unknown'
+    result.format = result.metadata.format || 'unknown'
+    result.fps = result.metadata.fps || 0
+    result.fileSize = result.metadata.size || 0
   } catch (err) {
     result.errors.push(`Metadata: ${err.message}`)
   }
@@ -162,7 +166,7 @@ async function detectScenes(videoPath, workDir) {
   const sceneFile = join(workDir, 'scenes.txt')
 
   try {
-    const { stdout } = await execFileAsync(ffmpeg, [
+    const { stderr } = await execFileAsync(ffmpeg, [
       '-i', videoPath,
       '-vf', 'select=gt(scene,0.3),showinfo',
       '-vsync', 'vfr',
@@ -170,13 +174,14 @@ async function detectScenes(videoPath, workDir) {
     ], { timeout: 120000 })
 
     const scenes = []
-    const regex = /pts_time:(\d+\.?\d*)/
-    const matches = stdout.match(regex) || []
+    const regex = /pts_time:(\d+\.?\d*)/g
+    const matches = [...stderr.matchAll(regex)]
 
     for (let i = 0; i < matches.length; i++) {
-      const time = parseFloat(matches[i])
+      const time = parseFloat(matches[i][1])
+      if (isNaN(time)) continue
       scenes.push({
-        start: i === 0 ? 0 : parseFloat(matches[i - 1]),
+        start: i === 0 ? 0 : parseFloat(matches[i - 1][1]),
         end: time,
         type: 'scene',
       })

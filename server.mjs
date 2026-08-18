@@ -8648,7 +8648,9 @@ const server = http.createServer(async (req, res) => {
 
       const llmCall = async (messages) => {
         const result = await callLLMForRole('reasoning', messages[0]?.content || '', messages.slice(1).map(m => m.content).join('\n\n'), { jsonMode: true, maxTokens: 2000 })
-        const raw = String(result?.result || '{}')
+        const parsed = result?.result
+        if (typeof parsed === 'object' && parsed !== null) return parsed
+        const raw = String(parsed || '{}')
         try { return JSON.parse(raw) } catch { return { content: raw } }
       }
 

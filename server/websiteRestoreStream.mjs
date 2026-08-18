@@ -112,7 +112,7 @@ export function handlePreviewRoute(req, res) {
     res.end(html)
   }).catch((fetchErr) => {
     clearTimeout(timer)
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' })
+    res.writeHead(502, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache', 'Access-Control-Allow-Origin': '*' })
     res.end(`<html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="background:#0A0A0A;color:#fff;font-family:monospace;padding:40px;text-align:center"><h2>Preview Unavailable</h2><p style="color:#ff6b6b">${fetchErr.name === 'AbortError' ? 'Connection timed out (20s)' : fetchErr.message}</p><p style="color:#666">URL: ${targetUrl}</p></body></html>`)
   })
 }
@@ -656,7 +656,7 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
 
   // PHASE A: Deterministic fixes (always work, no LLM needed)
   sendCard({ type: 'log', card: 'fixing', text: `> Applying deterministic fixes to HTML...` })
-  let fixedHtml = originalHtml
+  fixedHtml = originalHtml
 
   // Fix 1: Add viewport meta if missing
   if (!originalHtml.includes('viewport')) {
@@ -868,6 +868,7 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
   // ===== CARD 7: ACTION =====
   sendCard({ type: 'card', card: 'action', status: 'done', data: {
     scanId,
+    filesModified: fixedFiles.length,
     restoredZipUrl: fixedFiles.length > 0 ? `/api/download/restored/${scanId}` : null,
     rollbackUrl: `/api/download/rollback/${scanId}`,
     redeploySteps: [
@@ -979,19 +980,20 @@ async function runFixPipeline(scanId, sendCard, res) {
   let afterScreenshot = null
 
   try {
-    const browser = await getBrowser()
-    const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
+    await withContext(async (context) => {
+      const page = await context.newPage()
 
-    await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {})
-    await page.waitForTimeout(1500)
-    beforeScreenshot = await page.screenshot({ type: 'jpeg', quality: 75 }).catch(() => null)
+      await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {})
+      await page.waitForTimeout(1500)
+      beforeScreenshot = await page.screenshot({ type: 'jpeg', quality: 75 }).catch(() => null)
 
-    const fixedUrl = `data:text/html;base64,${Buffer.from(fixedHtml).toString('base64')}`
-    await page.goto(fixedUrl, { waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {})
-    await page.waitForTimeout(1500)
-    afterScreenshot = await page.screenshot({ type: 'jpeg', quality: 75 }).catch(() => null)
+      const fixedUrl = `data:text/html;base64,${Buffer.from(fixedHtml).toString('base64')}`
+      await page.goto(fixedUrl, { waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {})
+      await page.waitForTimeout(1500)
+      afterScreenshot = await page.screenshot({ type: 'jpeg', quality: 75 }).catch(() => null)
 
-    await page.close()
+      await page.close()
+    })
   } catch {}
 
   const beforeB64 = beforeScreenshot ? beforeScreenshot.toString('base64') : null
@@ -1008,7 +1010,7 @@ async function runFixPipeline(scanId, sendCard, res) {
     metrics: { before: { lcp: scanData?.lcp || 'unknown', errors: errorsFound.length }, after: { lcp: 'optimized', errors: 0 } },
   } })
 
-  emitRepairComplete(scanId, { filesModified: fixedFiles.length, testsPassed: 1 }, sseWriter)
+  emitRestorationCompleted(scanId, { filesModified: fixedFiles.length, testsPassed: 1 }, sseWriter)
   sendCard({ type: 'log', card: 'action', text: `> Restoration complete! ${fixedFiles.length} file(s) fixed.` })
   sendCard({ type: 'done' })
 
