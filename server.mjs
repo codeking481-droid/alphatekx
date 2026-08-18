@@ -10,6 +10,7 @@ import { chromium } from 'playwright'
 import { fallbackAlphaBuilder } from './alphaFallback.mjs'
 import { handlePreviewRoute, handleRestoreStreamRoute, handleDownloadRoute, handlePreviewFixedRoute } from './server/websiteRestoreStream.mjs'
 import { handleGitHubAuth, handleGitHubCallback, handleGitHubStatus, handleGitHubRepos, handleGitHubApplyFix, handleGitHubRollback } from './server/githubDirectPush.mjs'
+import { handleDiagnoseRoute } from './server/diagnoseRoute.mjs'
 import { extractPlan, isPlatformPrompt } from './server/alphaPlatformBuilder.mjs'
 import { buildPreviewProject, servePreviewBuild } from './server/previewBuild.mjs'
 import { marketplaceHandler, fulfillMarketplaceOrder } from './server/marketplace.mjs'
@@ -10504,6 +10505,9 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'POST' && req.url === '/api/github/apply-fix') {
     return handleGitHubApplyFix(req, res)
+  }
+  if (req.method === 'POST' && req.url === '/api/diagnose') {
+    return handleDiagnoseRoute(req, res)
   }
   if (req.method === 'POST' && req.url === '/api/github/rollback') {
     return handleGitHubRollback(req, res)
