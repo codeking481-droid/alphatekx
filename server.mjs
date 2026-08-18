@@ -6,7 +6,6 @@ import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, 
 import { fileURLToPath } from 'node:url'
 import { schedule } from 'node-cron'
 import { chromium } from 'playwright'
-import { Groq } from 'groq-sdk'
 
 import { fallbackAlphaBuilder } from './alphaFallback.mjs'
 import { handlePreviewRoute, handleRestoreStreamRoute, handleDownloadRoute, handlePreviewFixedRoute } from './server/websiteRestoreStream.mjs'

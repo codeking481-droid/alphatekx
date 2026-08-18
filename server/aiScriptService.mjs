@@ -1,13 +1,9 @@
 /**
  * AI Script Generation Service
- * Uses Groq LLM to generate video scripts and scene descriptions
+ * Uses alpha-core Groq router to generate video scripts and scene descriptions.
  */
 
-import { Groq } from 'groq-sdk'
-
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY,
-})
+import { alphaCall } from '../alpha-core/index.ts'
 
 export async function generateVideoScript(prompt, durationSeconds) {
   try {
@@ -16,13 +12,10 @@ export async function generateVideoScript(prompt, durationSeconds) {
     const numberOfScenes = Math.max(3, Math.min(6, Math.ceil(durationSeconds / 20)))
     const secondsPerScene = Math.round(durationSeconds / numberOfScenes)
 
-    const message = await groq.messages.create({
-      model: 'mixtral-8x7b-32768',
-      max_tokens: 2000,
-      messages: [
-        {
-          role: 'user',
-          content: `You are a professional video scriptwriter. Create a detailed video script for:
+    const result = await alphaCall('SCRIPT', [
+      {
+        role: 'user',
+        content: `You are a professional video scriptwriter. Create a detailed video script for:
           
 Prompt: "${prompt}"
 Duration: ${durationSeconds} seconds (${numberOfScenes} scenes, ~${secondsPerScene}s each)
@@ -42,11 +35,10 @@ Return ONLY a JSON object (no markdown, no explanation) with this exact structur
 }
 
 Make it cinematic and engaging. Each scene should be distinct and visually interesting.`
-        }
-      ]
-    })
+      }
+    ])
 
-    const responseText = message.content[0]?.text || ''
+    const responseText = result.content || ''
     console.log('[SCRIPT] Raw response:', responseText.substring(0, 200))
     
     // Extract JSON from response (try multiple patterns)

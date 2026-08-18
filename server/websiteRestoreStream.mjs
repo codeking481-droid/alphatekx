@@ -8,27 +8,34 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { tmpdir } from 'node:os'
 import { lookup } from 'node:dns'
-import { Groq } from 'groq-sdk'
+import { alphaChat, alphaText } from '../alpha-core/index.ts'
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
-
-async function groqChat(messages, model = 'openai/gpt-oss-120b') {
+/**
+ * AI analysis helper — returns parsed JSON or { content: rawText }.
+ * Delegates to alpha-core/groq-router (REASONING role).
+ */
+async function groqChat(messages, model) {
   try {
-    const resp = await groq.chat.completions.create({ model, messages, temperature: 0.3, max_tokens: 2048 })
-    const raw = resp.choices?.[0]?.message?.content || '{}'
-    try { return JSON.parse(raw) } catch { return { content: raw } }
+    // Map model names to alpha-core roles
+    const role = (model === 'compound-beta-mini' || model === 'compound-beta') ? 'SCANNER' : 'REASONING'
+    const result = await alphaChat(role, messages)
+    return result
   } catch (err) {
-    console.error(`[RESSTREAM] Groq error (${model}):`, err.message)
+    console.error(`[RESSTREAM] AI error (${model}):`, err.message)
     return { content: `LLM error: ${err.message}` }
   }
 }
 
-async function groqText(messages, model = 'openai/gpt-oss-120b') {
+/**
+ * AI text helper — returns plain text string.
+ * Delegates to alpha-core/groq-router (REASONING role).
+ */
+async function groqText(messages, model) {
   try {
-    const resp = await groq.chat.completions.create({ model, messages, temperature: 0.4, max_tokens: 2048 })
-    return resp.choices?.[0]?.message?.content || ''
+    const role = (model === 'compound-beta-mini' || model === 'compound-beta') ? 'SCANNER' : 'REASONING'
+    return await alphaText(role, messages)
   } catch (err) {
-    console.error(`[RESSTREAM] Groq text error:`, err.message)
+    console.error(`[RESSTREAM] AI text error:`, err.message)
     return `LLM error: ${err.message}`
   }
 }
