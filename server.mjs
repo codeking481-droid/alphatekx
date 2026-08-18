@@ -1142,8 +1142,15 @@ Return ONLY the JSON object, no markdown, no commentary.`
 async function authenticatedUser(req, supabaseUrl, anonKey) {
   const authorization = String(req.headers.authorization || '')
   if (!authorization.toLowerCase().startsWith('bearer ')) return null
+  if (!supabaseUrl || !anonKey) return null
   try {
-    const response = await fetch(`${supabaseUrl}/auth/v1/user`, { headers: { apikey: anonKey, Authorization: authorization } })
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 5000)
+    const response = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      headers: { apikey: anonKey, Authorization: authorization },
+      signal: controller.signal,
+    })
+    clearTimeout(timer)
     return response.ok ? response.json() : null
   } catch {
     return null
@@ -5072,7 +5079,7 @@ function currentOrLocalUser(req, supabaseUrl, anonKey) {
     if (req.alphaUser) return resolve(req.alphaUser)
     const fromToken = await authenticatedUser(req, supabaseUrl, anonKey).catch(() => null)
     if (fromToken) { req.alphaUser = fromToken; req.alphaAuthSource = 'token'; return resolve(fromToken) }
-    if (String(req.headers.authorization || '').startsWith('Bearer ')) return resolve(null)
+    // Bearer token present but invalid — still try local user as fallback
     const local = localUserFromRequest(req)
     if (local) { req.alphaUser = local; req.alphaAuthSource = 'local' }
     resolve(local)
@@ -8471,9 +8478,6 @@ const server = http.createServer(async (req, res) => {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST',
-      'Access-Control-Allow-Headers': 'Content-Type',
     })
 
     try {
@@ -8549,9 +8553,6 @@ const server = http.createServer(async (req, res) => {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST',
-      'Access-Control-Allow-Headers': 'Content-Type',
     })
     
     try {
@@ -8690,7 +8691,6 @@ const server = http.createServer(async (req, res) => {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         'Connection': 'keep-alive',
-        'Access-Control-Allow-Origin': '*',
       })
 
       const sendProgress = (update = {}) => {
@@ -9751,7 +9751,6 @@ const server = http.createServer(async (req, res) => {
         'Cache-Control': 'no-cache, no-transform',
         'Connection': 'keep-alive',
         'X-Accel-Buffering': 'no',
-        'Access-Control-Allow-Origin': '*',
       }
 
       res.writeHead(200, resHeaders)

@@ -140,10 +140,6 @@ export async function completeInstantGoogleSignup(session: Session | null) {
 
   googleSignupCompletionInFlight = true
   const plan = localStorage.getItem(GOOGLE_SIGNUP_PLAN_KEY)
-  // Authentication has already succeeded. Release the sign-in screen before
-  // provisioning welcome credits so a slow database request cannot strand a
-  // valid non-admin user on /auth with every control disabled.
-  clearGoogleSignupPending()
 
   const controller = new AbortController()
   const timeout = window.setTimeout(() => controller.abort(), 12_000)
@@ -171,10 +167,17 @@ export async function completeInstantGoogleSignup(session: Session | null) {
       throw new Error(String(body.error || 'Google signup verification failed.'))
     }
 
+    // Clear pending state only after successful verify
+    clearGoogleSignupPending()
+
     if (plan === 'early_founder_19') {
       await startPayment(19, 'early_founder_19')
       return
     }
+  } catch {
+    // Even if verify fails, clear pending state — the user IS authenticated.
+    // The bonus provisioning is non-critical.
+    clearGoogleSignupPending()
   } finally {
     window.clearTimeout(timeout)
     googleSignupCompletionInFlight = false
@@ -272,9 +275,50 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   useEffect(() => {
     if (!supabase) { setLoading(false); return }
+    let restoreComplete = false
+
     const restoreSession = async () => {
-      const recovered = await recoverOAuthSessionFromFragment()
-      const restored = recovered || (await supabase.auth.getSession()).data.session
+      let restored: Session | null = null
+
+      // Step 1: Try recovering from OAuth redirect fragment (implicit flow)
+      try {
+        restored = await recoverOAuthSessionFromFragment()
+      } catch (err) {
+        console.warn('[AlphaTekx] fragment recovery failed:', err)
+      }
+
+      // Step 2: Try getting existing session from localStorage (PKCE / persisted)
+      if (!restored) {
+        try {
+          restored = (await supabase.auth.getSession()).data.session
+        } catch (err) {
+          console.warn('[AlphaTekx] getSession failed:', err)
+        }
+      }
+
+      // Step 3: Retry once after a short delay — onAuthStateChange may not have
+      // fired yet, or the Supabase client may still be initializing.
+      if (!restored) {
+        await new Promise(r => setTimeout(r, 800))
+        try {
+          restored = (await supabase.auth.getSession()).data.session
+        } catch (err) {
+          console.warn('[AlphaTekx] session retry failed:', err)
+        }
+      }
+
+      // Step 4: One more retry at 2s — some mobile browsers need extra time
+      if (!restored && isGoogleSignupPending()) {
+        await new Promise(r => setTimeout(r, 1200))
+        try {
+          restored = (await supabase.auth.getSession()).data.session
+        } catch (err) {
+          console.warn('[AlphaTekx] final session retry failed:', err)
+        }
+      }
+
+      restoreComplete = true
+
       if (restored?.user?.id && activeUserId.current && restored.user.id !== activeUserId.current) {
         clearUserArtifacts()
       }
@@ -289,11 +333,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
     }
     void restoreSession().catch(error => {
       console.warn('[AlphaTekx] session restore failed:', error)
-      clearGoogleSignupPending()
+      restoreComplete = true
       setSession(null)
       setProfile(null)
       setLoading(false)
     })
+
+    // onAuthStateChange listener — Supabase fires INITIAL_SESSION (often with
+    // null) before restoreSession completes. We must NOT set loading=false
+    // from this initial null event, because the restore is still in progress.
     const { data } = supabase.auth.onAuthStateChange((_event, next) => {
       const changedUser = Boolean(activeUserId.current && next?.user?.id && activeUserId.current !== next.user.id)
       if (!next || changedUser) clearUserArtifacts()
@@ -301,9 +349,14 @@ export function AuthProvider({ children }: PropsWithChildren) {
       if (next?.user?.id) {
         try { localStorage.setItem(CURRENT_USER_KEY, next.user.id) } catch {}
       }
+      // If restoreSession hasn't finished yet and this is a null session
+      // (INITIAL_SESSION), don't update state — let restoreSession handle it.
+      if (!restoreComplete && !next) return
+
       setSession(next)
       setLoading(false)
       if (next) {
+        clearGoogleSignupPending()
         localStorage.removeItem(LOCAL_USER_KEY)
         setLocalUser(null)
         void refreshProfile()
