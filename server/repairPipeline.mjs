@@ -428,7 +428,7 @@ async function phaseTest(message, scan, execute, llmCall) {
 Scan: ${JSON.stringify(scan)}
 Execute: ${JSON.stringify(execute)}
 
-Simulate verification checks and return results:
+Analyze what verification checks should be run for this fix and return results:
 
 Return JSON with:
 - passed: number of checks passed
@@ -453,9 +453,9 @@ Return ONLY valid JSON.`
     summary: result.summary || 'Verification complete',
     details: result.details || ['All checks passed'],
     metrics: result.metrics || {
-      lcp: { before: '4.2s', after: '1.1s' },
-      errors: { before: 12, after: 0 },
-      uptime: { before: '94%', after: '99.9%' },
+      lcp: { before: 'measured after fix', after: 'measured after fix' },
+      errors: { before: 'counted from scan', after: 'verified after fix' },
+      uptime: { before: 'check status', after: 'check status' },
     },
   }
 }

@@ -45,17 +45,22 @@ export async function executeVideoEdit(videoPath, analysis, editPlan, sendEvent,
   let plan = editPlan || {}
   if (llmCall) {
     try {
-      const system = `You are a professional video editor. Return a JSON object with:
-- textOverlays: array of { text: string, time: number (seconds from start), duration: number }
-  Pick 2-5 short punchy keywords/phrases from the user's request to overlay at different times.
+      const system = `You are a professional video editor specializing in MrBeast retention editing and Malva AI style. Return a JSON object with:
+- textOverlays: array of { text: string, time: number, duration: number }
+  MrBeast style: Bold, short, punchy words (INSANE, NO WAY, WAIT). 3-6 overlays.
+  Malva style: Emotional phrases (EVERYBODY WANTS THIS, THE TRUTH). 2-4 overlays.
+  Place overlays every 3-5 seconds to maintain visual interest.
 - speedRamps: array of { start: number, end: number, speed: number }
-  Add 1-3 speed ramp entries to make the video more dynamic.
-- brollSuggestions: array of { time: number, description: string, duration: number }
-  Suggest 2-4 B-roll timestamps with descriptions of what footage would enhance the video.
-  Focus on moments where visual variety would boost engagement (transitions, emphasis points).
+  MrBeast: Speed up boring parts (2x-4x), slow down dramatic moments (0.5x)
+  Malva: Speed up transitions, slow down emotional beats
+- zoomPunches: array of { time: number, scale: number (1.1-1.5), duration: number }
+  MrBeast signature: Quick digital zoom-ins as "pattern interrupts" every 3-5 seconds.
+  2-4 zoom punches on key moments.
 - platform: string — one of "tiktok", "reels", "shorts", "square", "widescreen", or null
-  Detect from user request which platform they want. Default to null (keep original).
-- removeFillerWords: boolean — default true. Remove "um", "uh", "like" filler words.
+  Detect from user request. Default to null.
+- removeFillerWords: boolean — default true
+- colorGrade: string — "mrbeast" (bright vibrant saturated), "malva" (heavy saturation + vignette), "cinematic", or null
+  Detect from user request or style name. Default based on style.
 Return ONLY valid JSON.`
 
       const result = await Promise.race([
@@ -69,8 +74,10 @@ Return ONLY valid JSON.`
       if (result && result.textOverlays) plan.textOverlays = result.textOverlays
       if (result && result.speedRamps) plan.speedRamps = result.speedRamps
       if (result && result.brollSuggestions) plan.brollSuggestions = result.brollSuggestions
+      if (result && result.zoomPunches) plan.zoomPunches = result.zoomPunches
       if (result && result.platform) plan.platform = result.platform
       if (result && result.removeFillerWords !== undefined) plan.removeFillerWords = result.removeFillerWords
+      if (result && result.colorGrade) plan.colorGrade = result.colorGrade
     } catch (err) {
       log('PLAN', `LLM failed (${err.message}), using auto-generated overlays`)
     }
@@ -182,13 +189,29 @@ Return ONLY valid JSON.`
 
   try {
     const filters = buildFFmpegFilters(plan)
-    // Always add dramatic sharpen for that pro look
-    if (!filters.some(f => f.includes('unsharp'))) {
+
+    // MrBeast color grade: bright, vibrant, saturated (the "larger than life" look)
+    const grade = plan.colorGrade || plan.name || 'custom'
+    if (grade === 'mrbeast' || grade === 'viral') {
+      filters.push('eq=brightness=0.06:saturation=1.5:contrast=1.2:gamma=1.1')
       filters.push('unsharp=5:5:1.5:5:5:0')
+      sendEvent({ type: 'thought_step', step: { id: 'effects-grade', label: 'MrBeast Color Grade', icon: 'film', status: 'done', summary: 'Bright + saturated + vibrant' } })
+    } else if (grade === 'malva' || grade === 'cinematic') {
+      // Malva: heavy saturation + vignette + slight warmth
+      filters.push('eq=saturation=1.8:contrast=1.3:brightness=0.05')
+      filters.push('vignette=PI/4:mode=forward')
+      filters.push('unsharp=5:5:1.0:5:5:0')
+      sendEvent({ type: 'thought_step', step: { id: 'effects-grade', label: 'Malva Cinematic Grade', icon: 'film', status: 'done', summary: 'Heavy saturation + vignette + warmth' } })
+    } else {
+      // Default: dramatic sharpen for pro look
+      if (!filters.some(f => f.includes('unsharp'))) {
+        filters.push('unsharp=5:5:1.5:5:5:0')
+      }
     }
+
     // Add film grain for cinematic feel (subtle)
-    if (plan.filmGrain || plan.name === 'cinematic') {
-      filters.push('noise=alls=15:allf=t+u')
+    if (plan.filmGrain || grade === 'cinematic' || grade === 'malva') {
+      filters.push('noise=alls=12:allf=t+u')
     }
 
     if (filters.length > 0) {
@@ -218,14 +241,18 @@ Return ONLY valid JSON.`
     sendEvent({ type: 'thought_step', step: { id: 'effects', label: 'Effects failed', icon: 'film', status: 'error', summary: err.message } })
   }
 
-  // ── PHASE 4: Ken Burns (slow zoom) ───────────────────────────────────
-  sendEvent({ type: 'thought_step', step: { id: 'kenburns', label: 'Adding Ken Burns...', icon: 'film', status: 'active' } })
+  // ── PHASE 4: Ken Burns (slow zoom) + Zoom Punches (MrBeast pattern interrupts) ──
+  sendEvent({ type: 'thought_step', step: { id: 'kenburns', label: 'Adding motion effects...', icon: 'film', status: 'active' } })
 
   try {
-    if (plan.kenBurns || plan.name === 'cinematic' || plan.name === 'documentary') {
+    const grade = plan.colorGrade || plan.name || 'custom'
+    if (plan.kenBurns || grade === 'cinematic' || grade === 'malva' || grade === 'mrbeast') {
       const kbPath = join(workDir, 'kenburns.mp4')
-      // Slow zoom from 1.0 to 1.08 over the full duration
-      const zoomExpr = `z='min(1+0.0008*on,1.08)'`
+      // MrBeast: Continuous slow push-in (5% over 10s) keeps frame dynamic
+      // Malva: Slower zoom for dramatic feel
+      const zoomRate = grade === 'mrbeast' || grade === 'viral' ? 0.001 : 0.0006
+      const maxZoom = grade === 'mrbeast' || grade === 'viral' ? 1.12 : 1.08
+      const zoomExpr = `z='min(1+${zoomRate}*on,${maxZoom})'`
       const fps = 30
       await execFileAsync(ffmpeg, [
         '-i', currentPath,
@@ -235,14 +262,48 @@ Return ONLY valid JSON.`
         '-y', kbPath,
       ], { timeout: 300000 })
       currentPath = kbPath
-      log('KENBURNS', 'Applied slow zoom effect')
-      sendEvent({ type: 'thought_step', step: { id: 'kenburns', label: 'Ken Burns Applied', icon: 'film', status: 'done', summary: 'Slow cinematic zoom' } })
+      log('KENBURNS', `Applied continuous push-in zoom (${grade} style)`)
+      sendEvent({ type: 'thought_step', step: { id: 'kenburns', label: 'Motion Applied', icon: 'film', status: 'done', summary: `Continuous push-in (${grade} style)` } })
     } else {
-      sendEvent({ type: 'thought_step', step: { id: 'kenburns', label: 'Ken Burns skipped', icon: 'film', status: 'done', summary: 'Not needed for this style' } })
+      sendEvent({ type: 'thought_step', step: { id: 'kenburns', label: 'Motion skipped', icon: 'film', status: 'done', summary: 'Not needed for this style' } })
     }
   } catch (err) {
     log('KENBURNS', `Error: ${err.message}`)
-    sendEvent({ type: 'thought_step', step: { id: 'kenburns', label: 'Ken Burns failed', icon: 'film', status: 'error', summary: err.message } })
+    sendEvent({ type: 'thought_step', step: { id: 'kenburns', label: 'Motion failed', icon: 'film', status: 'error', summary: err.message } })
+  }
+
+  // ── PHASE 4.5: Zoom Punches (MrBeast pattern interrupts — digital zoom on key moments) ──
+  const zoomPunches = plan.zoomPunches || []
+  if (zoomPunches.length > 0 && duration > 5) {
+    sendEvent({ type: 'thought_step', step: { id: 'zoompunch', label: 'Adding zoom punches...', icon: 'film', status: 'active' } })
+    try {
+      // Build zoom punch filter: scale up at specific timestamps
+      const zoomFilters = zoomPunches.map(zp => {
+        const scale = Math.min(Math.max(zp.scale || 1.3, 1.1), 1.5)
+        const start = zp.time || 0
+        const dur = zp.duration || 0.5
+        const end = start + dur
+        // Smooth zoom: scale from 1.0 to scale and back
+        return `zoompan=z='if(between(t,${start},${end}),min(1+(${scale}-1)*((t-${start})/${dur}),${scale}),1)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=1920x1080:fps=30`
+      }).join(',')
+
+      if (zoomFilters) {
+        const zoomPath = join(workDir, 'zoompunch.mp4')
+        await execFileAsync(ffmpeg, [
+          '-i', currentPath,
+          '-vf', zoomFilters,
+          '-c:v', 'libx264', '-preset', 'fast', '-crf', '18',
+          '-c:a', 'copy',
+          '-y', zoomPath,
+        ], { timeout: 300000 })
+        currentPath = zoomPath
+        log('ZOOMPUNCH', `Applied ${zoomPunches.length} zoom punches`)
+        sendEvent({ type: 'thought_step', step: { id: 'zoompunch', label: 'Zoom Punches Added', icon: 'film', status: 'done', summary: `${zoomPunches.length} pattern interrupts` } })
+      }
+    } catch (err) {
+      log('ZOOMPUNCH', `Error: ${err.message}`)
+      sendEvent({ type: 'thought_step', step: { id: 'zoompunch', label: 'Zoom punches failed', icon: 'film', status: 'error', summary: err.message } })
+    }
   }
 
   // ── PHASE 5: Word-level captions (from Groq Whisper transcription) ────
@@ -460,35 +521,42 @@ Return ONLY valid JSON.`
 
 function generateAutoOverlays(plan, duration) {
   const overlays = []
-  const styleName = plan.name || 'video'
-  const textFontSize = plan.textFontSize || 72
+  const styleName = plan.name || plan.colorGrade || 'video'
 
-  // Opening hook (first 1.5s)
-  overlays.push({ text: 'WATCH THIS', time: 0.2, duration: 1.2 })
-
-  // Style-specific overlays
+  // Style-specific overlays (MrBeast = retention hooks, Malva = emotional)
   const styleOverlays = {
-    mrbeast: ['INSANE', 'NO WAY', 'BUT WAIT', 'THIS IS CRAZY'],
+    mrbeast: ['WAIT FOR IT', 'THIS IS INSANE', 'NO WAY', 'BUT WAIT', 'THIS IS CRAZY'],
+    viral: ['POV', 'WAIT FOR IT', 'OF COURSE', 'THATS CRAZY'],
+    malva: ['EVERYBODY WANTS THIS', 'THE TRUTH', 'NOBODY TELLS YOU', 'BUT LISTEN'],
     nasdaily: ['ONE MINUTE', 'HERE IS THE THING', 'LET ME EXPLAIN'],
     cinematic: ['A STORY', 'EVERYTHING CHANGES', 'THE END'],
-    viral: ['POV', 'WAIT FOR IT', 'OFCOURSE', 'THATS CRAZY'],
     documentary: ['THE TRUTH', 'WHAT HAPPENED', 'THE REAL STORY'],
     minimal: [],
   }
 
-  const phrases = styleOverlays[plan.styleKey] || styleOverlays[plan.style] || ['AMAZING', 'INCREDIBLE', 'UNREAL']
-  const interval = duration / (phrases.length + 1)
+  const phrases = styleOverlays[plan.styleKey] || styleOverlays[plan.style] || styleOverlays[styleName] || ['AMAZING', 'INCREDIBLE', 'UNREAL']
 
-  phrases.forEach((phrase, i) => {
-    const time = interval * (i + 1)
-    if (time + 1 < duration) {
-      overlays.push({ text: phrase, time: Math.round(time * 10) / 10, duration: 1.0 })
+  // MrBeast/Malva: More overlays, more frequently (every 3-4 seconds)
+  const isRetentionStyle = styleName === 'mrbeast' || styleName === 'viral' || styleName === 'malva'
+  const interval = isRetentionStyle ? Math.min(3.5, duration / (phrases.length + 1)) : duration / (phrases.length + 1)
+
+  // Opening hook (first 1-2s) — critical for retention
+  if (isRetentionStyle) {
+    overlays.push({ text: phrases[0] || 'WATCH THIS', time: 0.3, duration: 1.0 })
+  } else {
+    overlays.push({ text: 'WATCH THIS', time: 0.2, duration: 1.2 })
+  }
+
+  phrases.slice(isRetentionStyle ? 1 : 0).forEach((phrase, i) => {
+    const time = interval * (i + 1) + (isRetentionStyle ? 0.3 : 0)
+    if (time + 1.5 < duration) {
+      overlays.push({ text: phrase, time: Math.round(time * 10) / 10, duration: isRetentionStyle ? 0.8 : 1.0 })
     }
   })
 
   // Closing (last 1.5s)
   if (duration > 3) {
-    overlays.push({ text: 'FOLLOW FOR MORE', time: Math.max(0, duration - 1.5), duration: 1.5 })
+    overlays.push({ text: isRetentionStyle ? 'FOLLOW FOR PART 2' : 'FOLLOW FOR MORE', time: Math.max(0, duration - 1.5), duration: 1.5 })
   }
 
   return overlays
