@@ -86,6 +86,9 @@ export async function analyzeVideo(videoPath, opts = {}) {
     result.errors.push(`Quality: ${err.message}`)
   }
 
+  // Phase 6: Virality scoring
+  result.virality = calculateViralityScore(result)
+
   return result
 }
 
@@ -347,4 +350,76 @@ async function scoreQuality(videoPath, analysis) {
     editing: scores.editing,
     grade: overall >= 80 ? 'A' : overall >= 60 ? 'B' : overall >= 40 ? 'C' : 'D',
   }
+}
+
+// ── VIRALITY SCORING ──────────────────────────────────────────────────
+
+function calculateViralityScore(analysis) {
+  let score = 50 // baseline
+  const factors = []
+
+  // Duration sweet spot (15-60s is optimal for social media)
+  const dur = analysis.duration || 0
+  if (dur >= 15 && dur <= 60) {
+    score += 15
+    factors.push({ factor: 'Duration', impact: +15, detail: `${dur.toFixed(0)}s — ideal for short-form` })
+  } else if (dur > 60 && dur <= 180) {
+    score += 5
+    factors.push({ factor: 'Duration', impact: +5, detail: `${dur.toFixed(0)}s — long but acceptable` })
+  } else if (dur > 3 && dur < 15) {
+    score += 8
+    factors.push({ factor: 'Duration', impact: +8, detail: `${dur.toFixed(0)}s — very short, hook-driven` })
+  } else {
+    score -= 5
+    factors.push({ factor: 'Duration', impact: -5, detail: `${dur.toFixed(0)}s — suboptimal length` })
+  }
+
+  // Has transcription (engagement signal)
+  if (analysis.transcription?.text) {
+    score += 10
+    factors.push({ factor: 'Speech', impact: +10, detail: 'Has spoken content (engages viewers)' })
+  }
+
+  // Quality score contribution
+  if (analysis.quality?.overall) {
+    const qBonus = Math.round((analysis.quality.overall - 50) / 5)
+    score += qBonus
+    factors.push({ factor: 'Quality', impact: qBonus, detail: `Quality score: ${analysis.quality.overall}/100` })
+  }
+
+  // Scene variety (more scenes = more dynamic)
+  if (analysis.scenes?.length > 2) {
+    score += 5
+    factors.push({ factor: 'Scene cuts', impact: +5, detail: `${analysis.scenes.length} scenes detected` })
+  }
+
+  // Has text in transcription = potential for captions
+  const wordCount = analysis.transcription?.words?.length || 0
+  if (wordCount > 20) {
+    score += 5
+    factors.push({ factor: 'Word density', impact: +5, detail: `${wordCount} words — good for captions` })
+  }
+
+  score = Math.max(0, Math.min(100, score))
+
+  return {
+    score,
+    grade: score >= 80 ? 'Viral' : score >= 60 ? 'Strong' : score >= 40 ? 'Average' : 'Weak',
+    factors,
+    recommendations: generateRecommendations(score, analysis),
+  }
+}
+
+function generateRecommendations(score, analysis) {
+  const recs = []
+  const dur = analysis.duration || 0
+
+  if (dur > 60) recs.push('Consider trimming to under 60 seconds for better retention')
+  if (dur < 10) recs.push('Very short — add a strong hook in the first 2 seconds')
+  if (!analysis.transcription?.text) recs.push('Add captions to boost engagement by 40%+')
+  if (analysis.quality?.overall < 50) recs.push('Improve video quality — higher resolution gets more reach')
+  if (analysis.scenes?.length <= 1) recs.push('Add more visual variety with cuts or B-roll')
+  if (score < 60) recs.push('Apply AlphaTekX video restoration to boost quality and virality')
+
+  return recs.slice(0, 4)
 }

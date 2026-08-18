@@ -8,7 +8,7 @@ import { schedule } from 'node-cron'
 import { chromium } from 'playwright'
 
 import { fallbackAlphaBuilder } from './alphaFallback.mjs'
-import { handlePreviewRoute, handleRestoreStreamRoute, handleDownloadRoute, handlePreviewFixedRoute, handleScreenshotRoute } from './server/websiteRestoreStream.mjs'
+import { handlePreviewRoute, handleRestoreStreamRoute, handleFixStreamRoute, handleDownloadRoute, handlePreviewFixedRoute, handleScreenshotRoute } from './server/websiteRestoreStream.mjs'
 import { handleGitHubAuth, handleGitHubCallback, handleGitHubStatus, handleGitHubRepos, handleGitHubApplyFix, handleGitHubRollback } from './server/githubDirectPush.mjs'
 import { handleDiagnoseRoute } from './server/diagnoseRoute.mjs'
 import { extractPlan, isPlatformPrompt } from './server/alphaPlatformBuilder.mjs'
@@ -10532,6 +10532,9 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'GET' && req.url?.startsWith('/api/restore/stream')) {
     return handleRestoreStreamRoute(req, res)
+  }
+  if (req.method === 'GET' && req.url?.startsWith('/api/restore/fix')) {
+    return handleFixStreamRoute(req, res)
   }
   if (req.method === 'GET' && req.url?.startsWith('/api/download/')) {
     return handleDownloadRoute(req, res)

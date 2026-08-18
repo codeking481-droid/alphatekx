@@ -50,6 +50,12 @@ export async function executeVideoEdit(videoPath, analysis, editPlan, sendEvent,
   Pick 2-5 short punchy keywords/phrases from the user's request to overlay at different times.
 - speedRamps: array of { start: number, end: number, speed: number }
   Add 1-3 speed ramp entries to make the video more dynamic.
+- brollSuggestions: array of { time: number, description: string, duration: number }
+  Suggest 2-4 B-roll timestamps with descriptions of what footage would enhance the video.
+  Focus on moments where visual variety would boost engagement (transitions, emphasis points).
+- platform: string — one of "tiktok", "reels", "shorts", "square", "widescreen", or null
+  Detect from user request which platform they want. Default to null (keep original).
+- removeFillerWords: boolean — default true. Remove "um", "uh", "like" filler words.
 Return ONLY valid JSON.`
 
       const result = await Promise.race([
@@ -62,6 +68,9 @@ Return ONLY valid JSON.`
 
       if (result && result.textOverlays) plan.textOverlays = result.textOverlays
       if (result && result.speedRamps) plan.speedRamps = result.speedRamps
+      if (result && result.brollSuggestions) plan.brollSuggestions = result.brollSuggestions
+      if (result && result.platform) plan.platform = result.platform
+      if (result && result.removeFillerWords !== undefined) plan.removeFillerWords = result.removeFillerWords
     } catch (err) {
       log('PLAN', `LLM failed (${err.message}), using auto-generated overlays`)
     }
@@ -85,17 +94,18 @@ Return ONLY valid JSON.`
   sendEvent({ type: 'thought_step', step: { id: 'trim', label: 'Removing silence...', icon: 'plan', status: 'active' } })
 
   let currentPath = videoPath
+  let silenceSegments = []
   try {
-    const silences = await detectSilence(videoPath)
-    if (silences.length > 0 && plan.removeSilence !== false) {
-      currentPath = await removeSilenceSegments(videoPath, silences, duration, workDir)
+    silenceSegments = await detectSilence(videoPath)
+    if (silenceSegments.length > 0 && plan.removeSilence !== false) {
+      currentPath = await removeSilenceSegments(videoPath, silenceSegments, duration, workDir)
       const newDuration = await getDuration(currentPath)
-      log('TRIM', `Removed ${silences.length} silence gaps, new duration: ${newDuration.toFixed(1)}s`)
+      log('TRIM', `Removed ${silenceSegments.length} silence gaps, new duration: ${newDuration.toFixed(1)}s`)
       sendEvent({
         type: 'thought_step',
         step: {
           id: 'trim', label: 'Silence Removed', icon: 'plan', status: 'done',
-          summary: `${silences.length} gaps removed`,
+          summary: `${silenceSegments.length} gaps removed`,
           details: [`${duration.toFixed(1)}s → ${newDuration.toFixed(1)}s`, `${Math.round((1 - newDuration / duration) * 100)}% tighter`],
         },
       })
@@ -105,6 +115,66 @@ Return ONLY valid JSON.`
   } catch (err) {
     log('TRIM', `Error: ${err.message}`)
     sendEvent({ type: 'thought_step', step: { id: 'trim', label: 'Trim skipped', icon: 'plan', status: 'done', summary: err.message } })
+  }
+
+  // ── PHASE 2.5: Filler word removal ("um", "uh", "like", "you know") ──
+  if (plan.removeFillerWords !== false) {
+    sendEvent({ type: 'thought_step', step: { id: 'fillers', label: 'Removing filler words...', icon: 'plan', status: 'active' } })
+    try {
+      const words = analysis.transcription?.words || []
+      const fillerWords = ['um', 'uh', 'erm', 'hmm', 'like', 'you know', 'basically', 'actually', 'literally', 'sort of', 'kind of']
+      const fillerSegments = []
+
+      for (let i = 0; i < words.length; i++) {
+        const w = words[i].word.toLowerCase().replace(/[.,!?]/g, '')
+        if (fillerWords.includes(w)) {
+          const start = words[i].start
+          const end = words[i].end
+          // Extend gap slightly to avoid choppy audio (0.05s before, 0.1s after)
+          fillerSegments.push({ start: Math.max(0, start - 0.05), end: end + 0.1 })
+        }
+      }
+
+      // Also detect repeated words (stuttering)
+      for (let i = 1; i < words.length; i++) {
+        const prev = words[i - 1].word.toLowerCase().replace(/[.,!?]/g, '')
+        const curr = words[i].word.toLowerCase().replace(/[.,!?]/g, '')
+        if (prev === curr && prev.length > 1) {
+          fillerSegments.push({ start: Math.max(0, words[i].start - 0.05), end: words[i].end + 0.1 })
+        }
+      }
+
+      // Merge overlapping segments
+      fillerSegments.sort((a, b) => a.start - b.start)
+      const merged = []
+      for (const seg of fillerSegments) {
+        if (merged.length > 0 && seg.start <= merged[merged.length - 1].end + 0.1) {
+          merged[merged.length - 1].end = Math.max(merged[merged.length - 1].end, seg.end)
+        } else {
+          merged.push({ ...seg })
+        }
+      }
+
+      if (merged.length > 0) {
+        const fillerPath = join(workDir, 'fillers_removed.mp4')
+        currentPath = await removeSegments(currentPath, merged, await getDuration(currentPath), workDir, fillerPath)
+        const newDur = await getDuration(currentPath)
+        log('FILLERS', `Removed ${merged.length} filler segments`)
+        sendEvent({
+          type: 'thought_step',
+          step: {
+            id: 'fillers', label: 'Filler Words Removed', icon: 'plan', status: 'done',
+            summary: `${merged.length} filler words cut`,
+            details: [`${merged.map(s => `${s.start.toFixed(1)}s-${s.end.toFixed(1)}s`).join(', ')}`, `Duration: ${newDur.toFixed(1)}s`],
+          },
+        })
+      } else {
+        sendEvent({ type: 'thought_step', step: { id: 'fillers', label: 'No fillers found', icon: 'plan', status: 'done', summary: 'Speech is clean' } })
+      }
+    } catch (err) {
+      log('FILLERS', `Error: ${err.message}`)
+      sendEvent({ type: 'thought_step', step: { id: 'fillers', label: 'Filler removal skipped', icon: 'plan', status: 'done', summary: err.message } })
+    }
   }
 
   // ── PHASE 3: Color grading + sharpen + film grain ────────────────────
@@ -294,6 +364,54 @@ Return ONLY valid JSON.`
     sendEvent({ type: 'thought_step', step: { id: 'speed', label: 'Speed failed', icon: 'plan', status: 'error', summary: err.message } })
   }
 
+  // ── PHASE 7.5: Platform reframing (9:16, 1:1, 16:9) ──────────────
+  sendEvent({ type: 'thought_step', step: { id: 'reframe', label: 'Reframing for platform...', icon: 'film', status: 'active' } })
+
+  try {
+    const platform = plan.platform || plan.reframe || null
+    const platformFormats = {
+      tiktok: { w: 1080, h: 1920, label: 'TikTok (9:16)' },
+      reels: { w: 1080, h: 1920, label: 'Instagram Reels (9:16)' },
+      shorts: { w: 1080, h: 1920, label: 'YouTube Shorts (9:16)' },
+      vertical: { w: 1080, h: 1920, label: 'Vertical (9:16)' },
+      square: { w: 1080, h: 1080, label: 'Square (1:1)' },
+      instagram: { w: 1080, h: 1080, label: 'Instagram Post (1:1)' },
+      widescreen: { w: 1920, h: 1080, label: 'Widescreen (16:9)' },
+      landscape: { w: 1920, h: 1080, label: 'Landscape (16:9)' },
+      story: { w: 1080, h: 1920, label: 'Story (9:16)' },
+      linkedin: { w: 1920, h: 1080, label: 'LinkedIn (16:9)' },
+      twitter: { w: 1280, h: 720, label: 'Twitter/X (16:9)' },
+    }
+
+    const fmt = platformFormats[platform]
+    if (fmt) {
+      const reframePath = join(workDir, 'reframed.mp4')
+      // Smart crop: scale up to fill, then center-crop to target aspect
+      await execFileAsync(ffmpeg, [
+        '-i', currentPath,
+        '-vf', `scale=${fmt.w}:${fmt.h}:force_original_aspect_ratio=increase,crop=${fmt.w}:${fmt.h}`,
+        '-c:v', 'libx264', '-preset', 'fast', '-crf', '18',
+        '-c:a', 'copy',
+        '-y', reframePath,
+      ], { timeout: 300000 })
+      currentPath = reframePath
+      log('REFRAME', `Reframed to ${fmt.label}`)
+      sendEvent({
+        type: 'thought_step',
+        step: {
+          id: 'reframe', label: 'Reframed', icon: 'film', status: 'done',
+          summary: fmt.label,
+          details: [`${fmt.w}x${fmt.h}`, 'Smart center-crop'],
+        },
+      })
+    } else {
+      sendEvent({ type: 'thought_step', step: { id: 'reframe', label: 'No reframe needed', icon: 'film', status: 'done', summary: 'Keeping original aspect ratio' } })
+    }
+  } catch (err) {
+    log('REFRAME', `Error: ${err.message}`)
+    sendEvent({ type: 'thought_step', step: { id: 'reframe', label: 'Reframe skipped', icon: 'film', status: 'error', summary: err.message } })
+  }
+
   // ── PHASE 8: Final encode (1080p, H.264, faststart) ─────────────────
   sendEvent({ type: 'thought_step', step: { id: 'encode', label: 'Final encode...', icon: 'test', status: 'active' } })
 
@@ -431,6 +549,44 @@ async function removeSilenceSegments(videoPath, silences, totalDuration, workDir
 
   // Limit to 15 segments to keep ffmpeg filter complex manageable
   const limited = keeps.slice(0, 15)
+  const filterParts = limited.map((k, i) =>
+    `[0:v]trim=start=${k.start}:duration=${k.end - k.start},setpts=PTS-STARTPTS[v${i}];` +
+    `[0:a]atrim=start=${k.start}:duration=${k.end - k.start},asetpts=PTS-STARTPTS[a${i}]`
+  )
+  const concatInputs = limited.map((_, i) => `[v${i}][a${i}]`).join('')
+  filterParts.push(`${concatInputs}concat=n=${limited.length}:v=1:a=1[outv][outa]`)
+
+  await execFileAsync(ffmpeg, [
+    '-i', videoPath,
+    '-filter_complex', filterParts.join(''),
+    '-map', '[outv]', '-map', '[outa]',
+    '-c:v', 'libx264', '-preset', 'fast', '-crf', '18',
+    '-c:a', 'aac', '-b:a', '192k',
+    '-y', outputPath,
+  ], { timeout: 300000 })
+
+  return outputPath
+}
+
+// Generic segment removal (used for filler words, etc.)
+async function removeSegments(videoPath, segments, totalDuration, workDir, outputPath) {
+  const ffmpeg = getFfmpegPath()
+  const keeps = []
+  let lastEnd = 0
+
+  for (const seg of segments) {
+    if (seg.start > lastEnd + 0.05) {
+      keeps.push({ start: lastEnd, end: seg.start })
+    }
+    lastEnd = seg.end
+  }
+  if (lastEnd < totalDuration - 0.05) {
+    keeps.push({ start: lastEnd, end: totalDuration })
+  }
+
+  if (keeps.length === 0) return videoPath
+
+  const limited = keeps.slice(0, 20)
   const filterParts = limited.map((k, i) =>
     `[0:v]trim=start=${k.start}:duration=${k.end - k.start},setpts=PTS-STARTPTS[v${i}];` +
     `[0:a]atrim=start=${k.start}:duration=${k.end - k.start},asetpts=PTS-STARTPTS[a${i}]`

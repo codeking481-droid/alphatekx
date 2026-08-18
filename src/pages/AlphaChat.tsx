@@ -15,6 +15,7 @@ import FixingCard, { type DiffEntry } from '../components/alpha/restore/FixingCa
 import GoldProofCard, { type ProofData } from '../components/alpha/restore/GoldProofCard'
 import ActionCard from '../components/alpha/restore/ActionCard'
 import GitHubApplyCard from '../components/alpha/restore/GitHubApplyCard'
+import FixPromptCard from '../components/alpha/restore/FixPromptCard'
 import ActivityStream from '../components/alpha/restore/ActivityStream'
 import LiveBrowserCard from '../components/alpha/restore/cards/LiveBrowserCard'
 import CodeDiffCard from '../components/alpha/restore/cards/CodeDiffCard'
@@ -46,6 +47,7 @@ type RestoreCardState = {
   goldproof?: ProofData | null
   action?: { scanId: string; restoredZipUrl?: string | null; rollbackUrl?: string; redeploySteps?: string[]; metrics?: any }
   github?: boolean
+  fixprompt?: { scanId: string; url: string; errorsFound: number; severity: string; summary: string }
   isRunning?: boolean
 }
 
@@ -220,7 +222,7 @@ function ChatContent() {
     if (isWebsiteRestore && detectedUrl) {
       try {
         abortRef.current = new AbortController()
-        const streamUrl = `/api/restore/stream?url=${encodeURIComponent(detectedUrl)}`
+        const streamUrl = `/api/restore/stream?url=${encodeURIComponent(detectedUrl)}&intent=scan&message=${encodeURIComponent(userText)}`
         const res = await fetch(streamUrl, { signal: abortRef.current.signal })
 
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -499,6 +501,17 @@ function ChatContent() {
           cards.preview = { url, status: 'loaded' }
           break
         }
+        case 'fixprompt': {
+          cards.isRunning = false
+          cards.fixprompt = {
+            scanId: event.scanId || '',
+            url: event.url || url,
+            errorsFound: event.errorsFound || 0,
+            severity: event.severity || 'unknown',
+            summary: event.summary || '',
+          }
+          break
+        }
         case 'error': {
           cards.isRunning = false
           break
@@ -509,6 +522,56 @@ function ChatContent() {
     })
     scrollToBottom()
   }, [updateLastMessage, scrollToBottom])
+
+  const handleFixNow = useCallback(async (scanId: string, url: string) => {
+    setIsGenerating(true)
+    updateLastMessage((prev) => {
+      const cards = { ...(prev.restoreCards || {}) }
+      cards.fixprompt = undefined
+      cards.fixing = { files: [], diffs: [], status: 'start' }
+      return { ...prev, restoreCards: cards }
+    })
+    scrollToBottom()
+
+    try {
+      abortRef.current = new AbortController()
+      const fixUrl = `/api/restore/fix?scanId=${encodeURIComponent(scanId)}`
+      const res = await fetch(fixUrl, { signal: abortRef.current.signal })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const reader = res.body?.getReader()
+      if (!reader) throw new Error('No response body')
+
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6))
+              handleRestoreEvent(data, url)
+            } catch {}
+          }
+        }
+      }
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        updateLastMessage((prev) => ({
+          ...prev,
+          content: prev.content || `Fix failed: ${err.message}`,
+        }))
+      }
+    } finally {
+      setIsGenerating(false)
+      scrollToBottom()
+    }
+  }, [updateLastMessage, scrollToBottom, handleRestoreEvent])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -744,6 +807,17 @@ function ChatContent() {
                             {/* Card 3: Errors Found */}
                             {msg.restoreCards.errors && (
                               <ErrorsCard errors={msg.restoreCards.errors.errors} severity={msg.restoreCards.errors.severity} status={msg.restoreCards.errors.status} />
+                            )}
+                            {/* Card 3.5: Fix Prompt — asks user before fixing */}
+                            {msg.restoreCards.fixprompt && !msg.restoreCards.fixing && (
+                              <FixPromptCard
+                                scanId={msg.restoreCards.fixprompt.scanId}
+                                url={msg.restoreCards.fixprompt.url}
+                                errorsFound={msg.restoreCards.fixprompt.errorsFound}
+                                severity={msg.restoreCards.fixprompt.severity}
+                                summary={msg.restoreCards.fixprompt.summary}
+                                onFixNow={() => handleFixNow(msg.restoreCards!.fixprompt!.scanId, msg.restoreCards!.fixprompt!.url)}
+                              />
                             )}
                             {/* Card 4: Backup */}
                             {msg.restoreCards.backup && (

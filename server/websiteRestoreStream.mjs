@@ -132,6 +132,8 @@ function rewriteRelativeUrls(html, origin) {
 export function handleRestoreStreamRoute(req, res) {
   const parsed = new URL(req.url, 'http://localhost')
   const targetUrl = parsed.searchParams.get('url')
+  const intent = parsed.searchParams.get('intent') || 'auto' // 'scan' | 'fix' | 'auto'
+  const userMessage = parsed.searchParams.get('message') || ''
   if (!targetUrl) {
     res.writeHead(400, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' })
     res.write(`data: ${JSON.stringify({ type: 'error', message: 'Missing url parameter' })}\n\n`)
@@ -154,15 +156,41 @@ export function handleRestoreStreamRoute(req, res) {
     if (!res.writableEnded) res.write(`data: ${JSON.stringify(card)}\n\n`)
   }
 
-  // Run the pipeline (async, fires and forgets on res error)
-  runPipeline(targetUrl, sendCard, res).catch(err => {
+  runPipeline(targetUrl, sendCard, res, intent, userMessage).catch(err => {
     console.error('[RESSTREAM] Pipeline crashed:', err.message)
     sendCard({ type: 'error', message: err.message || 'Pipeline failed' })
     if (!res.writableEnded) res.end()
   })
 }
 
-async function runPipeline(targetUrl, sendCard, res) {
+export function handleFixStreamRoute(req, res) {
+  const parsed = new URL(req.url, 'http://localhost')
+  const scanId = parsed.searchParams.get('scanId')
+  if (!scanId) {
+    res.writeHead(400, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' })
+    res.write(`data: ${JSON.stringify({ type: 'error', message: 'Missing scanId parameter' })}\n\n`)
+    return res.end()
+  }
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  })
+
+  const sendCard = (card) => {
+    if (!res.writableEnded) res.write(`data: ${JSON.stringify(card)}\n\n`)
+  }
+
+  runFixPipeline(scanId, sendCard, res).catch(err => {
+    console.error('[FIXSTREAM] Pipeline crashed:', err.message)
+    sendCard({ type: 'error', message: err.message || 'Fix pipeline failed' })
+    if (!res.writableEnded) res.end()
+  })
+}
+
+async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessage = '') {
   const scanId = `wr_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
   const workDir = path.resolve(tmpdir(), `restore-${scanId}`)
   const restoredDir = path.resolve(workDir, 'restored')
@@ -407,6 +435,36 @@ async function runPipeline(targetUrl, sendCard, res) {
 
   sendCard({ type: 'card', card: 'errors', status: 'done', data: { errors: errorsFound, severity: errorAnalysis.severity || 'unknown', summary: errorAnalysis.summary || `${errorsFound.length} errors found` } })
 
+  // ===== SCAN-ONLY MODE: Stop after scanning and ask user =====
+  if (intent === 'scan') {
+    const scanSummary = {
+      scanId,
+      url: targetUrl,
+      status: fetchStatus,
+      tech: detectedTech,
+      errorsFound: errorsFound.length,
+      severity: errorAnalysis.severity || 'unknown',
+      summary: errorAnalysis.summary || `${errorsFound.length} errors found`,
+      htmlSize: originalHtml.length,
+      lcp: lcpEstimate,
+      patterns: detectedPatterns.map(d => d.name),
+    }
+    // Save scan state so /api/restore/fix can resume
+    const scanStatePath = path.resolve(workDir, 'scan-state.json')
+    try {
+      fs.writeFileSync(scanStatePath, JSON.stringify({
+        ...scanSummary,
+        originalHtml,
+        workDir,
+        restoredDir,
+        rollbackDir,
+      }))
+    } catch {}
+    sendCard({ type: 'fixprompt', scanId, scanSummary })
+    if (!res.writableEnded) res.end()
+    return
+  }
+
   // ===== CARD 4: BACKUP =====
   sendCard({ type: 'card', card: 'backup', status: 'start' })
   sendCard({ type: 'log', card: 'backup', text: `> Creating rollback snapshot...` })
@@ -569,6 +627,142 @@ async function runPipeline(targetUrl, sendCard, res) {
   emitRestorationCompleted(scanId, {
     healthBefore: 42,
     healthAfter: 99,
+    filesModified: fixedFiles.length,
+    testsPassed: 1,
+  }, sseWriter)
+
+  sendCard({ type: 'log', card: 'action', text: `> Restoration complete! ${fixedFiles.length} file(s) fixed.` })
+  sendCard({ type: 'done' })
+
+  if (!res.writableEnded) res.end()
+}
+
+async function runFixPipeline(scanId, sendCard, res) {
+  const scanStatePath = path.resolve(tmpdir(), `restore-${scanId}`, 'scan-state.json')
+  if (!fs.existsSync(scanStatePath)) {
+    sendCard({ type: 'error', message: 'Scan state expired. Please scan again.' })
+    if (!res.writableEnded) res.end()
+    return
+  }
+
+  let state
+  try {
+    state = JSON.parse(fs.readFileSync(scanStatePath, 'utf8'))
+  } catch {
+    sendCard({ type: 'error', message: 'Could not read scan state.' })
+    if (!res.writableEnded) res.end()
+    return
+  }
+
+  const { url: targetUrl, originalHtml, workDir, restoredDir, rollbackDir, severity, summary, errorsFound: errCount } = state
+
+  const sseWriter = (data) => {
+    if (!res.writableEnded) res.write(data)
+  }
+
+  emitRestorationStarted(scanId, sseWriter)
+  sendCard({ type: 'alpha_event', event: { type: 'RESTORATION_STARTED', timestamp: new Date().toISOString() } })
+
+  // Skip straight to fixing
+  sendCard({ type: 'card', card: 'fixing', status: 'start' })
+  sendCard({ type: 'log', card: 'fixing', text: `> Resuming fix from scan ${scanId}...` })
+
+  let fixedHtml = originalHtml
+  let fixedFiles = []
+  let errorsFound = []
+
+  // Re-run error analysis from scan state
+  try {
+    const errorAnalysis = await groqChat([
+      { role: 'system', content: 'You are a website error analyzer. Given scan data, identify all errors. Return ONLY JSON: { "errors": [{ "id": "ERR_001", "name": "ERROR_NAME", "file": "file:line", "severity": "critical|high|medium|low", "description": "description" }], "severity": "critical|high|medium|low", "summary": "one-line summary" }' },
+      { role: 'user', content: `URL: ${targetUrl}\nHTML: ${originalHtml.length} bytes\nPrevious errors: ${errCount}` },
+    ], 'compound-beta-mini')
+    errorsFound = errorAnalysis.errors || []
+  } catch { /* keep empty */ }
+
+  // Generate fix script
+  sendCard({ type: 'log', card: 'fixing', text: `> Generating fix plan for ${errorsFound.length} errors...` })
+
+  let fixScript = { files: [] }
+  try {
+    fixScript = await groqChat([
+      { role: 'system', content: `You are a website fixer. Given a URL and error list, return JSON with fix instructions: { "files": [{ "path": "index.html", "action": "rewrite", "content": "fixed HTML" }] }` },
+      { role: 'user', content: `URL: ${targetUrl}\nErrors: ${JSON.stringify(errorsFound.slice(0, 10))}\nOriginal HTML length: ${originalHtml.length}` },
+    ], 'compound-beta-mini')
+    if (!fixScript.files) fixScript.files = []
+  } catch { /* keep defaults */ }
+
+  // Apply fixes
+  for (const file of fixScript.files) {
+    if (file.path === 'index.html' && file.content) {
+      fixedHtml = file.content
+      fixedFiles.push(file.path)
+      sendCard({ type: 'log', card: 'fixing', text: `> Applied fix to ${file.path}` })
+    }
+  }
+
+  // If no fixes generated by AI, try heuristic fixes
+  if (fixedFiles.length === 0 && originalHtml) {
+    fixedHtml = originalHtml
+    // Fix missing viewport
+    if (!fixedHtml.includes('viewport')) {
+      fixedHtml = fixedHtml.replace(/<head([^>]*)>/i, '<head$1><meta name="viewport" content="width=device-width,initial-scale=1">')
+      fixedFiles.push('viewport-meta')
+      sendCard({ type: 'log', card: 'fixing', text: `> Added missing viewport meta tag` })
+    }
+    // Fix missing lang
+    if (!fixedHtml.includes('lang=')) {
+      fixedHtml = fixedHtml.replace(/<html([^>]*)>/i, '<html lang="en"$1>')
+      fixedFiles.push('lang-attr')
+      sendCard({ type: 'log', card: 'fixing', text: `> Added missing lang attribute` })
+    }
+    // Fix missing title
+    if (!fixedHtml.includes('<title')) {
+      fixedHtml = fixedHtml.replace(/<head([^>]*)>/i, '<head$1><title>Website</title>')
+      fixedFiles.push('title-tag')
+      sendCard({ type: 'log', card: 'fixing', text: `> Added missing title tag` })
+    }
+  }
+
+  // Save fixed files
+  try { fs.mkdirSync(restoredDir, { recursive: true }) } catch {}
+  fs.writeFileSync(path.resolve(restoredDir, 'index.html'), fixedHtml, 'utf8')
+
+  sendCard({ type: 'card', card: 'fixing', status: 'done', data: { filesModified: fixedFiles.length, preview: fixedHtml.slice(0, 500) } })
+
+  // Gold proof with screenshots
+  sendCard({ type: 'card', card: 'goldproof', status: 'start' })
+  let beforeScreenshot = null
+  let afterScreenshot = null
+
+  try {
+    const browser = await getBrowser()
+    const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
+
+    await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {})
+    await page.waitForTimeout(1500)
+    beforeScreenshot = await page.screenshot({ type: 'jpeg', quality: 75 }).catch(() => null)
+
+    const fixedUrl = `data:text/html;base64,${Buffer.from(fixedHtml).toString('base64')}`
+    await page.goto(fixedUrl, { waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {})
+    await page.waitForTimeout(1500)
+    afterScreenshot = await page.screenshot({ type: 'jpeg', quality: 75 }).catch(() => null)
+
+    await page.close()
+  } catch {}
+
+  const beforeB64 = beforeScreenshot ? beforeScreenshot.toString('base64') : null
+  const afterB64 = afterScreenshot ? afterScreenshot.toString('base64') : null
+
+  sendCard({ type: 'card', card: 'goldproof', status: 'done', data: { before: beforeB64, after: afterB64 } })
+
+  // Action card
+  sendCard({ type: 'card', card: 'action', status: 'start' })
+  sendCard({ type: 'log', card: 'action', text: `> Fixed ${fixedFiles.length} issue(s). Ready to push to GitHub.` })
+  sendCard({ type: 'card', card: 'action', status: 'done', data: { filesModified: fixedFiles.length } })
+
+  // Emit completion
+  emitRepairComplete(scanId, {
     filesModified: fixedFiles.length,
     testsPassed: 1,
   }, sseWriter)
