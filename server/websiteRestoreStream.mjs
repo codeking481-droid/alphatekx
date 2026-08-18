@@ -8,6 +8,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { tmpdir } from 'node:os'
 import { lookup } from 'node:dns'
+import { withContext } from './scanner/browserPool.mjs'
 import { alphaChat, alphaText } from '../alpha-core/index.ts'
 import {
   emitRestorationStarted,
@@ -145,7 +146,7 @@ async function runPipeline(targetUrl, sendCard, res) {
   sendCard({ type: 'alpha_event', event: { type: 'RESTORATION_STARTED', timestamp: new Date().toISOString() } })
 
   // ===== CARD 2: SCANNING LOG =====
-  sendCard({ type: 'card', card: 'scanning', status: 'start' })
+  sendCard({ type: 'card', card: 'scanning', status: 'start', data: { scanId } })
 
   // DNS
   sendCard({ type: 'log', card: 'scanning', text: `> DNS lookup for ${new URL(targetUrl).hostname}...` })
@@ -161,31 +162,88 @@ async function runPipeline(targetUrl, sendCard, res) {
     sendCard({ type: 'log', card: 'scanning', text: `> DNS lookup failed: ${err.message}` })
   }
 
-  // Fetch
-  sendCard({ type: 'log', card: 'scanning', text: `> FETCH ${targetUrl}...` })
+  // ===== PLAYWRIGHT BROWSER SCANNING WITH LIVE SCREENSHOTS =====
+  const screenshots = []
+  const screenshotDir = path.join(workDir, 'screenshots')
+  try { fs.mkdirSync(screenshotDir, { recursive: true }) } catch {}
   let fetchStatus = 0
+
+  sendCard({ type: 'log', card: 'scanning', text: `> Launching headless Chromium browser...` })
+
   try {
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), 20000)
-    const fetchRes = await fetch(targetUrl, {
-      signal: controller.signal,
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 AlphaTekX/1.0' },
-      redirect: 'follow',
+    await withContext(async (context) => {
+      const page = await context.newPage()
+      try {
+        sendCard({ type: 'log', card: 'scanning', text: `> Navigating to ${targetUrl}...` })
+        sendCard({ type: 'alpha_event', event: { type: 'BROWSER_OPENED', data: { url: targetUrl }, timestamp: new Date().toISOString() } })
+
+        const response = await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 25000 })
+        fetchStatus = response?.status() || 0
+        sendCard({ type: 'log', card: 'scanning', text: `> Status: ${fetchStatus} | Page loaded in browser` })
+        sendCard({ type: 'alpha_event', event: { type: 'PAGE_NAVIGATED', data: { url: targetUrl }, timestamp: new Date().toISOString() } })
+
+        // Screenshot 1: Homepage
+        const ss1 = '01-homepage.jpg'
+        await page.screenshot({ path: path.join(screenshotDir, ss1), type: 'jpeg', quality: 60 })
+        screenshots.push({ filename: ss1, label: `Homepage loaded (HTTP ${fetchStatus})` })
+        sendCard({ type: 'screenshot', scanId, filename: ss1, label: `Homepage loaded (HTTP ${fetchStatus})` })
+
+        // Capture HTML
+        originalHtml = await page.content()
+        sendCard({ type: 'log', card: 'scanning', text: `> HTML captured: ${(originalHtml.length / 1024).toFixed(1)}KB` })
+
+        // Probe sensitive paths
+        const probePaths = ['/wp-admin', '/.env', '/wp-config.php.bak', '/.git/config', '/server-status']
+        for (let i = 0; i < probePaths.length; i++) {
+          sendCard({ type: 'log', card: 'scanning', text: `> Checking ${probePaths[i]}...` })
+          try {
+            const probePage = await context.newPage()
+            const probeRes = await probePage.goto(new URL(probePaths[i], targetUrl).toString(), { waitUntil: 'commit', timeout: 8000 })
+            const probeStatus = probeRes?.status() || 0
+            const probeFile = `0${i + 2}-probe.jpg`
+            await probePage.screenshot({ path: path.join(screenshotDir, probeFile), type: 'jpeg', quality: 60 })
+            screenshots.push({ filename: probeFile, label: `${probePaths[i]} → HTTP ${probeStatus}` })
+            sendCard({ type: 'screenshot', scanId, filename: probeFile, label: `${probePaths[i]} → HTTP ${probeStatus}` })
+            sendCard({ type: 'log', card: 'scanning', text: `> ${probePaths[i]}: HTTP ${probeStatus}` })
+            await probePage.close()
+          } catch {
+            sendCard({ type: 'log', card: 'scanning', text: `> ${probePaths[i]}: connection refused` })
+          }
+        }
+
+        // Screenshot: Full page
+        const ssFull = `${screenshots.length + 1}-fullpage.jpg`
+        await page.screenshot({ path: path.join(screenshotDir, ssFull), type: 'jpeg', quality: 50, fullPage: true })
+        screenshots.push({ filename: ssFull, label: 'Full page capture' })
+        sendCard({ type: 'screenshot', scanId, filename: ssFull, label: 'Full page capture' })
+      } catch (err) {
+        sendCard({ type: 'log', card: 'scanning', text: `> Browser error: ${err.message}` })
+      } finally {
+        await page.close()
+      }
     })
-    clearTimeout(timer)
-    fetchStatus = fetchRes.status
-    originalHtml = await fetchRes.text()
-    sendCard({ type: 'log', card: 'scanning', text: `> Status: ${fetchStatus} ${fetchRes.statusText || ''} | Size: ${(originalHtml.length / 1024).toFixed(1)}KB` })
   } catch (err) {
-    fetchStatus = 0
-    sendCard({ type: 'log', card: 'scanning', text: `> FETCH failed: ${err.name === 'AbortError' ? 'Timeout (20s)' : err.message}` })
+    // Playwright failed — fallback to plain HTTP fetch
+    sendCard({ type: 'log', card: 'scanning', text: `> Browser unavailable (${err.message}), using HTTP fallback...` })
+    try {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 20000)
+      const fetchRes = await fetch(targetUrl, {
+        signal: controller.signal,
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 AlphaTekX/1.0' },
+        redirect: 'follow',
+      })
+      clearTimeout(timer)
+      fetchStatus = fetchRes.status
+      originalHtml = await fetchRes.text()
+      sendCard({ type: 'log', card: 'scanning', text: `> Status: ${fetchStatus} | Size: ${(originalHtml.length / 1024).toFixed(1)}KB` })
+    } catch (fetchErr) {
+      fetchStatus = 0
+      sendCard({ type: 'log', card: 'scanning', text: `> FETCH failed: ${fetchErr.name === 'AbortError' ? 'Timeout (20s)' : fetchErr.message}` })
+    }
   }
 
   metrics.before.statusCode = fetchStatus
-
-  // ===== EMIT: BROWSER OPENED =====
-  emitBrowserOpened(scanId, targetUrl, sseWriter)
-  emitPageNavigated(scanId, targetUrl, undefined, sseWriter)
 
   // Tech detection
   sendCard({ type: 'log', card: 'scanning', text: `> TECH detection — analyzing HTML patterns...` })
@@ -675,4 +733,27 @@ export function handlePreviewFixedRoute(req, res) {
 
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' })
   res.end('<html><body style="background:#0A0A0A;color:#D6FF00;font-family:monospace;padding:40px;text-align:center"><h2>Fixed version ready</h2><p>Download restored.zip to view the fix.</p></body></html>')
+}
+
+export function handleScreenshotRoute(req, res) {
+  const parsed = new URL(req.url, 'http://localhost')
+  const raw = parsed.pathname.replace(/^\/api\/restore\/screenshots\//, '')
+  const parts = raw.split('/')
+  if (parts.length !== 2 || !parts[0] || !parts[1]) return jsonResponse(res, 400, { error: 'Invalid path' })
+
+  const [scanId, filename] = parts
+  if (scanId.includes('..') || filename.includes('..')) return jsonResponse(res, 403, { error: 'Invalid path' })
+
+  const filePath = path.resolve(tmpdir(), `restore-${scanId}`, 'screenshots', filename)
+  const screenshotsDir = path.resolve(tmpdir(), `restore-${scanId}`, 'screenshots')
+  if (!filePath.startsWith(screenshotsDir)) return jsonResponse(res, 403, { error: 'Forbidden' })
+  if (!fs.existsSync(filePath)) return jsonResponse(res, 404, { error: 'Screenshot not found' })
+
+  const ext = path.extname(filename).toLowerCase()
+  res.writeHead(200, {
+    'Content-Type': ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/png',
+    'Cache-Control': 'public, max-age=3600',
+    'Access-Control-Allow-Origin': '*',
+  })
+  fs.createReadStream(filePath).pipe(res)
 }

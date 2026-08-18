@@ -38,6 +38,8 @@ import { supabase } from '../lib/supabase'
 type RestoreCardState = {
   preview?: { url: string; status: 'loading' | 'loaded' | 'error' }
   scanning?: { logs: ScanLog[]; status: 'start' | 'done' | 'error' }
+  screenshots?: Array<{ filename: string; label: string }>
+  scanId?: string
   errors?: { errors: ScanError[]; severity: string; status: 'start' | 'done' }
   backup?: { status: 'start' | 'done'; scanId?: string; version?: string }
   fixing?: { files: string[]; diffs: DiffEntry[]; status: 'start' | 'done'; summary?: string; _refreshKey?: number }
@@ -425,6 +427,7 @@ function ChatContent() {
           if (cardName === 'preview') break
           if (cardName === 'scanning') {
             cards.scanning = { logs: cards.scanning?.logs || [], status: event.status }
+            if (event.data?.scanId) cards.scanId = event.data.scanId
           } else if (cardName === 'errors') {
             cards.errors = { errors: event.data?.errors || [], severity: event.data?.severity || 'unknown', status: event.status }
           } else if (cardName === 'backup') {
@@ -464,6 +467,12 @@ function ChatContent() {
           if (cards.fixing) {
             cards.fixing = { ...cards.fixing, _refreshKey: Date.now() }
           }
+          break
+        }
+        case 'screenshot': {
+          const existing = cards.screenshots || []
+          cards.screenshots = [...existing, { filename: event.filename, label: event.label }]
+          if (event.scanId) cards.scanId = event.scanId
           break
         }
         case 'done': {
@@ -708,13 +717,13 @@ function ChatContent() {
                             {/* Card 1+2: Live Preview + Scanning side-by-side during scan phase */}
                             {msg.restoreCards.preview && msg.restoreCards.scanning && msg.restoreCards.scanning.status === 'start' ? (
                               <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                                <LivePreviewCard url={msg.restoreCards.preview.url} status={msg.restoreCards.preview.status} compact />
+                                <LivePreviewCard url={msg.restoreCards.preview.url} status={msg.restoreCards.preview.status} compact screenshots={msg.restoreCards.screenshots} scanId={msg.restoreCards.scanId} />
                                 <ScanningCard logs={msg.restoreCards.scanning.logs} status={msg.restoreCards.scanning.status} />
                               </div>
                             ) : (
                               <>
                                 {msg.restoreCards.preview && (
-                                  <LivePreviewCard url={msg.restoreCards.preview.url} status={msg.restoreCards.preview.status} />
+                                  <LivePreviewCard url={msg.restoreCards.preview.url} status={msg.restoreCards.preview.status} screenshots={msg.restoreCards.screenshots} scanId={msg.restoreCards.scanId} />
                                 )}
                                 {msg.restoreCards.scanning && (
                                   <ScanningCard logs={msg.restoreCards.scanning.logs} status={msg.restoreCards.scanning.status} />
