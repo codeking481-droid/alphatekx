@@ -317,6 +317,22 @@ export function AuthProvider({ children }: PropsWithChildren) {
         }
       }
 
+      // Proactive token refresh: if the access token is expired or near-expiry,
+      // refresh it immediately so subsequent API calls don't fail with 401.
+      if (restored?.access_token) {
+        const expiresIn = (restored.expires_at ?? 0) * 1000 - Date.now()
+        if (expiresIn < 300_000) {
+          try {
+            const { data: refreshed } = await supabase.auth.refreshSession()
+            if (refreshed.session) {
+              restored = refreshed.session
+            }
+          } catch (err) {
+            console.warn('[AlphaTekx] proactive token refresh failed:', err)
+          }
+        }
+      }
+
       restoreComplete = true
 
       if (restored?.user?.id && activeUserId.current && restored.user.id !== activeUserId.current) {
@@ -333,9 +349,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
     }
     void restoreSession().catch(error => {
       console.warn('[AlphaTekx] session restore failed:', error)
+      // Don't immediately log user out on network errors — keep existing session
+      // if one exists, and let onAuthStateChange handle any real auth failures.
       restoreComplete = true
-      setSession(null)
-      setProfile(null)
       setLoading(false)
     })
 

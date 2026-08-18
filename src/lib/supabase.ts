@@ -7,6 +7,13 @@ const anonKey = viteEnv.VITE_SUPABASE_ANON_KEY?.trim()
 export const isSupabaseConfigured = Boolean(url && anonKey)
 export const supabase: SupabaseClient | null = url && anonKey
   ? createClient(url, anonKey, {
-      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+        storageKey: 'sb-alphatekx-auth',
+        flowType: 'pkce',
+      },
     })
   : null
