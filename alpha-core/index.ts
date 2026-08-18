@@ -37,3 +37,27 @@ export {
   getBudgetSummary,
 } from './budget-guard.ts'
 export type { BudgetConfig, BudgetState } from './budget-guard.ts'
+
+export {
+  emit,
+  subscribe,
+  getEventTimeline,
+  emitRestorationStarted,
+  emitRepositoryScanned,
+  emitFileOpened,
+  emitCommandStarted,
+  emitCommandFinished,
+  emitBrowserOpened,
+  emitPageNavigated,
+  emitErrorDetected,
+  emitHypothesisCreated,
+  emitExperimentStarted,
+  emitFileModified,
+  emitTestStarted,
+  emitTestFinished,
+  emitComponentHealthChanged,
+  emitVerificationPassed,
+  emitRestorationCompleted,
+  emitReasoningTrace,
+} from './event-bus.ts'
+export type { AlphaEvent, AlphaEventHandler } from './event-bus.ts'

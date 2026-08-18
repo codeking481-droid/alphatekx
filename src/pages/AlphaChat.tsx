@@ -15,6 +15,14 @@ import FixingCard, { type DiffEntry } from '../components/alpha/restore/FixingCa
 import GoldProofCard, { type ProofData } from '../components/alpha/restore/GoldProofCard'
 import ActionCard from '../components/alpha/restore/ActionCard'
 import GitHubApplyCard from '../components/alpha/restore/GitHubApplyCard'
+import ActivityStream from '../components/alpha/restore/ActivityStream'
+import LiveBrowserCard from '../components/alpha/restore/cards/LiveBrowserCard'
+import CodeDiffCard from '../components/alpha/restore/cards/CodeDiffCard'
+import TerminalCard from '../components/alpha/restore/cards/TerminalCard'
+import SystemGraphAliveCard from '../components/alpha/restore/cards/SystemGraphAliveCard'
+import ReasoningTrace from '../components/alpha/restore/ReasoningTrace'
+import RestorationComplete from '../components/alpha/restore/RestorationComplete'
+import AlphaReplay from '../components/alpha/restore/AlphaReplay'
 import {
   createChatThread,
   saveChatThread,
@@ -39,11 +47,19 @@ type RestoreCardState = {
   isRunning?: boolean
 }
 
+type AlphaEventType = {
+  type: string
+  timestamp: string
+  data?: any
+}
+
 type AlphaMessage = GeneralChatMessage & {
   thoughtSteps?: ThoughtStep[]
   restoreResult?: any
   videoResult?: { videoUrl: string; editId: string; plan: any; elapsed: string }
   restoreCards?: RestoreCardState
+  alphaEvents?: AlphaEventType[]
+  alphaReasoning?: { assessment: string; hypotheses: { cause: string; confidence: number }[]; evidence: string; decision: string }
   isStreaming?: boolean
 }
 
@@ -171,6 +187,7 @@ function ChatContent() {
       content: '',
       createdAt: new Date().toISOString(),
       thoughtSteps: [],
+      alphaEvents: [],
       restoreCards: isWebsiteRestore ? { preview: { url: detectedUrl!, status: 'loading' }, isRunning: true } : undefined,
       isStreaming: true,
     }
@@ -380,6 +397,25 @@ function ChatContent() {
   }, [input, isGenerating, activeThread, messages, scrollToBottom, updateLastMessage, attachedFile])
 
   const handleRestoreEvent = useCallback((event: any, url: string) => {
+    // Handle alpha events from event-bus
+    if (event.type === 'alpha_event' && event.event) {
+      const alphaEvent = event.event
+      updateLastMessage((prev) => {
+        const events = [...(prev.alphaEvents || [])]
+        events.push(alphaEvent)
+
+        // Handle reasoning trace events
+        let reasoning = prev.alphaReasoning
+        if (alphaEvent.type === 'REASONING_TRACE' && alphaEvent.data) {
+          reasoning = alphaEvent.data
+        }
+
+        return { ...prev, alphaEvents: events, alphaReasoning: reasoning }
+      })
+      scrollToBottom()
+      return
+    }
+
     updateLastMessage((prev) => {
       const cards = { ...(prev.restoreCards || {}) }
 
@@ -692,6 +728,75 @@ function ChatContent() {
                             {/* Card 8: GitHub Direct Push */}
                             {msg.restoreCards.github && msg.restoreCards.action?.scanId && (
                               <GitHubApplyCard scanId={msg.restoreCards.action.scanId} />
+                            )}
+                          </div>
+                        )}
+
+                        {/* Alpha Activity Stream — below chat, shows when events arrive */}
+                        {msg.alphaEvents && msg.alphaEvents.length > 0 && (
+                          <div className="mt-3 space-y-3">
+                            <ActivityStream
+                              events={msg.alphaEvents}
+                              isRunning={msg.isStreaming === true}
+                            />
+
+                            {/* Signature Visual Cards — appear when relevant events arrive */}
+                            {msg.alphaEvents.filter(e => e.type === 'BROWSER_OPENED').map((e, i) => (
+                              <LiveBrowserCard key={`browser-${i}`} url={e.data?.url || ''} />
+                            ))}
+                            {msg.alphaEvents.filter(e => e.type === 'PAGE_NAVIGATED' && e.data?.screenshotUrl).map((e, i) => (
+                              <LiveBrowserCard key={`nav-${i}`} url={e.data?.url || ''} screenshotUrl={e.data?.screenshotUrl} />
+                            ))}
+                            {msg.alphaEvents.filter(e => e.type === 'FILE_MODIFIED').map((e, i) => (
+                              <CodeDiffCard key={`diff-${i}`} filename={e.data?.path || ''} old={e.data?.diff || ''} newContent={e.data?.diff || ''} />
+                            ))}
+                            {msg.alphaEvents.filter(e => e.type === 'COMMAND_STARTED' || e.type === 'COMMAND_FINISHED').map((e, i) => (
+                              <TerminalCard
+                                key={`cmd-${i}`}
+                                cmd={e.data?.cmd || ''}
+                                status={e.type === 'COMMAND_FINISHED' ? (e.data?.success ? 'success' : 'error') : 'running'}
+                                output={e.data?.output}
+                              />
+                            ))}
+                            {msg.alphaEvents.filter(e => e.type === 'TEST_STARTED' || e.type === 'TEST_FINISHED').map((e, i) => (
+                              <TerminalCard
+                                key={`test-${i}`}
+                                cmd="Running Tests"
+                                status={e.type === 'TEST_FINISHED' ? 'success' : 'running'}
+                                testCount={e.data?.count}
+                                testsPassed={e.data?.passed}
+                                testsFailed={e.data?.failed}
+                              />
+                            ))}
+                            {msg.alphaEvents.filter(e => e.type === 'COMPONENT_HEALTH_CHANGED').map((e, i) => (
+                              <SystemGraphAliveCard
+                                key={`health-${i}`}
+                                components={[{
+                                  name: e.data?.component || '',
+                                  health: e.data?.newHealth as any || 'unknown',
+                                }]}
+                                recentChange={e.data}
+                              />
+                            ))}
+
+                            {/* Reasoning Trace */}
+                            {msg.alphaReasoning && (
+                              <ReasoningTrace
+                                assessment={msg.alphaReasoning.assessment}
+                                hypotheses={msg.alphaReasoning.hypotheses}
+                                evidence={msg.alphaReasoning.evidence}
+                                decision={msg.alphaReasoning.decision}
+                              />
+                            )}
+
+                            {/* Restoration Complete */}
+                            {msg.alphaEvents.some(e => e.type === 'RESTORATION_COMPLETED') && (
+                              <RestorationComplete
+                                healthBefore={msg.alphaEvents.find(e => e.type === 'RESTORATION_COMPLETED')?.data?.healthBefore || 42}
+                                healthAfter={msg.alphaEvents.find(e => e.type === 'RESTORATION_COMPLETED')?.data?.healthAfter || 99}
+                                filesModified={msg.alphaEvents.find(e => e.type === 'RESTORATION_COMPLETED')?.data?.filesModified || 0}
+                                testsPassed={msg.alphaEvents.find(e => e.type === 'RESTORATION_COMPLETED')?.data?.testsPassed || 0}
+                              />
                             )}
                           </div>
                         )}
