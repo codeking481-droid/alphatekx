@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: alphatekx
+    env: node
+    plan: free
+    branch: main
+    autoDeploy: true
+    buildCommand: npm install && npx playwright install chromium && npm run build
+    startCommand: node --experimental-strip-types server.mjs
+    envVars:
+      - key: NODE_VERSION
+        value: 22.11.0
+      - key: PLAYWRIGHT_BROWSERS_PATH
+        value: 0
+      - key: PUBLIC_APP_URL
+        value: https://alphatekx.name.ng
+      - key: VITE_PUBLIC_APP_URL
+        value: https://alphatekx.name.ng
+      - key: GOOGLE_REDIRECT_URI
+        value: https://alphatekx.name.ng/api/auth/gmail/callback
+      - key: META_REDIRECT_URI
+        value: https://alphatekx.name.ng/api/connectors/facebook/callback

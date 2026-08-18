@@ -1,0 +1,41 @@
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import path from 'node:path'
+
+const css = fs.readFileSync('src/index.css', 'utf8')
+const app = fs.readFileSync('src/App.tsx', 'utf8')
+const billing = fs.readFileSync('src/lib/billing.ts', 'utf8')
+const settings = fs.readFileSync('src/pages/Settings.tsx', 'utf8')
+
+const files = []
+function collect(directory) {
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const target = path.join(directory, entry.name)
+    if (entry.isDirectory()) collect(target)
+    else if (/\.(?:tsx?|css|m?js)$/.test(entry.name)) files.push(target)
+  }
+}
+collect('src')
+const source = files.map(file => fs.readFileSync(file, 'utf8')).join('\n')
+const componentSource = files.filter(file => !file.endsWith('.css')).map(file => fs.readFileSync(file, 'utf8')).join('\n')
+
+assert.match(css, /--bg-base:\s*#0A0F1E/)
+for (const color of ['#06FFA5', '#3B82F6', '#8B5CF6', '#7C3AED']) assert.ok(css.includes(color))
+assert.match(css, /body\s*\{[^}]*background:\s*radial-gradient\(ellipse at 50% -10%,\s*#111827 0%,\s*#0A0F1E 52%,\s*#080C1A 100%\)\s*fixed\s*!important/s)
+assert.match(css, /body::before\s*\{[^}]*fractalNoise/s)
+assert.equal((app.match(/aurora-blob aurora-blob-/g) || []).length, 3)
+assert.match(css, /backdrop-filter:\s*blur\(20px\)/)
+assert.match(css, /backdrop-filter:\s*blur\(24px\)\s*saturate\(180%\)\s*!important/)
+assert.match(css, /border-top-color:\s*rgba\(255,255,255,.15\)\s*!important/)
+assert.match(css, /:where\(\.btn-alpha,\s*\.btn-primary,\s*\.primary-button\)/)
+assert.match(css, /:has\(>\s*#automation-request\)/)
+assert.match(css, /linear-gradient\(90deg,\s*transparent,\s*rgba\(6,255,165/)
+assert.match(css, /scrollbar-color/)
+assert.doesNotMatch(source, /#000000|bg-black|rgb\(0\s*,\s*0\s*,\s*0\s*\)/)
+assert.doesNotMatch(componentSource, /(?:^|\s)bg-white(?:\s|["'`])/)
+assert.doesNotMatch(componentSource, /bg-\[#(?:FFFFFF|FAFBFF|F9FAFB|F4F3FF)\]/)
+assert.match(settings, /text-3xl font-black text-cyan-200/)
+assert.match(settings, /value="Living indigo"/)
+for (const price of ['1500', '2900', '7900']) assert.match(billing, new RegExp(`priceKobo:\\s*${price}`))
+
+console.log('PLATFORM_RECOLOUR_TESTS_OK')

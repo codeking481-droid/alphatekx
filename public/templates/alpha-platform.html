@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NeuralOS</title>
+<script>
+(function(){
+  const p = new URLSearchParams(location.search);
+  const t = p.get('t');
+  if (t) document.title = t;
+})();
+</script>
+<style>
+:root{--bg:#0a0a0a;--panel:#151515;--panel-2:#1c1c1c;--text:#f5f5f7;--muted:#a1a1aa;--primary:#6366f1;--primary-2:#ec4899;--border:rgba(255,255,255,.08);--radius:16px;--shadow:0 4px 24px rgba(0,0,0,.2)}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);line-height:1.5;overflow:hidden}
+button,input,textarea,select{font:inherit}
+button{cursor:pointer;border:none;background:none;color:inherit}
+.app{display:flex;height:100vh;width:100vw;overflow:hidden}
+.sidebar{width:260px;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column}
+.logo{padding:20px 22px;font-weight:800;font-size:1.15rem;letter-spacing:.04em;background:linear-gradient(135deg,var(--primary),var(--primary-2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.nav{flex:1;overflow-y:auto;padding:0 12px 16px}
+.nav button{display:flex;align-items:center;gap:12px;width:100%;padding:10px 12px;border-radius:10px;margin-bottom:4px;font-size:.9rem;color:var(--muted);transition:.15s}
+.nav button:hover,.nav button.active{background:var(--panel-2);color:var(--text)}
+.nav svg{width:18px;height:18px;opacity:.8}
+.main{flex:1;display:flex;flex-direction:column;min-width:0}
+.topbar{height:64px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 24px;background:rgba(10,10,10,.85);backdrop-filter:blur(20px)}
+.topbar h1{font-size:1.1rem;font-weight:700;margin:0}
+.topbar-actions{display:flex;align-items:center;gap:12px}
+.search{width:280px;max-width:40%;padding:8px 14px;border-radius:999px;border:1px solid var(--border);background:var(--panel);color:var(--text);outline:none;font-size:.85rem}
+.search::placeholder{color:var(--muted)}
+.icon-btn{width:36px;height:36px;border-radius:999px;border:1px solid var(--border);display:grid;place-items:center;transition:.15s}
+.icon-btn:hover{background:var(--panel-2)}
+.content{flex:1;overflow-y:auto;padding:24px}
+.grid-4{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+.card-title{font-size:.85rem;color:var(--muted);margin:0 0 6px}
+.card-value{font-size:1.7rem;font-weight:800;margin:0}
+.card-sub{font-size:.75rem;color:var(--muted);margin-top:4px}
+.section-title{font-size:1rem;font-weight:700;margin:0 0 14px}
+.row{display:flex;gap:16px;flex-wrap:wrap}
+.col{flex:1;min-width:260px}
+table{width:100%;border-collapse:collapse;font-size:.85rem}
+th{text-align:left;color:var(--muted);font-weight:600;padding:10px;border-bottom:1px solid var(--border)}
+td{padding:12px 10px;border-bottom:1px solid var(--border);vertical-align:middle}
+tr:hover td{background:rgba(255,255,255,.02)}
+.badge{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;font-size:.7rem;font-weight:600;background:var(--panel-2)}
+.badge.green{background:rgba(16,185,129,.15);color:#6ee7b7}
+.badge.amber{background:rgba(245,158,11,.15);color:#fcd34d}
+.badge.blue{background:rgba(99,102,241,.15);color:#a5b4fc}
+.badge.red{background:rgba(239,68,68,.15);color:#fca5a5}
+.btn{padding:8px 14px;border-radius:10px;font-size:.85rem;font-weight:600;background:linear-gradient(135deg,var(--primary),var(--primary-2));color:#fff;box-shadow:var(--shadow);transition:.15s}
+.btn:hover{opacity:.92}
+.btn.secondary{background:var(--panel-2);color:var(--text);border:1px solid var(--border)}
+.input{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--panel);color:var(--text);outline:none;margin-bottom:10px}
+.input:focus{border-color:var(--primary)}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:100;padding:20px}
+.modal.show{display:flex}
+.modal-box{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);width:100%;max-width:460px;padding:22px;max-height:90vh;overflow-y:auto}
+.kanban{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+.kanban-col{background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius);padding:12px;min-height:120px}
+.kanban-head{font-size:.8rem;font-weight:700;color:var(--muted);margin-bottom:10px;display:flex;justify-content:space-between}
+.kanban-card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:10px;cursor:grab}
+.kanban-card:hover{border-color:rgba(255,255,255,.18)}
+.chat{display:flex;height:100%;gap:16px}
+.channels{width:220px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:12px}
+.channel{padding:8px 10px;border-radius:8px;margin-bottom:4px;font-size:.85rem;color:var(--muted);cursor:pointer}
+.channel:hover,.channel.active{background:var(--panel-2);color:var(--text)}
+.chat-main{flex:1;display:flex;flex-direction:column;min-width:0}
+.messages{flex:1;overflow-y:auto;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:12px}
+.msg{margin-bottom:14px}
+.msg strong{font-size:.85rem}
+.msg p{margin:4px 0 0;font-size:.85rem;color:var(--muted)}
+.chat-input{display:flex;gap:8px}
+.chat-input input{flex:1}
+.calendar{display:grid;grid-template-columns:repeat(7,1fr);gap:8px}
+.cal-day{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:10px;min-height:100px;font-size:.8rem;color:var(--muted)}
+.cal-day .event{background:var(--primary);color:#fff;border-radius:6px;padding:3px 6px;margin-top:4px;font-size:.7rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.file-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
+.file-item{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:14px;text-align:center;transition:.15s}
+.file-item:hover{border-color:rgba(255,255,255,.18)}
+.chart-bar{display:flex;align-items:flex-end;gap:6px;height:160px}
+.bar{flex:1;background:linear-gradient(180deg,var(--primary),var(--primary-2));border-radius:8px 8px 0 0;min-height:6px;transition:.3s}
+.hidden{display:none}
+.flex{display:flex;gap:12px;align-items:center}
+.mt{margin-top:16px}
+.muted{color:var(--muted)}
+small{font-size:.75rem;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="logo">NEURAL OS</div>
+    <nav class="nav" id="nav"></nav>
+  </aside>
+  <main class="main">
+    <header class="topbar">
+      <h1 id="pageTitle">Dashboard</h1>
+      <div class="topbar-actions">
+        <input class="search" id="globalSearch" placeholder="Search anything..." oninput="globalSearch()" />
+        <button class="icon-btn" title="Notifications">🔔</button>
+        <button class="icon-btn" title="Profile">👤</button>
+      </div>
+    </header>
+    <div class="content" id="content"></div>
+  </main>
+</div>
+
+<div class="modal" id="modal" onclick="if(event.target===this)closeModal()">
+  <div class="modal-box" id="modalBox"></div>
+</div>
+
+<script>
+const KEY = 'neuralos_data_v1';
+
+const modules = [
+  {id:'dashboard',label:'Dashboard',icon:'◈'},
+  {id:'projects',label:'Projects',icon:'▣'},
+  {id:'crm',label:'CRM',icon:'♟'},
+  {id:'analytics',label:'Analytics',icon:'◧'},
+  {id:'chat',label:'Team Chat',icon:'✉'},
+  {id:'calendar',label:'Calendar',icon:'◴'},
+  {id:'email',label:'Email',icon:'✉'},
+  {id:'files',label:'Files',icon:'❏'},
+  {id:'automations',label:'Automations',icon:'↻'},
+  {id:'settings',label:'Settings',icon:'⚙'}
+];
+
+const initialData = () => ({
+  stats:{mrr:42800,users:4820,newUsers:312,churn:2.4,aiUsage:8400,storage:64,apiRequests:1240000,automations:48,projects:14},
+  projects:[
+    {id:1,title:'AI CRM v2',status:'In Progress',priority:'High',owner:'Daniel'},
+    {id:2,title:'Mobile App',status:'Done',priority:'Medium',owner:'Sarah'},
+    {id:3,title:'API Gateway',status:'Review',priority:'High',owner:'Mike'},
+    {id:4,title:'Onboarding Flow',status:'Todo',priority:'Low',owner:'Ada'},
+    {id:5,title:'Billing 2.0',status:'In Progress',priority:'High',owner:'John'}
+  ],
+  tasks:[
+    {id:1,title:'Design dashboard',col:'todo',project:'AI CRM v2'},
+    {id:2,title:'Connect OpenAI',col:'inprogress',project:'AI CRM v2'},
+    {id:3,title:'Write tests',col:'review',project:'API Gateway'},
+    {id:4,title:'Deploy beta',col:'done',project:'Mobile App'},
+    {id:5,title:'User interviews',col:'inprogress',project:'Onboarding Flow'}
+  ],
+  leads:[
+    {id:1,name:'Acme Corp',stage:'new',value:45000,contact:'jane@acme.com'},
+    {id:2,name:'Beta Ltd',stage:'qualified',value:12000,contact:'tom@beta.com'},
+    {id:3,name:'Gamma Inc',stage:'proposal',value:78000,contact:'lisa@gamma.com'},
+    {id:4,name:'Delta LLC',stage:'closed',value:95000,contact:'mark@delta.com'}
+  ],
+  messages:[
+    {channel:'General',user:'Daniel',text:'New deployment is live.',time:'2m ago'},
+    {channel:'Engineering',user:'Sarah',text:'Fixed the auth bug.',time:'5m ago'},
+    {channel:'Marketing',user:'Ada',text:'Campaign assets ready.',time:'12m ago'}
+  ],
+  events:[
+    {id:1,title:'Sprint planning',day:3,time:'10:00'},
+    {id:2,title:'Investor call',day:7,time:'14:00'},
+    {id:3,title:'Design review',day:12,time:'11:00'},
+    {id:4,title:'Release party',day:18,time:'17:00'}
+  ],
+  emails:[
+    {id:1,from:'Jane Doe',subject:'Welcome to NeuralOS',preview:'Thanks for signing up...',read:false},
+    {id:2,from:'Stripe',subject:'Payment received',preview:'Your invoice was paid.',read:true},
+    {id:3,from:'GitHub',subject:'Security alert',preview:'New sign-in detected.',read:false}
+  ],
+  files:[
+    {id:1,name:'Brand.pdf',size:'2.4 MB',type:'pdf'},
+    {id:2,name:'Roadmap.png',size:'1.1 MB',type:'image'},
+    {id:3,name:'Spec.docx',size:'840 KB',type:'doc'},
+    {id:4,name:'Dashboard.fig',size:'4.2 MB',type:'figma'}
+  ],
+  automations:[
+    {id:1,name:'Lead-to-CRM',active:true,runs:1240},
+    {id:2,name:'Slack alerts',active:true,runs:5820},
+    {id:3,name:'Email digest',active:false,runs:320},
+    {id:4,name:'Invoice reminder',active:true,runs:210}
+  ],
+  revenue:[12000,15000,14000,19000,22000,26000,31000,29000,35000,38000,41000,42800],
+  activity:[
+    {text:'New user signed up',time:'2m ago'},
+    {text:'Invoice #1024 paid',time:'12m ago'},
+    {text:'Automation workflow triggered',time:'25m ago'},
+    {text:'API key rotated',time:'1h ago'},
+    {text:'New lead created',time:'2h ago'}
+  ]
+});
+
+function loadData(){try{const s=localStorage.getItem(KEY);return s?JSON.parse(s):initialData()}catch(e){return initialData()}}
+function saveData(){try{localStorage.setItem(KEY,JSON.stringify(data))}catch(e){}}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
+function $(id){return document.getElementById(id)}
+
+let data = loadData();
+let view = 'dashboard';
+let selectedChannel = 0;
+let searchQ = '';
+
+function renderNav(){
+  $('nav').innerHTML = modules.map(m=>`<button class="${m.id===view?'active':''}" onclick="setView('${m.id}')" data-view="${m.id}"><span>${m.icon}</span>${m.label}</button>`).join('');
+}
+
+function setView(v){view=v;$('pageTitle').textContent=modules.find(m=>m.id===v).label;renderNav();render();}
+
+function formatMoney(n){return '$'+n.toLocaleString()}
+function badge(status){const map={todo:'amber','in progress':'blue',review:'amber',done:'green',new:'blue',qualified:'amber',proposal:'amber',closed:'green'};return `<span class="badge ${map[(status||'').toLowerCase()]||'blue'}">${status}</span>`}
+
+function statCard(label,value,sub){return `<div class="card"><div class="card-title">${label}</div><div class="card-value">${value}</div>${sub?`<div class="card-sub">${sub}</div>`:''}</div>`}
+
+function render(){
+  const c=$('content');
+  c.innerHTML='';
+  if(view==='dashboard') renderDashboard(c);
+  else if(view==='projects') renderProjects(c);
+  else if(view==='crm') renderCRM(c);
+  else if(view==='analytics') renderAnalytics(c);
+  else if(view==='chat') renderChat(c);
+  else if(view==='calendar') renderCalendar(c);
+  else if(view==='email') renderEmail(c);
+  else if(view==='files') renderFiles(c);
+  else if(view==='automations') renderAutomations(c);
+  else if(view==='settings') renderSettings(c);
+}
+
+function renderDashboard(c){
+  c.innerHTML=`
+    <div class="grid-4">
+      ${statCard('MRR',formatMoney(data.stats.mrr),'+12% from last month')}
+      ${statCard('Active Users',data.stats.users.toLocaleString(),'+312 new')}
+      ${statCard('Churn Rate',data.stats.churn+'%','-0.3%')}
+      ${statCard('API Requests',(data.stats.apiRequests/1000000).toFixed(1)+'M','+8%')}
+    </div>
+    <div class="row">
+      <div class="col card"><h3 class="section-title">Revenue</h3><div class="chart-bar">${data.revenue.map(v=>`<div class="bar" style="height:${Math.max(6,(v/50000)*100)}%"></div>`).join('')}</div></div>
+      <div class="col card"><h3 class="section-title">Recent Activity</h3>${data.activity.map(a=>`<div class="msg"><strong>${a.text}</strong><p>${a.time}</p></div>`).join('')}</div>
+    </div>
+    <div class="row mt">
+      <div class="col card"><h3 class="section-title">Active Projects</h3><table><thead><tr><th>Name</th><th>Status</th><th>Owner</th></tr></thead><tbody>${data.projects.slice(0,4).map(p=>`<tr><td>${p.title}</td><td>${badge(p.status)}</td><td>${p.owner}</td></tr>`).join('')}</tbody></table></div>
+      <div class="col card"><h3 class="section-title">Team Chat</h3>${data.messages.slice(0,3).map(m=>`<div class="msg"><strong>${m.user}</strong> in #${m.channel}<p>${m.text} · ${m.time}</p></div>`).join('')}</div>
+    </div>`;
+}
+
+function renderProjects(c){
+  const cols={todo:'To Do',inprogress:'In Progress',review:'Review',done:'Done'};
+  c.innerHTML=`<div class="flex"><h3 class="section-title">Kanban</h3><button class="btn" onclick="addTask()">+ Task</button></div>
+    <div class="kanban">${Object.entries(cols).map(([key,label])=>`<div class="kanban-col" ondragover="allowDrop(event)" ondrop="drop(event,'${key}')"><div class="kanban-head">${label}<span>(${data.tasks.filter(t=>t.col===key).length})</span></div>${data.tasks.filter(t=>t.col===key).map(t=>`<div class="kanban-card" draggable="true" ondragstart="drag(event,${t.id})"><div style="font-weight:600">${t.title}</div><small>${t.project}</small></div>`).join('')}</div>`).join('')}</div>`;
+}
+function drag(e,id){e.dataTransfer.setData('id',id);}
+function allowDrop(e){e.preventDefault();}
+function drop(e,col){e.preventDefault();const id=Number(e.dataTransfer.getData('id'));const t=data.tasks.find(x=>x.id===id);if(t){t.col=col;saveData();render();}}
+function addTask(){const title=prompt('Task title');if(title){data.tasks.push({id:uid(),title,col:'todo',project:'General'});saveData();render();}}
+
+function renderCRM(c){
+  const q=searchQ.toLowerCase();
+  const leads=data.leads.filter(l=>l.name.toLowerCase().includes(q)||l.contact.toLowerCase().includes(q));
+  c.innerHTML=`<div class="flex"><h3 class="section-title">Leads</h3><button class="btn" onclick="addLead()">+ Lead</button></div>
+    <div class="card"><table><thead><tr><th>Company</th><th>Stage</th><th>Value</th><th>Contact</th><th></th></tr></thead><tbody>${leads.map(l=>`<tr><td>${l.name}</td><td>${badge(l.stage)}</td><td>${formatMoney(l.value)}</td><td>${l.contact}</td><td><button class="muted" onclick="deleteLead(${l.id})">Delete</button></td></tr>`).join('')}</tbody></table></div>`;
+}
+function addLead(){const name=prompt('Company name');const contact=prompt('Contact email');if(name){data.leads.push({id:uid(),name,stage:'new',value:Math.floor(Math.random()*80000)+5000,contact:contact||'unknown@example.com'});saveData();render();}}
+function deleteLead(id){data.leads=data.leads.filter(l=>l.id!==id);saveData();render();}
+
+function renderAnalytics(c){
+  c.innerHTML=`<div class="grid-4">
+    ${statCard('Conversion',3.8+'%','+0.4%')}
+    ${statCard('Retention',84+'%','+2%')}
+    ${statCard('LTV','$2,400','+5%')}
+    ${statCard('CAC','$142','-8%')}
+  </div>
+  <div class="row mt">
+    <div class="col card"><h3 class="section-title">Revenue Growth</h3><div class="chart-bar">${data.revenue.map(v=>`<div class="bar" style="height:${Math.max(6,(v/50000)*100)}%"></div>`).join('')}</div></div>
+    <div class="col card"><h3 class="section-title">Users by Plan</h3><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px"><div class="badge blue">Starter 42%</div><div class="badge green">Pro 35%</div><div class="badge amber">Enterprise 23%</div></div></div>
+  </div>`;
+}
+
+function renderChat(c){
+  const channels=['General','Engineering','Marketing','Sales'];
+  const msgs=data.messages.filter((m,i)=>i%channels.length===selectedChannel).concat([
+    {user:'Daniel',text:'Let us ship the CRM update today.',time:'1m ago'},
+    {user:'Sarah',text:'Tests are green.',time:'2m ago'}
+  ]);
+  c.innerHTML=`<div class="chat"><div class="channels">${channels.map((ch,i)=>`<div class="channel ${i===selectedChannel?'active':''}" onclick="selectChannel(${i})"># ${ch}</div>`).join('')}</div><div class="chat-main"><div class="messages" id="chatMsgs">${msgs.map(m=>`<div class="msg"><strong>${m.user}</strong><p>${m.text} · ${m.time}</p></div>`).join('')}</div><div class="chat-input"><input id="chatInput" class="input" placeholder="Message #${channels[selectedChannel]}..." onkeydown="if(event.key==='Enter')sendMessage()" /><button class="btn" onclick="sendMessage()">Send</button></div></div></div>`;
+}
+function selectChannel(i){selectedChannel=i;render();}
+function sendMessage(){const inp=$('chatInput');const text=inp.value.trim();if(!text)return;data.messages.push({channel:['General','Engineering','Marketing','Sales'][selectedChannel],user:'You',text,time:'now'});saveData();render();}
+
+function renderCalendar(c){
+  const days=Array.from({length:30},(_,i)=>i+1);
+  c.innerHTML=`<h3 class="section-title">July 2026</h3><div class="calendar">${days.map(d=>`<div class="cal-day">${d}${data.events.filter(e=>e.day===d).map(e=>`<div class="event" title="${e.time}">${e.title}</div>`).join('')}</div>`).join('')}</div>`;
+}
+
+function renderEmail(c){
+  const q=searchQ.toLowerCase();
+  const emails=data.emails.filter(e=>e.subject.toLowerCase().includes(q)||e.from.toLowerCase().includes(q));
+  c.innerHTML=`<div class="flex"><h3 class="section-title">Inbox</h3><button class="btn" onclick="composeEmail()">Compose</button></div>
+    <div class="card"><table><thead><tr><th>From</th><th>Subject</th><th>Preview</th></tr></thead><tbody>${emails.map(e=>`<tr style="${e.read?'':'font-weight:700'}"><td>${e.from}</td><td>${e.subject}</td><td class="muted">${e.preview}</td></tr>`).join('')}</tbody></table></div>`;
+}
+function composeEmail(){const to=prompt('To');const subject=prompt('Subject');if(subject){data.emails.unshift({id:uid(),from:'You',subject,preview:'Sent to '+to,read:true});saveData();render();}}
+
+function renderFiles(c){
+  c.innerHTML=`<div class="flex"><h3 class="section-title">Files</h3><button class="btn" onclick="addFile()">+ File</button></div><div class="file-list">${data.files.map(f=>`<div class="file-item"><div style="font-size:2rem">📄</div><div style="font-weight:600;font-size:.9rem;margin-top:8px">${f.name}</div><small>${f.size}</small></div>`).join('')}</div>`;
+}
+function addFile(){const name=prompt('File name');if(name){data.files.push({id:uid(),name,size:'0 KB',type:'doc'});saveData();render();}}
+
+function renderAutomations(c){
+  c.innerHTML=`<h3 class="section-title">Workflows</h3><div class="card"><table><thead><tr><th>Name</th><th>Status</th><th>Runs</th><th></th></tr></thead><tbody>${data.automations.map(a=>`<tr><td>${a.name}</td><td>${a.active?'<span class="badge green">Active</span>':'<span class="badge amber">Paused</span>'}</td><td>${a.runs.toLocaleString()}</td><td><button class="btn secondary" onclick="toggleAuto(${a.id})">${a.active?'Pause':'Activate'}</button></td></tr>`).join('')}</tbody></table></div>`;
+}
+function toggleAuto(id){const a=data.automations.find(x=>x.id===id);if(a){a.active=!a.active;saveData();render();}}
+
+function renderSettings(c){
+  c.innerHTML=`<h3 class="section-title">Settings</h3>
+    <div class="card">
+      <p class="muted">Workspace</p>
+      <div class="mt"><label class="muted">Workspace name</label><input class="input" value="NeuralOS" /></div>
+      <div class="mt"><label class="muted">Theme</label><select class="input"><option>Dark</option><option>Light</option><option>System</option></select></div>
+      <button class="btn mt" onclick="resetData()">Reset demo data</button>
+    </div>`;
+}
+function resetData(){if(confirm('Reset all demo data?')){data=initialData();saveData();render();}}
+
+function globalSearch(){searchQ=$('globalSearch').value;render();}
+
+renderNav();
+render();
+</script>
+</body>
+</html>

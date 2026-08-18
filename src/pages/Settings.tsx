@@ -1,0 +1,329 @@
+import { useEffect, useRef, useState } from 'react'
+import { isAdminUser } from '../lib/adminAccess'
+import { Check, CreditCard, Globe, LoaderCircle, LogOut, Moon, Palette, Receipt, Shield, Sparkles, Trash2, User, Wallet, WalletCards, Zap } from 'lucide-react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useAuth } from '../lib/auth'
+import { getCredits, hydrateCredits, setCredits as saveCredits, subscribeCredits } from '../lib/creditStore'
+import { formatCredits, formatCurrency, getPlan, PLANS, type BillingSummary, type PlanId } from '../lib/billing'
+import { initializeCheckout, verifyCheckout } from '../lib/payment'
+
+export default function Settings() {
+  const { user, session, signOut, refreshProfile } = useAuth()
+  const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const isAdmin = isAdminUser(user)
+  const [credits, setCredits] = useState(getCredits())
+  const [billing, setBilling] = useState<BillingSummary | null>(null)
+  const [loadingBilling, setLoadingBilling] = useState(false)
+  const [selectedPlan, setSelectedPlan] = useState<PlanId | null>(null)
+  const [notice, setNotice] = useState('')
+  const [pending, setPending] = useState(false)
+  const billingRef = useRef<HTMLElement>(null)
+
+  const authHeaders = (): Record<string, string> => {
+    const h: Record<string, string> = {}
+    if (session?.access_token) h.Authorization = `Bearer ${session.access_token}`
+    try {
+      const raw = localStorage.getItem('alphatekx:local-user')
+      if (raw) {
+        const u = JSON.parse(raw)
+        if (u?.id && u?.email) { h['x-local-user-id'] = String(u.id); h['x-local-user-email'] = String(u.email) }
+      }
+    } catch {}
+    return h
+  }
+
+  useEffect(() => subscribeCredits(() => setCredits(getCredits())), [])
+  useEffect(() => { void hydrateCredits() }, [user?.id, user?.email])
+
+  const loadBilling = async () => {
+    setLoadingBilling(true)
+    try {
+      const res = await fetch('/api/billing', { headers: authHeaders() })
+      let data: Record<string, any> = {}
+      try { data = await res.json() } catch (err) { data = {} }
+      if (res.ok) {
+        const summary: BillingSummary = {
+          credits: data.credits,
+          plan: data.plan,
+          planName: data.planName,
+          monthlyCredits: data.monthlyCredits,
+          purchasedCredits: data.purchasedCredits,
+          monthlyIncluded: data.monthlyIncluded,
+          renewalDate: data.renewalDate,
+          usageThisMonth: data.usageThisMonth,
+          totalCreditsSpent: data.totalCreditsSpent,
+          maxActiveAutomations: data.maxActiveAutomations,
+          transactions: (data.transactions || []).map((t: Record<string, unknown>) => ({
+            id: String(t.id || ''),
+            type: String(t.type) as BillingSummary['transactions'][number]['type'],
+            creditsAdded: Number(t.credits_added || 0),
+            creditsRemoved: Number(t.credits_removed || 0),
+            balanceAfter: Number(t.balance_after || 0),
+            reference: t.reference ? String(t.reference) : null,
+            automationId: t.automation_id ? String(t.automation_id) : null,
+            reason: t.reason ? String(t.reason) : null,
+            createdAt: String(t.created_at || ''),
+          })),
+        }
+        setBilling(summary)
+        setCredits(summary.credits)
+      } else {
+        setBilling(null)
+        setNotice(String(data?.error || `Could not load billing (${res.status})`))
+      }
+    } catch (error) {
+      console.error('Settings load error', error)
+      setNotice(error instanceof Error ? error.message : 'Could not load billing. Please refresh.')
+    } finally { setLoadingBilling(false) }
+  }
+
+  useEffect(() => {
+    if (!user?.id) return
+    void loadBilling()
+  }, [user?.id, user?.email])
+
+  useEffect(() => {
+    const pending = (() => {
+      try { return JSON.parse(localStorage.getItem('alphatekx:pending-payment') || 'null') } catch { return null }
+    })()
+    const reference = searchParams.get('reference') || searchParams.get('trxref') || searchParams.get('ref') || pending?.reference || (() => {
+      try { return localStorage.getItem('lastRef') || '' } catch { return '' }
+    })()
+    if (!reference) return
+    setPending(true)
+    setNotice('Verifying payment...')
+    verifyCheckout('paystack', reference)
+      .then(async () => {
+        const res = await fetch('/api/credits/balance', { headers: authHeaders() })
+        const creditData = await res.json().catch(() => ({ credits: getCredits() }))
+        saveCredits(Number(creditData.credits) || getCredits())
+        await refreshProfile()
+        await loadBilling()
+        setNotice('Payment verified. Your account has been updated.')
+        searchParams.delete('payment')
+        searchParams.delete('reference')
+        searchParams.delete('trxref')
+        searchParams.delete('ref')
+        setSearchParams(searchParams, { replace: true })
+      })
+      .catch((error) => setNotice(error instanceof Error ? error.message : 'Payment verification failed'))
+      .finally(() => setPending(false))
+  }, [searchParams, setSearchParams, refreshProfile])
+
+  useEffect(() => {
+    if (searchParams.get('tab') === 'billing' && billingRef.current) {
+      billingRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      searchParams.delete('tab')
+      setSearchParams(searchParams, { replace: true })
+    }
+  }, [searchParams, setSearchParams, billing])
+
+  const currentPlan = billing ? getPlan(billing.plan) : getPlan('free')
+  const visiblePlans = Object.values(PLANS).filter((plan, index, all) => {
+    return all.findIndex(other => other.name === plan.name && other.priceKobo === plan.priceKobo) === index
+  })
+
+  const startCheckout = async () => {
+    if (!selectedPlan) return
+    if (selectedPlan === 'free') {
+      setPending(true)
+      setNotice('Downgrading to Free...')
+      try {
+        const res = await fetch('/api/billing/upgrade', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ planId: 'free' }) })
+        if (!res.ok) throw new Error('Could not change plan')
+        await refreshProfile()
+        await loadBilling()
+        setNotice('You are now on the Free plan.')
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : 'Plan change failed.')
+      } finally { setPending(false) }
+      return
+    }
+    setPending(true)
+    setNotice('Opening secure checkout...')
+    try {
+      const item = { type: 'subscription' as const, planId: selectedPlan }
+      const data = await initializeCheckout('paystack', item)
+      if (data.authorization_url) {
+        window.location.href = data.authorization_url
+        return
+      }
+      setNotice('Checkout ready. Complete payment in the new tab.')
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Checkout failed.')
+      setPending(false)
+    }
+  }
+
+  const selectPlan = (planId: PlanId) => { setSelectedPlan(planId) }
+
+  const deleteAccount = () => {
+    const first = window.confirm('You sure? All Media Library and History will be deleted permanently.')
+    if (!first) return
+
+    const second = window.confirm('Confirm: delete your Alpha account and all saved media, history, and settings permanently.')
+    if (!second) return
+
+    localStorage.clear()
+    void signOut()
+    navigate('/')
+  }
+
+  const renewalText = billing?.renewalDate ? new Date(billing.renewalDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
+
+  if (!user) {
+    return (
+      <div className="min-h-screen w-full max-w-full overflow-x-hidden px-4 py-8 text-white sm:px-6 md:px-10">
+        <div className="mx-auto max-w-3xl space-y-4">
+          <div className="luxury-card animate-pulse p-5 sm:p-6">
+            <div className="h-5 w-36 rounded bg-white/10" />
+            <div className="mt-4 h-12 w-full rounded-2xl bg-white/10" />
+            <div className="mt-3 h-12 w-full rounded-2xl bg-white/10" />
+          </div>
+          <div className="luxury-card animate-pulse p-5 sm:p-6">
+            <div className="h-4 w-24 rounded bg-white/10" />
+            <div className="mt-3 h-20 w-full rounded-2xl bg-white/10" />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen w-full max-w-full overflow-x-hidden px-4 py-8 text-white sm:px-6 md:px-10">
+      <div className="mx-auto max-w-3xl space-y-6">
+        <div>
+          <h1 className="text-2xl font-black text-white md:text-3xl">Settings</h1>
+          <p className="mt-2 text-sm font-semibold text-slate-300">Manage your account, credits, and preferences.</p>
+        </div>
+
+        <section className="luxury-card p-5 sm:p-6">
+          <div className="flex items-center gap-2 text-lg font-semibold"><User size={20} className="text-violet-400"/> Profile</div>
+          <div className="mt-4 flex items-center gap-3">
+            <span className="grid size-12 place-items-center rounded-full bg-[#6D28D9] text-white font-semibold">{(user?.email?.[0] || 'A').toUpperCase()}</span>
+            <div>
+              <p className="font-medium">{user?.email || 'Guest'}</p>
+              <p className="text-sm font-medium text-slate-400">Signed in securely with Google</p>
+            </div>
+          </div>
+        </section>
+
+        <section ref={billingRef} className="luxury-card p-5 sm:p-6">
+          <div className="flex items-center gap-2 text-lg font-black text-white"><CreditCard size={20} className="text-cyan-300"/> Billing & Credits</div>
+          <p className="mt-2 text-sm font-semibold text-slate-300">Credits are consumed only when an automation performs work. Costs are always shown before you approve an automation.</p>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <Stat label="Current Plan" value={currentPlan.name} sub={currentPlan.badge ? `Most Popular` : undefined} />
+            <Stat label="Credit Balance" value={isAdmin ? 'Unlimited' : formatCredits(billing?.credits ?? credits)} />
+            <Stat label="Monthly Included" value={billing ? `${billing.monthlyCredits.toLocaleString()} / ${billing.monthlyIncluded.toLocaleString()}` : '—'} />
+            <Stat label="Purchased Credits" value={billing ? billing.purchasedCredits.toLocaleString() : '—'} />
+            <Stat label="Usage This Month" value={billing ? `${billing.usageThisMonth.toLocaleString()} used` : '—'} />
+            <Stat label="Renewal Date" value={renewalText} />
+          </div>
+
+          {(/payment|credit|verify/i.test(notice) || searchParams.get('reference')) && (
+            <div className="mt-5 rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="font-semibold">Billing issue? We’re here.</div>
+                  <p className="mt-1 text-amber-100/80">If your payment reference is stuck, send it to us and we’ll resolve it in under a minute.</p>
+                </div>
+                <button onClick={() => window.dispatchEvent(new CustomEvent('alphatekx:open-contact-us'))} className="shrink-0 rounded-full bg-[#FFD700] px-3 py-1.5 text-xs font-black text-black">Contact support</button>
+              </div>
+            </div>
+          )}
+
+          <div className="mt-6">
+            <h3 className="flex items-center gap-2 font-black text-white"><Sparkles size={16} className="text-cyan-300"/> Upgrade plan</h3>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              {visiblePlans.map((plan) => {
+                const active = selectedPlan === plan.id || billing?.plan === plan.id
+                return (
+                  <button key={plan.id} onClick={() => selectPlan(plan.id)} disabled={billing?.plan === plan.id} className={`relative rounded-2xl border p-4 text-left text-white shadow-[0_12px_30px_rgba(3,7,18,.24)] transition-all ${active ? 'border-cyan-300/60 bg-blue-500/20' : 'border-violet-400/30 bg-violet-500/15 hover:border-blue-300/60 hover:bg-blue-500/15'} ${billing?.plan === plan.id ? 'opacity-80' : ''}`}>
+                    {plan.badge && <span className="absolute right-3 top-3 rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 px-2 py-0.5 text-[10px] font-semibold text-white">{plan.badge}</span>}
+                    <span className="font-black text-white">{plan.name}</span>
+                    <p className="mt-2 text-3xl font-black text-[#FFD700]">{plan.priceKobo === 0 ? 'Free' : `${formatCurrency(plan.priceKobo)}/mo`}</p>
+                    <ul className="mt-3 space-y-1.5 text-xs font-semibold text-slate-200">
+                      {plan.features.map((f, i) => <li key={i} className="flex items-start gap-1.5"><Check size={12} className="mt-0.5 text-violet-400"/> {f}</li>)}
+                    </ul>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+
+          {notice && <p role="status" className="mt-4 rounded-lg border border-violet-200 bg-violet-500/10 p-3 text-sm font-semibold text-white">{notice}</p>}
+
+          <button onClick={() => void startCheckout()} disabled={pending || !selectedPlan} className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl btn-alpha px-4 text-sm font-medium text-white transition-all disabled:opacity-50">
+            {pending ? <LoaderCircle className="animate-spin" size={16}/> : <WalletCards size={16}/>}
+            {selectedPlan ? `Upgrade to ${getPlan(selectedPlan).name} — ${formatCurrency(getPlan(selectedPlan).priceKobo)}` : 'Select a plan'}
+          </button>
+
+          <div className="mt-6">
+            <h3 className="flex items-center gap-2 font-semibold"><Receipt size={16} className="text-violet-400"/> Credit History</h3>
+            {loadingBilling ? <p className="mt-3 text-sm text-slate-400">Loading...</p> : !billing?.transactions?.length ? <p className="mt-3 text-sm text-slate-400">No transactions yet.</p> : (
+              <div className="mt-3 space-y-2 max-h-64 overflow-y-auto pr-1">
+                {billing.transactions.map((t) => (
+                  <div key={t.id} className="flex items-center justify-between rounded-xl border border-violet-400/20 bg-blue-500/10 px-4 py-3 text-sm text-white">
+                    <div>
+                      <p className="font-medium capitalize">{String(t.type).replace('_', ' ')}</p>
+                      <p className="text-xs text-slate-400">{t.reason || '—'} • {new Date(t.createdAt).toLocaleString()}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className={`font-semibold ${t.creditsAdded ? 'text-emerald-300' : t.creditsRemoved ? 'text-rose-300' : ''}`}>{t.creditsAdded ? `+${t.creditsAdded}` : t.creditsRemoved ? `-${t.creditsRemoved}` : '—'}</p>
+                      <p className="text-xs text-slate-400">bal {t.balanceAfter.toLocaleString()}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="luxury-card p-5 sm:p-6">
+          <div className="flex items-center gap-2 text-lg font-semibold"><Palette size={20} className="text-violet-400"/> Preferences</div>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <Pref label="Timezone" icon={<Globe size={16}/>} value="UTC / Local time" />
+            <Pref label="Notifications" icon={<Zap size={16}/>} value="Email when automations fail" />
+            <Pref label="Language" icon={<span className="text-xs">EN</span>} value="English" />
+            <Pref label="Appearance" icon={<Moon size={16}/>} value="Living indigo" />
+          </div>
+          <p className="mt-4 text-xs text-slate-400">More preference options will be added soon.</p>
+        </section>
+
+        <section className="luxury-card p-5 sm:p-6">
+          <div className="flex items-center gap-2 text-lg font-semibold"><Shield size={20} className="text-violet-400"/> Security</div>
+          <div className="mt-4 space-y-3">
+            <div className="flex items-center justify-between rounded-xl border border-violet-400/20 bg-blue-500/10 px-4 py-3">
+              <span className="text-sm font-medium text-slate-400">Connected login method</span>
+              <span className="text-sm font-black text-white">Google</span>
+            </div>
+            <button onClick={() => void signOut()} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-violet-400/20 bg-violet-500/10 px-4 text-sm font-bold text-white transition-all hover:border-violet-500 hover:bg-violet-500/10"><LogOut size={16}/>Sign out</button>
+          </div>
+          <div className="mt-6 border-t border-violet-400/20 pt-6">
+            <h3 className="font-semibold text-rose-300">Danger zone</h3>
+            <p className="mt-1 text-sm text-slate-400">Permanently delete your account and all data.</p>
+            <button onClick={deleteAccount} className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-500/10 px-4 text-sm font-bold text-rose-300 transition-all hover:bg-rose-500/10"><Trash2 size={16}/>Delete account</button>
+          </div>
+        </section>
+      </div>
+    </div>
+  )
+}
+
+function Pref({ label, icon, value }: { label: string; icon: React.ReactNode; value: string }) {
+  return <div className="flex items-center justify-between rounded-xl border border-violet-400/20 bg-blue-500/10 px-4 py-3">
+    <span className="flex items-center gap-2 text-sm font-medium text-slate-400">{icon}{label}</span>
+    <span className="text-sm font-bold text-white">{value}</span>
+  </div>
+}
+
+function Stat({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
+  return <div className="rounded-xl border border-violet-400/20 bg-blue-500/10 px-4 py-3">
+    <p className="text-xs font-medium text-slate-400">{label}{sub ? <span className="ml-1.5 rounded-full bg-violet-500/10 px-1.5 py-0.5 text-[10px] text-violet-300">{sub}</span> : null}</p>
+    <p className="mt-1 text-lg font-semibold text-white">{value}</p>
+  </div>
+}
+

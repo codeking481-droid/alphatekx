@@ -1,0 +1,559 @@
+import assert from 'node:assert/strict'
+import http from 'node:http'
+import { spawn } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
+import { buildCapabilityPlan, detectCapability } from '../server/automation/capabilityRegistry.mjs'
+import { createConversationEngine } from '../server/alpha/conversationEngine.mjs'
+import { hasUsableLinkedInStorage, publishLinkedInTextPost, validateLinkedInCredentials } from '../server/linkedin.mjs'
+import { prepareCampaignPostsForActivation } from '../server/automation/campaignActivation.mjs'
+
+const tests = []
+async function test(name, fn) {
+  try { await fn(); tests.push({ name, ok: true }) }
+  catch (error) { tests.push({ name, ok: false, error: error instanceof Error ? error.message : String(error) }) }
+}
+
+const validCredentials = { accessToken: 'token', authorUrn: 'urn:li:person:test-member', scopes: ['w_member_social'], expiry: Date.now() + 60_000 }
+
+await test('LinkedIn storage ignores stale rows without native publishing credentials', () => {
+  assert.equal(hasUsableLinkedInStorage({ connectionId: 'stale-composio-row' }), false)
+  assert.equal(hasUsableLinkedInStorage({ access_token: 'token', author_urn: 'urn:li:person:member' }), true)
+})
+
+await test('LinkedIn capability detection and plan', () => {
+  assert.equal(detectCapability('Schedule a LinkedIn post about AlphaTekx every Monday')?.id, 'linkedin-post')
+  const plan = buildCapabilityPlan('Write a LinkedIn post about AlphaTekx for founders in a professional tone', { timezone: 'Africa/Lagos' })
+  assert.equal(plan.actions[0].connector, 'linkedin')
+  assert.equal(plan.actions[0].requiresApproval, true)
+  assert.deepEqual(plan.requiredPermissions, ['w_member_social'])
+})
+
+await test('Missing-field questioning, model generation, review and explicit approval', async () => {
+  const records = new Map()
+  let contentCalls = 0
+  const engine = createConversationEngine({
+    saveServerAgent: async record => { records.set(record.id, structuredClone(record)); return record },
+    getServerAgent: async id => structuredClone(records.get(id)),
+    getUserCredits: async () => 30,
+    spendUserCredits: async () => true,
+    getIntegrationStatus: async () => ({ connected: true, ready: true, scopes: ['w_member_social'], identifier: 'urn:li:person:test-member' }),
+    callLLMForRole: async (role, system) => {
+      if (role !== 'content') {
+        if (system.includes('Analyze the user')) return { result: { intent: 'social_content', confidence: 0.9, knownFields: {} }, provider: 'test', model: 'test' }
+        return { result: {}, provider: 'test', model: 'test' }
+      }
+      contentCalls++
+      if (system.includes('Rewrite the following')) return { result: { text: 'A stronger regenerated LinkedIn post.\n\nWhat would you automate first?\n\n#AI #Automation #Founders' }, provider: 'test', model: 'test', generationMode: 'model' }
+      return { result: { calendar: [{ day: 1, slot: '09:00', platforms: ['linkedin'], topic: 'AlphaTekx', postType: 'educational', captions: { linkedin: 'Automation should feel like hiring help, not building a machine.\n\nAlphaTekx turns a clear goal into reviewed, scheduled work.\n\nWhat would you delegate first?\n\n#AI #Automation #Founders' } }] }, provider: 'test', model: 'test', generationMode: 'model' }
+    },
+  })
+  const user = { id: 'conversation-user', email: 'conversation@test.local' }
+  let conversation = await engine.start(user, 'Create a LinkedIn post about AlphaTekx')
+  assert.equal(conversation.conversationStage, 'gathering_information')
+  assert.equal(conversation.lastQuestion, 'publishingMode')
+  conversation = await engine.continue(conversation.id, user, 'Publish once now')
+  assert.equal(conversation.lastQuestion, 'audience')
+  conversation = await engine.continue(conversation.id, user, 'Founders and creators')
+  assert.equal(conversation.lastQuestion, 'tone')
+  conversation = await engine.continue(conversation.id, user, 'Professional and conversational')
+  assert.equal(conversation.conversationStage, 'awaiting_content_review', JSON.stringify({ lastQuestion: conversation.lastQuestion, missingFields: conversation.missingFields, knownFields: conversation.knownFields }))
+  assert.equal(conversation.generationMode, 'model')
+  assert.equal(conversation.generatedContent.length, 1)
+  await engine.regenerateContent(conversation, [conversation.generatedContent[0].id])
+  assert.ok(contentCalls >= 2)
+  await engine.approveContent(conversation)
+  assert.equal(conversation.conversationStage, 'awaiting_approval')
+  assert.equal(conversation.automationDraft.approved, false)
+})
+
+await test('LinkedIn scheduling is explicit and never silently becomes seven days', async () => {
+  const records = new Map()
+  const engine = createConversationEngine({
+    saveServerAgent: async record => { records.set(record.id, structuredClone(record)); return record },
+    getServerAgent: async id => structuredClone(records.get(id)),
+    getUserCredits: async () => 30,
+    spendUserCredits: async () => true,
+    getIntegrationStatus: async () => ({ connected: true, ready: true, scopes: ['w_member_social'] }),
+    callLLMForRole: async () => ({ result: {}, provider: 'test', model: 'test' }),
+  })
+  const user = { id: 'explicit-schedule-user', email: 'schedule@test.local' }
+
+  const undecided = await engine.start(user, 'Create a LinkedIn post about Python.')
+  assert.equal(undecided.lastQuestion, 'publishingMode')
+  assert.equal(undecided.knownFields.durationDays, undefined)
+  assert.equal(undecided.knownFields.frequency, undefined)
+  assert.equal(undecided.knownFields.durationSource, 'unresolved')
+  await assert.rejects(() => engine.approveAndCreate(undecided.id, user), /No automation draft/)
+
+  const now = await engine.start({ ...user, id: 'explicit-now-user' }, 'Create a LinkedIn post about Python now.')
+  assert.equal(now.knownFields.publishingMode, 'once_now')
+  assert.equal(now.knownFields.totalPosts, 1)
+  assert.equal(now.knownFields.durationDays, 1)
+  assert.equal(now.knownFields.frequency, 'once')
+
+  const later = await engine.start({ ...user, id: 'explicit-later-user' }, 'Create a LinkedIn post about Python tomorrow at 9 AM.')
+  assert.equal(later.knownFields.publishingMode, 'once_later')
+  assert.equal(later.knownFields.time, '09:00')
+  assert.match(later.knownFields.startDate, /^\d{4}-\d{2}-\d{2}$/)
+  assert.equal(later.lastQuestion, 'timezone')
+
+  const weekly = await engine.start({ ...user, id: 'explicit-weekly-user' }, 'Create a LinkedIn post about Python every Monday.')
+  assert.equal(weekly.knownFields.publishingMode, 'recurring')
+  assert.equal(weekly.knownFields.frequency, 'weekly')
+  assert.equal(weekly.lastQuestion, 'endCondition')
+  assert.equal(weekly.knownFields.durationDays, undefined)
+
+  const sevenDays = await engine.start({ ...user, id: 'explicit-seven-user' }, 'Create LinkedIn posts about Python for seven days.')
+  assert.equal(sevenDays.knownFields.publishingMode, 'recurring')
+  assert.equal(sevenDays.knownFields.durationDays, 7)
+  assert.equal(sevenDays.knownFields.durationSource, 'user_explicit')
+  assert.equal(sevenDays.lastQuestion, 'frequency')
+})
+
+await test('Expired token and missing permission are rejected', () => {
+  assert.doesNotThrow(() => validateLinkedInCredentials({ ...validCredentials, scopes: ['email,openid,profile,w_member_social'] }))
+  assert.throws(() => validateLinkedInCredentials({ ...validCredentials, expiry: Date.now() - 1 }), /expired/i)
+  assert.throws(() => validateLinkedInCredentials({ ...validCredentials, scopes: [] }), /w_member_social/i)
+  assert.throws(() => validateLinkedInCredentials({ ...validCredentials, authorUrn: 'urn:li:organization:1' }), /personal profile/i)
+})
+
+await test('Successful response requires and returns LinkedIn post ID', async () => {
+  const response = await publishLinkedInTextPost(validCredentials, { text: 'Test post' }, { fetchImpl: async () => new Response('', { status: 201, headers: { 'x-restli-id': 'urn:li:share:123' } }) })
+  assert.equal(response.id, 'urn:li:share:123')
+  await assert.rejects(() => publishLinkedInTextPost(validCredentials, { text: 'Test post' }, { fetchImpl: async () => new Response('', { status: 201 }) }), /confirmed post identifier/i)
+})
+
+await test('LinkedIn image publishing uploads the real image before creating the post', async () => {
+  const calls = []
+  const response = await publishLinkedInTextPost(validCredentials, {
+    text: 'Image post',
+    image_url: 'https://images.test/post.png',
+    imageAlt: 'AlphaTekx campaign image',
+  }, {
+    fetchImpl: async (url, init = {}) => {
+      calls.push({ url: String(url), method: init.method || 'GET', body: init.body })
+      if (String(url) === 'https://images.test/post.png') return new Response(new Uint8Array([137, 80, 78, 71]), { status: 200, headers: { 'content-type': 'image/png' } })
+      if (String(url).includes('/rest/images?action=initializeUpload')) return Response.json({ value: { uploadUrl: 'https://uploads.test/linkedin-image', image: 'urn:li:image:asset-123' } })
+      if (String(url) === 'https://uploads.test/linkedin-image') return new Response('', { status: 201 })
+      const body = JSON.parse(String(init.body || '{}'))
+      assert.equal(body.content.media.id, 'urn:li:image:asset-123')
+      assert.equal(body.content.media.altText, 'AlphaTekx campaign image')
+      return new Response('', { status: 201, headers: { 'x-restli-id': 'urn:li:share:image-post-123' } })
+    },
+  })
+  assert.equal(response.id, 'urn:li:share:image-post-123')
+  assert.equal(response.imageId, 'urn:li:image:asset-123')
+  assert.deepEqual(calls.map(call => call.method), ['GET', 'POST', 'PUT', 'POST'])
+})
+
+await test('LinkedIn image failure prevents post creation and cannot be charged as success', async () => {
+  let postCalled = false
+  await assert.rejects(() => publishLinkedInTextPost(validCredentials, {
+    text: 'Image post', imageUrl: 'https://images.test/post.png',
+  }, {
+    fetchImpl: async url => {
+      if (String(url) === 'https://images.test/post.png') return new Response(new Uint8Array([1]), { status: 200, headers: { 'content-type': 'image/png' } })
+      if (String(url).includes('/rest/images?action=initializeUpload')) return Response.json({ value: {} })
+      postCalled = true
+      return new Response('', { status: 201 })
+    },
+  }), /confirmed image upload asset/i)
+  assert.equal(postCalled, false)
+})
+
+let providerCalls = 0
+const providerRequests = []
+const provider = http.createServer(async (req, res) => {
+  if (req.method === 'GET' && req.url === '/test-image') { res.writeHead(200, { 'content-type': 'image/jpeg' }); res.end(Buffer.alloc(12 * 1024, 1)); return }
+  if (req.method === 'POST' && req.url === '/rest/images?action=initializeUpload') { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ value: { uploadUrl: `http://127.0.0.1:${providerPort}/upload-image`, image: `urn:li:image:${randomUUID()}` } })); return }
+  if (req.method === 'PUT' && req.url === '/upload-image') { for await (const _chunk of req) { /* consume upload */ } res.writeHead(201); res.end(); return }
+  if (req.method !== 'POST' || req.url !== '/rest/posts') { res.writeHead(404); res.end(); return }
+  providerCalls++
+  let raw = ''
+  for await (const chunk of req) raw += chunk
+  const body = JSON.parse(raw || '{}')
+  providerRequests.push(String(body.commentary || ''))
+  if (String(body.commentary).includes('NO_ID')) { res.writeHead(201); res.end(); return }
+  res.writeHead(201, { 'x-restli-id': `urn:li:share:${providerCalls}` })
+  res.end()
+})
+await new Promise(resolve => provider.listen(0, '127.0.0.1', resolve))
+const providerPort = provider.address().port
+
+async function startApp(port, extraEnv = {}) {
+  const child = spawn(process.execPath, ['server.mjs'], { cwd: new URL('..', import.meta.url), env: { ...process.env, PORT: String(port), KEEP_ALIVE: 'false', LINKEDIN_API_BASE_URL: `http://127.0.0.1:${providerPort}`, ...extraEnv }, stdio: ['ignore', 'pipe', 'pipe'] })
+  let output = ''
+  child.stdout.on('data', data => { output += data })
+  child.stderr.on('data', data => { output += data })
+  for (let i = 0; i < 60; i++) {
+    try { if ((await fetch(`http://127.0.0.1:${port}/api/health`)).ok) return { child, output: () => output } } catch {}
+    await new Promise(resolve => setTimeout(resolve, 200))
+  }
+  child.kill('SIGTERM')
+  throw new Error(`Server did not start: ${output}`)
+}
+
+function onePostCampaign(agentId, scheduledAt, caption = 'Focused LinkedIn automation integration test.') {
+  return { id: agentId, type: 'campaign', name: 'LinkedIn one post', description: 'Focused integration test', trigger: { type: 'campaign', cron: 'campaign', nextRun: scheduledAt }, status: 'awaiting_approval', approved: false, actions: [], executionHistory: [], permissions: ['linkedin'], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), campaign: { name: 'LinkedIn one post', description: 'test', brand: { business: 'AlphaTekx', audience: 'Founders', tone: 'Professional', website: '', dontPost: [] }, meta: { platforms: ['linkedin'], slots: [{ label: '09:00', hour: 9, minute: 0 }], durationDays: 1, postsPerDay: 1, totalPosts: 1, startDate: scheduledAt, includeImages: true, timezone: 'UTC', frequency: 'once', frequencyText: 'One time' }, posts: [{ id: `post-${randomUUID()}`, day: 1, slot: '09:00', scheduledAt, platforms: ['linkedin'], topic: 'AlphaTekx', postType: 'educational', captions: { linkedin: caption }, imageUrl: `http://127.0.0.1:${providerPort}/test-image`, status: 'pending_approval', result: {}, credits: 3 }], totalCredits: 3, status: 'pending_approval', charged: false, approved: false, autoPublish: false } }
+}
+
+await test('OAuth denial redirects to canonical Connected Apps route', async () => {
+  const port = 4500 + Math.floor(Math.random() * 200)
+  const app = await startApp(port)
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/connectors/linkedin/callback?error=access_denied&error_description=User%20cancelled`, { redirect: 'manual' })
+    assert.equal(response.status, 302)
+    assert.match(response.headers.get('location') || '', /\/connected-apps\?connected=error/)
+  } finally { app.child.kill('SIGTERM') }
+})
+
+await test('OAuth start uses the exact callback, required scope and signed state', async () => {
+  const port = 4550 + Math.floor(Math.random() * 100)
+  const callback = 'https://alphatekx.name.ng/api/connectors/linkedin/callback'
+  const app = await startApp(port, {
+    LINKEDIN_CLIENT_ID: 'linkedin-client',
+    LINKEDIN_CLIENT_SECRET: 'linkedin-secret',
+    LINKEDIN_REDIRECT_URI: callback,
+    LINKEDIN_OAUTH_SCOPES: 'openid profile email',
+  })
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/connectors/linkedin/start`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-local-user-id': 'linkedin-oauth-user', 'x-local-user-email': 'oauth@test.local' },
+      body: JSON.stringify({ redirect: '/connected-apps' }),
+    })
+    assert.equal(response.status, 200)
+    const data = await response.json()
+    const authorization = new URL(data.url)
+    assert.equal(authorization.origin, 'https://www.linkedin.com')
+    assert.equal(authorization.searchParams.get('redirect_uri'), callback)
+    assert.ok(authorization.searchParams.get('state')?.includes('.'))
+    assert.ok(authorization.searchParams.get('scope')?.split(' ').includes('w_member_social'))
+  } finally { app.child.kill('SIGTERM') }
+})
+
+await test('OAuth normalizes a pasted Render assignment instead of blocking LinkedIn', async () => {
+  const port = 4650 + Math.floor(Math.random() * 80)
+  const callback = 'https://alphatekx.name.ng/api/connectors/linkedin/callback'
+  const app = await startApp(port, {
+    PUBLIC_APP_URL: 'https://alphatekx.name.ng',
+    LINKEDIN_CLIENT_ID: 'linkedin-client',
+    LINKEDIN_CLIENT_SECRET: 'linkedin-secret',
+    LINKEDIN_REDIRECT_URI: `LINKEDIN_REDIRECT_URI="${callback}"`,
+  })
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/connectors/linkedin/start`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-local-user-id': 'linkedin-pasted-env-user', 'x-local-user-email': 'oauth@test.local' },
+      body: JSON.stringify({ redirect: '/connected-apps' }),
+    })
+    assert.equal(response.status, 200)
+    const authorization = new URL((await response.json()).url)
+    assert.equal(authorization.searchParams.get('redirect_uri'), callback)
+  } finally { app.child.kill('SIGTERM') }
+})
+
+await test('OAuth safely falls back to the canonical callback for malformed configuration', async () => {
+  const port = 4730 + Math.floor(Math.random() * 70)
+  const callback = 'https://alphatekx.name.ng/api/connectors/linkedin/callback'
+  const app = await startApp(port, {
+    PUBLIC_APP_URL: 'https://alphatekx.name.ng',
+    LINKEDIN_CLIENT_ID: 'linkedin-client',
+    LINKEDIN_CLIENT_SECRET: 'linkedin-secret',
+    LINKEDIN_REDIRECT_URI: 'not-a-url',
+  })
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/connectors/linkedin/start`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-local-user-id': 'linkedin-fallback-user', 'x-local-user-email': 'oauth@test.local' },
+      body: JSON.stringify({ redirect: '/connected-apps' }),
+    })
+    assert.equal(response.status, 200)
+    const authorization = new URL((await response.json()).url)
+    assert.equal(authorization.searchParams.get('redirect_uri'), callback)
+  } finally { app.child.kill('SIGTERM') }
+})
+
+await test('OAuth callback requires durable, verified LinkedIn storage', async () => {
+  const source = await readFile(new URL('../server.mjs', import.meta.url), 'utf8')
+  assert.match(source, /if \(!saved\.durable\).*could not securely save/s)
+  assert.match(source, /const verified = await getUserIntegration\(parsed\.userId, 'linkedin', config\)/)
+  assert.match(source, /saved connection could not be verified/)
+  assert.match(source, /user_integrations is the original encrypted connector vault/)
+  assert.match(source, /access_token: encryptSecret\(JSON\.stringify\(tokens\), key\)/)
+  assert.match(source, /source: 'user_integrations'/)
+})
+
+await test('Publish-now activation marks the first post as immediate without shifting the rest', () => {
+  const startAt = new Date('2025-01-01T00:00:00.000Z')
+  const scheduledAt = '2030-01-01T00:00:00.000Z'
+  const prepared = prepareCampaignPostsForActivation({
+    posts: [
+      { id: 'first', scheduledAt, status: 'pending_approval', approved: false },
+      { id: 'second', scheduledAt, status: 'pending_approval', approved: false },
+    ],
+    postingOption: 'now',
+    startAt,
+  })
+  assert.equal(prepared.immediatePostCount, 1)
+  assert.equal(prepared.posts[0].status, 'scheduled')
+  assert.equal(prepared.posts[0].scheduledAt, startAt.toISOString())
+  assert.equal(prepared.posts[1].status, 'scheduled')
+  assert.equal(prepared.posts[1].scheduledAt, scheduledAt)
+})
+
+await test('Approved campaign publishes once, charges once, persists history, and survives refresh', async () => {
+  const port = 4700 + Math.floor(Math.random() * 200)
+  let app = await startApp(port)
+  const userId = `linkedin-test-${randomUUID()}`
+  const email = `${userId}@test.local`
+  const headers = { 'content-type': 'application/json', 'x-local-user-id': userId, 'x-local-user-email': email }
+  const request = (path, options = {}) => fetch(`http://127.0.0.1:${port}${path}`, { ...options, headers: { ...headers, ...(options.headers || {}) } })
+  const agentId = `linkedin-agent-${randomUUID()}`
+  try {
+    let response = await request('/api/connectors/save', { method: 'POST', body: JSON.stringify({ platform: 'linkedin', tokens: { access_token: 'test-token', author_urn: 'urn:li:person:test-member', expiry: Date.now() + 3600_000 }, identifier: 'urn:li:person:test-member', scopes: ['email,openid,profile,w_member_social'] }) })
+    assert.equal(response.status, 200)
+    const scheduledAt = new Date(Date.now() + 3_000).toISOString()
+    const agent = { id: agentId, type: 'campaign', name: 'LinkedIn test', description: 'Focused integration test', trigger: { type: 'campaign', cron: 'campaign', nextRun: scheduledAt }, status: 'awaiting_approval', approved: false, actions: [], executionHistory: [], permissions: ['linkedin'], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), campaign: { name: 'LinkedIn test', description: 'test', brand: { business: 'AlphaTekx', audience: 'Founders', tone: 'Professional', website: '', dontPost: [] }, meta: { platforms: ['linkedin'], slots: [{ label: '09:00', hour: 9, minute: 0 }], durationDays: 1, postsPerDay: 1, totalPosts: 1, startDate: scheduledAt, includeImages: true, timezone: 'UTC', frequencyText: 'One time' }, posts: [{ id: `post-${randomUUID()}`, day: 1, slot: '09:00', scheduledAt, platforms: ['linkedin'], topic: 'AlphaTekx', postType: 'educational', captions: { linkedin: 'Focused LinkedIn automation integration test.' }, imageUrl: `http://127.0.0.1:${providerPort}/test-image`, status: 'pending_approval', result: {}, credits: 3 }], totalCredits: 3, status: 'pending_approval', charged: false, approved: false, autoPublish: false } }
+    response = await request('/api/agents', { method: 'POST', body: JSON.stringify({ agent }) })
+    assert.equal(response.status, 200)
+    const balanceBefore = (await (await request('/api/credits/balance')).json()).credits
+    response = await request(`/api/agents/campaign/${agentId}/activate`, { method: 'POST', body: JSON.stringify({ autoPublish: true, startAt: scheduledAt }) })
+    assert.equal(response.status, 200)
+    assert.equal((await response.json()).charged, 0)
+    await new Promise(resolve => setTimeout(resolve, 3_100))
+    response = await request('/api/agents/run-due')
+    assert.equal(response.status, 200)
+    const dueResult = await response.json()
+    assert.ok(dueResult.results.some(result => result.agentId === agentId && result.status === 'success'))
+    const callsAfterFirst = providerCalls
+    response = await request(`/api/agents/${agentId}/run`, { method: 'POST', body: '{}' })
+    assert.equal(response.status, 200)
+    assert.equal(providerCalls, callsAfterFirst)
+    const balanceAfter = (await (await request('/api/credits/balance')).json()).credits
+    assert.equal(balanceBefore - balanceAfter, 1)
+    let saved = (await (await request('/api/agents')).json()).agents.find(item => item.id === agentId)
+    assert.match(saved.campaign.posts[0].providerPostId, /^urn:li:share:/)
+    assert.equal(saved.campaign.posts[0].charged, true)
+    assert.ok(saved.executionHistory.length >= 1)
+    assert.equal(saved.executionsDone, 1)
+    assert.equal(saved.successfulRuns, 1)
+    assert.equal(saved.failedRuns, 0)
+    assert.equal(saved.successRate, 100)
+    assert.ok(saved.lastRunAt)
+    app.child.kill('SIGTERM')
+    await new Promise(resolve => setTimeout(resolve, 500))
+    app = await startApp(port)
+    saved = (await (await request('/api/agents')).json()).agents.find(item => item.id === agentId)
+    assert.equal(saved.campaign.posts[0].status, 'posted')
+    assert.match(saved.campaign.posts[0].providerPostId, /^urn:li:share:/)
+  } finally { app.child.kill('SIGTERM') }
+})
+
+await test('Publish Now confirms a real post ID, history, counters and one credit charge', async () => {
+  const port = 5100 + Math.floor(Math.random() * 100)
+  const app = await startApp(port)
+  const userId = `linkedin-now-${randomUUID()}`
+  const headers = { 'content-type': 'application/json', 'x-local-user-id': userId, 'x-local-user-email': `${userId}@test.local` }
+  const request = (path, options = {}) => fetch(`http://127.0.0.1:${port}${path}`, { ...options, headers: { ...headers, ...(options.headers || {}) } })
+  const agentId = `linkedin-now-agent-${randomUUID()}`
+  const caption = `Publish now exact content ${randomUUID()}`
+  try {
+    await request('/api/connectors/save', { method: 'POST', body: JSON.stringify({ platform: 'linkedin', tokens: { access_token: 'test-token', author_urn: 'urn:li:person:test-member', expiry: Date.now() + 3600_000 }, scopes: ['email,openid,profile,w_member_social'] }) })
+    await request('/api/agents', { method: 'POST', body: JSON.stringify({ agent: onePostCampaign(agentId, new Date(Date.now() + 60_000).toISOString(), caption) }) })
+    const before = (await (await request('/api/credits/balance')).json()).credits
+    const response = await request(`/api/agents/campaign/${agentId}/activate`, { method: 'POST', body: JSON.stringify({ autoPublish: true, postingOption: 'now', timezone: 'Africa/Lagos' }) })
+    assert.equal(response.status, 200)
+    const data = await response.json()
+    assert.equal(data.execution.status, 'success')
+    assert.match(data.agent.campaign.posts[0].providerPostId, /^urn:li:share:/)
+    assert.equal(data.agent.campaign.posts[0].status, 'posted')
+    assert.equal(data.agent.campaign.posts[0].charged, true)
+    assert.equal(data.agent.campaign.meta.postingOption, 'now')
+    assert.equal(data.agent.campaign.meta.totalPosts, 1)
+    assert.equal(data.agent.executionsDone, 1)
+    assert.equal(data.agent.successRate, 100)
+    assert.equal(data.agent.executionHistory[0].output.steps[0].content, caption)
+    assert.match(data.agent.executionHistory[0].output.steps[0].linkedinPostId, /^urn:li:share:/)
+    const after = (await (await request('/api/credits/balance')).json()).credits
+    assert.equal(before - after, 1)
+  } finally { app.child.kill('SIGTERM') }
+})
+
+await test('Publish-now activation failures remain retryable instead of becoming unreachable', async () => {
+  const port = 5150 + Math.floor(Math.random() * 100)
+  const app = await startApp(port)
+  const userId = `linkedin-fail-now-${randomUUID()}`
+  const headers = { 'content-type': 'application/json', 'x-local-user-id': userId, 'x-local-user-email': `${userId}@test.local` }
+  const request = (path, options = {}) => fetch(`http://127.0.0.1:${port}${path}`, { ...options, headers: { ...headers, ...(options.headers || {}) } })
+  const agentId = `linkedin-fail-now-agent-${randomUUID()}`
+  try {
+    await request('/api/connectors/save', { method: 'POST', body: JSON.stringify({ platform: 'linkedin', tokens: { access_token: 'test-token', author_urn: 'urn:li:person:test-member', expiry: Date.now() + 3600_000 }, scopes: ['w_member_social'] }) })
+    await request('/api/agents', { method: 'POST', body: JSON.stringify({ agent: onePostCampaign(agentId, new Date(Date.now() + 60_000).toISOString(), 'NO_ID') }) })
+    const response = await request(`/api/agents/campaign/${agentId}/activate`, { method: 'POST', body: JSON.stringify({ autoPublish: true, postingOption: 'now', timezone: 'Africa/Lagos' }) })
+    assert.equal(response.status, 502)
+    const data = await response.json()
+    assert.equal(data.execution.status, 'error')
+    assert.equal(data.agent.status, 'warning')
+    assert.equal(data.agent.campaign.status, 'running')
+    assert.ok(data.agent.trigger.nextRun)
+    assert.match(data.execution.log, /retry automatically/i)
+    assert.match(data.execution.log, /No credits were charged/i)
+  } finally { app.child.kill('SIGTERM') }
+})
+
+await test('Custom local date/time converts safely, can be edited, rejects past time and can cancel', async () => {
+  const port = 5200 + Math.floor(Math.random() * 100)
+  const app = await startApp(port)
+  const userId = `linkedin-later-${randomUUID()}`
+  const headers = { 'content-type': 'application/json', 'x-local-user-id': userId, 'x-local-user-email': `${userId}@test.local` }
+  const request = (path, options = {}) => fetch(`http://127.0.0.1:${port}${path}`, { ...options, headers: { ...headers, ...(options.headers || {}) } })
+  const agentId = `linkedin-later-agent-${randomUUID()}`
+  try {
+    await request('/api/connectors/save', { method: 'POST', body: JSON.stringify({ platform: 'linkedin', tokens: { access_token: 'test-token', author_urn: 'urn:li:person:test-member', expiry: Date.now() + 3600_000 }, scopes: ['w_member_social'] }) })
+    await request('/api/agents', { method: 'POST', body: JSON.stringify({ agent: onePostCampaign(agentId, '2030-07-23T20:30:00.000Z') }) })
+    let response = await request(`/api/agents/campaign/${agentId}/activate`, { method: 'POST', body: JSON.stringify({ autoPublish: true, postingOption: 'later', localDate: '2030-07-23', localTime: '21:30', timezone: 'Africa/Lagos' }) })
+    assert.equal(response.status, 200)
+    let data = await response.json()
+    assert.equal(data.agent.campaign.posts[0].scheduledAt, '2030-07-23T20:30:00.000Z')
+    assert.equal(data.agent.campaign.posts[0].scheduledLocalTime, '21:30')
+    response = await request(`/api/agents/campaign/${agentId}/review`, { method: 'POST', body: JSON.stringify({ postId: data.agent.campaign.posts[0].id, platform: 'linkedin', action: 'edit', text: 'Edited content must require fresh approval.' }) })
+    assert.equal(response.status, 200)
+    data = await response.json()
+    assert.equal(data.agent.approved, false)
+    assert.equal(data.agent.campaign.approved, false)
+    assert.equal(data.post.approved, false)
+    assert.equal(data.post.status, 'pending_approval')
+    response = await request(`/api/agents/campaign/${agentId}/activate`, { method: 'POST', body: JSON.stringify({ autoPublish: true, postingOption: 'later', localDate: '2030-07-24', localTime: '13:40', timezone: 'Africa/Lagos' }) })
+    assert.equal(response.status, 200)
+    data = await response.json()
+    assert.equal(data.agent.campaign.posts[0].scheduledAt, '2030-07-24T12:40:00.000Z')
+    response = await request(`/api/agents/campaign/${agentId}/activate`, { method: 'POST', body: JSON.stringify({ autoPublish: true, postingOption: 'later', localDate: '2020-01-01', localTime: '08:15', timezone: 'Africa/Lagos' }) })
+    assert.equal(response.status, 400)
+    assert.match((await response.json()).error, /passed|Publish Now/i)
+    response = await request(`/api/agents/campaign/${agentId}/cancel`, { method: 'POST', body: '{}' })
+    assert.equal(response.status, 200)
+    data = await response.json()
+    assert.equal(data.agent.campaign.status, 'cancelled')
+    assert.equal(data.agent.trigger.nextRun, null)
+  } finally { app.child.kill('SIGTERM') }
+})
+
+await test('Provider success without post ID does not charge and records failure for retry', async () => {
+  const port = 4900 + Math.floor(Math.random() * 100)
+  const app = await startApp(port)
+  const userId = `linkedin-failure-${randomUUID()}`
+  const email = `${userId}@test.local`
+  const headers = { 'content-type': 'application/json', 'x-local-user-id': userId, 'x-local-user-email': email }
+  const request = (path, options = {}) => fetch(`http://127.0.0.1:${port}${path}`, { ...options, headers: { ...headers, ...(options.headers || {}) } })
+  const agentId = `linkedin-failure-agent-${randomUUID()}`
+  try {
+    await request('/api/connectors/save', { method: 'POST', body: JSON.stringify({ platform: 'linkedin', tokens: { access_token: 'test-token', author_urn: 'urn:li:person:test-member', expiry: Date.now() + 3600_000 }, scopes: ['w_member_social'] }) })
+    const scheduledAt = new Date(Date.now() + 60_000).toISOString()
+    const agent = { id: agentId, type: 'campaign', name: 'Failure test', description: 'Failure test', trigger: { type: 'campaign', cron: 'campaign', nextRun: scheduledAt }, status: 'awaiting_approval', approved: false, actions: [], executionHistory: [], permissions: ['linkedin'], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), campaign: { name: 'Failure test', description: 'test', brand: { business: 'AlphaTekx', audience: 'Founders', tone: 'Professional', website: '', dontPost: [] }, meta: { platforms: ['linkedin'], slots: [], durationDays: 1, postsPerDay: 1, totalPosts: 1, startDate: scheduledAt, includeImages: true, timezone: 'UTC', frequencyText: 'One time' }, posts: [{ id: `post-${randomUUID()}`, day: 1, slot: '09:00', scheduledAt, platforms: ['linkedin'], topic: 'test', postType: 'educational', captions: { linkedin: 'NO_ID' }, imageUrl: `http://127.0.0.1:${providerPort}/test-image`, status: 'pending_approval', result: {}, credits: 3 }], totalCredits: 3, status: 'pending_approval', charged: false, approved: false, autoPublish: false } }
+    await request('/api/agents', { method: 'POST', body: JSON.stringify({ agent }) })
+    const before = (await (await request('/api/credits/balance')).json()).credits
+    await request(`/api/agents/campaign/${agentId}/activate`, { method: 'POST', body: JSON.stringify({ autoPublish: true, startAt: scheduledAt }) })
+    const execution = (await (await request(`/api/agents/${agentId}/run`, { method: 'POST', body: '{}' })).json()).execution
+    assert.equal(execution.status, 'error')
+    assert.equal(execution.credits_used, 0)
+    const after = (await (await request('/api/credits/balance')).json()).credits
+    assert.equal(after, before)
+    const saved = (await (await request('/api/agents')).json()).agents.find(item => item.id === agentId)
+    assert.equal(saved.campaign.posts[0].charged, false)
+    assert.equal(saved.campaign.posts[0].status, 'scheduled')
+    assert.equal(saved.campaign.posts[0].retryCount, 1)
+    assert.equal(saved.executionsDone, 1)
+    assert.equal(saved.successfulRuns, 0)
+    assert.equal(saved.failedRuns, 1)
+    assert.equal(saved.successRate, 0)
+    assert.equal(saved.executionHistory[0].status, 'error')
+    assert.ok(new Date(saved.trigger.nextRun).getTime() > Date.now())
+  } finally { app.child.kill('SIGTERM') }
+})
+
+await test('Exact one-post review prompt creates one non-recurring draft without extra questions', async () => {
+  const records = new Map()
+  const calls = []
+  const requiredSentence = 'Tell AlphaTekx the result you want. Watch Alpha get it done.'
+  const engine = createConversationEngine({
+    saveServerAgent: async record => { records.set(record.id, structuredClone(record)); return record },
+    getServerAgent: async id => structuredClone(records.get(id)),
+    getUserCredits: async () => 30,
+    spendUserCredits: async () => true,
+    getIntegrationStatus: async () => ({ connected: true, ready: true, scopes: ['w_member_social'], identifier: 'urn:li:person:test-member' }),
+    callLLMForRole: async role => {
+      calls.push(role)
+      if (role !== 'content') return { result: {}, provider: 'test', model: 'test', generationMode: 'model' }
+      return { result: { calendar: [{ day: 1, slot: 'morning', platforms: ['linkedin'], topic: 'AlphaTekx', postType: 'product', captions: { linkedin: `One intelligent AI for getting work done.\n\n${requiredSentence}\n\n#AlphaTekx #AI #Startups` } }] }, provider: 'test', model: 'test', generationMode: 'model' }
+    },
+  })
+  const prompt = `Create one LinkedIn post introducing AlphaTekx.
+
+Audience: startup founders, creators, freelancers, and small business owners.
+
+Tone: confident, professional, exciting, and human.
+
+Explain that AlphaTekx is one intelligent AI that understands what users want, asks the right questions, generates content, schedules it, and publishes it after approval.
+
+Include this sentence:
+
+“${requiredSentence}”
+
+Use no more than five relevant hashtags.
+
+Create only one post.
+Do not schedule a recurring campaign.
+Show me the post for review before publishing.`
+  let conversation = await engine.start({ id: 'exact-prompt-user', email: 'exact@test.local' }, prompt)
+  assert.equal(conversation.lastQuestion, 'publishingMode')
+  conversation = await engine.continue(conversation.id, { id: 'exact-prompt-user', email: 'exact@test.local' }, 'Publish once now')
+  assert.equal(calls.filter(role => role === 'content').length, 1, JSON.stringify({ calls, knownFields: conversation.knownFields, missingFields: conversation.missingFields, askedFields: conversation.askedFields }))
+  assert.ok(calls.filter(role => role === 'fast').length <= 3, 'Deterministic routing should not add unnecessary LLM classification calls.')
+  assert.equal(conversation.conversationStage, 'awaiting_content_review')
+  assert.equal(conversation.generatedContent.length, 1)
+  assert.equal(conversation.automationDraft.campaign.meta.totalPosts, 1)
+  assert.equal(conversation.automationDraft.campaign.meta.durationDays, 1)
+  assert.equal(conversation.automationDraft.campaign.meta.frequency, 'once')
+  assert.equal(conversation.automationDraft.approved, false)
+  assert.match(conversation.generatedContent[0].captions.linkedin, new RegExp(requiredSentence.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+})
+
+await test('Production regression: overdue scheduler run without LinkedIn readiness is recorded honestly', async () => {
+  const port = 5000 + Math.floor(Math.random() * 100)
+  const app = await startApp(port)
+  const userId = `linkedin-regression-${randomUUID()}`
+  const headers = { 'content-type': 'application/json', 'x-local-user-id': userId, 'x-local-user-email': `${userId}@test.local` }
+  const request = (path, options = {}) => fetch(`http://127.0.0.1:${port}${path}`, { ...options, headers: { ...headers, ...(options.headers || {}) } })
+  const agentId = `linkedin-regression-agent-${randomUUID()}`
+  const postId = `post-${randomUUID()}`
+  const overdueAt = new Date(Date.now() - 10 * 60_000).toISOString()
+  const blockedCaption = `This must not be sent without a ready connection: ${randomUUID()}`
+  try {
+    const agent = { id: agentId, type: 'campaign', name: 'Social Content - 7 days', description: 'Regression fixture', trigger: { type: 'campaign', cron: 'campaign', nextRun: overdueAt }, status: 'running', approved: true, actions: [], executionHistory: [], executionsDone: 0, successRate: 100, permissions: ['linkedin'], createdAt: overdueAt, updatedAt: overdueAt, campaign: { name: 'Social Content - 7 days', description: 'test', brand: { business: 'AlphaTekx', audience: 'Founders', tone: 'Professional', website: '', dontPost: [] }, meta: { platforms: ['linkedin'], slots: [], durationDays: 7, postsPerDay: 1, totalPosts: 1, startDate: overdueAt, includeImages: true, timezone: 'Africa/Lagos', frequencyText: 'Daily' }, posts: [{ id: postId, day: 1, slot: '09:00', scheduledAt: overdueAt, platforms: ['linkedin'], topic: 'test', postType: 'educational', captions: { linkedin: blockedCaption }, imageUrl: `http://127.0.0.1:${providerPort}/test-image`, status: 'scheduled', approved: true, charged: false, result: {}, credits: 3 }], totalCredits: 3, status: 'running', charged: false, approved: true, autoPublish: true } }
+    assert.equal((await request('/api/agents', { method: 'POST', body: JSON.stringify({ agent }) })).status, 200)
+    const before = (await (await request('/api/credits/balance')).json()).credits
+    const due = await (await request('/api/agents/run-due')).json()
+    assert.ok(due.results.some(result => result.agentId === agentId && result.status === 'error'))
+    assert.equal(providerRequests.includes(blockedCaption), false)
+    const after = (await (await request('/api/credits/balance')).json()).credits
+    assert.equal(after, before)
+    const saved = (await (await request('/api/agents')).json()).agents.find(item => item.id === agentId)
+    assert.equal(saved.executionsDone, 1)
+    assert.equal(saved.successRate, 0)
+    assert.equal(saved.executionHistory.length, 1)
+    assert.equal(saved.executionHistory[0].status, 'error')
+    assert.equal(saved.campaign.completedCount, 0)
+    assert.ok(new Date(saved.trigger.nextRun).getTime() > Date.now())
+    assert.equal(saved.campaign.posts[0].charged, false)
+  } finally { app.child.kill('SIGTERM') }
+})
+
+provider.close()
+const passed = tests.filter(item => item.ok).length
+console.log('LINKEDIN_TESTS:')
+for (const item of tests) console.log(`- ${item.ok ? 'PASS' : 'FAIL'}: ${item.name}${item.error ? ` — ${item.error}` : ''}`)
+console.log(`- Total: ${tests.length}, Passed: ${passed}, Failed: ${tests.length - passed}`)
+if (passed !== tests.length) process.exit(1)
+console.log('LINKEDIN_TESTS_OK')
