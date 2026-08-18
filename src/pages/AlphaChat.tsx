@@ -705,13 +705,21 @@ function ChatContent() {
                         {/* Website Resurrector Cards — stacked vertically below chat */}
                         {msg.restoreCards && (
                           <div className="mt-3 space-y-3">
-                            {/* Card 1: Live Preview */}
-                            {msg.restoreCards.preview && (
-                              <LivePreviewCard url={msg.restoreCards.preview.url} status={msg.restoreCards.preview.status} />
-                            )}
-                            {/* Card 2: Scanning Log */}
-                            {msg.restoreCards.scanning && (
-                              <ScanningCard logs={msg.restoreCards.scanning.logs} status={msg.restoreCards.scanning.status} />
+                            {/* Card 1+2: Live Preview + Scanning side-by-side during scan phase */}
+                            {msg.restoreCards.preview && msg.restoreCards.scanning && msg.restoreCards.scanning.status === 'start' ? (
+                              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                                <LivePreviewCard url={msg.restoreCards.preview.url} status={msg.restoreCards.preview.status} compact />
+                                <ScanningCard logs={msg.restoreCards.scanning.logs} status={msg.restoreCards.scanning.status} />
+                              </div>
+                            ) : (
+                              <>
+                                {msg.restoreCards.preview && (
+                                  <LivePreviewCard url={msg.restoreCards.preview.url} status={msg.restoreCards.preview.status} />
+                                )}
+                                {msg.restoreCards.scanning && (
+                                  <ScanningCard logs={msg.restoreCards.scanning.logs} status={msg.restoreCards.scanning.status} />
+                                )}
+                              </>
                             )}
                             {/* Card 3: Errors Found */}
                             {msg.restoreCards.errors && (

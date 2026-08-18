@@ -173,8 +173,11 @@ export async function handleGitHubCallback(req, res) {
 // ─── Route: Check connection status ───────────────────────────────────────────
 
 export async function handleGitHubStatus(req, res) {
+  if (!GITHUB_CLIENT_ID || !GITHUB_CLIENT_SECRET) {
+    return jsonResponse(res, 200, { connected: false, configured: false, error: 'GitHub OAuth not configured on this server. Set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET environment variables.' })
+  }
   const token = getTokenFromRequest(req)
-  if (!token) return jsonResponse(res, 200, { connected: false })
+  if (!token) return jsonResponse(res, 200, { connected: false, configured: true })
 
   try {
     const user = await githubApi('/user', token)

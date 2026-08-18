@@ -8,6 +8,7 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { readFile, writeFile, unlink, mkdir } from 'node:fs/promises'
+import path from 'node:path'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import ffmpegPath from 'ffmpeg-static'

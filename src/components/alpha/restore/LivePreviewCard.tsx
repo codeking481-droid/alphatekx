@@ -2,8 +2,9 @@ import { motion } from 'framer-motion'
 import { Eye, Loader2 } from 'lucide-react'
 import { useState } from 'react'
 
-export default function LivePreviewCard({ url, status }: { url: string; status?: 'loading' | 'loaded' | 'error' }) {
+export default function LivePreviewCard({ url, status, compact }: { url: string; status?: 'loading' | 'loaded' | 'error'; compact?: boolean }) {
   const [loaded, setLoaded] = useState(false)
+  const iframeHeight = compact ? '260px' : '400px'
 
   return (
     <motion.div
@@ -44,7 +45,7 @@ export default function LivePreviewCard({ url, status }: { url: string; status?:
         <iframe
           src={`/api/preview?url=${encodeURIComponent(url)}&_cb=${Date.now()}`}
           sandbox="allow-same-origin allow-scripts"
-          style={{ pointerEvents: 'none', width: '100%', height: '400px', border: 'none', borderRadius: '0 0 12px 12px' }}
+          style={{ pointerEvents: 'none', width: '100%', height: iframeHeight, border: 'none', borderRadius: '0 0 12px 12px' }}
           onLoad={() => setLoaded(true)}
           title="Website preview"
         />

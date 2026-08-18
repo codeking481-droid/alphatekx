@@ -8663,6 +8663,27 @@ const server = http.createServer(async (req, res) => {
         const { executeVideoEdit } = await import('./server/videoEditor.mjs')
         const { detectStyle, detectStyleKey } = await import('./server/creatorStyles.mjs')
 
+        // Verify FFmpeg is available before starting
+        const ffmpegPath = (await import('ffmpeg-static')).default || 'ffmpeg'
+        try {
+          const { execFile: ef } = await import('node:child_process')
+          const { promisify: pf } = await import('node:util')
+          await pf(ef)(ffmpegPath, ['-version'], { timeout: 5000 })
+        } catch (ffErr) {
+          sendEvent({ type: 'error', message: `FFmpeg is not available on this server. Video editing requires FFmpeg. (${ffErr.message})` })
+          res.end()
+          return
+        }
+
+        // Top-level timeout: kill pipeline after 300 seconds
+        const VIDEO_TIMEOUT_MS = 300_000
+        const pipelineTimer = setTimeout(() => {
+          if (!res.writableEnded) {
+            sendEvent({ type: 'error', message: 'Video processing timed out after 5 minutes. Try a shorter video.' })
+            res.end()
+          }
+        }, VIDEO_TIMEOUT_MS)
+
         sendEvent({ type: 'content', text: 'Detected video. Analyzing...\n\n' })
 
         // Resolve the local file path directly — no HTTP fetch needed
@@ -8687,11 +8708,13 @@ const server = http.createServer(async (req, res) => {
             const videoBuffer = Buffer.from(await videoRes.arrayBuffer())
             fs.writeFileSync(tmpVideoPath, videoBuffer)
           } catch (err) {
+            clearTimeout(pipelineTimer)
             sendEvent({ type: 'error', message: `Failed to download video: ${err.message}` })
             res.end()
             return
           }
         } else {
+          clearTimeout(pipelineTimer)
           sendEvent({ type: 'error', message: 'No video file path provided' })
           res.end()
           return
@@ -8699,6 +8722,7 @@ const server = http.createServer(async (req, res) => {
 
         // Verify the file exists
         if (!fs.existsSync(tmpVideoPath)) {
+          clearTimeout(pipelineTimer)
           sendEvent({ type: 'error', message: `Video file not found on server: ${path.basename(tmpVideoPath)}` })
           res.end()
           return
@@ -8709,7 +8733,15 @@ const server = http.createServer(async (req, res) => {
 
         // Analyze the video
         sendEvent({ type: 'thought_step', step: { id: 'analyze', label: 'Analyzing video...', icon: 'test', status: 'active' } })
-        const analysis = await analyzeVideo(tmpVideoPath)
+        let analysis
+        try {
+          analysis = await analyzeVideo(tmpVideoPath)
+        } catch (analyzeErr) {
+          clearTimeout(pipelineTimer)
+          sendEvent({ type: 'error', message: `Video analysis failed: ${analyzeErr.message}` })
+          res.end()
+          return
+        }
         sendEvent({
           type: 'thought_step',
           step: {
@@ -8753,6 +8785,7 @@ const server = http.createServer(async (req, res) => {
         try {
           result = await executeVideoEdit(tmpVideoPath, analysis, editPlan, sendEvent, llmCall)
         } catch (editErr) {
+          clearTimeout(pipelineTimer)
           console.error('[VIDEO] Edit pipeline error:', editErr.message)
           sendEvent({ type: 'error', message: `Video edit failed: ${editErr.message}` })
           res.end()
@@ -8766,12 +8799,14 @@ const server = http.createServer(async (req, res) => {
           const editId = result.editId
           outputUrl = `/api/alpha/video-output/${editId}/${path.basename(result.outputPath)}`
         } else {
+          clearTimeout(pipelineTimer)
           console.error('[VIDEO] Output file not found:', result.outputPath)
           sendEvent({ type: 'error', message: 'Output file was not generated' })
           res.end()
           return
         }
 
+        clearTimeout(pipelineTimer)
         sendEvent({
           type: 'video_result',
           result: {

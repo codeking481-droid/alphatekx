@@ -30,6 +30,8 @@ type ApplyResult = {
 
 export default function GitHubApplyCard({ scanId }: { scanId: string }) {
   const [connected, setConnected] = useState<boolean | null>(null)
+  const [configured, setConfigured] = useState<boolean | null>(null)
+  const [configError, setConfigError] = useState<string | null>(null)
   const [user, setUser] = useState<{ login: string; avatar_url: string } | null>(null)
   const [repos, setRepos] = useState<Repo[]>([])
   const [selectedRepo, setSelectedRepo] = useState<string>('')
@@ -47,6 +49,8 @@ export default function GitHubApplyCard({ scanId }: { scanId: string }) {
       .then(r => r.json())
       .then(data => {
         setConnected(data.connected)
+        setConfigured(data.configured !== false)
+        if (data.error) setConfigError(data.error)
         if (data.user) setUser(data.user)
       })
       .catch(() => setConnected(false))
@@ -177,8 +181,19 @@ export default function GitHubApplyCard({ scanId }: { scanId: string }) {
       </div>
 
       <div className="px-5 py-4 space-y-4">
+        {/* Not configured on server */}
+        {configured === false && (
+          <div className="text-center space-y-3">
+            <div className="flex items-center justify-center gap-2 rounded-xl border border-amber-500/15 bg-amber-500/[0.04] px-3 py-3">
+              <AlertTriangle size={14} className="shrink-0 text-amber-400" />
+              <p className="text-[12px] text-amber-200/70">{configError || 'GitHub OAuth is not configured on this server.'}</p>
+            </div>
+            <p className="text-[11px] text-white/30">Ask the server admin to set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET environment variables, then restart the server.</p>
+          </div>
+        )}
+
         {/* Not connected */}
-        {connected === false && (
+        {connected === false && configured !== false && (
           <div className="text-center space-y-3">
             <p className="text-[12px] text-white/50">Connect your GitHub account to push fixes directly to your repository.</p>
             <button
