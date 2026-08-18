@@ -8,7 +8,7 @@
     "api": "node --experimental-strip-types server.mjs",
     "start": "node --experimental-strip-types server.mjs",
     "install:playwright": "npx playwright install chromium",
-    "postinstall": "node scripts/fix-composio.mjs && npm run install:playwright && npm run build",
+    "postinstall": "node scripts/fix-composio.mjs && npm run install:playwright && npm rebuild ffmpeg-static || true && npm run build",
     "build": "node scripts/build.mjs",
     "lint": "eslint . --quiet",
     "lint:fix": "eslint . --fix",
