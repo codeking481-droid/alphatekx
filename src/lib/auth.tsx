@@ -369,6 +369,31 @@ export function AuthProvider({ children }: PropsWithChildren) {
       // (INITIAL_SESSION), don't update state — let restoreSession handle it.
       if (!restoreComplete && !next) return
 
+      // If Supabase fires null but we know a valid session exists in localStorage,
+      // ignore the null event and try to recover. This prevents logout after a
+      // stale-deployment reload where the refresh token is temporarily unreachable.
+      if (!next) {
+        void supabase.auth.getSession().then(({ data: { session: fresh } }) => {
+          if (fresh?.user) {
+            setSession(fresh)
+            setLoading(false)
+            clearGoogleSignupPending()
+            void refreshProfile()
+          } else {
+            setSession(null)
+            setLoading(false)
+            clearUserArtifacts()
+            setProfile(null)
+          }
+        }).catch(() => {
+          setSession(null)
+          setLoading(false)
+          clearUserArtifacts()
+          setProfile(null)
+        })
+        return
+      }
+
       setSession(next)
       setLoading(false)
       if (next) {
@@ -376,12 +401,26 @@ export function AuthProvider({ children }: PropsWithChildren) {
         localStorage.removeItem(LOCAL_USER_KEY)
         setLocalUser(null)
         void refreshProfile()
-      } else {
-        clearUserArtifacts()
-        setProfile(null)
       }
     })
-    return () => data.subscription.unsubscribe()
+
+    // Periodic background session refresh — keeps the access token alive even
+    // during long idle periods, preventing the expired-token-on-reload problem.
+    const SESSION_REFRESH_INTERVAL_MS = 10 * 60 * 1000 // every 10 minutes
+    const refreshInterval = setInterval(() => {
+      supabase.auth.getSession().then(({ data: { session: current } }) => {
+        if (!current?.access_token) return
+        const expiresIn = (current.expires_at ?? 0) * 1000 - Date.now()
+        if (expiresIn < 300_000) {
+          supabase.auth.refreshSession().catch(() => {})
+        }
+      }).catch(() => {})
+    }, SESSION_REFRESH_INTERVAL_MS)
+
+    return () => {
+      data.subscription.unsubscribe()
+      clearInterval(refreshInterval)
+    }
   }, [refreshProfile])
 
   const user: AuthUser | null = useMemo(() => {

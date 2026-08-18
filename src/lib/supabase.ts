@@ -12,7 +12,6 @@ export const supabase: SupabaseClient | null = url && anonKey
         autoRefreshToken: true,
         detectSessionInUrl: true,
         storage: typeof window !== 'undefined' ? window.localStorage : undefined,
-        storageKey: 'sb-alphatekx-auth',
         flowType: 'pkce',
       },
     })
