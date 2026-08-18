@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, MessageSquare, CreditCard, Trash2, Clock } from 'lucide-react'
+import { X, MessageSquare, CreditCard, Trash2, Clock, Plus } from 'lucide-react'
 import { useAuth } from '../../lib/auth'
 import { getChatThreads, deleteChatThread, subscribeChatHistory, type ChatThread } from '../../lib/chatHistoryStore'
 
@@ -11,11 +11,13 @@ export default function HamburgerSidebar({
   open,
   onClose,
   onThreadSelect,
+  onNewChat,
   activeThreadId,
 }: {
   open: boolean
   onClose: () => void
   onThreadSelect: (thread: ChatThread) => void
+  onNewChat?: () => void
   activeThreadId?: string
 }) {
   const [tab, setTab] = useState<Tab>('history')
@@ -96,6 +98,13 @@ export default function HamburgerSidebar({
             <div className="flex-1 overflow-y-auto alpha-chat-scroll">
               {tab === 'history' && (
                 <div className="p-3">
+                  <button
+                    onClick={() => { onNewChat?.(); onClose() }}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#D6FF00]/20 bg-[#D6FF00]/[0.04] px-3 py-2.5 text-[12px] font-bold text-[#D6FF00] transition hover:bg-[#D6FF00]/[0.08]"
+                  >
+                    <Plus size={14} />
+                    New Chat
+                  </button>
                   {threads.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-16 text-center">
                       <MessageSquare size={28} className="mb-3 text-white/10" />

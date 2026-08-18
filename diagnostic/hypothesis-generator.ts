@@ -13,7 +13,7 @@
  */
 
 import { alphaCall, type ChatMessage } from '../alpha-core/groq-router.ts'
-import { auditThought, auditDecision, auditResult, auditError } from '../alpha-core/audit-trail.ts'
+import { auditResult, auditError } from '../alpha-core/audit-trail.ts'
 import type { EvidenceBundle } from './evidence-collector.ts'
 
 // ─── Types ────────────────────────────────────────────────────────────────────

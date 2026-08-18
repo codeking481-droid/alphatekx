@@ -122,8 +122,8 @@ function ChatContent() {
   const [input, setInput] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [attachedFile, setAttachedFile] = useState<File | null>(null)
-  const [attachedPreview, setAttachedPreview] = useState<string | null>(null)
+  const [attachedFiles, setAttachedFiles] = useState<File[]>([])
+  const [attachedPreviews, setAttachedPreviews] = useState<string[]>([])
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -161,9 +161,9 @@ function ChatContent() {
 
   const handleSend = useCallback(async () => {
     const text = input.trim()
-    if ((!text && !attachedFile) || isGenerating) return
+    if ((!text && attachedFiles.length === 0) || isGenerating) return
 
-    const sendText = text || (attachedFile ? 'Edit this video to look professional' : '')
+    const sendText = text || (attachedFiles.length > 0 ? 'Edit this video to look professional' : '')
     setInput('')
     setIsGenerating(true)
 
@@ -171,15 +171,16 @@ function ChatContent() {
     const detectedUrl = extractUrl(sendText)
     const isWebsiteRestore = isWebsiteRestoreIntent(sendText, detectedUrl)
 
-    // Upload file if attached
+    // Upload files if attached
     let fileUrl: string | null = null
     let fileType: string | null = null
-    if (attachedFile) {
+    if (attachedFiles.length > 0) {
       setUploading(true)
-      fileUrl = await uploadVideo(attachedFile)
-      fileType = attachedFile.type
+      // Upload first file (primary), then queue the rest
+      fileUrl = await uploadVideo(attachedFiles[0])
+      fileType = attachedFiles[0].type
       setUploading(false)
-      handleRemoveFile()
+      handleRemoveAllFiles()
       if (!fileUrl) {
         updateLastMessage((prev) => ({
           ...prev,
@@ -200,7 +201,7 @@ function ChatContent() {
     const userMsg: AlphaMessage = {
       id: uid(),
       role: 'user',
-      content: sendText + (fileUrl ? '\n\n[Video attached]' : ''),
+      content: sendText + (fileUrl ? `\n\n[${attachedFiles.length > 1 ? attachedFiles.length + ' videos attached' : 'Video attached'}]` : ''),
       createdAt: new Date().toISOString(),
     }
 
@@ -417,7 +418,7 @@ function ChatContent() {
       setIsGenerating(false)
       abortRef.current = null
     }
-  }, [input, isGenerating, activeThread, messages, scrollToBottom, updateLastMessage, attachedFile])
+  }, [input, isGenerating, activeThread, messages, scrollToBottom, updateLastMessage, attachedFiles])
 
   const handleRestoreEvent = useCallback((event: any, url: string) => {
     // Handle alpha events from event-bus
@@ -588,25 +589,36 @@ function ChatContent() {
   }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    if (!file.type.startsWith('video/')) {
-      alert('Only video files are supported.')
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
+    const validFiles: File[] = []
+    for (const file of files) {
+      if (!file.type.startsWith('video/')) continue
+      if (file.size > 2 * 1024 * 1024 * 1024) continue
+      validFiles.push(file)
+    }
+    if (validFiles.length === 0) {
+      alert('No valid video files. Max 2GB each.')
       return
     }
-    if (file.size > 2 * 1024 * 1024 * 1024) {
-      alert('File too large. Maximum 2GB.')
-      return
-    }
-    setAttachedFile(file)
-    const url = URL.createObjectURL(file)
-    setAttachedPreview(url)
+    const newPreviews = validFiles.map(f => URL.createObjectURL(f))
+    setAttachedFiles(prev => [...prev, ...validFiles])
+    setAttachedPreviews(prev => [...prev, ...newPreviews])
   }
 
-  const handleRemoveFile = () => {
-    setAttachedFile(null)
-    if (attachedPreview) URL.revokeObjectURL(attachedPreview)
-    setAttachedPreview(null)
+  const handleRemoveFile = (index: number) => {
+    setAttachedFiles(prev => prev.filter((_, i) => i !== index))
+    setAttachedPreviews(prev => {
+      URL.revokeObjectURL(prev[index])
+      return prev.filter((_, i) => i !== index)
+    })
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  const handleRemoveAllFiles = () => {
+    attachedPreviews.forEach(u => URL.revokeObjectURL(u))
+    setAttachedFiles([])
+    setAttachedPreviews([])
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
@@ -667,6 +679,7 @@ function ChatContent() {
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         onThreadSelect={handleThreadSelect}
+        onNewChat={handleNewChat}
         activeThreadId={activeThread?.id}
       />
 
@@ -690,13 +703,17 @@ function ChatContent() {
 
             {/* Centered Input */}
             <div className="w-full max-w-[560px]">
-              {/* Attached file preview */}
-              {attachedFile && (
-                <div className="mb-2 flex items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2">
-                  <Film size={16} className="text-[#D6FF00]" />
-                  <span className="flex-1 truncate text-[13px] text-white/70">{attachedFile.name}</span>
-                  <span className="text-[11px] text-white/30">{(attachedFile.size / 1024 / 1024).toFixed(1)}MB</span>
-                  <button onClick={handleRemoveFile} className="text-white/40 hover:text-white"><X size={14} /></button>
+              {/* Attached file previews */}
+              {attachedFiles.length > 0 && (
+                <div className="mb-2 space-y-1">
+                  {attachedFiles.map((file, i) => (
+                    <div key={i} className="flex items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2">
+                      <Film size={16} className="text-[#D6FF00] shrink-0" />
+                      <span className="flex-1 truncate text-[13px] text-white/70">{file.name}</span>
+                      <span className="text-[11px] text-white/30 shrink-0">{(file.size / 1024 / 1024).toFixed(1)}MB</span>
+                      <button onClick={() => handleRemoveFile(i)} className="text-white/40 hover:text-white shrink-0"><X size={14} /></button>
+                    </div>
+                  ))}
                 </div>
               )}
               <div className="alpha-input-glow group relative flex items-end rounded-2xl border border-white/[0.08] bg-white/[0.03] transition-all duration-300">
@@ -704,6 +721,7 @@ function ChatContent() {
                   ref={fileInputRef}
                   type="file"
                   accept="video/*"
+                  multiple
                   className="hidden"
                   onChange={handleFileSelect}
                 />
@@ -730,10 +748,10 @@ function ChatContent() {
                     target.style.height = Math.min(target.scrollHeight, 120) + 'px'
                   }}
                 />
-                {!input && !attachedFile && <AnimatedPlaceholder />}
+                {!input && attachedFiles.length === 0 && <AnimatedPlaceholder />}
                 <button
                   onClick={() => void handleSend()}
-                  disabled={(!input.trim() && !attachedFile) || isGenerating || uploading}
+                  disabled={(!input.trim() && attachedFiles.length === 0) || isGenerating || uploading}
                   className="mb-2.5 mr-2.5 grid size-9 shrink-0 place-items-center rounded-xl bg-[#D6FF00] text-black transition hover:bg-[#C2E600] disabled:opacity-20 disabled:cursor-not-allowed"
                 >
                   {uploading ? <Loader2 size={14} className="animate-spin" /> : isGenerating ? <Square size={14} /> : <Send size={14} />}
@@ -968,19 +986,24 @@ function ChatContent() {
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-white/[0.04] bg-[#0A0A0A]/90 px-4 py-3 backdrop-blur-xl">
           <div className="mx-auto max-w-[680px]">
             {/* Attached file preview */}
-            {attachedFile && (
-              <div className="mb-2 flex items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2">
-                <Film size={16} className="text-[#D6FF00]" />
-                <span className="flex-1 truncate text-[13px] text-white/70">{attachedFile.name}</span>
-                <span className="text-[11px] text-white/30">{(attachedFile.size / 1024 / 1024).toFixed(1)}MB</span>
-                <button onClick={handleRemoveFile} className="text-white/40 hover:text-white"><X size={14} /></button>
-              </div>
+            {attachedFiles.length > 0 && (
+                <div className="mb-2 space-y-1">
+                  {attachedFiles.map((file, i) => (
+                    <div key={i} className="flex items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2">
+                      <Film size={16} className="text-[#D6FF00] shrink-0" />
+                      <span className="flex-1 truncate text-[13px] text-white/70">{file.name}</span>
+                      <span className="text-[11px] text-white/30 shrink-0">{(file.size / 1024 / 1024).toFixed(1)}MB</span>
+                      <button onClick={() => handleRemoveFile(i)} className="text-white/40 hover:text-white shrink-0"><X size={14} /></button>
+                    </div>
+                  ))}
+                </div>
             )}
             <div className="alpha-input-glow group relative flex items-end rounded-2xl border border-white/[0.08] bg-white/[0.03] transition-all duration-300">
               <input
                 ref={fileInputRef}
                 type="file"
                 accept="video/*"
+                multiple
                 className="hidden"
                 onChange={handleFileSelect}
               />

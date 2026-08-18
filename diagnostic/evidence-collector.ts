@@ -15,7 +15,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { execSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
-import { auditAction, auditResult } from '../alpha-core/audit-trail.ts'
+import { auditResult } from '../alpha-core/audit-trail.ts'
 import type { SystemGraph, VulnerabilityInfo } from '../system-xray/scanner.ts'
 
 // ─── Types ────────────────────────────────────────────────────────────────────

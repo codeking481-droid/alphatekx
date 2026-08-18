@@ -35,6 +35,7 @@ export async function analyzeVideo(videoPath, opts = {}) {
   const analysisId = randomUUID().slice(0, 8)
   const workDir = join(TMP_DIR, analysisId)
   await mkdir(workDir, { recursive: true })
+  const sendEvent = opts.sendEvent || (() => {})
 
   const result = {
     id: analysisId,
@@ -49,6 +50,7 @@ export async function analyzeVideo(videoPath, opts = {}) {
   }
 
   // Phase 1: Extract metadata
+  sendEvent({ type: 'thought_step', step: { id: 'analyze-meta', label: 'Reading video metadata...', icon: 'test', status: 'active' } })
   try {
     result.metadata = await extractMetadata(videoPath)
     result.duration = result.metadata.duration || 0
@@ -56,31 +58,41 @@ export async function analyzeVideo(videoPath, opts = {}) {
     result.format = result.metadata.format || 'unknown'
     result.fps = result.metadata.fps || 0
     result.fileSize = result.metadata.size || 0
+    sendEvent({ type: 'thought_step', step: { id: 'analyze-meta', label: 'Metadata read', icon: 'test', status: 'done', summary: `${result.resolution} ${result.fps}fps, ${result.duration?.toFixed(1)}s` } })
   } catch (err) {
     result.errors.push(`Metadata: ${err.message}`)
+    sendEvent({ type: 'thought_step', step: { id: 'analyze-meta', label: 'Metadata failed', icon: 'test', status: 'error', summary: err.message } })
   }
 
   // Phase 2: Scene detection
+  sendEvent({ type: 'thought_step', step: { id: 'analyze-scenes', label: 'Detecting scenes...', icon: 'test', status: 'active' } })
   try {
     result.scenes = await detectScenes(videoPath, workDir)
+    sendEvent({ type: 'thought_step', step: { id: 'analyze-scenes', label: 'Scenes detected', icon: 'test', status: 'done', summary: `${result.scenes.length} scene(s)` } })
   } catch (err) {
     result.errors.push(`Scenes: ${err.message}`)
-    // Fallback: treat entire video as one scene
     result.scenes = [{ start: 0, end: result.duration, type: 'full' }]
+    sendEvent({ type: 'thought_step', step: { id: 'analyze-scenes', label: 'Scenes fallback', icon: 'test', status: 'done', summary: '1 full scene' } })
   }
 
   // Phase 3: Extract thumbnails
+  sendEvent({ type: 'thought_step', step: { id: 'analyze-thumbs', label: 'Extracting thumbnails...', icon: 'test', status: 'active' } })
   try {
     result.thumbnails = await extractThumbnails(videoPath, workDir, result.duration)
+    sendEvent({ type: 'thought_step', step: { id: 'analyze-thumbs', label: 'Thumbnails extracted', icon: 'test', status: 'done', summary: `${result.thumbnails.length} frame(s)` } })
   } catch (err) {
     result.errors.push(`Thumbnails: ${err.message}`)
+    sendEvent({ type: 'thought_step', step: { id: 'analyze-thumbs', label: 'Thumbnails skipped', icon: 'test', status: 'done', summary: err.message } })
   }
 
   // Phase 4: Transcription via Whisper
+  sendEvent({ type: 'thought_step', step: { id: 'analyze-transcribe', label: 'Transcribing audio...', icon: 'test', status: 'active' } })
   try {
     result.transcription = await transcribeAudio(videoPath)
+    sendEvent({ type: 'thought_step', step: { id: 'analyze-transcribe', label: 'Transcription done', icon: 'test', status: 'done', summary: result.transcription?.text ? `${result.transcription.words?.length || 0} words (${result.transcription.provider})` : 'No speech detected' } })
   } catch (err) {
     result.errors.push(`Transcription: ${err.message}`)
+    sendEvent({ type: 'thought_step', step: { id: 'analyze-transcribe', label: 'Transcription failed', icon: 'test', status: 'error', summary: err.message } })
   }
 
   // Phase 5: Quality scoring

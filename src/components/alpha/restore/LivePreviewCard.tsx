@@ -22,6 +22,13 @@ export default function LivePreviewCard({
   const hasScreenshots = screenshots && screenshots.length > 0
   const current = hasScreenshots ? screenshots[currentIdx] : null
 
+  // Reset iframe state when URL changes
+  useEffect(() => {
+    setIframeLoaded(false)
+    setIframeError(false)
+    setView('live')
+  }, [url])
+
   // Auto-advance to latest screenshot
   useEffect(() => {
     if (hasScreenshots) {
@@ -41,7 +48,7 @@ export default function LivePreviewCard({
     if (hasScreenshots && view === 'live') {
       setView('screenshots')
     }
-  }, [hasScreenshots?.length])
+  }, [screenshots?.length])
 
   return (
     <motion.div
@@ -127,7 +134,7 @@ export default function LivePreviewCard({
             ) : (
               <iframe
                 src={`/api/preview?url=${encodeURIComponent(url)}&_cb=${Date.now()}`}
-                sandbox="allow-same-origin allow-scripts allow-forms"
+                sandbox="allow-scripts allow-forms"
                 className="w-full border-none"
                 style={{ pointerEvents: 'none', height: compact ? 220 : 340, border: 'none' }}
                 onLoad={() => setIframeLoaded(true)}

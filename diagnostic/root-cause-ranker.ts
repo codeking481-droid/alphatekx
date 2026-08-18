@@ -7,7 +7,7 @@
  * Logs to audit-trail + reasoning-trace.
  */
 
-import { auditDecision, auditAction, auditResult } from '../alpha-core/audit-trail.ts'
+import { auditDecision } from '../alpha-core/audit-trail.ts'
 import { emitHypothesisCreated, emitReasoningTrace } from '../alpha-core/event-bus.ts'
 import type { Hypothesis } from './hypothesis-generator.ts'
 

@@ -8734,10 +8734,9 @@ const server = http.createServer(async (req, res) => {
         console.log(`[VIDEO] Processing ${path.basename(tmpVideoPath)} (${fileSizeMB} MB)`)
 
         // Analyze the video
-        sendEvent({ type: 'thought_step', step: { id: 'analyze', label: 'Analyzing video...', icon: 'test', status: 'active' } })
         let analysis
         try {
-          analysis = await analyzeVideo(tmpVideoPath)
+          analysis = await analyzeVideo(tmpVideoPath, { sendEvent })
         } catch (analyzeErr) {
           clearTimeout(pipelineTimer)
           sendEvent({ type: 'error', message: `Video analysis failed: ${analyzeErr.message}` })
