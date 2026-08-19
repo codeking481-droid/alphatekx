@@ -7,13 +7,10 @@ import { fileURLToPath } from 'node:url'
 import { schedule } from 'node-cron'
 import { chromium } from 'playwright'
 
-import { fallbackAlphaBuilder } from './alphaFallback.mjs'
 import { handlePreviewRoute, handleRestoreStreamRoute, handleFixStreamRoute, handleDownloadRoute, handlePreviewFixedRoute, handleScreenshotRoute } from './server/websiteRestoreStream.mjs'
 import { handleGitHubAuth, handleGitHubCallback, handleGitHubStatus, handleGitHubRepos, handleGitHubApplyFix, handleGitHubRollback } from './server/githubDirectPush.mjs'
 import { handleDiagnoseRoute } from './server/diagnoseRoute.mjs'
-import { handleRestoreV2Route, handleRestorePushRoute, handleScreenshotServeRoute } from './server/restorePipelineV2.mjs'
-import { extractPlan, isPlatformPrompt } from './server/alphaPlatformBuilder.mjs'
-import { buildPreviewProject, servePreviewBuild } from './server/previewBuild.mjs'
+import { handleRestoreV2Route, handleRestorePushRoute } from './server/restorePipelineV2.mjs'
 import { marketplaceHandler, fulfillMarketplaceOrder } from './server/marketplace.mjs'
 import { getRecords, getRecord, createRecord, updateRecord, deleteRecord, appEntitiesMigrationSql } from './server/appData.mjs'
 import { createAlphaBrain } from './server/alphaBrain.mjs'
@@ -76,31 +73,15 @@ async function executeProviderWithHealing(user, provider, actionName, params = {
   }
 }
 import * as mediaLibrary from './server/mediaLibraryService.mjs'
-import * as videoPipeline from './server/videoPipeline.mjs'
-import { runRepairPipeline, runConversationChat, isVideoRequest, isRepairRequest } from './server/repairPipeline.mjs'
+import { runRepairPipeline, runConversationChat, isRepairRequest } from './server/repairPipeline.mjs'
 import { runWebsiteResurrector, isWebsiteRequest } from './server/websiteResurrector.mjs'
 import { runBackendResurrector, isBackendRequest } from './server/backendResurrector.mjs'
-// Lazy load pro-video-workflow to avoid sharp/canvas native deps at startup
-let proVideoWorkflow = null
-const loadProVideoWorkflow = async () => {
-  if (!proVideoWorkflow) {
-    try {
-      proVideoWorkflow = await import('./server/pro-video-workflow.mjs')
-    } catch (err) {
-      console.warn('[Phase 1] Pro video workflow unavailable (sharp/canvas not installed):', err.message)
-      proVideoWorkflow = {}
-    }
-  }
-  return proVideoWorkflow
-}
 import * as moneyLoop from './server/moneyLoopService.mjs'
-import * as eliteBuilder from './server/eliteBuilderService.mjs'
 import { claimPendingAction, createPendingAction, finishPendingAction, listPendingActions } from './server/ceoPendingActions.mjs'
 import { scheduledCreditCost } from './server/schedulePricing.mjs'
 import generatePostHandler from './api/ai/generate-post.mjs'
 import { runRealScan, createScanId, evidenceDirFor, loadStoredReport } from './server/scanner/realScanner.mjs'
 import { createRestoreScanner, assertSafeUrl, RAW_SECRETS } from './server/scanEngine/playwrightScanner.js'
-import { aiBuilderHunter } from './server/scanEngine/aiBuilderHunter.js'
 import { gitHistoryScanner } from './server/scanEngine/gitHistoryScanner.js'
 import { liveVerifier } from './server/scanEngine/liveVerifier.js'
 import { calculateRisk } from './server/scanEngine/riskScorer.js'
@@ -141,9 +122,6 @@ try { fs.mkdirSync(previewsDir, { recursive: true }) } catch {}
 try { fs.mkdirSync(dataDir, { recursive: true }) } catch {}
 
 const schedulerState = { lastRun: null, nextRun: null, activeAgents: 0, startedAt: new Date().toISOString(), isRunning: false, uptime: () => Math.floor((Date.now() - new Date(schedulerState.startedAt).getTime()) / 1000) }
-// Video work must outlive a browser connection.  This in-memory registry is intentionally
-// small and only stores live work; final bytes live in the configured media bucket.
-const videoJobs = new Map()
 const scanQuotaByDay = globalThis.__alphatekxScanQuotaByDay || (globalThis.__alphatekxScanQuotaByDay = new Map())
 const allowedOrigins = new Set(['https://alphatekx.name.ng', 'https://www.alphatekx.name.ng', 'http://localhost:5173', `http://localhost:${port}`])
 function isAllowedOrigin(origin) {
@@ -374,16 +352,6 @@ async function runGeneralTool(prompt) {
     if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter a valid currency amount')
     return { tool: 'currency', text: 'Live conversion result.', currency: await currencyPair(match[2], match[3], amount) }
   }
-  if (/\b(youtube|videos?|watch|tutorial)\b/i.test(prompt)) {
-    const apiKey = firstKey('YOUTUBE_API_KEY')
-    if (!apiKey) throw new Error('YouTube search is not configured')
-    const requested = Number(prompt.match(/\b(\d+)\s+(?:youtube\s+)?videos?\b/i)?.[1] || 1)
-    const count = Math.min(5, Math.max(1, requested))
-    const query = prompt.replace(/\b(show|find|load|play|youtube|videos?|watch|tutorial|me|please)\b/gi, ' ').replace(/\s+/g, ' ').trim() || prompt
-    const data = await fetchJson(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=${count}&q=${encodeURIComponent(query)}&key=${apiKey}`, {})
-    const videos = (data.items || []).map(item => ({ id: item.id.videoId, title: item.snippet.title, channel: item.snippet.channelTitle, thumbnail: item.snippet.thumbnails?.medium?.url, url: `https://www.youtube.com/watch?v=${item.id.videoId}` }))
-    return { tool: 'youtube', text: videos.length ? `I found ${videos.length} video${videos.length === 1 ? '' : 's'}.` : 'No matching YouTube video was found.', videos }
-  }
   if (/\b(search (?:the )?(?:web|internet)|look up|latest|news|research online|browse)\b/i.test(prompt)) {
     const apiKey = firstKey('TAVILY_API_KEY')
     if (apiKey) {
@@ -411,62 +379,12 @@ export async function handleAlpha(prompt, mode = 'chat', currentCode = '', reque
     ? [requestedProvider].filter((name) => allOrder.includes(name) && getProviderKey(name))
     : allOrder
   if (order.length === 0) {
-    if (builder) return { code: fallbackAlphaBuilder(prompt), provider: 'fallback' }
     throw new Error('No AI provider is configured. Add OPENAI_API_KEY, GROQ_API_KEY, QWEN_API_KEY, KIMI_API_KEY, MINIMAX_API_KEY, or FLATKEY_API_KEY.')
   }
   const founderName = 'Daniel Thompson'
-  const fullAppBuilderPrompt = `You are AlphaTekX Builder — a world-class Senior Full-Stack Engineer at Vercel + Linear.
-
-YOUR JOB: Build COMPLETE, PRODUCTION-READY, FULL websites and apps — NOT demos, NOT toys.
-
-RULES:
-- ALWAYS build FULL multi-view apps with REAL features. Minimum 5-7 distinct views/pages unless the user explicitly says "simple demo". If the prompt is a large platform / OS (e.g. NeuralOS, business operating system, all-in-one SaaS), generate 6-10 core modules first (Dashboard, Projects/CRM, Analytics, Chat, Calendar, Files, Automations, Settings, etc.) and use the AlphaUI library for consistency.
-- If user says "Build e-commerce" → Build: Home, Shop, Product Detail, Cart, Checkout, User Dashboard, Admin Dashboard.
-- If user says "Build POS" → Build: Login/Dashboard, Make Sale, Inventory (50+ items), Customers, Reports/Charts, Settings, Receipt Print.
-- If user says "Build blog" → Build: Home feed, Single post view, Write/Editor view, Categories, Profile, Search.
-- If user says "Build chat" → Build: Thread list, Message pane, New thread, Search, real-time-style UI.
-- Architecture: React 18 + Tailwind CSS only. All icons must be inline SVG. All animations CSS transitions. NO external packages are bundled, so do NOT import lucide-react, framer-motion, recharts, zustand, or react-router-dom.
-- Generate 8-15 FILES minimum. Each main page/component should be 150+ lines of real code. Total output should be 1000+ lines across all files. For very large platforms, generate 10-15 files and use AlphaUI components to keep each module concise.
-- AlphaUI component library: A global window.AlphaUI object is injected by the runtime. You may use these React components in JSX: <AlphaUI.Sidebar items={...} current={...} onChange={...} />, <AlphaUI.Topbar title={...} />, <AlphaUI.Card title={...} />, <AlphaUI.StatCard label={...} value={...} change={...} />, <AlphaUI.Button />, <AlphaUI.Input />, <AlphaUI.Table columns={...} rows={...} />, <AlphaUI.Kanban columns={...} cards={...} onMove={...} />, <AlphaUI.Chart type="bar" data={...} labels={...} />, <AlphaUI.Modal open={...} onClose={...} />, <AlphaUI.Tabs tabs={...} active={...} onChange={...} />, <AlphaUI.Search />, <AlphaUI.Avatar name={...} />, <AlphaUI.Badge />, <AlphaUI.Empty />, <AlphaUI.Skeleton />. Do NOT redefine these components; they are already available as global JSX tags via window.AlphaUI.
-- AlphaUI prop shapes: Sidebar items must be an array of objects {id, label, icon?} (never a string array). Table columns must be an array of objects {key, title, render?} and rows an array of arrays or objects. Avatar accepts name and optional image/src.
-- Defensive code: always guard nested access with optional chaining and fallbacks. For example use (currentUser || {}).name, user?.image || '', files?.[0]?.name || ''. Never access .image, .url, .name, or any nested property on a possibly undefined object without a fallback.
-- UI: World-class like Linear/Stripe — dark premium (#0A0A0A bg, #151515 cards, one accent color), glassmorphism, rounded-2xl, responsive mobile+desktop, loading states, toast notifications, dark mode toggle, localStorage persistence.
-- Data: Realistic mock data (20+ products/posts/customers), search, filter, sort. Every button works, every form validates.
-- Backend: Use the global AlphaAPI object for real CRUD against the AlphaTekX backend: AlphaAPI.get('products'), AlphaAPI.post('products', data), AlphaAPI.put('products', id, data), AlphaAPI.del('products', id). Do not redefine AlphaAPI; it is injected by the Builder preview and by the deployed app runtime. Keep a local cache in React state and refresh after every create/update/delete.
-- Navigation: Use a currentView state and a setView function. Define a 'views' object mapping lowercase view names (e.g. home, shop, cart, admin, dashboard, settings) to the component that should render. Render the active view based on currentView. Provide a sidebar or topbar where every page button has a 'data-view' attribute equal to the lowercase view name (e.g. data-view="home"). Clicking a button calls setView(viewName). Also listen to window.location.hash on load and on the 'hashchange' event: if the hash matches a known view name, call setView(hashValue) so the Builder preview dropdown and external links can drive navigation.
-- Code quality: Clean, commented, production-ready, no TODOs, no lorem ipsum, no placeholder text, no markdown code fences inside file strings, no trailing commas.
-
-OUTPUT FORMAT - STRICT JSON:
-Return a single valid JSON object (no markdown fences) with this exact shape:
-{
-  "title": "App title",
-  "description": "Short tagline",
-  "dependencies": ["react-router-dom", "framer-motion", "lucide-react", "zustand"],
-  "files": {
-    "src/data/mockData.js": "...",
-    "src/lib/store.js": "function loadEntities(entity, setState) { window.AlphaAPI.get(entity).then(r => setState(r.records || [])); } function saveEntity(entity, data, setState) { window.AlphaAPI.post(entity, data).then(() => loadEntities(entity, setState)); }",
-    "src/components/Navbar.jsx": "...",
-    "src/pages/Home.jsx": "...",
-    "src/pages/Shop.jsx": "...",
-    "src/App.jsx": "...",
-    "supabase/migrations/001_app_entities.sql": "CREATE TABLE IF NOT EXISTS app_entities (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), app_slug text NOT NULL, entity text NOT NULL, data jsonb NOT NULL DEFAULT '{}'::jsonb, owner_id uuid, owner_email text, created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now()); CREATE INDEX IF NOT EXISTS idx_app_entities_app_entity ON app_entities(app_slug, entity);"
-  }
-}
-
-FILE RULES:
-- Do NOT use import/export statements. All functions share the same global scope, so define helpers in data/lib files first, then components, then pages, then App.jsx.
-- App.jsx must define a function named AlphaApp (or App) and end with exactly: ReactDOM.createRoot(document.getElementById('root')).render(<AlphaApp />);
-- Use React.useState, React.useEffect, React.useMemo, React.useReducer for state management. Define helper functions and components before they are used.
-- Use window.localStorage for UI state persistence (it is patched in the preview).
-- Use AlphaAPI for real data CRUD. Keep a local state cache and refresh the relevant list after every post/put/del.
-- The "dependencies" field is for documentation only; do not import those packages.
-- Use only https://images.unsplash.com/photo-... or https://api.dicebear.com for images; never placeholder.com.
-- NEVER put an object directly inside JSX. Only render strings, numbers, booleans, arrays, or React elements.
-
-You are AlphaTekX. You turn ideas into reality. AlphaTekX was founded and is led by ${founderName}, Founder and CEO. Build something users will love and pay for.`
-  const system = builder ? fullAppBuilderPrompt : 'You are AlphaTekX, a precise creation and productivity assistant. Help the user build, learn, research, plan, and solve problems. Be honest about missing tools and never invent completed actions.'
+  const system = 'You are AlphaTekX, a precise creation and productivity assistant. Help the user build, learn, research, plan, and solve problems. Be honest about missing tools and never invent completed actions.'
   const userContent = refine && currentCode.trim()
-    ? `Existing AlphaApp code to modify:\n\`\`\`jsx\n${currentCode}\n\`\`\`\n\nRequested change: ${prompt}\n\nApply the change and return the COMPLETE updated JSON object with all files. Preserve all existing functionality, the design system, and the exact output format. Do not return explanations.`
+    ? `Existing code to modify:\n\`\`\`\n${currentCode}\n\`\`\`\n\nRequested change: ${prompt}\n\nApply the change and return the COMPLETE updated code. Preserve all existing functionality. Do not return explanations.`
     : prompt
   const messages = [{ role: 'system', content: system }, { role: 'user', content: userContent }]
   let provider = ''
@@ -497,8 +415,8 @@ You are AlphaTekX. You turn ideas into reality. AlphaTekX was founded and is led
   }
   if (!content) {
     if (builder) {
-      console.error('[AlphaTekX] All providers failed, falling back to deterministic builder:', lastError instanceof Error ? lastError.message : lastError)
-      return { code: fallbackAlphaBuilder(prompt), provider: 'fallback' }
+      console.error('[AlphaTekX] All providers failed:', lastError instanceof Error ? lastError.message : lastError)
+      throw lastError || new Error('No AI provider was able to respond.')
     }
     throw lastError || new Error('No AI provider was able to respond.')
   }
@@ -522,7 +440,7 @@ Modules should cover the core screens the user needs (4-8 modules). Use short ke
   } catch (error) {
     console.error('[AlphaTekX] AI plan failed:', error instanceof Error ? error.message : error)
   }
-  return extractPlan(prompt)
+  return { title: 'New project', description: prompt, modules: [{ id: 'main', name: 'Main', purpose: prompt, files: [] }] }
 }
 
 async function callLLMJSON(systemPrompt, userPrompt) {
@@ -4991,12 +4909,8 @@ async function fetchPublishedCreation(slug) {
   if (!config.url || !config.anon) throw new Error('Path deployment is not configured.')
   const response = await fetch(`${config.url}/rest/v1/creations?slug=eq.${encodeURIComponent(slug)}&published=eq.true&select=id,title,slug,code&limit=1`, { headers: deploymentReadHeaders(config) })
   const payload = await response.json()
-  if (!response.ok) throw new Error(payload.message || 'Could not load the published app. Run supabase/path-deploy.sql once.')
-  if (payload?.[0]) return payload[0]
-  const builderResponse = await fetch(`${config.url}/rest/v1/builder_projects?slug=eq.${encodeURIComponent(slug)}&published=eq.true&select=id,title,slug,code&limit=1`, { headers: deploymentReadHeaders(config) })
-  const builderPayload = await builderResponse.json()
-  if (!builderResponse.ok) throw new Error(builderPayload.message || 'Could not load the published Builder app. Run supabase/elite-builder.sql once.')
-  return builderPayload?.[0] || null
+  if (!response.ok) throw new Error(payload.message || 'Could not load the published app.')
+  return payload?.[0] || null
 }
 
 async function servePublishedCreation(req, res, slug) {
@@ -7527,301 +7441,10 @@ async function buildMissionFiles(req, res) {
   return json(res, 200, { missionId, generatedPath: `generated/${missionId}`, files, code: files.find(file => file.path === 'src/App.jsx')?.code || '', logs })
 }
 
-const ELITE_BUILDER_PROMPT = `You are AlphaTekX Builder V3, a senior product engineering system with deep experience shipping reliable products.
-Build a complete, production-quality interactive application, not a static mock-up.
-Return only one JSX code block containing a single React component named App.
-- NO IMPORTS ALLOWED. Return only function App() {...} with no import lines.
-- Do not use exports, explanation, script tags, eval, Function constructors, createRoot, ReactDOM, TypeScript types, or external component packages.
-- React is already available. Use only React.useState, React.useEffect, React.useRef, React.useMemo, React.useCallback, React.useReducer, and React.useContext.
-- For icons use inline SVG or Unicode symbols, never lucide-react or another import.
-- Use Tailwind className utilities only. Do not depend on component libraries.
-- Make it mobile-first, responsive, accessible, and premium using #0A0A0F, #1A1A23, #7C3AED and #E9E7FF.
-- Add realistic data, working interactions, focus states, and useful copy.
-- Use inline SVG or text symbols for icons. When imagery helps, use resilient
-  https://gen.pollinations.ai/image/{encoded-description}?model=flux&width=1200&height=628&enhance=true&nologo=true
-  image URLs with a CSS gradient fallback and an onError handler so a remote
-  image failure never breaks the application.
-- Landing pages need navigation, hero, proof, features, pricing, FAQ, CTA, and footer.
-- Apps need useful navigation, data views, forms, and interactive state.
-- Use glass, bento layouts, large typography, a 12-column rhythm, micro-interactions, skeletons, empty states and honest error states.
-- Mobile experiences need a real hamburger or bottom sheet, not merely shrinking desktop UI.
-- For e-commerce include product grid, cart drawer, checkout mock and order-success state. Never claim a real payment occurred.
-- For dashboards include sidebar, stats, CSS charts, table and filters.
-- For marketplaces include search, categories, product detail, cart quantity controls, persisted cart, checkout validation, order confirmation, and responsive navigation.
-- Every visible button must have a real local interaction or be clearly disabled with explanatory copy.
-- For apps that save data, use window.AlphaAPI.get/post/put/del with an entity name. AlphaAPI is the secure project-scoped backend; never embed Supabase keys.
-- Do not claim payment, authentication, database, or external API behavior that is not implemented.`
-
-function fallbackEliteComponent(prompt) {
-  const contextualFallback = eliteBuilder.contextualFallbackBuilderCode(prompt)
-  if (contextualFallback) return contextualFallback
-  const subject = String(prompt || 'Your next product').replace(/[<>{}`]/g, '').trim().slice(0, 90) || 'Your next product'
-  return `function App() {
-  const [email, setEmail] = React.useState('');
-  const [joined, setJoined] = React.useState(false);
-  const features = [['Built for momentum','A focused experience that moves visitors from curiosity to action.'],['Responsive by default','Every section adapts cleanly from mobile screens to wide desktops.'],['Designed to convert','Clear proof, pricing and calls to action without visual clutter.']];
-  return <main className="min-h-screen overflow-hidden bg-[#0A0A0F] text-[#E9E7FF]">
-    <nav className="mx-auto flex max-w-6xl items-center justify-between px-5 py-6"><span className="text-sm font-black tracking-[.22em]">ALPHA BUILT</span><button onClick={()=>document.getElementById('join')?.scrollIntoView({behavior:'smooth'})} className="rounded-full bg-[#7C3AED] px-5 py-2.5 text-sm font-black transition hover:-translate-y-0.5">Join early</button></nav>
-    <section className="relative mx-auto max-w-6xl px-5 pb-24 pt-16 text-center sm:pt-24"><div className="absolute left-1/2 top-10 h-64 w-64 -translate-x-1/2 rounded-full bg-violet-600/20 blur-3xl"/><p className="relative text-xs font-black uppercase tracking-[.25em] text-violet-300">Designed by AlphaTekX</p><h1 className="relative mx-auto mt-6 max-w-4xl text-4xl font-black leading-[1.02] sm:text-6xl lg:text-7xl">${subject}</h1><p className="relative mx-auto mt-6 max-w-2xl text-base font-semibold leading-7 text-white/60 sm:text-lg">A premium, focused product experience created to help ambitious people launch with confidence.</p><div className="relative mt-9 flex flex-wrap justify-center gap-3"><button onClick={()=>document.getElementById('join')?.scrollIntoView({behavior:'smooth'})} className="rounded-2xl bg-[#7C3AED] px-7 py-4 font-black shadow-2xl shadow-violet-900/30 transition hover:-translate-y-1">Start building</button><button onClick={()=>document.getElementById('features')?.scrollIntoView({behavior:'smooth'})} className="rounded-2xl border border-white/10 bg-white/5 px-7 py-4 font-black transition hover:bg-white/10">Explore features</button></div></section>
-    <section id="features" className="mx-auto grid max-w-6xl gap-4 px-5 py-16 md:grid-cols-3">{features.map(([title,copy],index)=><article key={title} className="rounded-3xl border border-white/10 bg-[#1A1A23] p-7 shadow-2xl"><span className="grid size-10 place-items-center rounded-xl bg-violet-500/15 font-black text-violet-300">0{index+1}</span><h2 className="mt-8 text-xl font-black">{title}</h2><p className="mt-3 leading-7 text-white/55">{copy}</p></article>)}</section>
-    <section id="join" className="mx-auto max-w-3xl px-5 py-24 text-center"><div className="rounded-[2rem] border border-violet-400/20 bg-gradient-to-br from-violet-600/20 to-cyan-400/5 p-7 sm:p-12"><h2 className="text-3xl font-black">Ready when you are.</h2><p className="mt-3 text-white/60">Join the early list and be first to experience what comes next.</p>{joined?<p className="mt-7 rounded-2xl bg-emerald-400/10 p-4 font-bold text-emerald-300">You are on the list. Welcome.</p>:<form onSubmit={event=>{event.preventDefault();if(email.includes('@'))setJoined(true)}} className="mx-auto mt-7 flex max-w-lg flex-col gap-3 sm:flex-row"><input required type="email" value={email} onChange={event=>setEmail(event.target.value)} placeholder="you@company.com" className="min-h-12 flex-1 rounded-xl border border-white/10 bg-black/20 px-4 text-white outline-none focus:border-violet-400"/><button className="min-h-12 rounded-xl bg-white px-6 font-black text-[#0A0A0F]">Join waitlist</button></form>}</div></section>
-  </main>;
-}`
-}
-
-function verifiedBuilderCompletion(content, provider) {
-  const result = eliteBuilder.validateBuilderCode(extractAppComponent(content || ''))
-  if (result.errors.length) throw new Error(result.errors.join(' '))
-  return { code: result.code, provider }
-}
-
-function extractAppComponent(value) {
-  const source = String(value || '').replace(/```(?:jsx|tsx|javascript|js)?/gi, '').replace(/```/g, '').trim()
-  const start = source.search(/\bfunction\s+App\s*\(/)
-  if (start < 0) return source
-  const open = source.indexOf('{', start)
-  if (open < 0) return source
-  let depth = 0
-  let quote = ''
-  let escaped = false
-  let lineComment = false
-  let blockComment = false
-  for (let index = open; index < source.length; index += 1) {
-    const char = source[index]
-    const next = source[index + 1]
-    if (lineComment) {
-      if (char === '\n') lineComment = false
-      continue
-    }
-    if (blockComment) {
-      if (char === '*' && next === '/') { blockComment = false; index += 1 }
-      continue
-    }
-    if (quote) {
-      if (escaped) { escaped = false; continue }
-      if (char === '\\') { escaped = true; continue }
-      if (char === quote) quote = ''
-      continue
-    }
-    if (char === '/' && next === '/') { lineComment = true; index += 1; continue }
-    if (char === '/' && next === '*') { blockComment = true; index += 1; continue }
-    if (char === "'" || char === '"' || char === '`') { quote = char; continue }
-    if (char === '{') depth += 1
-    if (char === '}') {
-      depth -= 1
-      if (depth === 0) return source.slice(start, index + 1)
-    }
-  }
-  return source
-}
-
-function parseGradioCompletion(eventStream) {
-  const blocks = String(eventStream || '').split(/\r?\n\r?\n/)
-  const complete = blocks.find(block => /^event:\s*complete\s*$/m.test(block))
-  if (!complete) {
-    const failed = blocks.find(block => /^event:\s*(?:error|unexpected_error)\s*$/m.test(block))
-    if (failed) {
-      const dataLine = failed.split(/\r?\n/).find(line => line.startsWith('data:'))
-      try {
-        const payload = JSON.parse(String(dataLine || '').slice(5).trim())
-        throw new Error(String(payload?.title || payload?.error || 'AlphaTekX Coder reported a generation error.'))
-      } catch (error) {
-        if (error instanceof SyntaxError) throw new Error('AlphaTekX Coder reported a generation error.')
-        throw error
-      }
-    }
-    throw new Error('AlphaTekX Coder did not finish in time.')
-  }
-  const dataLine = complete.split(/\r?\n/).find(line => line.startsWith('data:'))
-  if (!dataLine) throw new Error('AlphaTekX Coder returned an empty completion.')
-  const payload = JSON.parse(dataLine.slice(5).trim())
-  return Array.isArray(payload) ? payload[0] : payload
-}
-
-async function alphatekxCoderCompletion(messages) {
-  const configured = String(process.env.BUILDER_GRADIO_URL || 'https://alpha4-44-alphatekx-coder-api2.hf.space').trim()
-  const base = new URL(configured)
-  if (base.protocol !== 'https:') throw new Error('BUILDER_GRADIO_URL must use HTTPS.')
-  const huggingFaceToken = firstKey('HUGGINGFACE_TOKEN', 'HF_TOKEN')
-  const authorizationHeaders = huggingFaceToken ? { Authorization: `Bearer ${huggingFaceToken}` } : {}
-  // The Space already owns its elite system prompt. Send only the build
-  // request; duplicating AlphaTekX's server prompt wastes ZeroGPU time and
-  // reduces the tokens available for the generated application.
-  const prompt = String([...messages].reverse().find(message => message.role === 'user')?.content || 'Build a production-quality application')
-  const started = Date.now()
-  const submission = await fetchJson(`${base.origin}/gradio_api/call/generate`, {
-    method: 'POST',
-    headers: { ...authorizationHeaders, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ data: [prompt] }),
-  }, 4_000)
-  if (!submission?.event_id) throw new Error('AlphaTekX Coder did not issue a generation job.')
-  const remaining = Math.max(1_000, 25_000 - (Date.now() - started))
-  const events = await fetchText(`${base.origin}/gradio_api/call/generate/${encodeURIComponent(submission.event_id)}`, {
-    headers: { ...authorizationHeaders, Accept: 'text/event-stream' },
-  }, remaining)
-  return verifiedBuilderCompletion(parseGradioCompletion(events), 'alphatekx-coder')
-}
-
-async function freeBuilderCompletion(messages) {
-  let lastError = null
-  try {
-    return await alphatekxCoderCompletion(messages)
-  } catch (error) {
-    lastError = error
-    console.error('[Elite Builder] AlphaTekX Coder failed:', error instanceof Error ? error.message : error)
-  }
-
-  const groqKey = firstKey('GROQ_API_KEY')
-  if (groqKey) {
-    try {
-      const payload = await fetchJson('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: process.env.GROQ_BUILDER_MODEL || 'openai/gpt-oss-120b',
-          messages,
-          temperature: 0.7,
-          max_tokens: 6000,
-        }),
-      }, 6_000)
-      return verifiedBuilderCompletion(payload?.choices?.[0]?.message?.content, 'groq')
-    } catch (error) {
-      lastError = error
-      console.error('[Elite Builder] Groq failed:', error instanceof Error ? error.message : error)
-    }
-  }
-
-  throw lastError || new Error('No hosted Builder provider is configured.')
-}
-
-async function generateEliteCode(prompt) {
-  const messages = [{ role: 'system', content: ELITE_BUILDER_PROMPT }, { role: 'user', content: `Build this now at production-quality visual standards: ${prompt}` }]
-  try {
-    return await freeBuilderCompletion(messages)
-  } catch (error) {
-    console.error('[Elite Builder] hosted providers unavailable:', error instanceof Error ? error.message : error)
-  }
-  const fallback = eliteBuilder.validateBuilderCode(fallbackEliteComponent(prompt))
-  if (fallback.errors.length) throw new Error('Alpha could not produce a verified build.')
-  return { code: fallback.code, provider: 'alpha-fallback' }
-}
-
-async function generateEliteRevision(currentCode, instruction, error = '') {
-  const task = error
-    ? `The existing app failed with this runtime error: ${error}. Repair the root cause and preserve every working feature.`
-    : `Edit the existing app exactly as requested: ${instruction}. Preserve every feature the user did not ask to change.`
-  const messages = [
-    { role: 'system', content: `${ELITE_BUILDER_PROMPT}\nYou are editing existing verified code. Return the complete corrected App component only.` },
-    { role: 'user', content: `${task}\n\nEXISTING CODE:\n${currentCode}` },
-  ]
-  try {
-    return await freeBuilderCompletion(messages)
-  } catch (providerError) {
-    console.error('[Elite Builder edit] hosted providers unavailable:', providerError instanceof Error ? providerError.message : providerError)
-  }
-  throw new Error('Alpha could not produce a verified edit. Your current build was preserved.')
-}
-
-async function builderRevisionHandler(req, res, fixing = false) {
-  const config = supabaseConfig()
-  const user = await currentOrLocalUser(req, config.url, config.anon)
-  if (!user) return json(res, 401, { error: 'Authentication required.' })
-  const body = await readBody(req)
-  const project = await eliteBuilder.getOwnerProject(config, user, String(body.projectId || ''))
-  if (!project) return json(res, 404, { error: 'This build could not be found.' })
-  const instruction = String(body.instruction || '').trim()
-  const runtimeError = String(body.error || '').trim().slice(0, 1500)
-  if (!fixing && instruction.length < 3) return json(res, 400, { error: 'Tell Alpha what should change.' })
-  if (fixing && !runtimeError) return json(res, 400, { error: 'A runtime error is required for auto-repair.' })
-  try {
-    const revised = await generateEliteRevision(project.code, instruction, runtimeError)
-    const updated = await eliteBuilder.updateProjectCode(config, user, project.id, revised.code, `${revised.provider}-${fixing ? 'auto-fix' : 'edit'}`)
-    return json(res, 200, { project: updated, code: revised.code, provider: revised.provider })
-  } catch (error) { return json(res, 503, { error: error instanceof Error ? error.message : 'Alpha could not verify this edit.' }) }
-}
-
-async function builderDomainHandler(req, res) {
-  const config = supabaseConfig()
-  const user = await currentOrLocalUser(req, config.url, config.anon)
-  if (!user) return json(res, 401, { error: 'Authentication required.' })
-  try {
-    const body = await readBody(req)
-    return json(res, 200, await eliteBuilder.requestCustomDomain(config, user, body.projectId, body.domain, `alphatekx-${randomUUID()}`))
-  } catch (error) { return json(res, Number(error?.status) || 503, { error: error instanceof Error ? error.message : 'Custom domain setup could not start.' }) }
-}
-
-async function builderGenerateHandler(req, res) {
-  const config = supabaseConfig()
-  const user = await currentOrLocalUser(req, config.url, config.anon)
-  if (!user) return json(res, 401, { error: 'Authentication required.' })
-  const body = await readBody(req)
-  const prompt = String(body.prompt || '').trim()
-  const requestId = String(body.requestId || randomUUID()).replace(/[^a-zA-Z0-9-]/g, '').slice(0, 80)
-  if (prompt.length < 8) return json(res, 400, { error: 'Describe what you want Alpha to build in a little more detail.' })
-  if (prompt.length > 6000) return json(res, 413, { error: 'Keep the build description under 6,000 characters.' })
-  const existing = await eliteBuilder.findProjectByRequest(config, user, requestId).catch(() => null)
-  if (existing?.charged) {
-    const balance = isAdminAuthUser(user) ? null : await billing.getUserCredits(user, config)
-    return json(res, 200, { project: existing, code: existing.code, provider: existing.provider, credits: balance, duplicate: true })
-  }
-  let project = null
-  try {
-    const generated = await generateEliteCode(prompt)
-    const title = prompt.replace(/^(build|create|make|design)\s+(me\s+)?/i, '').split(/[.!?\n]/)[0].trim().slice(0, 72) || 'Untitled build'
-    if (existing?.id) await eliteBuilder.deleteProject(config, user, existing.id).catch(() => {})
-    try {
-      project = await eliteBuilder.saveGeneratedProject(config, user, { title, prompt, code: generated.code, provider: generated.provider, requestId })
-    } catch (storageError) {
-      console.error('[Elite Builder] verified preview could not persist:', storageError instanceof Error ? storageError.message : storageError)
-      const transient = eliteBuilder.transientBuilderProject({ title, prompt, code: generated.code, provider: generated.provider })
-      const balance = isAdminAuthUser(user) ? null : await billing.getUserCredits(user, config).catch(() => null)
-      return json(res, 200, {
-        project: transient,
-        code: generated.code,
-        provider: generated.provider,
-        credits: Number.isFinite(balance) ? balance : null,
-        persisted: false,
-        charged: false,
-        storageWarning: 'Preview is ready, but Builder storage is unavailable. Nothing was charged. Deployment and editing require the Builder database.',
-      })
-    }
-    project = await eliteBuilder.markProjectCharged(config, user, project.id)
-    const balance = isAdminAuthUser(user) ? null : await billing.getUserCredits(user, config).catch(() => null)
-    return json(res, 200, { project, code: generated.code, provider: generated.provider, credits: Number.isFinite(balance) ? balance : null, persisted: true, charged: false })
-  } catch (error) {
-    if (project?.id) await eliteBuilder.deleteProject(config, user, project.id).catch(() => {})
-    return json(res, 503, { error: error instanceof Error ? error.message : 'Alpha is resting. Retry this build in a moment.' })
-  }
-}
-
-async function builderProjectsHandler(req, res) {
-  const config = supabaseConfig()
-  const user = await currentOrLocalUser(req, config.url, config.anon)
-  if (!user) return json(res, 401, { error: 'Authentication required.' })
-  try { return json(res, 200, { projects: await eliteBuilder.listProjects(config, user) }) }
-  catch (error) { return json(res, 503, { error: error instanceof Error ? error.message : 'Builder history could not load.' }) }
-}
-
-async function builderDeployHandler(req, res) {
-  const config = supabaseConfig()
-  const user = await currentOrLocalUser(req, config.url, config.anon)
-  if (!user) return json(res, 401, { error: 'Authentication required.' })
-  try { return json(res, 200, await eliteBuilder.deployProject(config, user, await readBody(req), publicAppUrl())) }
-  catch (error) { return json(res, Number(error?.status) || 503, { error: error instanceof Error ? error.message : 'Deployment could not be completed.' }) }
-}
-
-async function builderPublicHandler(req, res, slug) {
-  try {
-    const project = await eliteBuilder.getPublicProject(supabaseConfig(), slug)
-    if (!project) return json(res, 404, { error: 'This AlphaTekX build is not published.' })
-    return json(res, 200, { project })
-  } catch (error) { return json(res, 503, { error: error instanceof Error ? error.message : 'Published build could not load.' }) }
-}
-
 const rateLimitMap = new Map()
 const RATE_LIMIT_WINDOW_MS = 60_000
 const RATE_LIMIT_MAX = 60
-const SENSITIVE_PATHS = ['/api/alpha', '/api/brain', '/api/credits', '/api/agents', '/api/alpha/mission', '/api/previews/', '/api/creations/publish', '/api/integrations/', '/api/verify-bonus', '/api/builder/']
+const SENSITIVE_PATHS = ['/api/alpha', '/api/brain', '/api/credits', '/api/agents', '/api/alpha/mission', '/api/previews/', '/api/creations/publish', '/api/integrations/', '/api/verify-bonus']
 function isRateLimited(req) {
   const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown').split(',')[0].trim()
   const now = Date.now()
@@ -7839,15 +7462,6 @@ const server = http.createServer(async (req, res) => {
   if (isRateLimited(req)) return json(res, 429, { error: 'Too many requests. Please slow down.' })
   if (req.method === 'OPTIONS') return json(res, 204, {})
   if (String(req.url || '').startsWith('/api/')) await refreshFeatureConfig(supabaseConfig()).catch(() => {})
-  if (req.method === 'POST' && req.url === '/api/builder/generate') return builderGenerateHandler(req, res)
-  if (req.method === 'POST' && req.url === '/api/builder/edit') return builderRevisionHandler(req, res, false)
-  if (req.method === 'POST' && req.url === '/api/builder/fix') return builderRevisionHandler(req, res, true)
-  if (req.method === 'GET' && req.url === '/api/builder/projects') return builderProjectsHandler(req, res)
-  if (req.method === 'POST' && req.url === '/api/builder/deploy') return builderDeployHandler(req, res)
-  if (req.method === 'POST' && req.url === '/api/builder/domain') return builderDomainHandler(req, res)
-  if (req.method === 'GET' && /^\/api\/builder\/public\/[a-z0-9-]+$/.test(req.url || '')) {
-    return builderPublicHandler(req, res, decodeURIComponent(String(req.url).split('/').pop() || ''))
-  }
   if ((req.method === 'GET' || req.method === 'POST') && String(req.url || '').startsWith('/api/connectors/whatsapp/webhook')) {
     try { return await whatsappWebhookHandler(req, res) } catch { return json(res, 500, { error: 'WhatsApp could not process this webhook.' }) }
   }
@@ -8475,148 +8089,6 @@ const server = http.createServer(async (req, res) => {
       return json(res, error instanceof Error && error.message.includes('No AI provider') ? 503 : 400, { error: error instanceof Error ? error.message : 'Conversation failed' })
     }
   }
-  if (req.method === 'GET' && req.url === '/api/alpha/video-health') {
-    try {
-      // Test tmp directory writeability
-      const tmpTestDir = path.join(tmpdir(), `health-check-${Date.now()}`)
-      fs.mkdirSync(tmpTestDir, { recursive: true })
-      const testFile = path.join(tmpTestDir, 'write-test.tmp')
-      fs.writeFileSync(testFile, 'health-check')
-      fs.unlinkSync(testFile)
-      fs.rmdirSync(tmpTestDir)
-      
-      console.log('[HEALTH] All checks passed')
-      return json(res, 200, { ok: true, ffmpeg: true, tmpWritable: true, timestamp: new Date().toISOString() })
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Health check failed'
-      console.error('[HEALTH] Check failed:', message)
-      return json(res, 503, { ok: false, error: message })
-    }
-  }
-
-  // Video upload endpoint — accepts multipart form with video file
-  if (req.method === 'POST' && req.url === '/api/alpha/upload-video') {
-    try {
-      const config = supabaseConfig()
-      const user = await currentOrLocalUser(req, config.url, config.anon)
-      if (!user) return json(res, 401, { error: 'Authentication required' })
-
-      const chunks = []
-      let totalSize = 0
-      const maxSize = 2 * 1024 * 1024 * 1024 // 2GB
-
-      await new Promise((resolve, reject) => {
-        req.on('data', chunk => {
-          totalSize += chunk.length
-          if (totalSize > maxSize) { reject(new Error('File too large')); return }
-          chunks.push(chunk)
-        })
-        req.on('end', resolve)
-        req.on('error', reject)
-      })
-
-      const body = Buffer.concat(chunks)
-      const contentType = req.headers['content-type'] || ''
-
-      // Parse multipart form data
-      const boundaryMatch = contentType.match(/boundary=(.+)/)
-      if (!boundaryMatch) return json(res, 400, { error: 'Invalid form data' })
-
-      const boundary = boundaryMatch[1]
-      const boundaryBuf = Buffer.from(`--${boundary}`)
-      const parts = []
-      let searchStart = 0
-
-      while (true) {
-        const start = body.indexOf(boundaryBuf, searchStart)
-        if (start === -1) break
-        const nextStart = body.indexOf(boundaryBuf, start + boundaryBuf.length)
-        if (nextStart === -1) break
-        const part = body.subarray(start + boundaryBuf.length, nextStart)
-        parts.push(part)
-        searchStart = nextStart
-      }
-
-      // Find the video file part
-      let fileData = null
-      let fileName = `upload_${Date.now()}.mp4`
-      for (const part of parts) {
-        const headerEnd = part.indexOf('\r\n\r\n')
-        if (headerEnd === -1) continue
-        const header = part.subarray(0, headerEnd).toString()
-        if (header.includes('filename=')) {
-          const nameMatch = header.match(/filename="([^"]+)"/)
-          if (nameMatch) fileName = nameMatch[1]
-          fileData = part.subarray(headerEnd + 4)
-          // Remove trailing \r\n
-          if (fileData.length >= 2 && fileData[fileData.length - 2] === 0x0d && fileData[fileData.length - 1] === 0x0a) {
-            fileData = fileData.subarray(0, fileData.length - 2)
-          }
-          break
-        }
-      }
-
-      if (!fileData) return json(res, 400, { error: 'No video file found in upload' })
-
-      // Save to temp directory
-      const uploadsDir = path.resolve(root, '.tmp', 'uploads')
-      try { fs.mkdirSync(uploadsDir, { recursive: true }) } catch {}
-      const ext = path.extname(fileName) || '.mp4'
-      const savedName = `upload_${Date.now()}${ext}`
-      const savedPath = path.resolve(uploadsDir, savedName)
-      fs.writeFileSync(savedPath, fileData)
-
-      // Return URL that the frontend can use
-      const url = `/api/alpha/video-local/${savedName}`
-      return json(res, 200, { url, name: savedName, size: fileData.length })
-    } catch (err) {
-      console.error('[UPLOAD] Error:', err.message)
-      return json(res, 500, { error: err.message || 'Upload failed' })
-    }
-  }
-
-  // Serve uploaded/processed video files
-  if (req.method === 'GET' && req.url.startsWith('/api/alpha/video-local/')) {
-    const fileName = req.url.split('/api/alpha/video-local/')[1]
-    if (!fileName || fileName.includes('..')) return json(res, 400, { error: 'Invalid path' })
-    const filePath = path.resolve(root, '.tmp', 'uploads', fileName)
-    if (!fs.existsSync(filePath)) return json(res, 404, { error: 'File not found' })
-    const stat = fs.statSync(filePath)
-    const ext = path.extname(fileName).toLowerCase()
-    const mimeTypes = { '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.avi': 'video/x-msvideo', '.mkv': 'video/x-matroska' }
-    res.writeHead(200, {
-      'Content-Type': mimeTypes[ext] || 'video/mp4',
-      'Content-Length': stat.size,
-      'Content-Disposition': `inline; filename="${fileName}"`,
-    })
-    fs.createReadStream(filePath).pipe(res)
-    return
-  }
-
-  // Serve video edit output files — supports /{editId}/{filename} paths
-  if (req.method === 'GET' && req.url.startsWith('/api/alpha/video-output/')) {
-    const urlPath = req.url.split('/api/alpha/video-output/')[1]
-    if (!urlPath || urlPath.includes('..')) return json(res, 400, { error: 'Invalid path' })
-    const parts = urlPath.split('/')
-    let actualPath = ''
-    if (parts.length >= 2) {
-      // /{editId}/{filename}
-      actualPath = path.resolve(root, '.tmp', 'video-edits', parts[0], parts[1])
-    } else {
-      // Try flat
-      actualPath = path.resolve(root, '.tmp', 'video-edits', parts[0])
-    }
-    if (!fs.existsSync(actualPath)) return json(res, 404, { error: 'Output not found' })
-    const stat = fs.statSync(actualPath)
-    res.writeHead(200, {
-      'Content-Type': 'video/mp4',
-      'Content-Length': stat.size,
-      'Content-Disposition': `inline; filename="${path.basename(actualPath)}"`,
-    })
-    fs.createReadStream(actualPath).pipe(res)
-    return
-  }
-
   if (req.method === 'POST' && req.url === '/api/alpha/repair') {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
@@ -8660,170 +8132,6 @@ const server = http.createServer(async (req, res) => {
         return result?.result || ''
       }
 
-      if (isVideoRequest(message) || body.fileUrl) {
-        // Route to video edit pipeline
-        const { analyzeVideo } = await import('./server/videoAnalyzer.mjs')
-        const { executeVideoEdit } = await import('./server/videoEditor.mjs')
-        const { detectStyle, detectStyleKey } = await import('./server/creatorStyles.mjs')
-
-        // Verify FFmpeg is available before starting
-        const ffmpegPath = (await import('ffmpeg-static')).default || 'ffmpeg'
-        try {
-          const { execFile: ef } = await import('node:child_process')
-          const { promisify: pf } = await import('node:util')
-          await pf(ef)(ffmpegPath, ['-version'], { timeout: 5000 })
-        } catch (ffErr) {
-          sendEvent({ type: 'error', message: `FFmpeg is not available on this server. Video editing requires FFmpeg. (${ffErr.message})` })
-          res.end()
-          return
-        }
-
-        // Top-level timeout: kill pipeline after 300 seconds
-        const VIDEO_TIMEOUT_MS = 300_000
-        const pipelineTimer = setTimeout(() => {
-          if (!res.writableEnded) {
-            sendEvent({ type: 'error', message: 'Video processing timed out after 5 minutes. Try a shorter video.' })
-            res.end()
-          }
-        }, VIDEO_TIMEOUT_MS)
-
-        sendEvent({ type: 'content', text: 'Detected video. Analyzing...\n\n' })
-
-        // Resolve the local file path directly — no HTTP fetch needed
-        const fileUrl = body.fileUrl || ''
-        let tmpVideoPath = ''
-
-        if (fileUrl.startsWith('/api/alpha/video-local/')) {
-          // Local upload path — resolve to actual disk path
-          const fileName = fileUrl.split('/api/alpha/video-local/')[1]
-          tmpVideoPath = path.resolve(root, '.tmp', 'uploads', fileName)
-        } else if (fileUrl.startsWith('http://') || fileUrl.startsWith('https://')) {
-          // External URL — download it
-          const tmpVideoDir = path.resolve(root, '.tmp', 'uploads')
-          try { fs.mkdirSync(tmpVideoDir, { recursive: true }) } catch {}
-          tmpVideoPath = path.resolve(tmpVideoDir, `upload_${Date.now()}.mp4`)
-          try {
-            const controller = new AbortController()
-            const timer = setTimeout(() => controller.abort(), 120000)
-            const videoRes = await fetch(fileUrl, { signal: controller.signal })
-            clearTimeout(timer)
-            if (!videoRes.ok) throw new Error(`Failed to download video: ${videoRes.status}`)
-            const videoBuffer = Buffer.from(await videoRes.arrayBuffer())
-            fs.writeFileSync(tmpVideoPath, videoBuffer)
-          } catch (err) {
-            clearTimeout(pipelineTimer)
-            sendEvent({ type: 'error', message: `Failed to download video: ${err.message}` })
-            res.end()
-            return
-          }
-        } else {
-          clearTimeout(pipelineTimer)
-          sendEvent({ type: 'error', message: 'No video file path provided' })
-          res.end()
-          return
-        }
-
-        // Verify the file exists
-        if (!fs.existsSync(tmpVideoPath)) {
-          clearTimeout(pipelineTimer)
-          sendEvent({ type: 'error', message: `Video file not found on server: ${path.basename(tmpVideoPath)}` })
-          res.end()
-          return
-        }
-
-        const fileSizeMB = (fs.statSync(tmpVideoPath).size / 1024 / 1024).toFixed(1)
-        console.log(`[VIDEO] Processing ${path.basename(tmpVideoPath)} (${fileSizeMB} MB)`)
-
-        // Analyze the video
-        let analysis
-        try {
-          analysis = await analyzeVideo(tmpVideoPath, { sendEvent })
-        } catch (analyzeErr) {
-          clearTimeout(pipelineTimer)
-          sendEvent({ type: 'error', message: `Video analysis failed: ${analyzeErr.message}` })
-          res.end()
-          return
-        }
-        sendEvent({
-          type: 'thought_step',
-          step: {
-            id: 'analyze',
-            label: 'Video Analyzed',
-            icon: 'test',
-            status: 'done',
-            summary: `${analysis.metadata?.width}x${analysis.metadata?.height} ${analysis.metadata?.fps}fps, ${analysis.duration?.toFixed(1)}s`,
-            details: [
-              `Codec: ${analysis.metadata?.codec}`,
-              `Quality: ${analysis.quality?.grade} (${analysis.quality?.overall}/100)`,
-              `Scenes: ${analysis.scenes?.length || 0}`,
-              analysis.transcription?.text ? `Transcript: ${analysis.transcription.text.slice(0, 80)}...` : 'No transcript',
-            ],
-          },
-        })
-
-        // Detect style from message
-        const styleKey = detectStyleKey(message)
-        const style = detectStyle(message)
-        sendEvent({
-          type: 'thought_step',
-          step: {
-            id: 'style',
-            label: 'Style Detected',
-            icon: 'plan',
-            status: 'done',
-            summary: style.name,
-            details: [
-              `Cuts/min: ${style.cutsPerMinute}`,
-              `Caption: ${style.captionStyle}`,
-              `Color grade: ${style.colorGrade}`,
-            ],
-          },
-        })
-
-        // Execute the edit pipeline
-        const editPlan = { ...style, styleKey, operations: [{ type: 'full_edit', description: `${style.name} style edit` }], userPrompt: message }
-
-        let result
-        try {
-          result = await executeVideoEdit(tmpVideoPath, analysis, editPlan, sendEvent, llmCall)
-        } catch (editErr) {
-          clearTimeout(pipelineTimer)
-          console.error('[VIDEO] Edit pipeline error:', editErr.message)
-          sendEvent({ type: 'error', message: `Video edit failed: ${editErr.message}` })
-          res.end()
-          return
-        }
-
-        // Build public URL for the output — find the actual output file
-        let outputUrl = ''
-        if (fs.existsSync(result.outputPath)) {
-          // Output is in .tmp/video-edits/{editId}/restored_{editId}.mp4
-          const editId = result.editId
-          outputUrl = `/api/alpha/video-output/${editId}/${path.basename(result.outputPath)}`
-        } else {
-          clearTimeout(pipelineTimer)
-          console.error('[VIDEO] Output file not found:', result.outputPath)
-          sendEvent({ type: 'error', message: 'Output file was not generated' })
-          res.end()
-          return
-        }
-
-        clearTimeout(pipelineTimer)
-        sendEvent({
-          type: 'video_result',
-          result: {
-            videoUrl: outputUrl,
-            editId: result.editId,
-            plan: result.plan,
-            elapsed: result.elapsed,
-          },
-        })
-
-        sendEvent({ type: 'done' })
-        res.end()
-        return
-      }
-
       if (isWebsiteRequest(message)) {
         const urlMatch = message.match(/https?:\/\/[^\s]+/)
         await runWebsiteResurrector(urlMatch ? urlMatch[0] : null, message, sendEvent, llmCall)
@@ -8850,175 +8158,6 @@ const server = http.createServer(async (req, res) => {
     }
     return
   }
-  if (req.method === 'POST' && req.url === '/api/alpha/video-stream') {
-    // Set SSE headers FIRST, before any other logic
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-    })
-    
-    try {
-      const config = supabaseConfig()
-      const user = await currentOrLocalUser(req, config.url, config.anon)
-      if (!user) {
-        res.write(`data: ${JSON.stringify({ phase: 'error', message: 'Authentication required', error: 'Unauthorized' })}
-
-`)
-        res.end()
-        return
-      }
-      
-      const body = await readBody(req)
-      const prompt = String(body.prompt || '').trim()
-      if (!prompt) {
-        res.write(`data: ${JSON.stringify({ phase: 'error', message: 'Prompt is required', error: 'Bad request' })}\n\n`)
-        res.end()
-        return
-      }
-      
-      const plan = String(body.plan || 'free').toLowerCase()
-      const planConfig = videoPipeline.getPlanConfig(plan)
-      const jobId = randomUUID()
-      const job = { id: jobId, userId: user.id, status: 'running', events: [], createdAt: new Date().toISOString(), result: null, error: null }
-      videoJobs.set(jobId, job)
-      
-      // Stream progress updates
-      const sendProgress = (update = {}) => {
-        const data = { jobId, ...update, timestamp: update.timestamp || new Date().toISOString() }
-        job.events.push(data)
-        if (job.events.length > 100) job.events.shift()
-        if (!res.writableEnded) res.write(`data: ${JSON.stringify(data)}\n\n`)
-      }
-      
-      try {
-        sendProgress({ 
-          phase: 'starting', 
-          message: `Starting ${plan} video (${planConfig.scenesMax} scenes, ${planConfig.duration}s)`, 
-          totalScenes: planConfig.scenesMax 
-        })
-        
-        // Build video with resilient pipeline
-        const result = await videoPipeline.buildProductionVideo(prompt, {
-          duration: planConfig.duration,
-          plan,
-          jobId,
-          onProgress: sendProgress,
-        })
-        
-        if (!result || !result.videoPath) throw new Error('Video pipeline returned invalid result')
-        
-        // Read the final video file
-        const videoBytes = await fs.promises.readFile(result.videoPath)
-        
-        // Upload to media library
-        sendProgress({ phase: 'upload', message: 'Uploading to media library...' })
-        const storagePath = `${user.id}/generated-videos/${Date.now()}-${randomUUID()}.mp4`
-        const upload = await fetch(`${config.url}/storage/v1/object/media-library/${storagePath}`, {
-          method: 'POST',
-          headers: supabaseServiceHeaders(config.service, { 'Content-Type': 'video/mp4' }),
-          body: videoBytes,
-        })
-        if (!upload.ok) throw new Error(`Media upload failed: ${upload.status}`)
-        
-        const signed = await fetch(`${config.url}/storage/v1/object/sign/media-library/${storagePath}`, {
-          method: 'POST',
-          headers: supabaseServiceHeaders(config.service, { 'Content-Type': 'application/json' }),
-          body: JSON.stringify({ expiresIn: 60 * 60 * 24 }),
-        })
-        const signedPayload = await signed.json().catch(() => ({}))
-        if (!signed.ok || !signedPayload.signedURL) throw new Error(`Could not create preview link: ${signed.status}`)
-        
-        const videoUrl = `${config.url}/storage/v1${signedPayload.signedURL}`
-        job.status = 'completed'
-        job.result = { 
-          finalVideoUrl: videoUrl, 
-          scenes: result.scenes,
-          duration: result.duration,
-          plan: result.plan,
-          size: videoBytes.length 
-        }
-        
-        sendProgress({ 
-          phase: 'complete', 
-          step: 100, 
-          message: `✅ Video complete! ${(videoBytes.length / 1024 / 1024).toFixed(1)}MB ready to download`,
-          finalVideoUrl: videoUrl,
-          size: videoBytes.length 
-        })
-        res.end()
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : 'Video generation failed'
-        console.error('[VIDEO_STREAM_ERROR]', msg, error instanceof Error ? error.stack : '')
-        job.status = 'failed'
-        job.error = msg
-        sendProgress({ phase: 'error', message: `Error: ${msg}`, error: msg })
-        res.write(`data: ${JSON.stringify({ phase: 'error', message: `Server warming up - retrying...`, error: msg })}\n\n`)
-        res.end()
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Video stream failed'
-      if (!res.writableEnded) res.write(`data: ${JSON.stringify({ phase: 'error', message: 'Server warming up - retrying...', error: message })}\n\n`)
-      return json(res, 400, { error: message })
-    }
-  }
-  const videoStatusMatch = req.url?.match(/^\/api\/alpha\/video\/([^/]+)\/status$/)
-  if (req.method === 'GET' && videoStatusMatch) {
-    const job = videoJobs.get(videoStatusMatch[1])
-    if (!job) return json(res, 404, { error: 'Video job not found or expired.' })
-    return json(res, 200, { job: { id: job.id, status: job.status, events: job.events, result: job.result, error: job.error } })
-  }
-
-  // Pro video workflow endpoint - advanced editing + YouTube scheduling
-  if (req.method === 'POST' && req.url === '/api/alpha/pro-video') {
-    try {
-      const config = supabaseConfig()
-      const user = await currentOrLocalUser(req, config.url, config.anon)
-      if (!user) return json(res, 401, { error: 'Authentication required' })
-
-      const body = await readBody(req)
-      const prompt = String(body.prompt || '').trim()
-      if (!prompt) return json(res, 400, { error: 'Prompt required' })
-
-      // Create pro video job
-      const job = proVideoWorkflow.createProVideoJob(prompt, {
-        duration: Math.min(600, Math.max(10, Number(body.duration) || 600)),
-        colorGrade: body.colorGrade || 'vibrant',
-        transition: body.transition || 'fade',
-        scheduleDurationDays: Number(body.scheduleDurationDays) || 7,
-        youtubeUpload: body.youtubeUpload !== false,
-      })
-
-      // Set response headers for Server-Sent Events
-      res.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-      })
-
-      const sendProgress = (update = {}) => {
-        const data = { jobId: job.id, ...update, timestamp: update.timestamp || new Date().toISOString() }
-        if (!res.writableEnded) res.write(`data: ${JSON.stringify(data)}\n\n`)
-      }
-
-      // Run pro workflow asynchronously
-      proVideoWorkflow
-        .executeProVideoWorkflow(job.id, sendProgress)
-        .then(() => {
-          res.end()
-        })
-        .catch((error) => {
-          sendProgress({
-            error: error instanceof Error ? error.message : 'Workflow failed',
-            phase: 'failed',
-          })
-          res.end()
-        })
-    } catch (error) {
-      return json(res, 400, { error: error instanceof Error ? error.message : 'Pro video failed' })
-    }
-  }
-
   if (req.method === 'GET' && req.url === '/api/alpha/conversations') {
     try {
       const config = supabaseConfig()
@@ -9698,12 +8837,6 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, await handleAlpha(String(body.prompt || body.request || ''), String(body.mode || 'chat'), String(body.currentCode || ''), String(body.provider || '')))
     } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Alpha failed.' }) }
   }
-  if (req.method === 'POST' && req.url === '/api/alpha/fallback') {
-    try {
-      const body = await readBody(req)
-      return json(res, 200, { code: fallbackAlphaBuilder(String(body.prompt || '')), provider: 'fallback' })
-    } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Fallback failed.' }) }
-  }
   if (req.method === 'POST' && req.url === '/api/alpha/repair') {
     try {
       const body = await readBody(req)
@@ -10197,9 +9330,8 @@ const server = http.createServer(async (req, res) => {
       })
       const candidates = scan[RAW_SECRETS] || []
 
-      // 2) Shared Playwright context for the AI-builder + git-history hunters.
+      // 2) Shared Playwright context for the git-history hunter.
       let browser = null
-      let aiBuild = { builder: 'unknown', builderConfidence: 0, usesSupabase: false, usesVercel: false, usesNetlify: false, routes: [], evidence: [], leaks: [], error: null }
       let gitHistory = { repoOwner: '', repoName: '', isPublic: false, commitCount: 0, localGitExposed: false, routes: [], localGitLeaks: [], commitMessagesWithSecrets: [], deletedSecretFiles: [], evidence: [], error: null }
       let liveSecrets = []
       let homepageHtml = ''
@@ -10213,7 +9345,6 @@ const server = http.createServer(async (req, res) => {
           homepageHtml = ''
         }
         const headers = {}
-        aiBuild = await aiBuilderHunter(safeTarget, { context, headers, sourceHtml: homepageHtml }).catch(err => ({ ...aiBuild, error: err instanceof Error ? err.message : String(err) }))
         gitHistory = await gitHistoryScanner(safeTarget, { context, sourceHtml: homepageHtml, headers }).catch(err => ({ ...gitHistory, error: err instanceof Error ? err.message : String(err) }))
       } finally {
         await browser?.close().catch(() => {})
@@ -10230,8 +9361,8 @@ const server = http.createServer(async (req, res) => {
         gitLeaks: gitHistory.localGitLeaks || [],
         commitMessages: gitHistory.commitMessagesWithSecrets || [],
         deletedSecretFiles: gitHistory.deletedSecretFiles || [],
-        builderConfidence: aiBuild.builderConfidence || 0,
-        usesSupabase: Boolean(aiBuild.usesSupabase),
+        builderConfidence: 0,
+        usesSupabase: false,
       })
 
       // 5) BEFORE proof package (screenshot + findings card + verify QR).
@@ -10290,12 +9421,12 @@ const server = http.createServer(async (req, res) => {
         scan: {
           ...scan,
           aiBuild: {
-            builder: aiBuild.builder,
-            builderConfidence: aiBuild.builderConfidence,
-            usesSupabase: aiBuild.usesSupabase,
-            usesVercel: aiBuild.usesVercel,
-            usesNetlify: aiBuild.usesNetlify,
-            leaks: (aiBuild.leaks || []).slice(0, 10),
+            builder: 'unknown',
+            builderConfidence: 0,
+            usesSupabase: false,
+            usesVercel: false,
+            usesNetlify: false,
+            leaks: [],
           },
           gitHistory: {
             repoOwner: gitHistory.repoOwner,
@@ -10554,9 +9685,6 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'POST' && req.url === '/api/restore/push') {
     return handleRestorePushRoute(req, res)
-  }
-  if (req.method === 'GET' && req.url?.startsWith('/api/restore/screenshots/')) {
-    return handleScreenshotServeRoute(req, res)
   }
 
   // ===== GITHUB DIRECT PUSH: OAuth + API =====

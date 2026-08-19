@@ -22,7 +22,6 @@ const Privacy = lazy(() => import('./pages/Privacy'))
 const Terms = lazy(() => import('./pages/Terms'))
 const ContentPage = lazy(() => import('./pages/ContentPage'))
 const MediaLibrary = lazy(() => import('./pages/MediaLibrary'))
-const PublicBuilderProject = lazy(() => import('./pages/PublicBuilderProject'))
 const FoundersLegacy = lazy(() => import('./pages/FoundersLegacy'))
 const Admin = lazy(() => import('./pages/Admin'))
 const AdminAgents = lazy(() => import('./pages/AdminAgents'))
@@ -96,7 +95,6 @@ export default function App() {
       <Route path="/cookie-policy" element={<ContentPage slug="cookie-policy" />} />
       <Route path="/updates" element={<ContentPage slug="updates" />} />
       <Route path="/founders-legacy" element={suspended(<FoundersLegacy />)} />
-      <Route path="/b/:slug" element={suspended(<PublicBuilderProject />)} />
 
       {/* Backward-compatible redirect: /agents -> /automations */}
       <Route path="/agents" element={toAutomations} />

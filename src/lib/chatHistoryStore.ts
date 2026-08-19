@@ -5,8 +5,7 @@ export type GeneralChatMessage = {
   role: 'user' | 'assistant'
   content: string
   createdAt: string
-  tool?: 'clock' | 'currency' | 'youtube' | 'search'
-  videos?: Array<{ id: string; title: string; channel: string; url: string; thumbnail?: string }>
+  tool?: 'clock' | 'currency' | 'search'
   sources?: Array<{ title: string; url: string; content?: string }>
   currency?: { from: string; to: string; amount: number; rate: number; result: number; updatedAt?: string }
 }

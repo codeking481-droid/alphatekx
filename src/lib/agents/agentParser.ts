@@ -64,7 +64,6 @@ function detectActions(input: string, userEmail?: string): AgentAction[] {
   const platforms: Record<string, string> = {
     linkedin: 'linkedin',
     threads: 'threads',
-    youtube: 'youtube',
     pinterest: 'pinterest',
     reddit: 'reddit',
     discord: 'discord',

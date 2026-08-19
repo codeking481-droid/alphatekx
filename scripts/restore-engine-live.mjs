@@ -1,8 +1,7 @@
-// Live browser test: playwrightScanner + aiBuilderHunter + gitHistoryScanner
+// Live browser test: playwrightScanner + gitHistoryScanner
 // against a real public site. Must not throw and must produce the v2 shape.
 import { chromium } from 'playwright'
 import { createRestoreScanner, assertSafeUrl, RAW_SECRETS } from '../server/scanEngine/playwrightScanner.js'
-import { aiBuilderHunter } from '../server/scanEngine/aiBuilderHunter.js'
 import { gitHistoryScanner } from '../server/scanEngine/gitHistoryScanner.js'
 import { liveVerifier } from '../server/scanEngine/liveVerifier.js'
 import { calculateRisk } from '../server/scanEngine/riskScorer.js'
@@ -25,7 +24,6 @@ console.log('SCAN', JSON.stringify({
   score: scan.score,
   screenshot: scan.screenshotPath,
   tookMs: scan.tookMs,
-  aiBuilderKeys: Object.keys(scan.aiBuild || {}),
 }))
 
 const candidates = scan[RAW_SECRETS] || []
@@ -38,8 +36,6 @@ try {
     const r = await context.request.get(target, { timeout: 10000 })
     homepageHtml = r.ok() ? await r.text() : ''
   } catch { /* ignore */ }
-  const ai = await aiBuilderHunter(target, { context, headers: {} })
-  console.log('AIBUILDER', JSON.stringify({ builder: ai.builder, confidence: ai.builderConfidence, routes: ai.routes.length, leaks: ai.leaks.length }))
   const git = await gitHistoryScanner(target, { context, sourceHtml: homepageHtml, headers: {} })
   console.log('GIT', JSON.stringify({ repoOwner: git.repoOwner, repoName: git.repoName, isPublic: git.isPublic, localGitExposed: git.localGitExposed, commitCount: git.commitCount, commitMsgs: git.commitMessagesWithSecrets.length, deleted: git.deletedSecretFiles.length }))
 } finally {

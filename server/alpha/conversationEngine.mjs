@@ -8,7 +8,6 @@ import { connectorFeatureAccess, unavailableConnectorMessage, unavailablePromptC
 import { classifyIntent, clarificationResponse, conversationalResponse, helpResponse, INTENT_CATEGORIES } from './intentClassifier.mjs'
 import { ALPHATEKX_BRAIN, answerFromBrain } from './brainKnowledge.mjs'
 import * as billing from '../billing.mjs'
-import * as videoPipeline from '../videoPipeline.mjs'
 import { normalizeAutomationLifecycle } from '../automation/lifecycle.mjs'
 
 const STAGES = [
@@ -541,40 +540,6 @@ export function createConversationEngine(deps) {
       conversation.conversationStage = 'chatting'
       addMessage(conversation, 'alpha', brainAnswer, { knowledgeSource: 'alphatekx-brain' })
       return
-    }
-    // Quick video generation trigger: user asked to generate/create a video
-    const isVideoCmd = /\b(?:generate|create|make)\s+(?:a\s+)?video\b/i.test(prompt) || /\bvideo about\b/i.test(prompt) || /\bcreate\s+(?:a\s+)?faceless\s+video\b/i.test(prompt)
-    
-    // Detect pro features: youtube posting, scheduling, advanced editing
-    const isProVideo = /youtube|post|upload|publish|schedule|advanced|professional|edit|like\s+pro|better\s+than|cinema|color|grade/i.test(prompt)
-    
-    if (isVideoCmd) {
-      conversation.conversationStage = 'generating_content'
-      
-      // Extract topic from user prompt
-      const topic = prompt.replace(/\b(?:create|generate|make)\s+(?:a\s+)?(?:video\s+)?(?:of|about)?\s+/i, '').trim()
-      
-      if (isProVideo) {
-        // Route to PRO VIDEO WORKFLOW (advanced editing + YouTube)
-        const duration = /\b(\d{1,2})\s*(?:min|minute)s?\b/i.test(prompt) ? parseInt(RegExp.$1) * 60 : 600
-        const colorGrade = /(?:cinematic|cool|warm|dramatic|vibrant)/i.exec(prompt)?.[0] || 'vibrant'
-        
-        const proMsg = `🎬 **Starting Pro Video Production** for "${topic}"\n\n[PRO_VIDEO_COMPONENT:${JSON.stringify({
-          prompt: topic,
-          duration,
-          colorGrade,
-          youtubeUpload: /youtube|upload|post/i.test(prompt),
-          scheduleDurationDays: /7\s*day|week|schedule/i.test(prompt) ? 7 : 0,
-        })}]`
-        
-        addMessage(conversation, 'alpha', proMsg)
-        return
-      } else {
-        // Standard Glass Studio (basic video generation)
-        const glassStudioMsg = `🎬 Building your **${topic}** video...\n\n[GLASS_STUDIO_COMPONENT:${JSON.stringify({ prompt: topic, duration: 600 })}]`
-        addMessage(conversation, 'alpha', glassStudioMsg)
-        return
-      }
     }
     const classification = classifyIntent(prompt)
     conversation.intentClassification = classification

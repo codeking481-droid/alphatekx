@@ -1,17 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowUp, Bot, Check, Clock, Copy, DollarSign, ExternalLink, Loader2, MessageSquare, Mic, Pencil, Search, Sparkles, Square, Volume2, Youtube } from 'lucide-react'
+import { ArrowUp, Bot, Check, Clock, Copy, DollarSign, ExternalLink, Loader2, MessageSquare, Mic, Pencil, Search, Sparkles, Square, Volume2 } from 'lucide-react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import { createChatThread, saveChatThread, getChatThread, type GeneralChatMessage } from '../lib/chatHistoryStore'
-import VideoBuildGlassContainer from '../components/VideoBuildGlassContainer'
-import ProVideoBuildContainer from '../components/ProVideoBuildContainer'
 
 function uid() { return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}` }
 function formatTime(d = new Date()) { return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) }
-function extractYouTubeId(url: string) {
-  const match = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/)
-  return match?.[1]
-}
 
 async function fetchRates() {
   try {
@@ -88,46 +82,6 @@ function Markdown({ children }: { children: string }) {
 }
 
 function ChatWidget({ message }: { message: GeneralChatMessage }) {
-  // Check for Pro Video component marker
-  if (message.content?.includes('[PRO_VIDEO_COMPONENT:')) {
-    try {
-      const componentMatch = message.content.match(/\[PRO_VIDEO_COMPONENT:(.+?)\]/)
-      if (componentMatch) {
-        const componentData = JSON.parse(componentMatch[1])
-        return (
-          <div className="mt-3 w-full max-w-4xl">
-            <ProVideoBuildContainer
-              prompt={componentData.prompt}
-              duration={componentData.duration || 600}
-              colorGrade={componentData.colorGrade || 'vibrant'}
-              youtubeUpload={componentData.youtubeUpload !== false}
-              scheduleDurationDays={componentData.scheduleDurationDays || 0}
-            />
-          </div>
-        )
-      }
-    } catch (e) {
-      console.warn('Failed to parse Pro Video component:', e)
-    }
-  }
-
-  // Check for Glass Studio component marker
-  if (message.content?.includes('[GLASS_STUDIO_COMPONENT:')) {
-    try {
-      const componentMatch = message.content.match(/\[GLASS_STUDIO_COMPONENT:(.+?)\]/)
-      if (componentMatch) {
-        const componentData = JSON.parse(componentMatch[1])
-        return (
-          <div className="mt-3 w-full max-w-4xl">
-            <VideoBuildGlassContainer prompt={componentData.prompt} plan="free" totalScenes={6} duration={componentData.duration || 600} />
-          </div>
-        )
-      }
-    } catch (e) {
-      console.warn('Failed to parse Glass Studio component:', e)
-    }
-  }
-
   if (message.tool === 'clock') {
     return (
       <div className="mt-3 inline-flex items-center gap-2 rounded-xl border border-violet-400/20 bg-violet-500/10 px-3 py-2 text-sm backdrop-blur-xl">
@@ -146,25 +100,6 @@ function ChatWidget({ message }: { message: GeneralChatMessage }) {
           <span className="text-sm text-zinc-400">{c.to}</span>
         </div>
         <div className="mt-1 text-xs text-slate-400">{c.amount} {c.from} · rate {c.rate.toFixed(4)} · {c.updatedAt ? new Date(c.updatedAt).toLocaleDateString() : 'now'}</div>
-      </div>
-    )
-  }
-  if (message.tool === 'youtube' && message.videos?.length) {
-    return (
-      <div className="mt-3 w-full max-w-4xl space-y-4">
-        {message.videos.map(video => (
-          <div key={video.id} className="w-full overflow-hidden rounded-2xl border border-violet-400/20 bg-[#0A0F1E] shadow-lg">
-            <div className="aspect-video w-full">
-              <iframe className="h-full w-full" src={`https://www.youtube.com/embed/${video.id}?rel=0&modestbranding=1`} title={video.title || 'YouTube video'} loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen />
-            </div>
-            {(video.title || video.channel) && (
-              <div className="border-t border-violet-400/20 px-4 py-3">
-                <div className="text-sm font-medium text-white line-clamp-1">{video.title}</div>
-                {video.channel && <div className="text-xs text-slate-400">{video.channel}</div>}
-              </div>
-            )}
-          </div>
-        ))}
       </div>
     )
   }
@@ -299,13 +234,10 @@ export default function Chat() {
     const wantsClock = lower.includes('time') || lower.includes('clock') || lower.includes('what time')
     const parsedCurrency = parseCurrency(text)
     const wantsCurrency = lower.includes('currency') || lower.includes('rate') || lower.includes('convert') || lower.includes('naira') || lower.includes('usd') || lower.includes('ngn') || parsedCurrency !== null
-    const youtubeMatch = text.match(/(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)[^\s]+/)
-    const wantsYoutube = /\byoutube\b|\bvideo\b|\btutorial\b|\bshow me\b|\bfind me a video/i.test(text)
     const wantsSearch = lower.includes('search') || lower.includes('find') || lower.includes('latest') || lower.includes('news') || lower.startsWith('who is') || lower.startsWith('what is') || lower.startsWith('where is')
 
     let alphaContent = ''
     let tool: GeneralChatMessage['tool'] = undefined
-    let videos: GeneralChatMessage['videos'] = undefined
     let sources: GeneralChatMessage['sources'] = undefined
     let currency: GeneralChatMessage['currency'] = undefined
 
@@ -316,10 +248,9 @@ export default function Chat() {
         body: JSON.stringify({ mode: 'chat', prompt: text }),
         signal: abortCtrl.signal,
       })
-      const data = await res.json().catch(() => ({})) as { text?: string; response?: string; tool?: GeneralChatMessage['tool']; videos?: GeneralChatMessage['videos']; sources?: GeneralChatMessage['sources']; currency?: GeneralChatMessage['currency'] }
+      const data = await res.json().catch(() => ({})) as { text?: string; response?: string; tool?: GeneralChatMessage['tool']; sources?: GeneralChatMessage['sources']; currency?: GeneralChatMessage['currency'] }
       alphaContent = typeof data.text === 'string' ? data.text : typeof data.response === 'string' ? data.response : ''
       tool = data.tool
-      videos = data.videos
       sources = data.sources?.map(s => ({ title: s.title, url: s.url, content: s.content || s.snippet || s.url }))
       currency = data.currency
     } catch {
@@ -368,35 +299,6 @@ export default function Chat() {
 
     if (isAborted()) { setLoading(false); setController(null); abortRef.current = null; return }
 
-    if ((youtubeMatch || wantsYoutube) && !videos) {
-      if (youtubeMatch) {
-        const id = extractYouTubeId(youtubeMatch[0])
-        if (id) {
-          tool = 'youtube'
-          videos = [{ id, title: 'YouTube video', channel: '', url: `https://www.youtube.com/watch?v=${id}` }]
-          if (!alphaContent) alphaContent = 'Here is the YouTube video you shared.'
-        }
-      } else {
-        const query = text.replace(/\b(show|find|load|play|youtube|videos?|watch|tutorial|me|please|a)\b/gi, ' ').replace(/\s+/g, ' ').trim() || text
-        const result = await searchWeb(`site:youtube.com ${query}`)
-        const youtubeUrl = result?.results?.find(r => /youtube\.com|youtu\.be/.test(r.url))?.url
-        if (youtubeUrl) {
-          const id = extractYouTubeId(youtubeUrl)
-          if (id) {
-            const title = result?.results?.find(r => r.url === youtubeUrl)?.title || 'YouTube video'
-            tool = 'youtube'
-            videos = [{ id, title, channel: '', url: youtubeUrl }]
-            if (!alphaContent) alphaContent = 'Here is a matching YouTube video.'
-          }
-        }
-      }
-    }
-
-    if (isAborted()) { setLoading(false); setController(null); abortRef.current = null; return }
-
-    if (wantsYoutube && !videos && !alphaContent) {
-      alphaContent = 'I can embed a YouTube video if you paste the link here, like https://www.youtube.com/watch?v=...'
-    }
     if (wantsSearch && !sources && !alphaContent) {
       alphaContent = 'Live web search is not available right now. Try again later or ask me something else.'
     }
@@ -404,7 +306,7 @@ export default function Chat() {
     const alphaMsg: GeneralChatMessage = {
       id: uid(),
       role: 'assistant',
-      content: alphaContent || 'Alpha is here. I can search the web, fetch videos, show rates, and tell the time.',
+      content: alphaContent || 'Alpha is here. I can search the web, show rates, and tell the time.',
       createdAt: new Date().toISOString(),
       tool,
       videos,
@@ -448,9 +350,9 @@ export default function Chat() {
                 <Sparkles size={32} className="text-white" />
               </div>
               <h1 className="mt-6 text-2xl font-semibold text-white sm:text-3xl">Turn your ideas into reality</h1>
-              <p className="mt-2 max-w-md text-sm text-zinc-400">Ask Alpha anything. Search the live web, convert currency, embed YouTube videos, get the time, and more.</p>
+              <p className="mt-2 max-w-md text-sm text-zinc-400">Ask Alpha anything. Search the live web, convert currency, get the time, and more.</p>
               <div className="mt-8 flex flex-wrap justify-center gap-2">
-                {['Convert 100 USD to EUR', 'Search the web for Apple news', 'Show me a YouTube video about space', 'What time is it?'].map(p => (
+                {['Convert 100 USD to EUR', 'Search the web for Apple news', 'What time is it?'].map(p => (
                   <button key={p} onClick={() => void send(p, undefined, false)} className="rounded-full border border-violet-400/20 bg-violet-500/10 px-4 py-2 text-xs text-zinc-300 hover:bg-violet-500/10 hover:text-white">{p}</button>
                 ))}
               </div>
@@ -472,9 +374,9 @@ export default function Chat() {
                       )}
                     </div>
                   </div>
-                  {message.content && !message.content.includes('[GLASS_STUDIO_COMPONENT:') && !message.content.includes('[PRO_VIDEO_COMPONENT:') && (
+                  {message.content && (
                     <div className="text-[15px] leading-7 text-zinc-100">
-                      <Markdown>{message.content.replace(/\[(?:GLASS_STUDIO|PRO_VIDEO)_COMPONENT:.*?\]/g, '').trim()}</Markdown>
+                      <Markdown>{message.content.trim()}</Markdown>
                     </div>
                   )}
                   <ChatWidget message={message} />
@@ -517,7 +419,7 @@ export default function Chat() {
               value={input}
               onChange={e => { setInput(e.target.value); if (!e.target.value.trim()) setVoiceOn(false) }}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }}
-              placeholder={voiceOn ? 'Tap the mic or type a message...' : 'Ask Alpha anything, paste a YouTube link, search the web, or say show me currency...'}
+              placeholder={voiceOn ? 'Tap the mic or type a message...' : 'Ask Alpha anything, search the web, or say show me currency...'}
               className="max-h-40 min-h-14 flex-1 resize-none bg-transparent px-3 py-3 text-sm text-zinc-100 placeholder:text-slate-400 outline-none"
               rows={1}
             />
@@ -538,7 +440,6 @@ export default function Chat() {
           <div className="mt-2 flex flex-wrap gap-2 text-[10px] text-slate-400">
             <button onClick={() => setInput('Convert 100 USD to EUR')} className="rounded-full border border-violet-400/20 bg-violet-500/10 px-2 py-1 hover:bg-violet-500/10">Try: Convert 100 USD to EUR</button>
             <button onClick={() => setInput('Search the web for Apple news')} className="rounded-full border border-violet-400/20 bg-violet-500/10 px-2 py-1 hover:bg-violet-500/10">Try: search the web</button>
-            <button onClick={() => setInput('Show me a YouTube video about space')} className="rounded-full border border-violet-400/20 bg-violet-500/10 px-2 py-1 hover:bg-violet-500/10">Try: YouTube video</button>
             <button onClick={() => setInput('What time is it?')} className="rounded-full border border-violet-400/20 bg-violet-500/10 px-2 py-1 hover:bg-violet-500/10">Try: "What time is it?"</button>
           </div>
         </div>

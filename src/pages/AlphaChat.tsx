@@ -25,7 +25,6 @@ import TerminalCard from '../components/alpha/restore/cards/TerminalCard'
 import SystemGraphAliveCard from '../components/alpha/restore/cards/SystemGraphAliveCard'
 import ReasoningTrace from '../components/alpha/restore/ReasoningTrace'
 import RestorationComplete from '../components/alpha/restore/RestorationComplete'
-import AlphaReplay from '../components/alpha/restore/AlphaReplay'
 import {
   createChatThread,
   saveChatThread,
@@ -111,13 +110,17 @@ function isWebsiteRestoreIntent(text: string, url: string | null): boolean {
   const isUrlProminent = urlIdx !== -1 && (urlIdx < lower.length * 0.5 || lower.length < 80)
   if (!isUrlProminent) return false
 
-  // Fix/scan/restore intent keywords
-  const hasIntent = /\b(fix|scan|restore|diagnose|audit|repair|heal|resurrect|debug|check|analyze|inspect)\b/i.test(lower)
+  // Any detected URL triggers the real pipeline — no intent keywords required
+  return true
+}
 
-  // Problem description keywords
-  const hasProblem = /\b(broken|down|error|issue|problem|not.{0,8}work|fail|crash|bug|404|500|dead|missing|blank|white.?screen|not.?load|not.?show)\b/i.test(lower)
-
-  return hasIntent || hasProblem
+function isGitHubRepoUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    if (parsed.hostname !== 'github.com') return false
+    const parts = parsed.pathname.replace(/^\//, '').replace(/\/$/, '').split('/')
+    return parts.length >= 2 && Boolean(parts[0]) && Boolean(parts[1])
+  } catch { return false }
 }
 
 function detectRestoreIntent(text: string): 'scan' | 'full' {
@@ -164,6 +167,7 @@ function ChatContent() {
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const detectedUrlRef = useRef<string | null>(null)
 
   useEffect(() => {
     void hydrateChatHistory()
@@ -204,6 +208,7 @@ function ChatContent() {
 
     // Detect URL in message — only trigger restore when user explicitly asks to fix/scan a website
     const detectedUrl = extractUrl(sendText)
+    detectedUrlRef.current = detectedUrl
     const isWebsiteRestore = isWebsiteRestoreIntent(sendText, detectedUrl)
 
     // Upload files if attached
@@ -254,12 +259,21 @@ function ChatContent() {
     setMessages((prev) => [...prev, userMsg, aiMsg])
     scrollToBottom()
 
-    // If website restore detected, start SSE stream (V2 screenshot-based pipeline)
+    // If website restore detected, start SSE stream
     if (isWebsiteRestore && detectedUrl) {
       try {
         abortRef.current = new AbortController()
         const intent = detectRestoreIntent(sendText)
-        const streamUrl = `/api/restore/v2?url=${encodeURIComponent(detectedUrl)}&mode=${intent === 'full' ? 'full' : 'scan-only'}&message=${encodeURIComponent(sendText)}`
+        let streamUrl: string
+
+        if (isGitHubRepoUrl(detectedUrl)) {
+          // GitHub repo → V2 pipeline (clone, scan, experiment, PR)
+          streamUrl = `/api/restore/v2?url=${encodeURIComponent(detectedUrl)}&mode=${intent === 'full' ? 'full' : 'scan-only'}&message=${encodeURIComponent(sendText)}`
+        } else {
+          // Live website → V1 streaming pipeline (real Playwright scan + fix)
+          streamUrl = `/api/restore/stream?url=${encodeURIComponent(detectedUrl)}&intent=${intent === 'full' ? 'fix' : 'scan'}&message=${encodeURIComponent(sendText)}`
+        }
+
         const res = await fetch(streamUrl, { signal: abortRef.current.signal })
 
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -1036,6 +1050,14 @@ function ChatContent() {
                             {msg.restoreCards.v2?.githubGateRequired && (
                               <GitHubConnectGate
                                 scanId={msg.restoreCards.v2.restorationId || ''}
+                                sendEvent={(event: any) => {
+                                  if (event?.type === 'thought_step' && event?.step) {
+                                    updateLastMessage((prev) => ({
+                                      ...prev,
+                                      thoughtSteps: [...(prev.thoughtSteps || []), event.step],
+                                    }))
+                                  }
+                                }}
                                 onConnected={async ({ repoFullName }) => {
                                   if (!repoFullName || !msg.restoreCards?.v2?.restorationId) return
                                   updateLastMessage((prev) => ({
@@ -1061,7 +1083,7 @@ function ChatContent() {
                                       buf = lines.pop() || ''
                                       for (const line of lines) {
                                         if (line.startsWith('data: ')) {
-                                          try { handleRestoreEvent(JSON.parse(line.slice(6)), detectedUrl || '') } catch {}
+                                          try { handleRestoreEvent(JSON.parse(line.slice(6)), detectedUrlRef.current || '') } catch {}
                                         }
                                       }
                                     }

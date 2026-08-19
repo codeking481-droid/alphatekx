@@ -8,7 +8,6 @@ import { useAuth } from '../lib/auth'
 import { getIntegrationStatus, startLinkedInAuth, type IntegrationStatus } from '../lib/integrations'
 import { getConnectedApps } from '../lib/connectors/connectorApi'
 import { getJson, postJson } from '../lib/apiClient'
-import VideoBuildGlassContainer from '../components/VideoBuildGlassContainer'
 
 type ConversationMessage = { role: 'user' | 'alpha' | 'system'; text: string; ts: string; generatedCount?: number; totalCredits?: number }
 type AlphaConversation = {
