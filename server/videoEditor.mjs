@@ -194,333 +194,172 @@ Return ONLY valid JSON.`
     }
   }
 
-  // ── PHASE 3: Color grading + sharpen + film grain ────────────────────
-  sendEvent({ type: 'thought_step', step: { id: 'effects', label: 'Applying effects...', icon: 'film', status: 'active' } })
+  // ── PHASE 3: Build combined visual filter chain (color grade + sharpen + grain + text + reframe) ──
+  // All visual processing combined into a SINGLE final encode pass
+  sendEvent({ type: 'thought_step', step: { id: 'effects', label: 'Building effects chain...', icon: 'film', status: 'active' } })
 
-  try {
-    let filters = buildFFmpegFilters(plan)
+  const grade = plan.colorGrade || plan.name || 'custom'
+  const vfParts = []
+  const appliedEffects = []
 
-    // MrBeast color grade: bright, vibrant, saturated (the "larger than life" look)
-    const grade = plan.colorGrade || plan.name || 'custom'
-    if (grade === 'mrbeast' || grade === 'viral') {
-      // Remove any existing eq/unsharp from buildFFmpegFilters to avoid double-application
-      filters = filters.filter(f => !f.startsWith('eq=') && !f.startsWith('unsharp='))
-      filters.push('eq=brightness=0.06:saturation=1.5:contrast=1.2:gamma=1.1')
-      filters.push('unsharp=5:5:1.5:5:5:0')
-      sendEvent({ type: 'thought_step', step: { id: 'effects-grade', label: 'MrBeast Color Grade', icon: 'film', status: 'done', summary: 'Bright + saturated + vibrant' } })
-    } else if (grade === 'malva' || grade === 'cinematic') {
-      // Malva: heavy saturation + vignette + slight warmth
-      filters = filters.filter(f => !f.startsWith('eq=') && !f.startsWith('unsharp=') && !f.startsWith('noise='))
-      filters.push('eq=saturation=1.8:contrast=1.3:brightness=0.05')
-      filters.push('vignette=PI/4:mode=forward')
-      filters.push('unsharp=5:5:1.0:5:5:0')
-      sendEvent({ type: 'thought_step', step: { id: 'effects-grade', label: 'Malva Cinematic Grade', icon: 'film', status: 'done', summary: 'Heavy saturation + vignette + warmth' } })
-    } else {
-      // Default: dramatic sharpen for pro look
-      if (!filters.some(f => f.includes('unsharp'))) {
-        filters.push('unsharp=5:5:1.5:5:5:0')
-      }
-    }
+  // 3a: Color grading + sharpen + grain
+  let colorFilters = buildFFmpegFilters(plan)
+  if (grade === 'mrbeast' || grade === 'viral') {
+    colorFilters = colorFilters.filter(f => !f.startsWith('eq=') && !f.startsWith('unsharp='))
+    colorFilters.push('eq=brightness=0.06:saturation=1.5:contrast=1.2:gamma=1.1')
+    colorFilters.push('unsharp=5:5:1.5:5:5:0')
+    appliedEffects.push('MrBeast color grade')
+    sendEvent({ type: 'thought_step', step: { id: 'effects-grade', label: 'MrBeast Color Grade', icon: 'film', status: 'done', summary: 'Bright + saturated + vibrant' } })
+  } else if (grade === 'malva' || grade === 'cinematic') {
+    colorFilters = colorFilters.filter(f => !f.startsWith('eq=') && !f.startsWith('unsharp=') && !f.startsWith('noise='))
+    colorFilters.push('eq=saturation=1.8:contrast=1.3:brightness=0.05')
+    colorFilters.push('vignette=PI/4:mode=forward')
+    colorFilters.push('unsharp=5:5:1.0:5:5:0')
+    appliedEffects.push('Malva cinematic grade')
+    sendEvent({ type: 'thought_step', step: { id: 'effects-grade', label: 'Malva Cinematic Grade', icon: 'film', status: 'done', summary: 'Heavy saturation + vignette + warmth' } })
+  } else {
+    if (!colorFilters.some(f => f.includes('unsharp'))) colorFilters.push('unsharp=5:5:1.5:5:5:0')
+    appliedEffects.push('Default sharpen')
+  }
+  if (plan.filmGrain || grade === 'cinematic' || grade === 'malva') {
+    colorFilters.push('noise=alls=12:allf=t+u')
+    appliedEffects.push('Film grain')
+  }
+  vfParts.push(...colorFilters)
 
-    // Add film grain for cinematic feel (subtle)
-    if (plan.filmGrain || grade === 'cinematic' || grade === 'malva') {
-      filters.push('noise=alls=12:allf=t+u')
-    }
+  // 3b: Text overlays (drawtext filters)
+  const overlays = plan.textOverlays || []
+  for (const t of overlays) {
+    const escaped = t.text.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/:/g, '\\:')
+    const fadeIn = Math.min(0.15, (t.duration || 1) * 0.2)
+    vfParts.push(`drawtext=text='${escaped}':fontsize=${plan.textFontSize || 72}:fontcolor=${plan.textColor || 'white'}:borderw=5:bordercolor=${plan.textShadowColor || 'black'}:x=(w-text_w)/2:y=(h-text_h)/2:enable='between(t,${t.time},${t.time + (t.duration || 2)})':alpha='if(between(t,${t.time},${t.time + fadeIn}),min(1,(t-${t.time})/${fadeIn}),if(between(t,${t.time + (t.duration || 2) - fadeIn},${t.time + (t.duration || 2)}),max(0,(${t.time + (t.duration || 2)}-t)/${fadeIn}),1))'`)
+  }
+  if (overlays.length > 0) appliedEffects.push(`${overlays.length} text overlays`)
 
-    if (filters.length > 0) {
-      const effectsPath = join(workDir, 'effects.mp4')
-      await execFileAsync(ffmpeg, [
-        '-i', currentPath,
-        '-vf', filters.join(','),
-        '-c:v', 'libx264', '-preset', 'fast', '-crf', '18',
-        '-c:a', 'copy',
-        '-y', effectsPath,
-      ], { timeout: 300000 })
-      currentPath = effectsPath
-      log('EFFECTS', `Applied ${filters.length} filters`)
-      sendEvent({
-        type: 'thought_step',
-        step: {
-          id: 'effects', label: 'Effects Applied', icon: 'film', status: 'done',
-          summary: `${filters.length} filters applied`,
-          details: filters.map(f => f.split('=')[0]),
-        },
-      })
-    } else {
-      sendEvent({ type: 'thought_step', step: { id: 'effects', label: 'Effects ready', icon: 'film', status: 'done', summary: 'No filters needed' } })
-    }
-  } catch (err) {
-    log('EFFECTS', `Error: ${err.message}`)
-    sendEvent({ type: 'thought_step', step: { id: 'effects', label: 'Effects failed', icon: 'film', status: 'error', summary: err.message } })
+  // 3c: Platform reframe (scale + crop)
+  const platform = plan.platform || plan.reframe || null
+  const platformFormats = {
+    tiktok: { w: 1080, h: 1920, label: 'TikTok (9:16)' },
+    reels: { w: 1080, h: 1920, label: 'Instagram Reels (9:16)' },
+    shorts: { w: 1080, h: 1920, label: 'YouTube Shorts (9:16)' },
+    vertical: { w: 1080, h: 1920, label: 'Vertical (9:16)' },
+    square: { w: 1080, h: 1080, label: 'Square (1:1)' },
+    instagram: { w: 1080, h: 1080, label: 'Instagram Post (1:1)' },
+    widescreen: { w: 1920, h: 1080, label: 'Widescreen (16:9)' },
+    landscape: { w: 1920, h: 1080, label: 'Landscape (16:9)' },
+    story: { w: 1080, h: 1920, label: 'Story (9:16)' },
+    linkedin: { w: 1920, h: 1080, label: 'LinkedIn (16:9)' },
+    twitter: { w: 1280, h: 720, label: 'Twitter/X (16:9)' },
+  }
+  const fmt = platformFormats[platform]
+  if (fmt) {
+    vfParts.push(`scale=${fmt.w}:${fmt.h}:force_original_aspect_ratio=increase,crop=${fmt.w}:${fmt.h}`)
+    appliedEffects.push(`Reframe → ${fmt.label}`)
   }
 
-  // ── PHASE 4: Ken Burns (slow zoom) + Zoom Punches (MrBeast pattern interrupts) ──
-  sendEvent({ type: 'thought_step', step: { id: 'kenburns', label: 'Adding motion effects...', icon: 'film', status: 'active' } })
+  // 3d: Final scale to 1080p (always last)
+  if (!fmt) {
+    vfParts.push('scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2')
+  }
 
+  sendEvent({
+    type: 'thought_step',
+    step: {
+      id: 'effects', label: 'Effects Chain Built', icon: 'film', status: 'done',
+      summary: `${vfParts.length} filters combined`,
+      details: appliedEffects,
+    },
+  })
+
+  // ── PHASE 4: Ken Burns (only for videos > 10s, skipped for short clips) ──
+  let currentDuration = duration
   try {
-    const grade = plan.colorGrade || plan.name || 'custom'
-    if (plan.kenBurns || grade === 'cinematic' || grade === 'malva' || grade === 'mrbeast') {
+    const probeInfo = await ffprobeAsync(currentPath)
+    const match = probeInfo.match(/Duration:\s*(\d+):(\d+):(\d+)\.(\d+)/)
+    if (match) currentDuration = parseInt(match[1]) * 3600 + parseInt(match[2]) * 60 + parseInt(match[3]) + parseInt(match[4]) / 100
+  } catch {}
+
+  if (currentDuration > 10 && (plan.kenBurns || grade === 'cinematic' || grade === 'malva' || grade === 'mrbeast')) {
+    sendEvent({ type: 'thought_step', step: { id: 'kenburns', label: 'Adding Ken Burns...', icon: 'film', status: 'active' } })
+    try {
       const kbPath = join(workDir, 'kenburns.mp4')
-      // MrBeast: Continuous slow push-in (5% over 10s) keeps frame dynamic
-      // Malva: Slower zoom for dramatic feel
       const zoomRate = grade === 'mrbeast' || grade === 'viral' ? 0.001 : 0.0006
       const maxZoom = grade === 'mrbeast' || grade === 'viral' ? 1.12 : 1.08
-      const zoomExpr = `z='min(1+${zoomRate}*on,${maxZoom})'`
       const fps = 30
-      // Get actual duration of current video (may have been shortened by silence removal)
-      let currentDuration = duration
-      try {
-        const probeInfo = await ffprobeAsync(currentPath)
-        const match = probeInfo.match(/Duration:\s*(\d+):(\d+):(\d+)\.(\d+)/)
-        if (match) currentDuration = parseInt(match[1]) * 3600 + parseInt(match[2]) * 60 + parseInt(match[3]) + parseInt(match[4]) / 100
-      } catch {}
       await execFileAsync(ffmpeg, [
         '-i', currentPath,
-        '-vf', `zoompan=${zoomExpr}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${Math.round(currentDuration * fps)}:s=1920x1080:fps=${fps}`,
+        '-vf', `zoompan=z='min(1+${zoomRate}*on,${maxZoom})':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${Math.round(currentDuration * fps)}:s=1920x1080:fps=${fps}`,
         '-c:v', 'libx264', '-preset', 'fast', '-crf', '18',
         '-c:a', 'copy',
         '-y', kbPath,
-      ], { timeout: 300000 })
+      ], { timeout: 120000 })
       currentPath = kbPath
-      log('KENBURNS', `Applied continuous push-in zoom (${grade} style)`)
+      log('KENBURNS', `Applied push-in zoom (${grade} style)`)
       sendEvent({ type: 'thought_step', step: { id: 'kenburns', label: 'Motion Applied', icon: 'film', status: 'done', summary: `Continuous push-in (${grade} style)` } })
-    } else {
-      sendEvent({ type: 'thought_step', step: { id: 'kenburns', label: 'Motion skipped', icon: 'film', status: 'done', summary: 'Not needed for this style' } })
-    }
-  } catch (err) {
-    log('KENBURNS', `Error: ${err.message}`)
-    sendEvent({ type: 'thought_step', step: { id: 'kenburns', label: 'Motion failed', icon: 'film', status: 'error', summary: err.message } })
-  }
-
-  // ── PHASE 4.5: Zoom Punches (MrBeast pattern interrupts — digital zoom on key moments) ──
-  const zoomPunches = plan.zoomPunches || []
-  // Clamp zoom punch times to actual current video duration
-  let actualDuration = duration
-  try {
-    const probeInfo2 = await ffprobeAsync(currentPath)
-    const match2 = probeInfo2.match(/Duration:\s*(\d+):(\d+):(\d+)\.(\d+)/)
-    if (match2) actualDuration = parseInt(match2[1]) * 3600 + parseInt(match2[2]) * 60 + parseInt(match2[3]) + parseInt(match2[4]) / 100
-  } catch {}
-  const clampedPunches = zoomPunches.filter(zp => (zp.time || 0) < actualDuration - 1)
-  if (clampedPunches.length > 0 && actualDuration > 5) {
-    sendEvent({ type: 'thought_step', step: { id: 'zoompunch', label: 'Adding zoom punches...', icon: 'film', status: 'active' } })
-    try {
-      // Build zoom punch filter: scale up at specific timestamps
-      const zoomFilters = clampedPunches.map(zp => {
-        const scale = Math.min(Math.max(zp.scale || 1.3, 1.1), 1.5)
-        const start = zp.time || 0
-        const dur = zp.duration || 0.5
-        const end = start + dur
-        // Smooth zoom: scale from 1.0 to scale and back
-        return `zoompan=z='if(between(t,${start},${end}),min(1+(${scale}-1)*((t-${start})/${dur}),${scale}),1)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=1920x1080:fps=30`
-      }).join(',')
-
-      if (zoomFilters) {
-        const zoomPath = join(workDir, 'zoompunch.mp4')
-        await execFileAsync(ffmpeg, [
-          '-i', currentPath,
-          '-vf', zoomFilters,
-          '-c:v', 'libx264', '-preset', 'fast', '-crf', '18',
-          '-c:a', 'copy',
-          '-y', zoomPath,
-        ], { timeout: 300000 })
-        currentPath = zoomPath
-        log('ZOOMPUNCH', `Applied ${zoomPunches.length} zoom punches`)
-        sendEvent({ type: 'thought_step', step: { id: 'zoompunch', label: 'Zoom Punches Added', icon: 'film', status: 'done', summary: `${zoomPunches.length} pattern interrupts` } })
-      }
     } catch (err) {
-      log('ZOOMPUNCH', `Error: ${err.message}`)
-      sendEvent({ type: 'thought_step', step: { id: 'zoompunch', label: 'Zoom punches failed', icon: 'film', status: 'error', summary: err.message } })
+      log('KENBURNS', `Error: ${err.message}`)
+      sendEvent({ type: 'thought_step', step: { id: 'kenburns', label: 'Motion failed', icon: 'film', status: 'error', summary: err.message } })
     }
+  } else {
+    sendEvent({ type: 'thought_step', step: { id: 'kenburns', label: 'Motion skipped', icon: 'film', status: 'done', summary: currentDuration <= 10 ? 'Too short for Ken Burns' : 'Not needed for this style' } })
   }
 
-  // ── PHASE 5: Word-level captions (from Groq Whisper transcription) ────
+  // ── PHASE 5: Word-level captions (ASS subtitle file, burned in final pass) ────
+  let assPath = null
+  const words = analysis.transcription?.words || []
   sendEvent({ type: 'thought_step', step: { id: 'captions', label: 'Generating captions...', icon: 'plan', status: 'active' } })
 
-  try {
-    const words = analysis.transcription?.words || []
-    if (words.length > 0 && plan.captionStyle && plan.captionStyle !== 'none') {
-      const captionPath = join(workDir, 'captions.mp4')
+  if (words.length > 0 && plan.captionStyle && plan.captionStyle !== 'none') {
+    try {
+      assPath = join(workDir, 'captions.ass')
       const fontSize = plan.captionFontSize || 48
       const captionColor = plan.captionColor || 'white'
-
-      // Generate ASS subtitle file with word-level timing
-      const assPath = join(workDir, 'captions.ass')
       const assContent = generateWordCaptions(words, fontSize, captionColor, plan.captionStyle)
       await writeFile(assPath, assContent, 'utf-8')
-
-      await execFileAsync(ffmpeg, [
-        '-i', currentPath,
-        '-vf', `ass='${assPath.replace(/\\/g, '/').replace(/'/g, "\\'")}'`,
-        '-c:v', 'libx264', '-preset', 'fast', '-crf', '18',
-        '-c:a', 'copy',
-        '-y', captionPath,
-      ], { timeout: 300000 })
-      currentPath = captionPath
-      log('CAPTIONS', `Burned ${words.length} word captions (${analysis.transcription.provider})`)
+      const assWinPath = assPath.replace(/\\/g, '/').replace(/'/g, "\\'")
+      vfParts.push(`ass='${assWinPath}'`)
+      appliedEffects.push(`Captions (${words.length} words, ${plan.captionStyle})`)
+      log('CAPTIONS', `Generated ASS file for ${words.length} words (${analysis.transcription.provider})`)
       sendEvent({
         type: 'thought_step',
         step: {
-          id: 'captions', label: 'Captions Burned', icon: 'plan', status: 'done',
+          id: 'captions', label: 'Captions Ready', icon: 'plan', status: 'done',
           summary: `${words.length} words · ${plan.captionStyle} style · via ${analysis.transcription.provider}`,
           details: [`Font: ${fontSize}px ${captionColor}`, `First words: "${words.slice(0, 4).map(w => w.word).join(' ')}..."`],
         },
       })
-    } else {
-      sendEvent({ type: 'thought_step', step: { id: 'captions', label: 'No transcription', icon: 'plan', status: 'done', summary: words.length === 0 ? 'No words available' : 'Captions disabled' } })
+    } catch (err) {
+      log('CAPTIONS', `Error: ${err.message}`)
+      sendEvent({ type: 'thought_step', step: { id: 'captions', label: 'Captions failed', icon: 'plan', status: 'error', summary: err.message } })
+      assPath = null
     }
-  } catch (err) {
-    log('CAPTIONS', `Error: ${err.message}`)
-    sendEvent({ type: 'thought_step', step: { id: 'captions', label: 'Captions failed', icon: 'plan', status: 'error', summary: err.message } })
+  } else {
+    sendEvent({ type: 'thought_step', step: { id: 'captions', label: 'No transcription', icon: 'plan', status: 'done', summary: words.length === 0 ? 'No words available' : 'Captions disabled' } })
   }
 
-  // ── PHASE 6: Text overlays (bold, animated) ──────────────────────────
-  sendEvent({ type: 'thought_step', step: { id: 'text', label: 'Adding text overlays...', icon: 'plan', status: 'active' } })
-
-  try {
-    const overlays = plan.textOverlays || []
-    if (overlays.length > 0) {
-      const textPath = join(workDir, 'text.mp4')
-      const fontSize = plan.textFontSize || 72
-      const fontColor = plan.textColor || 'white'
-      const borderColor = plan.textShadowColor || 'black'
-
-      const drawtextFilters = overlays.map(t => {
-        const escaped = t.text.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/:/g, "\\:")
-        const fadeIn = Math.min(0.15, (t.duration || 1) * 0.2)
-        return `drawtext=text='${escaped}':fontsize=${fontSize}:fontcolor=${fontColor}:borderw=5:bordercolor=${borderColor}:x=(w-text_w)/2:y=(h-text_h)/2:enable='between(t,${t.time},${t.time + (t.duration || 2)})':alpha='if(between(t,${t.time},${t.time + fadeIn}),min(1,(t-${t.time})/${fadeIn}),if(between(t,${t.time + (t.duration || 2) - fadeIn},${t.time + (t.duration || 2)}),max(0,(${t.time + (t.duration || 2)}-t)/${fadeIn}),1))'`
-      })
-
-      await execFileAsync(ffmpeg, [
-        '-i', currentPath,
-        '-vf', drawtextFilters.join(','),
-        '-c:v', 'libx264', '-preset', 'fast', '-crf', '18',
-        '-c:a', 'copy',
-        '-y', textPath,
-      ], { timeout: 300000 })
-      currentPath = textPath
-      log('TEXT', `Added ${overlays.length} text overlays`)
-      sendEvent({
-        type: 'thought_step',
-        step: {
-          id: 'text', label: 'Text Overlays Added', icon: 'plan', status: 'done',
-          summary: `${overlays.length} overlays`,
-          details: overlays.map(t => `"${t.text}" @ ${t.time.toFixed(1)}s`),
-        },
-      })
-    } else {
-      sendEvent({ type: 'thought_step', step: { id: 'text', label: 'No text overlays', icon: 'plan', status: 'done', summary: 'None needed' } })
-    }
-  } catch (err) {
-    log('TEXT', `Error: ${err.message}`)
-    sendEvent({ type: 'thought_step', step: { id: 'text', label: 'Text failed', icon: 'plan', status: 'error', summary: err.message } })
-  }
-
-  // ── PHASE 7: Speed ramps ─────────────────────────────────────────────
-  sendEvent({ type: 'thought_step', step: { id: 'speed', label: 'Applying speed ramps...', icon: 'plan', status: 'active' } })
-
-  try {
-    const ramps = plan.speedRamps || []
-    if (ramps.length > 0) {
-      const speedPath = join(workDir, 'speed.mp4')
-      // Apply average speed change (simple approach — split/concat is complex)
-      const avgSpeed = ramps.reduce((acc, r) => acc + (r.speed || 2), 0) / ramps.length
-      const ptsFactor = 1.0 / Math.min(Math.max(avgSpeed, 0.5), 4.0)
-      const tempo = Math.min(Math.max(avgSpeed, 0.5), 2.0)
-
-      await execFileAsync(ffmpeg, [
-        '-i', currentPath,
-        '-vf', `setpts=${ptsFactor}*PTS`,
-        '-af', `atempo=${tempo}`,
-        '-c:v', 'libx264', '-preset', 'fast', '-crf', '18',
-        '-c:a', 'aac', '-b:a', '192k',
-        '-y', speedPath,
-      ], { timeout: 300000 })
-      currentPath = speedPath
-      log('SPEED', `Applied ${ramps.length} speed ramps (avg ${avgSpeed.toFixed(1)}x)`)
-      sendEvent({
-        type: 'thought_step',
-        step: {
-          id: 'speed', label: 'Speed Ramps Applied', icon: 'plan', status: 'done',
-          summary: `${ramps.length} ramps, avg ${avgSpeed.toFixed(1)}x`,
-        },
-      })
-    } else {
-      sendEvent({ type: 'thought_step', step: { id: 'speed', label: 'No speed ramps', icon: 'plan', status: 'done', summary: 'None needed' } })
-    }
-  } catch (err) {
-    log('SPEED', `Error: ${err.message}`)
-    sendEvent({ type: 'thought_step', step: { id: 'speed', label: 'Speed failed', icon: 'plan', status: 'error', summary: err.message } })
-  }
-
-  // ── PHASE 7.5: Platform reframing (9:16, 1:1, 16:9) ──────────────
-  sendEvent({ type: 'thought_step', step: { id: 'reframe', label: 'Reframing for platform...', icon: 'film', status: 'active' } })
-
-  try {
-    const platform = plan.platform || plan.reframe || null
-    const platformFormats = {
-      tiktok: { w: 1080, h: 1920, label: 'TikTok (9:16)' },
-      reels: { w: 1080, h: 1920, label: 'Instagram Reels (9:16)' },
-      shorts: { w: 1080, h: 1920, label: 'YouTube Shorts (9:16)' },
-      vertical: { w: 1080, h: 1920, label: 'Vertical (9:16)' },
-      square: { w: 1080, h: 1080, label: 'Square (1:1)' },
-      instagram: { w: 1080, h: 1080, label: 'Instagram Post (1:1)' },
-      widescreen: { w: 1920, h: 1080, label: 'Widescreen (16:9)' },
-      landscape: { w: 1920, h: 1080, label: 'Landscape (16:9)' },
-      story: { w: 1080, h: 1920, label: 'Story (9:16)' },
-      linkedin: { w: 1920, h: 1080, label: 'LinkedIn (16:9)' },
-      twitter: { w: 1280, h: 720, label: 'Twitter/X (16:9)' },
-    }
-
-    const fmt = platformFormats[platform]
-    if (fmt) {
-      const reframePath = join(workDir, 'reframed.mp4')
-      // Smart crop: scale up to fill, then center-crop to target aspect
-      await execFileAsync(ffmpeg, [
-        '-i', currentPath,
-        '-vf', `scale=${fmt.w}:${fmt.h}:force_original_aspect_ratio=increase,crop=${fmt.w}:${fmt.h}`,
-        '-c:v', 'libx264', '-preset', 'fast', '-crf', '18',
-        '-c:a', 'copy',
-        '-y', reframePath,
-      ], { timeout: 300000 })
-      currentPath = reframePath
-      log('REFRAME', `Reframed to ${fmt.label}`)
-      sendEvent({
-        type: 'thought_step',
-        step: {
-          id: 'reframe', label: 'Reframed', icon: 'film', status: 'done',
-          summary: fmt.label,
-          details: [`${fmt.w}x${fmt.h}`, 'Smart center-crop'],
-        },
-      })
-    } else {
-      sendEvent({ type: 'thought_step', step: { id: 'reframe', label: 'No reframe needed', icon: 'film', status: 'done', summary: 'Keeping original aspect ratio' } })
-    }
-  } catch (err) {
-    log('REFRAME', `Error: ${err.message}`)
-    sendEvent({ type: 'thought_step', step: { id: 'reframe', label: 'Reframe skipped', icon: 'film', status: 'error', summary: err.message } })
-  }
-
-  // ── PHASE 8: Final encode (1080p, H.264, faststart) ─────────────────
-  sendEvent({ type: 'thought_step', step: { id: 'encode', label: 'Final encode...', icon: 'test', status: 'active' } })
+  // ── PHASE 6: COMBINED FINAL ENCODE (effects + text + captions + reframe → 1 pass) ──
+  sendEvent({ type: 'thought_step', step: { id: 'encode', label: 'Final encode (all effects)...', icon: 'test', status: 'active' } })
 
   const outputPath = join(workDir, `restored_${editId}.mp4`)
+  const encodeArgs = ['-i', currentPath]
+  const vfChain = vfParts.join(',')
+  if (vfChain) encodeArgs.push('-vf', vfChain)
+  encodeArgs.push(
+    '-c:v', 'libx264', '-preset', 'medium', '-crf', '18',
+    '-c:a', 'aac', '-b:a', '192k',
+    '-movflags', '+faststart',
+    '-y', outputPath,
+  )
+
   try {
-    await execFileAsync(ffmpeg, [
-      '-i', currentPath,
-      '-vf', 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2',
-      '-c:v', 'libx264', '-preset', 'medium', '-crf', '18',
-      '-c:a', 'aac', '-b:a', '192k',
-      '-movflags', '+faststart',
-      '-y', outputPath,
-    ], { timeout: 300000 })
-    log('ENCODE', `Output: ${outputPath}`)
+    await execFileAsync(ffmpeg, encodeArgs, { timeout: 120000 })
+    log('ENCODE', `Combined encode done: ${outputPath}`)
     sendEvent({
       type: 'thought_step',
       step: {
         id: 'encode', label: 'Encode Complete', icon: 'test', status: 'done',
-        summary: 'Restored video ready',
-        details: ['1920x1080', 'H.264 MP4', `${plan.name || 'Custom'} style`],
+        summary: `${vfParts.length} effects in 1 pass`,
+        details: ['1920x1080', 'H.264 MP4', `${plan.name || 'Custom'} style`, ...appliedEffects],
       },
     })
   } catch (err) {

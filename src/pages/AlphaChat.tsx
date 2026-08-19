@@ -68,8 +68,16 @@ type AlphaMessage = GeneralChatMessage & {
 }
 
 function extractUrl(text: string): string | null {
+  // Try explicit protocol first
   const match = text.match(/https?:\/\/[^\s"'<>]+/)
-  return match ? match[0] : null
+  if (match) return match[0]
+
+  // Try bare domain: kraitin.vercel.app, mysite.com, sub.domain.co.uk/path
+  const bareMatch = text.match(/\b([a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+(?:com|net|org|io|co|app|dev|vercel\.app|netlify\.app|pages\.dev|workers\.dev|github\.io|herokuapp\.com|onrender\.com|name\.ng)(?:\/[^\s"'<>]*)?/i)
+  if (bareMatch) {
+    return 'https://' + bareMatch[0]
+  }
+  return null
 }
 
 function isWebsiteRestoreIntent(text: string, url: string | null): boolean {
@@ -648,6 +656,11 @@ function ChatContent() {
   }
 
   const handleNewChat = () => {
+    if (abortRef.current) {
+      abortRef.current.abort()
+      abortRef.current = null
+    }
+    setIsGenerating(false)
     setActiveThread(null)
     setMessages([])
     setInput('')

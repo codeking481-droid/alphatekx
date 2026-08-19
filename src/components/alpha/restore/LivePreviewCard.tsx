@@ -134,7 +134,7 @@ export default function LivePreviewCard({
             ) : (
               <iframe
                 src={`/api/preview?url=${encodeURIComponent(url)}&_cb=${Date.now()}`}
-                sandbox="allow-scripts allow-forms"
+                sandbox="allow-same-origin allow-scripts allow-forms"
                 className="w-full border-none"
                 style={{ pointerEvents: 'none', height: compact ? 220 : 340, border: 'none' }}
                 onLoad={() => setIframeLoaded(true)}
