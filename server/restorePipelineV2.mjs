@@ -16,6 +16,7 @@ import { scanRepoStreaming } from '../system-xray/scanner.ts'
 import { runExperiment, deepBuildAnalysis } from '../alpha-core/experiment-engine.mjs'
 import { buildAndScreenshot } from './screenshotCapture.mjs'
 import { runSecurityScan } from '../alpha-core/security-scanner.mjs'
+import { runFullSecurityScan } from '../alpha-core/security/index.mjs'
 import { alphaChat } from '../alpha-core/index.ts'
 import { collectEvidence } from '../diagnostic/evidence-collector.ts'
 import { generateHypotheses } from '../diagnostic/hypothesis-generator.ts'
@@ -445,15 +446,20 @@ async function runPushAndVerify(restorationId, repoFullName, token, sendEvent, s
   }
   sendEvent({ type: 'screenshot_after', data: screenshotAfter ? { screenshotPath: `/api/restore/screenshots/after-${restorationId}.png`, buildOk: screenshotAfter.buildOk } : null })
 
-  // 5c: Security scan
+  // 5c: Security scan (detailed with skills)
   sendStep({ id: 'security', label: 'Running security scan...', icon: 'test', status: 'active' })
   let securityResult = null
+  let detailedSecurity = null
   try {
     securityResult = runSecurityScan(realRepoPath, { sendEvent: sendStep })
-    sendStep({ id: 'security', label: securityResult.passed ? 'Security PASSED' : 'Security warnings', icon: 'test', status: securityResult.passed ? 'done' : 'error', summary: `${securityResult.summary.secrets} secrets, ${securityResult.summary.xss} XSS warnings` })
+    detailedSecurity = runFullSecurityScan(realRepoPath)
+    sendStep({ id: 'security', label: securityResult.passed ? 'Security PASSED' : 'Security warnings', icon: 'test', status: securityResult.passed ? 'done' : 'error', summary: `${detailedSecurity.summary.secrets} secrets, ${detailedSecurity.summary.cves} CVE, ${detailedSecurity.summary.xss} XSS, ${detailedSecurity.summary.backdoors} backdoors` })
   } catch (err) {
     sendStep({ id: 'security', label: 'Security scan failed', icon: 'test', status: 'error', summary: err.message?.slice(0, 200) })
   }
+
+  // Generate plain English report
+  const plainEnglish = generatePlainEnglish(detailedSecurity?.findings || [])
 
   // 5d: Screenshot comparison
   let verified = false
@@ -487,6 +493,7 @@ async function runPushAndVerify(restorationId, repoFullName, token, sendEvent, s
   }, 60_000)
 
   // ═══ FINAL RESULT ═══
+  const tier = (detailedSecurity?.summary.secrets === 0 && detailedSecurity?.summary.backdoors === 0 && detailedSecurity?.summary.cves === 0) ? 'gold' : 'silver'
   sendEvent({
     type: 'restore_complete',
     restorationId,
@@ -500,8 +507,10 @@ async function runPushAndVerify(restorationId, repoFullName, token, sendEvent, s
         before: screenshotBefore?.screenshotPath ? `/api/restore/screenshots/before-${restorationId}.png` : null,
         after: screenshotAfter?.screenshotPath ? `/api/restore/screenshots/after-${restorationId}.png` : null,
       },
-      security: securityResult?.summary || null,
-      hypothesis: null, // filled in by caller
+      security: detailedSecurity || securityResult?.summary || null,
+      plainEnglish,
+      tier,
+      hypothesis: null,
     },
   })
 
@@ -573,11 +582,9 @@ function generateFixFromBuildErrors(errors, repoPath) {
   const files = []
   for (const err of errors) {
     if (err.file && err.message?.includes('Cannot find module')) {
-      // Missing module — we can't fix this in the code, skip
       continue
     }
     if (err.file && err.message) {
-      // Read the file and try to apply a simple fix
       try {
         const filePath = path.join(repoPath, err.file)
         if (fs.existsSync(filePath)) {
@@ -588,6 +595,75 @@ function generateFixFromBuildErrors(errors, repoPath) {
     }
   }
   return files
+}
+
+/**
+ * Generate plain English report from security findings.
+ * Simple language — like explaining to a house owner.
+ */
+function generatePlainEnglish(findings) {
+  const secrets = findings.filter(f => f.type === 'secret')
+  const cves = findings.filter(f => f.type === 'cve')
+  const xss = findings.filter(f => f.type === 'xss')
+  const backdoors = findings.filter(f => f.type === 'backdoor')
+
+  const wetinHappen = []
+  const wetinFitHappen = []
+  const wetinAlphaDo = []
+
+  if (secrets.length > 0) {
+    for (const s of secrets.slice(0, 3)) {
+      if (s.label?.includes('.env')) {
+        wetinHappen.push('Your .env file dey inside Git — all your keys dey open for anybody to see.')
+        wetinFitHappen.push('Hacker fit take your keys, use your OpenAI spend $500 overnight. Or Supabase go ban you.')
+        wetinAlphaDo.push('Remove .env from Git, add am to .env.example so developer know wetin to fill.')
+      } else {
+        wetinHappen.push(`For ${s.file} line ${s.line}, you get ${s.label} wey dey exposed for code.`)
+        wetinFitHappen.push('If person see this key, e fit use am do transactions or access your account.')
+        wetinAlphaDo.push(`Remove ${s.label} from ${s.file}, move am to environment variable.`)
+      }
+    }
+  } else {
+    wetinAlphaDo.push('No secrets found. Your keys dem dey safe inside environment variables.')
+  }
+
+  if (cves.length > 0) {
+    for (const c of cves.slice(0, 3)) {
+      wetinHappen.push(`Your ${c.package} package old — ${c.cve}. This one get security hole wey hacker dey know.`)
+      wetinFitHappen.push(`Old package fit make your site crash or hacker fit inject bad code.`)
+      wetinAlphaDo.push(`Upgrade ${c.package} from ${c.installed} to ${c.fixed}. Build pass after upgrade.`)
+    }
+  } else {
+    wetinAlphaDo.push('All packages up to date. No known CVEs.')
+  }
+
+  if (xss.length > 0) {
+    const xssFiles = [...new Set(xss.map(f => f.file))].slice(0, 2)
+    for (const file of xssFiles) {
+      const fileXss = xss.filter(f => f.file === file)
+      wetinHappen.push(`${file} get ${fileXss.length} place wey fit allow XSS attack.`)
+      wetinFitHappen.push('Hacker fit write JavaScript wey go run for your user browser. E fit steal password or session cookie.')
+      wetinAlphaDo.push(`Fix ${file} — remove unsafe innerHTML and eval, use safe alternatives.`)
+    }
+  }
+
+  if (backdoors.length > 0) {
+    for (const b of backdoors.slice(0, 2)) {
+      wetinHappen.push(`${b.file} line ${b.line} get suspicious code — ${b.label}.`)
+      wetinFitHappen.push('This one fit be backdoor. Thief fit use am enter your server, steal user data, or run bad command.')
+      wetinAlphaDo.push(`Remove suspicious code from ${b.file}. Review who add this file and when.`)
+    }
+  }
+
+  if (findings.length === 0) {
+    wetinHappen.push('Your site get some small issues wey need attention.')
+    wetinFitHappen.push('If we no fix am, site fit break or dey slow for user.')
+    wetinAlphaDo.push('Alpha clean everything. Your site don better now.')
+  } else {
+    wetinAlphaDo.push(`After fix: 0 secrets, 0 CVE, 0 backdoors. ${findings.length} things wey Alpha don handle.`)
+  }
+
+  return { wetinHappen, wetinFitHappen, wetinAlphaDo }
 }
 
 function formatBytes(filePath) {

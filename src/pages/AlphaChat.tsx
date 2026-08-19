@@ -7,7 +7,6 @@ import AnimatedPlaceholder from '../components/alpha/AnimatedPlaceholder'
 import ChainOfThought, { type ThoughtStep } from '../components/alpha/ChainOfThought'
 import GoldCard, { type GoldCardProps } from '../components/alpha/GoldCard'
 import HamburgerSidebar from '../components/alpha/HamburgerSidebar'
-import LivePreviewCard from '../components/alpha/restore/LivePreviewCard'
 import ScanningCard, { type ScanLog } from '../components/alpha/restore/ScanningCard'
 import ErrorsCard, { type ScanError } from '../components/alpha/restore/ErrorsCard'
 import BackupCard from '../components/alpha/restore/BackupCard'
@@ -20,7 +19,7 @@ import FixPromptCard from '../components/alpha/restore/FixPromptCard'
 import ScreenshotComparison from '../components/alpha/restore/ScreenshotComparison'
 import SecurityFindings from '../components/alpha/restore/SecurityFindings'
 import ActivityStream from '../components/alpha/restore/ActivityStream'
-import LiveBrowserCard from '../components/alpha/restore/cards/LiveBrowserCard'
+import PlainEnglishReport from '../components/alpha/restore/PlainEnglishReport'
 import CodeDiffCard from '../components/alpha/restore/cards/CodeDiffCard'
 import TerminalCard from '../components/alpha/restore/cards/TerminalCard'
 import SystemGraphAliveCard from '../components/alpha/restore/cards/SystemGraphAliveCard'
@@ -40,7 +39,6 @@ import { useAuth } from '../lib/auth'
 import { supabase } from '../lib/supabase'
 
 type RestoreCardState = {
-  preview?: { url: string; status: 'loading' | 'loaded' | 'error' }
   scanning?: { logs: ScanLog[]; status: 'start' | 'done' | 'error' }
   screenshots?: Array<{ filename: string; label: string }>
   scanId?: string
@@ -64,8 +62,11 @@ type RestoreCardState = {
     prUrl?: string | null
     prNumber?: number | null
     branch?: string | null
+    repoFullName?: string
     securityFindings?: any[]
     securitySummary?: any
+    plainEnglish?: { wetinHappen: string[]; wetinFitHappen: string[]; wetinAlphaDo: string[] }
+    tier?: 'free' | 'silver' | 'gold'
     restoreComplete?: boolean
     pipelineDone?: boolean
   }
@@ -246,7 +247,7 @@ function ChatContent() {
       createdAt: new Date().toISOString(),
       thoughtSteps: [],
       alphaEvents: [],
-      restoreCards: isWebsiteRestore ? { preview: { url: detectedUrl!, status: 'loading' }, isRunning: true, v2: {} } : undefined,
+      restoreCards: isWebsiteRestore ? { isRunning: true, v2: {} } : undefined,
       isStreaming: true,
     }
 
@@ -539,9 +540,12 @@ function ChatContent() {
             v2.prUrl = event.data?.prUrl || v2.prUrl
             v2.prNumber = event.data?.prNumber || v2.prNumber
             v2.branch = event.data?.branch || v2.branch
+            v2.repoFullName = event.data?.repoFullName || v2.repoFullName
             v2.verified = event.data?.verified ?? v2.verified
             v2.securityFindings = event.data?.security?.findings || v2.securityFindings
             v2.securitySummary = event.data?.security?.summary || v2.securitySummary
+            v2.plainEnglish = event.data?.plainEnglish || v2.plainEnglish
+            v2.tier = event.data?.tier || v2.tier || 'gold'
             v2.restoreComplete = true
             cards.isRunning = false
             break
@@ -961,19 +965,15 @@ function ChatContent() {
                         {/* Website Resurrector Cards — sequential ordered flow */}
                         {msg.restoreCards && (
                           <div className="mt-3 space-y-3">
-                            {/* Card 1: Live Preview — always first, full width */}
-                            {msg.restoreCards.preview && (
-                              <LivePreviewCard url={msg.restoreCards.preview.url} status={msg.restoreCards.preview.status} screenshots={msg.restoreCards.screenshots} scanId={msg.restoreCards.scanId} />
-                            )}
-                            {/* Card 2: Scanning — below preview */}
+                            {/* Card 1: Scanning */}
                             {msg.restoreCards.scanning && (
                               <ScanningCard logs={msg.restoreCards.scanning.logs} status={msg.restoreCards.scanning.status} />
                             )}
-                            {/* Card 3: Errors Found */}
+                            {/* Card 2: Errors Found */}
                             {msg.restoreCards.errors && (
                               <ErrorsCard errors={msg.restoreCards.errors.errors} severity={msg.restoreCards.errors.severity} status={msg.restoreCards.errors.status} />
                             )}
-                            {/* Card 3.5: Fix Prompt — asks user before fixing */}
+                            {/* Card 3: Fix Prompt */}
                             {msg.restoreCards.fixprompt && !msg.restoreCards.fixing && (
                               <FixPromptCard
                                 scanId={msg.restoreCards.fixprompt.scanId}
@@ -1015,6 +1015,23 @@ function ChatContent() {
                               />
                             ) : null}
 
+                            {/* Plain English Report */}
+                            {msg.restoreCards.v2?.securityFindings && msg.restoreCards.v2.securityFindings.length > 0 && (
+                              <PlainEnglishReport
+                                findings={msg.restoreCards.v2.securityFindings}
+                                prUrl={msg.restoreCards.v2.prUrl}
+                                prNumber={msg.restoreCards.v2.prNumber}
+                              />
+                            )}
+
+                            {/* Security Findings */}
+                            {msg.restoreCards.v2?.securityFindings && msg.restoreCards.v2.securityFindings.length > 0 ? (
+                              <SecurityFindings
+                                findings={msg.restoreCards.v2.securityFindings}
+                                summary={msg.restoreCards.v2.securitySummary}
+                              />
+                            ) : null}
+
                             {/* GitHub Connect Gate */}
                             {msg.restoreCards.v2?.githubGateRequired && (
                               <GitHubConnectGate
@@ -1023,7 +1040,7 @@ function ChatContent() {
                                   if (!repoFullName || !msg.restoreCards?.v2?.restorationId) return
                                   updateLastMessage((prev) => ({
                                     ...prev,
-                                    restoreCards: { ...prev.restoreCards, isRunning: true, v2: { ...prev.restoreCards?.v2, githubGateRequired: false } },
+                                    restoreCards: { ...prev.restoreCards, isRunning: true, v2: { ...prev.restoreCards?.v2, githubGateRequired: false, repoFullName } },
                                   }))
                                   try {
                                     const pushRes = await fetch('/api/restore/push', {
@@ -1059,14 +1076,6 @@ function ChatContent() {
                               />
                             )}
 
-                            {/* Security Findings */}
-                            {msg.restoreCards.v2?.securityFindings ? (
-                              <SecurityFindings
-                                findings={msg.restoreCards.v2.securityFindings}
-                                summary={msg.restoreCards.v2.securitySummary}
-                              />
-                            ) : null}
-
                             {/* PR Link */}
                             {msg.restoreCards.v2?.prUrl && (
                               <a
@@ -1081,18 +1090,20 @@ function ChatContent() {
                               </a>
                             )}
 
-                            {/* Restoration Complete Banner */}
+                            {/* Gold Restoration Certificate */}
                             {msg.restoreCards.v2?.restoreComplete && (
-                              <div className="flex items-center gap-3 rounded-2xl border border-[#D6FF00]/20 bg-[#D6FF00]/[0.04] px-4 py-3">
-                                <span className="text-lg">✅</span>
-                                <div>
-                                  <p className="font-syne text-sm font-bold text-white">Restoration Complete</p>
-                                  <p className="text-[12px] text-white/40">
-                                    {msg.restoreCards.v2.verified ? 'Screenshots verified' : 'Check screenshots'}
-                                    {msg.restoreCards.v2.prUrl && ` · PR #${msg.restoreCards.v2.prNumber}`}
-                                  </p>
-                                </div>
-                              </div>
+                              <GoldCard
+                                tier={msg.restoreCards.v2.tier || 'gold'}
+                                screenshotBefore={msg.restoreCards.v2.screenshotBefore || undefined}
+                                screenshotAfter={msg.restoreCards.v2.screenshotAfter || undefined}
+                                prUrl={msg.restoreCards.v2.prUrl || undefined}
+                                prNumber={msg.restoreCards.v2.prNumber || undefined}
+                                branch={msg.restoreCards.v2.branch || undefined}
+                                repoFullName={msg.restoreCards.v2.repoFullName}
+                                findings={msg.restoreCards.v2.securityFindings || []}
+                                summary={msg.restoreCards.v2.securitySummary}
+                                plainEnglish={msg.restoreCards.v2.plainEnglish}
+                              />
                             )}
                           </div>
                         )}
@@ -1106,12 +1117,6 @@ function ChatContent() {
                             />
 
                             {/* Signature Visual Cards — appear when relevant events arrive */}
-                            {msg.alphaEvents.filter(e => e.type === 'BROWSER_OPENED').map((e, i) => (
-                              <LiveBrowserCard key={`browser-${i}`} url={e.data?.url || ''} />
-                            ))}
-                            {msg.alphaEvents.filter(e => e.type === 'PAGE_NAVIGATED' && e.data?.screenshotUrl).map((e, i) => (
-                              <LiveBrowserCard key={`nav-${i}`} url={e.data?.url || ''} screenshotUrl={e.data?.screenshotUrl} />
-                            ))}
                             {msg.alphaEvents.filter(e => e.type === 'FILE_MODIFIED').map((e, i) => (
                               <CodeDiffCard key={`diff-${i}`} filename={e.data?.path || ''} old={e.data?.diff || ''} newContent={e.data?.diff || ''} />
                             ))}
