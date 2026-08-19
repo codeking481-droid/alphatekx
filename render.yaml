@@ -5,7 +5,7 @@ services:
     plan: free
     branch: main
     autoDeploy: true
-    buildCommand: npm install && npm run install:playwright && npm run build
+    buildCommand: npm run build && rm -rf .next/node_modules .next/cache
     startCommand: node --experimental-strip-types server.mjs
     envVars:
       - key: NODE_VERSION

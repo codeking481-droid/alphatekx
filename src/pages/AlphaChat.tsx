@@ -15,7 +15,10 @@ import FixingCard, { type DiffEntry } from '../components/alpha/restore/FixingCa
 import GoldProofCard, { type ProofData } from '../components/alpha/restore/GoldProofCard'
 import ActionCard from '../components/alpha/restore/ActionCard'
 import GitHubApplyCard from '../components/alpha/restore/GitHubApplyCard'
+import GitHubConnectGate from '../components/alpha/restore/GitHubConnectGate'
 import FixPromptCard from '../components/alpha/restore/FixPromptCard'
+import ScreenshotComparison from '../components/alpha/restore/ScreenshotComparison'
+import SecurityFindings from '../components/alpha/restore/SecurityFindings'
 import ActivityStream from '../components/alpha/restore/ActivityStream'
 import LiveBrowserCard from '../components/alpha/restore/cards/LiveBrowserCard'
 import CodeDiffCard from '../components/alpha/restore/cards/CodeDiffCard'
@@ -49,6 +52,23 @@ type RestoreCardState = {
   github?: boolean
   fixprompt?: { scanId: string; url: string; errorsFound: number; severity: string; summary: string }
   isRunning?: boolean
+  // V2 pipeline state
+  v2?: {
+    restorationId?: string
+    screenshotBefore?: string | null
+    screenshotAfter?: string | null
+    verified?: boolean | null
+    githubGateRequired?: boolean
+    experimentId?: string
+    experimentPassed?: boolean
+    prUrl?: string | null
+    prNumber?: number | null
+    branch?: string | null
+    securityFindings?: any[]
+    securitySummary?: any
+    restoreComplete?: boolean
+    pipelineDone?: boolean
+  }
 }
 
 type AlphaEventType = {
@@ -97,6 +117,12 @@ function isWebsiteRestoreIntent(text: string, url: string | null): boolean {
   const hasProblem = /\b(broken|down|error|issue|problem|not.{0,8}work|fail|crash|bug|404|500|dead|missing|blank|white.?screen|not.?load|not.?show)\b/i.test(lower)
 
   return hasIntent || hasProblem
+}
+
+function detectRestoreIntent(text: string): 'scan' | 'full' {
+  const lower = text.toLowerCase()
+  if (/\b(fix|repair|restore|heal|resurrect|apply|commit|push|deploy|merge)\b/i.test(lower)) return 'full'
+  return 'scan'
 }
 
 function uid() {
@@ -220,18 +246,19 @@ function ChatContent() {
       createdAt: new Date().toISOString(),
       thoughtSteps: [],
       alphaEvents: [],
-      restoreCards: isWebsiteRestore ? { preview: { url: detectedUrl!, status: 'loading' }, isRunning: true } : undefined,
+      restoreCards: isWebsiteRestore ? { preview: { url: detectedUrl!, status: 'loading' }, isRunning: true, v2: {} } : undefined,
       isStreaming: true,
     }
 
     setMessages((prev) => [...prev, userMsg, aiMsg])
     scrollToBottom()
 
-    // If website restore detected, start SSE stream
+    // If website restore detected, start SSE stream (V2 screenshot-based pipeline)
     if (isWebsiteRestore && detectedUrl) {
       try {
         abortRef.current = new AbortController()
-        const streamUrl = `/api/restore/stream?url=${encodeURIComponent(detectedUrl)}&intent=scan&message=${encodeURIComponent(sendText)}`
+        const intent = detectRestoreIntent(sendText)
+        const streamUrl = `/api/restore/v2?url=${encodeURIComponent(detectedUrl)}&mode=${intent === 'full' ? 'full' : 'scan-only'}&message=${encodeURIComponent(sendText)}`
         const res = await fetch(streamUrl, { signal: abortRef.current.signal })
 
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -443,6 +470,106 @@ function ChatContent() {
         }
 
         return { ...prev, alphaEvents: events, alphaReasoning: reasoning }
+      })
+      scrollToBottom()
+      return
+    }
+
+    // ===== V2 Pipeline Events =====
+    if (event.type === 'pipeline_start' || event.type === 'scan_complete' || event.type === 'screenshot_before'
+      || event.type === 'experiment_complete' || event.type === 'github_gate_required' || event.type === 'screenshot_after'
+      || event.type === 'restore_complete' || event.type === 'pipeline_done' || event.type === 'pipeline_paused'
+      || event.type === 'branch_created' || event.type === 'fix_pushed' || event.type === 'pr_created') {
+      updateLastMessage((prev) => {
+        const cards = { ...(prev.restoreCards || {}) }
+        if (!cards.v2) cards.v2 = {}
+        const v2 = { ...cards.v2 }
+
+        switch (event.type) {
+          case 'pipeline_start':
+            v2.restorationId = event.restorationId
+            cards.isRunning = true
+            break
+          case 'scan_complete':
+            v2.screenshotBefore = event.data?.screenshotBefore || null
+            break
+          case 'screenshot_before':
+            v2.screenshotBefore = event.data?.screenshotPath || v2.screenshotBefore
+            break
+          case 'experiment_complete':
+            v2.experimentPassed = event.data?.passed
+            v2.experimentId = event.data?.experimentId
+            break
+          case 'github_gate_required':
+            v2.githubGateRequired = true
+            v2.experimentId = event.experimentId
+            v2.restorationId = event.restorationId
+            cards.isRunning = false
+            break
+          case 'pipeline_paused':
+            if (event.reason === 'github_gate') {
+              v2.githubGateRequired = true
+            }
+            if (event.reason === 'scan-only' || event.reason === 'no fixable hypothesis found') {
+              cards.isRunning = false
+            }
+            if (event.reason === 'experiment failed') {
+              cards.isRunning = false
+            }
+            break
+          case 'branch_created':
+            v2.branch = event.branch
+            v2.githubGateRequired = false
+            cards.isRunning = true
+            break
+          case 'fix_pushed':
+            v2.branch = event.branch
+            break
+          case 'pr_created':
+            v2.prUrl = event.prUrl
+            v2.prNumber = event.prNumber
+            break
+          case 'screenshot_after':
+            v2.screenshotAfter = event.data?.screenshotPath || null
+            v2.verified = event.data?.verified ?? null
+            break
+          case 'restore_complete':
+            v2.screenshotBefore = event.data?.screenshots?.before || v2.screenshotBefore
+            v2.screenshotAfter = event.data?.screenshots?.after || v2.screenshotAfter
+            v2.prUrl = event.data?.prUrl || v2.prUrl
+            v2.prNumber = event.data?.prNumber || v2.prNumber
+            v2.branch = event.data?.branch || v2.branch
+            v2.verified = event.data?.verified ?? v2.verified
+            v2.securityFindings = event.data?.security?.findings || v2.securityFindings
+            v2.securitySummary = event.data?.security?.summary || v2.securitySummary
+            v2.restoreComplete = true
+            cards.isRunning = false
+            break
+          case 'pipeline_done':
+            v2.pipelineDone = true
+            cards.isRunning = false
+            break
+        }
+
+        cards.v2 = v2
+        return { ...prev, restoreCards: cards }
+      })
+      scrollToBottom()
+      return
+    }
+
+    // ===== V1 Legacy Pipeline Events =====
+    // thought_step events (shared by V1 and V2)
+    if (event.type === 'thought_step' && event.step) {
+      updateLastMessage((prev) => {
+        const steps = [...(prev.thoughtSteps || [])]
+        const existing = steps.findIndex((s: ThoughtStep) => s.id === event.step.id)
+        if (existing >= 0) {
+          steps[existing] = event.step
+        } else {
+          steps.push(event.step)
+        }
+        return { ...prev, thoughtSteps: steps }
       })
       scrollToBottom()
       return
@@ -876,6 +1003,96 @@ function ChatContent() {
                             {/* Card 8: GitHub Direct Push */}
                             {msg.restoreCards.github && msg.restoreCards.action?.scanId && (
                               <GitHubApplyCard scanId={msg.restoreCards.action.scanId} />
+                            )}
+
+                            {/* ===== V2 Pipeline Cards ===== */}
+                            {/* Screenshot Before/After Comparison */}
+                            {msg.restoreCards.v2?.screenshotBefore || msg.restoreCards.v2?.screenshotAfter ? (
+                              <ScreenshotComparison
+                                beforeUrl={msg.restoreCards.v2.screenshotBefore || undefined}
+                                afterUrl={msg.restoreCards.v2.screenshotAfter || undefined}
+                                verified={msg.restoreCards.v2.verified}
+                              />
+                            ) : null}
+
+                            {/* GitHub Connect Gate */}
+                            {msg.restoreCards.v2?.githubGateRequired && (
+                              <GitHubConnectGate
+                                scanId={msg.restoreCards.v2.restorationId || ''}
+                                onConnected={async ({ repoFullName }) => {
+                                  if (!repoFullName || !msg.restoreCards?.v2?.restorationId) return
+                                  updateLastMessage((prev) => ({
+                                    ...prev,
+                                    restoreCards: { ...prev.restoreCards, isRunning: true, v2: { ...prev.restoreCards?.v2, githubGateRequired: false } },
+                                  }))
+                                  try {
+                                    const pushRes = await fetch('/api/restore/push', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ restorationId: msg.restoreCards?.v2?.restorationId, repoFullName }),
+                                    })
+                                    if (!pushRes.ok) throw new Error(`HTTP ${pushRes.status}`)
+                                    const reader = pushRes.body?.getReader()
+                                    if (!reader) throw new Error('No response body')
+                                    const decoder = new TextDecoder()
+                                    let buf = ''
+                                    while (true) {
+                                      const { done, value } = await reader.read()
+                                      if (done) break
+                                      buf += decoder.decode(value, { stream: true })
+                                      const lines = buf.split('\n')
+                                      buf = lines.pop() || ''
+                                      for (const line of lines) {
+                                        if (line.startsWith('data: ')) {
+                                          try { handleRestoreEvent(JSON.parse(line.slice(6)), detectedUrl || '') } catch {}
+                                        }
+                                      }
+                                    }
+                                  } catch (err: any) {
+                                    updateLastMessage((prev) => ({
+                                      ...prev,
+                                      content: prev.content || `Push failed: ${err.message}`,
+                                    }))
+                                  }
+                                  scrollToBottom()
+                                }}
+                              />
+                            )}
+
+                            {/* Security Findings */}
+                            {msg.restoreCards.v2?.securityFindings ? (
+                              <SecurityFindings
+                                findings={msg.restoreCards.v2.securityFindings}
+                                summary={msg.restoreCards.v2.securitySummary}
+                              />
+                            ) : null}
+
+                            {/* PR Link */}
+                            {msg.restoreCards.v2?.prUrl && (
+                              <a
+                                href={msg.restoreCards.v2.prUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-[13px] font-bold text-[#D6FF00] transition hover:border-[#D6FF00]/30"
+                              >
+                                <span className="text-[#D6FF00]">#</span>
+                                Open Pull Request #{msg.restoreCards.v2.prNumber}
+                                <span className="ml-auto text-[11px] text-white/30">↗</span>
+                              </a>
+                            )}
+
+                            {/* Restoration Complete Banner */}
+                            {msg.restoreCards.v2?.restoreComplete && (
+                              <div className="flex items-center gap-3 rounded-2xl border border-[#D6FF00]/20 bg-[#D6FF00]/[0.04] px-4 py-3">
+                                <span className="text-lg">✅</span>
+                                <div>
+                                  <p className="font-syne text-sm font-bold text-white">Restoration Complete</p>
+                                  <p className="text-[12px] text-white/40">
+                                    {msg.restoreCards.v2.verified ? 'Screenshots verified' : 'Check screenshots'}
+                                    {msg.restoreCards.v2.prUrl && ` · PR #${msg.restoreCards.v2.prNumber}`}
+                                  </p>
+                                </div>
+                              </div>
                             )}
                           </div>
                         )}

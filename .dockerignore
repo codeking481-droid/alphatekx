@@ -1,0 +1,11 @@
+tmp
+.tmp
+.next
+.opencode
+node_modules
+*.log
+coverage
+.git
+dist
+scripts
+test*

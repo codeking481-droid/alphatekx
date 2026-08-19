@@ -107,8 +107,11 @@ function gitLastCommitFiles(repoPath: string): string[] {
 
 // ─── Environment Variable Detection ───────────────────────────────────────────
 
+const isRender = !!(process.env.RENDER && process.env.NODE_ENV === 'production')
+
 function detectEnvIssues(repoPath: string, files: string[]): EnvIssue[] {
   const issues: EnvIssue[] = []
+  const maxCodeFiles = isRender ? 80 : 200
 
   // Read .env.example if exists
   const envExamplePath = path.join(repoPath, '.env.example')
@@ -144,9 +147,9 @@ function detectEnvIssues(repoPath: string, files: string[]): EnvIssue[] {
     // No .env
   }
 
-  // Scan source code for process.env references
+  // Scan source code for process.env references (streaming-style: process one at a time)
   const envRefsInCode = new Map<string, string[]>() // var -> files referencing it
-  const codeFiles = files.filter(f => /\.(ts|tsx|js|mjs)$/i.test(f)).slice(0, 200)
+  const codeFiles = files.filter(f => /\.(ts|tsx|js|mjs)$/i.test(f)).slice(0, maxCodeFiles)
 
   for (const file of codeFiles) {
     try {
@@ -242,13 +245,22 @@ function detectTestFailures(repoPath: string): TestFailure[] {
 
 // ─── Event Log Parsing ────────────────────────────────────────────────────────
 
+const MAX_EVENT_LINES = isRender ? 100 : 500
+
 function parseEventLog(restorationId: string): any[] {
   try {
     const eventsFile = path.join(tmpdir(), `alpha-events-${restorationId}.jsonl`)
+    if (!fs.existsSync(eventsFile)) return []
+    const stat = fs.statSync(eventsFile)
+    // On Render: skip files > 1MB to avoid memory blow-up
+    if (isRender && stat.size > 1024 * 1024) {
+      return []
+    }
     const content = fs.readFileSync(eventsFile, 'utf8')
-    return content
-      .split('\n')
-      .filter(line => line.trim())
+    const allLines = content.split('\n').filter(line => line.trim())
+    // Only keep last N lines to bound memory
+    const lines = allLines.slice(-MAX_EVENT_LINES)
+    return lines
       .map(line => {
         try { return JSON.parse(line) } catch { return null }
       })
@@ -314,7 +326,7 @@ export function collectEvidence(
   // 2. Environment issues
   onLog?.('Checking environment configuration...')
   const allFiles = enrichedGraph?.scannerGraph?.fileTree
-    ? extractAllFiles(enrichedGraph.scannerGraph.fileTree)
+    ? extractAllFiles(enrichedGraph.scannerGraph.fileTree, isRender ? 500 : 0)
     : []
   const envIssues = detectEnvIssues(repoPath, allFiles)
   onLog?.(`Found ${envIssues.length} environment issues`)
@@ -394,7 +406,7 @@ export function collectEvidence(
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function extractAllFiles(tree: any): string[] {
+function extractAllFiles(tree: any, limit: number = 0): string[] {
   const files: string[] = []
   if (!tree) return files
   if (tree.type === 'file') {
@@ -402,8 +414,9 @@ function extractAllFiles(tree: any): string[] {
   }
   if (tree.children) {
     for (const child of tree.children) {
+      if (limit > 0 && files.length >= limit) break
       const prefix = tree.name === '/' ? '' : tree.name + '/'
-      for (const f of extractAllFiles(child)) {
+      for (const f of extractAllFiles(child, limit - files.length)) {
         files.push(prefix + f)
       }
     }

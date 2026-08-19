@@ -144,5 +144,23 @@ export async function handleDiagnoseRoute(req, res) {
     sseWriter(`data: ${JSON.stringify({ type: 'error', error: err.message })}\n\n`)
     sseWriter(`data: [DONE]\n\n`)
     res.end()
+  } finally {
+    // Schedule tmp cleanup after 60s (non-blocking)
+    if (fs.existsSync(repoPath)) {
+      setTimeout(() => {
+        try { fs.rmSync(repoPath, { recursive: true, force: true }) } catch {}
+      }, 60_000)
+    }
+    // Truncate event log to last 100 lines to prevent bloat
+    try {
+      const eventsFile = path.join(tmpdir(), `alpha-events-${restorationId}.jsonl`)
+      if (fs.existsSync(eventsFile)) {
+        const content = fs.readFileSync(eventsFile, 'utf8')
+        const lines = content.split('\n').filter(l => l.trim())
+        if (lines.length > 100) {
+          fs.writeFileSync(eventsFile, lines.slice(-100).join('\n') + '\n', 'utf8')
+        }
+      }
+    } catch {}
   }
 }

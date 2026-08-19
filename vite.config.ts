@@ -13,6 +13,7 @@ export default defineConfig({
     allowedHosts: ['.devinapps.com'],
   },
   build: {
+    sourcemap: false,
     rollupOptions: {
       output: {
         manualChunks(id) {

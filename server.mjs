@@ -11,6 +11,7 @@ import { fallbackAlphaBuilder } from './alphaFallback.mjs'
 import { handlePreviewRoute, handleRestoreStreamRoute, handleFixStreamRoute, handleDownloadRoute, handlePreviewFixedRoute, handleScreenshotRoute } from './server/websiteRestoreStream.mjs'
 import { handleGitHubAuth, handleGitHubCallback, handleGitHubStatus, handleGitHubRepos, handleGitHubApplyFix, handleGitHubRollback } from './server/githubDirectPush.mjs'
 import { handleDiagnoseRoute } from './server/diagnoseRoute.mjs'
+import { handleRestoreV2Route, handleRestorePushRoute, handleScreenshotServeRoute } from './server/restorePipelineV2.mjs'
 import { extractPlan, isPlatformPrompt } from './server/alphaPlatformBuilder.mjs'
 import { buildPreviewProject, servePreviewBuild } from './server/previewBuild.mjs'
 import { marketplaceHandler, fulfillMarketplaceOrder } from './server/marketplace.mjs'
@@ -10547,6 +10548,17 @@ const server = http.createServer(async (req, res) => {
     return handleScreenshotRoute(req, res)
   }
 
+  // ===== RESTORE V2: Screenshot-based pipeline =====
+  if (req.method === 'GET' && req.url?.startsWith('/api/restore/v2')) {
+    return handleRestoreV2Route(req, res)
+  }
+  if (req.method === 'POST' && req.url === '/api/restore/push') {
+    return handleRestorePushRoute(req, res)
+  }
+  if (req.method === 'GET' && req.url?.startsWith('/api/restore/screenshots/')) {
+    return handleScreenshotServeRoute(req, res)
+  }
+
   // ===== GITHUB DIRECT PUSH: OAuth + API =====
   if (req.method === 'GET' && req.url === '/api/auth/github') {
     return handleGitHubAuth(req, res)
@@ -10658,6 +10670,29 @@ if (!process.env.VERCEL) {
     if (process.env.CEO_WATCHER_ENABLED !== 'true') return
     const users = readJsonFile(usersFile, []).filter(user => user?.id)
     for (const user of users) await scanCeoSignalsForUser(user)
+  })
+
+  // Cleanup stale /tmp/github-* dirs (older than 10 min) every 15 minutes
+  schedule('*/15 * * * *', () => {
+    try {
+      const tmpBase = tmpdir()
+      const entries = fs.readdirSync(tmpBase, { withFileTypes: true })
+      const now = Date.now()
+      let cleaned = 0
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue
+        if (!entry.name.startsWith('github-')) continue
+        const dirPath = path.join(tmpBase, entry.name)
+        try {
+          const stat = fs.statSync(dirPath)
+          if (now - stat.mtimeMs > 10 * 60 * 1000) {
+            fs.rmSync(dirPath, { recursive: true, force: true })
+            cleaned++
+          }
+        } catch {}
+      }
+      if (cleaned) process.stdout.write(`[cleanup] removed ${cleaned} stale github-* tmp dirs\n`)
+    } catch {}
   })
 
   if (process.env.KEEP_ALIVE !== 'false') {
