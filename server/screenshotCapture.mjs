@@ -32,21 +32,25 @@ export async function buildAndScreenshot(repoPath, opts = {}) {
   const screenshotPath = path.join(SCREENSHOT_DIR, `${label}-${restorationId}.png`)
   const startMs = Date.now()
 
+  // sendStep wrapper: caller passes sendStep which already wraps {type:'thought_step',step}
+  // So we send raw step objects via sendEvent (which IS sendStep)
+  const step = (s) => sendEvent(s)
+
   // Step 1: npm install
-  sendEvent({ type: 'thought_step', step: { id: `${label}-install`, label: `Installing deps (${label})...`, icon: 'plan', status: 'active' } })
+  step({ id: `${label}-install`, label: `Installing deps (${label})...`, icon: 'plan', status: 'active' })
   let installOk = false
   try {
     await execFileAsync('npm', ['install', '--prefer-offline', '--no-audit', '--no-fund'], {
       cwd: repoPath, timeout: 120_000, encoding: 'utf8', windowsHide: true,
     })
     installOk = true
-    sendEvent({ type: 'thought_step', step: { id: `${label}-install`, label: `Deps installed (${label})`, icon: 'plan', status: 'done', summary: 'npm install OK' } })
+    step({ id: `${label}-install`, label: `Deps installed (${label})`, icon: 'plan', status: 'done', summary: 'npm install OK' })
   } catch (err) {
-    sendEvent({ type: 'thought_step', step: { id: `${label}-install`, label: `Install failed (${label})`, icon: 'plan', status: 'error', summary: err.message?.slice(0, 200) } })
+    step({ id: `${label}-install`, label: `Install failed (${label})`, icon: 'plan', status: 'error', summary: err.message?.slice(0, 200) })
   }
 
   // Step 2: npm run build (try common build commands)
-  sendEvent({ type: 'thought_step', step: { id: `${label}-build`, label: `Building project (${label})...`, icon: 'test', status: 'active' } })
+  step({ id: `${label}-build`, label: `Building project (${label})...`, icon: 'test', status: 'active' })
   let buildOk = false
   let buildOutput = ''
   const pkg = readPackageJson(repoPath)
@@ -60,22 +64,22 @@ export async function buildAndScreenshot(repoPath, opts = {}) {
       })
       buildOk = true
       buildOutput = result.stdout?.slice(0, 2000) || 'Build OK'
-      sendEvent({ type: 'thought_step', step: { id: `${label}-build`, label: `Build passed (${label})`, icon: 'test', status: 'done', summary: buildCmd.cmd + ' ' + buildCmd.args.join(' ') } })
+      step({ id: `${label}-build`, label: `Build passed (${label})`, icon: 'test', status: 'done', summary: buildCmd.cmd + ' ' + buildCmd.args.join(' ') })
     } catch (err) {
       buildOutput = (err.stdout || '') + '\n' + (err.stderr || '')
       buildOutput = buildOutput.slice(0, 2000)
-      sendEvent({ type: 'thought_step', step: { id: `${label}-build`, label: `Build failed (${label})`, icon: 'test', status: 'error', summary: err.message?.slice(0, 200) } })
+      step({ id: `${label}-build`, label: `Build failed (${label})`, icon: 'test', status: 'error', summary: err.message?.slice(0, 200) })
     }
   } else if (!installOk) {
     buildOutput = 'Skipped: npm install failed'
-    sendEvent({ type: 'thought_step', step: { id: `${label}-build`, label: `Build skipped (${label})`, icon: 'test', status: 'error', summary: 'Deps not installed' } })
+    step({ id: `${label}-build`, label: `Build skipped (${label})`, icon: 'test', status: 'error', summary: 'Deps not installed' })
   } else {
     buildOutput = 'No build command detected in package.json'
-    sendEvent({ type: 'thought_step', step: { id: `${label}-build`, label: `Build skipped (${label})`, icon: 'test', status: 'done', summary: 'No build script' } })
+    step({ id: `${label}-build`, label: `Build skipped (${label})`, icon: 'test', status: 'done', summary: 'No build script' })
   }
 
   // Step 3: Serve and screenshot
-  sendEvent({ type: 'thought_step', step: { id: `${label}-screenshot`, label: `Capturing screenshot (${label})...`, icon: 'test', status: 'active' } })
+  step({ id: `${label}-screenshot`, label: `Capturing screenshot (${label})...`, icon: 'test', status: 'active' })
   let screenshotOk = false
 
   const distDir = findDistDir(repoPath)
@@ -92,7 +96,7 @@ export async function buildAndScreenshot(repoPath, opts = {}) {
         await page.waitForTimeout(2000) // let animations settle
         await page.screenshot({ path: screenshotPath, fullPage: false })
         screenshotOk = true
-        sendEvent({ type: 'thought_step', step: { id: `${label}-screenshot`, label: `Screenshot captured (${label})`, icon: 'test', status: 'done', summary: screenshotPath } })
+        step({ id: `${label}-screenshot`, label: `Screenshot captured (${label})`, icon: 'test', status: 'done', summary: screenshotPath })
       } catch (err) {
         // Try /dashboard as fallback
         try {
@@ -100,21 +104,21 @@ export async function buildAndScreenshot(repoPath, opts = {}) {
           await page.waitForTimeout(1000)
           await page.screenshot({ path: screenshotPath, fullPage: false })
           screenshotOk = true
-          sendEvent({ type: 'thought_step', step: { id: `${label}-screenshot`, label: `Screenshot captured (${label})`, icon: 'test', status: 'done', summary: screenshotPath } })
+          step({ id: `${label}-screenshot`, label: `Screenshot captured (${label})`, icon: 'test', status: 'done', summary: screenshotPath })
         } catch {
-          sendEvent({ type: 'thought_step', step: { id: `${label}-screenshot`, label: `Screenshot failed (${label})`, icon: 'test', status: 'error', summary: err.message?.slice(0, 200) } })
+          step({ id: `${label}-screenshot`, label: `Screenshot failed (${label})`, icon: 'test', status: 'error', summary: err.message?.slice(0, 200) })
         }
       } finally {
         await page.close().catch(() => {})
       }
     } catch (err) {
-      sendEvent({ type: 'thought_step', step: { id: `${label}-screenshot`, label: `Screenshot failed (${label})`, icon: 'test', status: 'error', summary: err.message?.slice(0, 200) } })
+      step({ id: `${label}-screenshot`, label: `Screenshot failed (${label})`, icon: 'test', status: 'error', summary: err.message?.slice(0, 200) })
     } finally {
       if (server) server.close(() => {})
     }
   } else {
     const reason = !chromium ? 'Playwright not available' : !distDir ? 'No dist directory found' : 'Build failed'
-    sendEvent({ type: 'thought_step', step: { id: `${label}-screenshot`, label: `Screenshot skipped (${label})`, icon: 'test', status: 'done', summary: reason } })
+    step({ id: `${label}-screenshot`, label: `Screenshot skipped (${label})`, icon: 'test', status: 'done', summary: reason })
   }
 
   return {

@@ -124,9 +124,10 @@ function isGitHubRepoUrl(url: string): boolean {
 }
 
 function detectRestoreIntent(text: string): 'scan' | 'full' {
+  // Default to full (scan + fix) — user pasting a URL wants it fixed, not just scanned
   const lower = text.toLowerCase()
-  if (/\b(fix|repair|restore|heal|resurrect|apply|commit|push|deploy|merge)\b/i.test(lower)) return 'full'
-  return 'scan'
+  if (/\b(scan|audit|check|analyze|inspect|diagnose)\b/i.test(lower) && !/\b(fix|repair|restore|heal|resurrect|apply|commit|push|deploy|merge)\b/i.test(lower)) return 'scan'
+  return 'full'
 }
 
 function uid() {

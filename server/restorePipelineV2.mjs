@@ -108,12 +108,11 @@ async function runRestoreV2(targetUrl, mode, sendEvent, sendStep, sendCard, res,
     sendStep({ id: 'clone', label: `Cloning ${repoInfo.fullName}...`, icon: 'clock', status: 'active' })
     try {
       fs.mkdirSync(githubDir, { recursive: true })
-      const git = simpleGit(githubDir)
       const token = getTokenFromCookie(req)
       const authUrl = token
         ? `https://${token}@github.com/${repoInfo.fullName}.git`
         : `https://github.com/${repoInfo.fullName}.git`
-      await git.clone(authUrl, '.', { depth: 20 })
+      await execFileAsync('git', ['clone', '--depth', '20', authUrl, '.'], { cwd: githubDir, encoding: 'utf8', timeout: 60000, windowsHide: true })
       isRepoClone = true
       try {
         const branchRes = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: githubDir, encoding: 'utf8', timeout: 5000, windowsHide: true })

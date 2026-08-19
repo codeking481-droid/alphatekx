@@ -31,14 +31,19 @@ import {
  * Delegates to alpha-core/groq-router (REASONING role).
  */
 async function groqChat(messages, model) {
+  if (!process.env.GROQ_API_KEY) {
+    return { improvements: [], summary: 'AI skipped (no API key)' }
+  }
   try {
-    // Map model names to alpha-core roles
     const role = (model === 'compound-beta-mini' || model === 'compound-beta') ? 'SCANNER' : 'REASONING'
-    const result = await alphaChat(role, messages)
+    const result = await Promise.race([
+      alphaChat(role, messages),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('AI timeout')), 15000)),
+    ])
     return result
   } catch (err) {
     console.error(`[RESSTREAM] AI error (${model}):`, err.message)
-    return { content: `LLM error: ${err.message}` }
+    return { improvements: [], summary: `AI skipped: ${err.message}` }
   }
 }
 
@@ -47,9 +52,15 @@ async function groqChat(messages, model) {
  * Delegates to alpha-core/groq-router (REASONING role).
  */
 async function groqText(messages, model) {
+  if (!process.env.GROQ_API_KEY) {
+    return 'AI skipped (no API key)'
+  }
   try {
     const role = (model === 'compound-beta-mini' || model === 'compound-beta') ? 'SCANNER' : 'REASONING'
-    return await alphaText(role, messages)
+    return await Promise.race([
+      alphaText(role, messages),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('AI timeout')), 15000)),
+    ])
   } catch (err) {
     console.error(`[RESSTREAM] AI text error:`, err.message)
     return `LLM error: ${err.message}`
@@ -263,7 +274,7 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
           networkFailures.push({ url: req.url(), error: req.failure()?.errorText || 'failed' })
         })
 
-        const response = await page.goto(targetUrl, { waitUntil: 'networkidle', timeout: 30000 })
+        const response = await page.goto(targetUrl, { waitUntil: 'networkidle', timeout: 15000 })
         fetchStatus = response?.status() || 0
         sendCard({ type: 'log', card: 'scanning', text: `> Status: ${fetchStatus} | Page loaded (network idle)` })
         sendCard({ type: 'alpha_event', event: { type: 'PAGE_NAVIGATED', data: { url: targetUrl }, timestamp: new Date().toISOString() } })
@@ -356,24 +367,25 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
           sendCard({ type: 'log', card: 'scanning', text: `> Performance measurement skipped` })
         }
 
-        // Probe sensitive paths
+        // Probe sensitive paths (fast: 4s timeout each, parallel)
         const probePaths = ['/wp-admin', '/.env', '/wp-config.php.bak', '/.git/config', '/server-status']
-        for (let i = 0; i < probePaths.length; i++) {
-          sendCard({ type: 'log', card: 'scanning', text: `> Checking ${probePaths[i]}...` })
+        const probeResults = await Promise.allSettled(probePaths.map(async (probePath, i) => {
+          sendCard({ type: 'log', card: 'scanning', text: `> Checking ${probePath}...` })
+          const probePage = await context.newPage()
           try {
-            const probePage = await context.newPage()
-            const probeRes = await probePage.goto(new URL(probePaths[i], targetUrl).toString(), { waitUntil: 'commit', timeout: 8000 })
+            const probeRes = await probePage.goto(new URL(probePath, targetUrl).toString(), { waitUntil: 'commit', timeout: 4000 })
             const probeStatus = probeRes?.status() || 0
             const probeFile = `0${i + 2}-probe.jpg`
             await probePage.screenshot({ path: path.join(screenshotDir, probeFile), type: 'jpeg', quality: 60 })
-            screenshots.push({ filename: probeFile, label: `${probePaths[i]} → HTTP ${probeStatus}` })
-            sendCard({ type: 'screenshot', scanId, filename: probeFile, label: `${probePaths[i]} → HTTP ${probeStatus}` })
-            sendCard({ type: 'log', card: 'scanning', text: `> ${probePaths[i]}: HTTP ${probeStatus}` })
-            await probePage.close()
+            screenshots.push({ filename: probeFile, label: `${probePath} → HTTP ${probeStatus}` })
+            sendCard({ type: 'screenshot', scanId, filename: probeFile, label: `${probePath} → HTTP ${probeStatus}` })
+            sendCard({ type: 'log', card: 'scanning', text: `> ${probePath}: HTTP ${probeStatus}` })
           } catch {
-            sendCard({ type: 'log', card: 'scanning', text: `> ${probePaths[i]}: connection refused` })
+            sendCard({ type: 'log', card: 'scanning', text: `> ${probePath}: connection refused` })
+          } finally {
+            await probePage.close().catch(() => {})
           }
-        }
+        }))
 
         // Screenshot: Full page
         const ssFull = `${screenshots.length + 1}-fullpage.jpg`
