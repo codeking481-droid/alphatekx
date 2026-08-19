@@ -9,7 +9,19 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { Shield, CheckCircle2, AlertTriangle, ExternalLink, QrCode, Award, Lock } from 'lucide-react'
-import type { SecurityFinding } from '../../alpha-core/security'
+
+type SecurityFinding = {
+  type: 'secret' | 'cve' | 'xss' | 'backdoor'
+  label: string
+  file: string
+  line: number
+  risk: 'high' | 'medium' | 'low'
+  raw?: string
+  cve?: string
+  package?: string
+  installed?: string
+  fixed?: string
+}
 
 export type GoldCardProps = {
   tier?: 'free' | 'silver' | 'gold'

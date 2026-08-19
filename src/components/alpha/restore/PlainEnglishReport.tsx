@@ -8,7 +8,19 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { AlertTriangle, CheckCircle2, MessageCircle, ArrowLeft } from 'lucide-react'
-import type { SecurityFinding } from '../../alpha-core/security'
+
+type SecurityFinding = {
+  type: 'secret' | 'cve' | 'xss' | 'backdoor'
+  label: string
+  file: string
+  line: number
+  risk: 'high' | 'medium' | 'low'
+  raw?: string
+  cve?: string
+  package?: string
+  installed?: string
+  fixed?: string
+}
 
 type Props = {
   findings: SecurityFinding[]
