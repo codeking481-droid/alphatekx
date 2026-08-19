@@ -1030,10 +1030,10 @@ function ChatContent() {
                   target.style.height = Math.min(target.scrollHeight, 100) + 'px'
                 }}
               />
-              {!input && !attachedFile && <AnimatedPlaceholder />}
+              {!input && attachedFiles.length === 0 && <AnimatedPlaceholder />}
               <button
                 onClick={() => void handleSend()}
-                disabled={(!input.trim() && !attachedFile) || isGenerating || uploading}
+                disabled={(!input.trim() && attachedFiles.length === 0) || isGenerating || uploading}
                 className="mb-2 mr-2 grid size-8 shrink-0 place-items-center rounded-xl bg-[#D6FF00] text-black transition hover:bg-[#C2E600] disabled:opacity-20 disabled:cursor-not-allowed"
               >
                 {uploading ? <Loader2 size={13} className="animate-spin" /> : isGenerating ? <Square size={13} /> : <Send size={13} />}
