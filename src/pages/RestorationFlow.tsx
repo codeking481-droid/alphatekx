@@ -8,18 +8,22 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  Code,
+  Copy,
+  Download,
   ExternalLink,
   FileText,
   GitPullRequest,
   Github,
+  Globe,
   Image,
   Link,
   Loader2,
   Lock,
   Radar,
   Scan,
+  Send,
   ShieldCheck,
-  Shield,
   Sparkles,
   ToggleLeft,
   ToggleRight,
@@ -30,8 +34,6 @@ import { useAuth } from '../lib/auth'
 import { getCredits, hydrateCredits, subscribeCredits } from '../lib/creditStore'
 import BeforeAfter from '../components/scan/BeforeAfter'
 import CreditsExhaustedModal from '../components/CreditsExhaustedModal'
-
-// --- Types ---
 
 type Severity = 'critical' | 'high' | 'medium' | 'low' | 'info'
 
@@ -92,19 +94,9 @@ type PRResult = {
   error?: boolean
 }
 
-type Step =
-  | 'input'
-  | 'scanning'
-  | 'results'
-  | 'generating'
-  | 'preview'
-  | 'approval'
-  | 'applying'
-  | 'github-setup'
-  | 'pushing'
-  | 'complete'
+type DeliveryMethod = 'github' | 'zip' | 'code' | 'deploy'
 
-// --- Constants ---
+type Step = 'input' | 'scanning' | 'results' | 'generating' | 'preview' | 'delivery' | 'complete'
 
 const SEVERITY_TONE: Record<Severity, string> = {
   critical: 'bg-rose-500/15 text-rose-300 ring-1 ring-rose-500/20',
@@ -144,15 +136,18 @@ const STEP_META: { key: Step; label: string }[] = [
   { key: 'results', label: 'Results' },
   { key: 'generating', label: 'Generating' },
   { key: 'preview', label: 'Preview' },
-  { key: 'approval', label: 'Approve' },
-  { key: 'applying', label: 'Applying' },
-  { key: 'github-setup', label: 'GitHub' },
-  { key: 'pushing', label: 'Push' },
+  { key: 'delivery', label: 'Deliver' },
   { key: 'complete', label: 'Done' },
 ]
 
 const STEP_ORDER: Step[] = STEP_META.map((s) => s.key)
-// --- Component ---
+
+const DELIVERY_OPTIONS: { id: DeliveryMethod; label: string; description: string; icon: typeof Github; gradient: string }[] = [
+  { id: 'github', label: 'GitHub Pull Request', description: 'Push fixes as a PR to your repo for review and merge', icon: GitPullRequest, gradient: 'from-violet-500 to-indigo-500' },
+  { id: 'zip', label: 'Download ZIP', description: 'Get a ZIP archive of all fixed files', icon: Download, gradient: 'from-blue-500 to-cyan-500' },
+  { id: 'code', label: 'Copy Fixed Code', description: 'Copy the fixed HTML to your clipboard', icon: Code, gradient: 'from-emerald-500 to-teal-500' },
+  { id: 'deploy', label: 'Deploy Live', description: 'Publish fixed site to a live preview URL', icon: Send, gradient: 'from-amber-500 to-orange-500' },
+]
 
 export default function RestorationFlow() {
   const { user, loading: authLoading } = useAuth()
@@ -171,7 +166,6 @@ export default function RestorationFlow() {
   const [error, setError] = useState<string | null>(null)
   const [isScanning, setIsScanning] = useState(false)
   const [isFixing, setIsFixing] = useState(false)
-  const [isApplying, setIsApplying] = useState(false)
   const [credits, setCreditsState] = useState(() => getCredits() || 0)
   const [showCreditsModal, setShowCreditsModal] = useState(false)
   const [expandedFinding, setExpandedFinding] = useState<string | null>(null)
@@ -182,12 +176,17 @@ export default function RestorationFlow() {
   const [ghUser, setGhUser] = useState<{ login: string; avatar_url: string } | null>(null)
   const [ghRepos, setGhRepos] = useState<GitHubRepo[]>([])
   const [selectedRepo, setSelectedRepo] = useState('')
-  const [selectedBranch, setSelectedBranch] = useState('')
   const [repoDropdownOpen, setRepoDropdownOpen] = useState(false)
   const [loadingRepos, setLoadingRepos] = useState(false)
   const [repoConfirmed, setRepoConfirmed] = useState(false)
   const [prResult, setPrResult] = useState<PRResult | null>(null)
   const [prLogs, setPrLogs] = useState<Array<{ text: string; step?: number; total?: number }>>([])
+
+  const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod | null>(null)
+  const [isDelivering, setIsDelivering] = useState(false)
+  const [deliveryResult, setDeliveryResult] = useState<{ url?: string; message?: string } | null>(null)
+  const [deployResult, setDeployResult] = useState<{ slug?: string; deployUrl?: string } | null>(null)
+  const [copiedToClipboard, setCopiedToClipboard] = useState(false)
 
   useEffect(() => {
     let unsub: (() => void) | null = null
@@ -217,7 +216,27 @@ export default function RestorationFlow() {
     return 'text-rose-300'
   }, [score])
 
-  // --- STEP 1+2: SCAN ---
+  const fixedHtml = useMemo(() => {
+    if (!fixReport || !fixReport.fixes) return ''
+    let html = `<html><head><meta charset="utf-8"><title>${scannedUrl || 'Restored Site'}</title></head><body>`
+    for (const fix of fixReport.fixes) {
+      if (!enabledFixes.has(fix.findingId)) continue
+      html += `<div data-finding="${fix.findingId}" data-severity="${fix.severity}">`
+      html += `<!-- Fix: ${fix.description} -->`
+      html += `<pre style="white-space:pre-wrap;font-family:monospace;font-size:13px;padding:16px;background:#0d1117;color:#c9d1d9;border-radius:8px;border:1px solid #30363d;overflow-x:auto">`
+      html += `<strong style="color:#58a6ff">${fix.findingType.toUpperCase()}</strong> - <span style="color:#8b949e">${fix.severity}</span>\n\n`
+      html += `<span style="color:#ff7b72">BEFORE:</span>\n${escapeHtml(fix.original)}\n\n`
+      html += `<span style="color:#7ee787">AFTER:</span>\n${escapeHtml(fix.fixed)}`
+      html += `</pre></div>\n`
+    }
+    html += `</body></html>`
+    return html
+  }, [fixReport, enabledFixes, scannedUrl])
+
+  function escapeHtml(str: string) {
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  }
+
   const handleScan = async () => {
     if (!url.trim()) return
     const activeEmail = String(user?.email || '').trim().toLowerCase()
@@ -317,7 +336,7 @@ export default function RestorationFlow() {
       setError(e instanceof Error ? e.message : 'Scan failed'); setStep('input')
     } finally { setIsScanning(false); setProgress(0); abortRef.current = null }
   }
-  // --- STEP 3: GENERATE FIXES ---
+
   const handleGenerateFixes = async () => {
     setIsFixing(true); setError(null); setFixReport(null); setStep('generating')
     try {
@@ -341,28 +360,10 @@ export default function RestorationFlow() {
     finally { setIsFixing(false) }
   }
 
-  // --- STEP 4+5: PREVIEW + APPROVAL ---
-  const handleProceedToApproval = () => { setStep('approval') }
-  const handleApprove = () => { setStep('applying'); handleApplyFixes() }
-  const handleReject = () => { setStep('results'); setFixReport(null) }
+  const handleProceedToDelivery = () => { setStep('delivery') }
+  const handleBackToPreview = () => { setStep('preview') }
 
-  // --- STEP 6: APPLY FIXES ---
-  const handleApplyFixes = async () => {
-    setIsApplying(true); setError(null)
-    try {
-      const res = await fetch('/api/fix/apply', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fixId: fixReport?.fixId, scanId, enabledFixes: Array.from(enabledFixes) }),
-      })
-      const data = await res.json()
-      if (!res.ok) { setError(data.error || 'Apply failed'); setStep('approval'); return }
-      setStep('github-setup'); checkGitHubConnection()
-    } catch (e) { setError(e instanceof Error ? e.message : 'Apply failed'); setStep('approval') }
-    finally { setIsApplying(false) }
-  }
-
-  // --- STEP 7: GITHUB CONNECTION ---
-  const checkGitHubConnection = async () => {
+  const checkGitHubConnection = useCallback(async () => {
     try {
       const res = await fetch('/api/github/status', { credentials: 'include' })
       const data = await res.json()
@@ -370,9 +371,7 @@ export default function RestorationFlow() {
       if (data.user) setGhUser(data.user)
       if (data.connected) fetchRepos()
     } catch { setGhConnected(false) }
-  }
-
-  const handleConnectGitHub = () => { window.location.href = '/api/auth/github' }
+  }, [])
 
   const fetchRepos = useCallback(async () => {
     setLoadingRepos(true)
@@ -383,19 +382,27 @@ export default function RestorationFlow() {
     finally { setLoadingRepos(false) }
   }, [])
 
+  useEffect(() => {
+    if (step === 'delivery' && deliveryMethod === 'github' && ghConnected === null) {
+      checkGitHubConnection()
+    }
+  }, [step, deliveryMethod, ghConnected, checkGitHubConnection])
+
+  const handleSelectDelivery = (method: DeliveryMethod) => {
+    setDeliveryMethod(method); setIsDelivering(false); setDeliveryResult(null); setError(null)
+    setCopiedToClipboard(false); setDeployResult(null)
+    setPrResult(null); setPrLogs([]); setSelectedRepo(''); setRepoConfirmed(false)
+  }
+
+  const handleConnectGitHub = () => { window.location.href = '/api/auth/github' }
+
   const handleSelectRepo = (repo: GitHubRepo) => {
-    setSelectedRepo(repo.full_name); setSelectedBranch(repo.default_branch)
-    setRepoDropdownOpen(false); setRepoConfirmed(false)
+    setSelectedRepo(repo.full_name); setRepoDropdownOpen(false); setRepoConfirmed(false)
   }
 
-  const handleContinueToPush = () => {
-    if (selectedRepo && repoConfirmed) { setStep('pushing'); handleCreatePR() }
-  }
-
-  // --- STEP 8: PUSH TO GITHUB ---
-  const handleCreatePR = async () => {
+  const handleGitHubPush = async () => {
     if (!selectedRepo || !fixReport) return
-    setPrLogs([]); setPrResult(null); setError(null)
+    setIsDelivering(true); setPrLogs([]); setPrResult(null); setError(null)
 
     try {
       const res = await fetch('/api/github/create-pr', {
@@ -404,7 +411,7 @@ export default function RestorationFlow() {
       })
       if (!res.ok) {
         const errData = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
-        setError(errData.error || `HTTP ${res.status}`); return
+        setError(errData.error || `HTTP ${res.status}`); setIsDelivering(false); return
       }
       const reader = res.body?.getReader()
       if (!reader) throw new Error('No response body')
@@ -420,26 +427,65 @@ export default function RestorationFlow() {
               const event = JSON.parse(line.slice(6))
               if (event.type === 'log') setPrLogs((p) => [...p, { text: event.text, step: event.step, total: event.total }])
               else if (event.type === 'error') setError(event.message)
-              else if (event.type === 'done') { setPrResult(event.data); setStep('complete') }
+              else if (event.type === 'done') { setPrResult(event.data); setDeliveryResult({ message: 'Pull request created successfully' }); setIsDelivering(false); setStep('complete') }
             } catch {}
           }
         }
       }
-    } catch (e) { setError(e instanceof Error ? e.message : 'PR creation failed') }
+    } catch (e) { setError(e instanceof Error ? e.message : 'PR creation failed'); setIsDelivering(false) }
+  }
+
+  const handleDownloadZip = async () => {
+    setIsDelivering(true); setError(null)
+    try {
+      const res = await fetch('/api/fix/apply', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fixReport, scanId, enabledFixes: Array.from(enabledFixes), html: fixedHtml }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setError(data.error || 'Failed to prepare download'); setIsDelivering(false); return }
+
+      const downloadUrl = `/api/download/restored/${data.scanId || scanId}`
+      const a = document.createElement('a'); a.href = downloadUrl; a.download = `restored-${scanId || 'site'}.zip`; document.body.appendChild(a); a.click(); document.body.removeChild(a)
+      setDeliveryResult({ message: 'ZIP download started' }); setIsDelivering(false); setStep('complete')
+    } catch (e) { setError(e instanceof Error ? e.message : 'Download failed'); setIsDelivering(false) }
+  }
+
+  const handleCopyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(fixedHtml || 'No fixed code available')
+      setCopiedToClipboard(true); setDeliveryResult({ message: 'Fixed code copied to clipboard' }); setStep('complete')
+    } catch { setError('Failed to copy to clipboard') }
+  }
+
+  const handleDeployLive = async () => {
+    setIsDelivering(true); setError(null)
+    try {
+      const res = await fetch('/api/deploy', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ html: fixedHtml, scanId, originalUrl: scannedUrl || url }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setError(data.error || 'Deploy failed'); setIsDelivering(false); return }
+      setDeployResult({ slug: data.slug, deployUrl: data.deployUrl })
+      setDeliveryResult({ url: data.deployUrl, message: 'Site deployed successfully' })
+      setIsDelivering(false); setStep('complete')
+    } catch (e) { setError(e instanceof Error ? e.message : 'Deploy failed'); setIsDelivering(false) }
   }
 
   const handleReset = () => {
     setStep('input'); setUrl(''); setScanId(null); setFindings([]); setFixReport(null)
     setEnabledFixes(new Set()); setScore(null); setRisk(null); setScannedUrl('')
-    setError(null); setProgress(0); setStatus(''); 
-    setPrResult(null); setPrLogs([]); setSelectedRepo(''); setSelectedBranch('')
-    setRepoConfirmed(false); setGhConnected(null); setGhUser(null); setGhRepos([])
+    setError(null); setProgress(0); setStatus('')
+    setPrResult(null); setPrLogs([]); setSelectedRepo(''); setRepoConfirmed(false)
+    setGhConnected(null); setGhUser(null); setGhRepos([])
+    setDeliveryMethod(null); setIsDelivering(false); setDeliveryResult(null); setDeployResult(null)
+    setCopiedToClipboard(false)
   }
 
-  // --- Render ---
   return (
     <main className="w-full bg-[#0A0A14] px-4 pb-12 pt-6 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1400px]">        {/* --- Step indicator --- */}
+      <div className="mx-auto max-w-[1400px]">
         <nav className="mb-8 flex items-center gap-1 overflow-x-auto pb-2">
           {STEP_META.map((s, i) => {
             const active = step === s.key
@@ -461,14 +507,13 @@ export default function RestorationFlow() {
           })}
         </nav>
 
-        {/* ===== STEP: INPUT ===== */}
         {step === 'input' && (
           <section className="rounded-[28px] border border-violet-300/20 bg-[radial-gradient(circle_at_top,_rgba(123,92,255,0.38),_rgba(17,19,31,0.9)_36%,_rgba(2,6,14,1)_72%)] p-5 shadow-[0_32px_120px_rgba(76,29,149,0.28)] sm:p-8">
             <header className="mb-6">
               <p className="text-[10px] font-black uppercase tracking-[0.22em] text-violet-300">Content Restoration</p>
-              <h1 className="mt-2 text-3xl font-black tracking-[-0.06em] text-white sm:text-4xl">Scan - Fix - Apply - Push</h1>
+              <h1 className="mt-2 text-3xl font-black tracking-[-0.06em] text-white sm:text-4xl">Scan - Fix - Deliver</h1>
               <p className="mt-2 max-w-xl text-sm text-slate-400">
-                Enter a live URL. We scan for broken links, leaked secrets, bad code, performance issues, and more - then generate one-click fixes.
+                Enter a live URL. We scan for broken links, leaked secrets, bad code, performance issues, and more — then generate one-click fixes and deliver them your way.
               </p>
             </header>
             <div className="flex flex-col gap-3 rounded-[20px] border border-violet-300/15 bg-[#111522]/70 p-3 sm:flex-row sm:items-center">
@@ -483,13 +528,12 @@ export default function RestorationFlow() {
             </div>
             <div className="mt-4 flex items-center gap-3 text-xs text-slate-500">
               <span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-1 font-black text-emerald-300">{credits} Credits</span>
-              <span>1 credit per scan - fixes are free</span>
+              <span>1 credit per scan — fixes are free</span>
             </div>
             {error && <div className="mt-4 rounded-2xl border border-rose-400/15 bg-rose-500/5 p-3 text-sm text-rose-100">{error}</div>}
           </section>
         )}
 
-        {/* ===== STEP: SCANNING ===== */}
         {step === 'scanning' && (
           <section className="rounded-[28px] border border-violet-300/20 bg-[#0b0d14]/80 p-5 shadow-[0_32px_120px_rgba(76,29,149,0.28)] sm:p-8">
             <div className="mb-6 flex items-center justify-between">
@@ -526,7 +570,7 @@ export default function RestorationFlow() {
             {error && <div className="mt-4 rounded-2xl border border-rose-400/15 bg-rose-500/5 p-3 text-sm text-rose-100">{error}</div>}
           </section>
         )}
-        {/* ===== STEP: RESULTS ===== */}
+
         {step === 'results' && (
           <section className="rounded-[28px] border border-violet-300/20 bg-[#0b0d14]/80 p-5 shadow-[0_32px_120px_rgba(76,29,149,0.28)] sm:p-8">
             <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -602,7 +646,7 @@ export default function RestorationFlow() {
             {error && <div className="mt-4 rounded-2xl border border-rose-400/15 bg-rose-500/5 p-3 text-sm text-rose-100">{error}</div>}
           </section>
         )}
-        {/* ===== STEP: GENERATING ===== */}
+
         {step === 'generating' && (
           <section className="rounded-[28px] border border-violet-300/20 bg-[#0b0d14]/80 p-8 text-center shadow-[0_32px_120px_rgba(76,29,149,0.28)]">
             <Loader2 size={48} className="mx-auto mb-4 animate-spin text-violet-400" />
@@ -621,7 +665,6 @@ export default function RestorationFlow() {
           </section>
         )}
 
-        {/* ===== STEP: PREVIEW (Before/After) ===== */}
         {step === 'preview' && fixReport && (
           <section className="rounded-[28px] border border-violet-300/20 bg-[#0b0d14]/80 p-5 shadow-[0_32px_120px_rgba(76,29,149,0.28)] sm:p-8">
             <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -688,270 +731,274 @@ export default function RestorationFlow() {
             </div>
 
             <div className="mt-6 flex items-center gap-3">
-              <button type="button" onClick={handleProceedToApproval} disabled={fixableCount === 0}
+              <button type="button" onClick={handleProceedToDelivery} disabled={fixableCount === 0}
                 className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-violet-500 to-indigo-500 px-6 py-3 text-sm font-black text-white shadow-[0_18px_38px_rgba(109,40,217,0.4)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50">
                 <ArrowRight size={16} />
-                Next: Review &amp; Approve
+                Next: Choose Delivery
               </button>
-              <span className="text-xs text-slate-500">{fixableCount} fix{fixableCount !== 1 ? 'es' : ''} selected for approval</span>
-            </div>
-            {error && <div className="mt-4 rounded-2xl border border-rose-400/15 bg-rose-500/5 p-3 text-sm text-rose-100">{error}</div>}
-          </section>
-        )}
-        {/* ===== STEP: APPROVAL (User Confirm) ===== */}
-        {step === 'approval' && fixReport && (
-          <section className="rounded-[28px] border border-violet-300/20 bg-[radial-gradient(circle_at_top,_rgba(251,191,36,0.15),_rgba(17,19,31,0.9)_36%,_rgba(2,6,14,1)_72%)] p-5 shadow-[0_32px_120px_rgba(251,191,36,0.12)] sm:p-8">
-            <div className="mx-auto mb-6 grid size-20 place-items-center rounded-full border border-amber-400/30 bg-amber-500/10 text-amber-300">
-              <AlertTriangle size={40} />
-            </div>
-            <h2 className="text-center text-3xl font-black text-white">Confirm Fixes</h2>
-            <p className="mt-3 text-center text-sm text-slate-400">
-              You are about to apply <span className="font-black text-white">{fixableCount} fix{fixableCount !== 1 ? 'es' : ''}</span> to <span className="font-mono text-white">{scannedUrl || url}</span>.
-            </p>
-
-            <div className="mx-auto mt-6 max-w-lg space-y-3">
-              <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
-                <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Summary</p>
-                <p className="mt-1 text-sm text-slate-300">{fixReport.summary}</p>
-              </div>
-
-              <div className="grid grid-cols-3 gap-2">
-                <div className="rounded-xl border border-rose-400/15 bg-rose-500/10 p-3 text-center">
-                  <div className="text-lg font-black text-rose-300">{fixReport.fixes.filter((f) => (f.severity === 'critical' || f.severity === 'high') && enabledFixes.has(f.findingId)).length}</div>
-                  <div className="text-[10px] font-black uppercase tracking-wider text-rose-300/70">Critical/High</div>
-                </div>
-                <div className="rounded-xl border border-amber-400/15 bg-amber-500/10 p-3 text-center">
-                  <div className="text-lg font-black text-amber-300">{fixReport.fixes.filter((f) => f.severity === 'medium' && enabledFixes.has(f.findingId)).length}</div>
-                  <div className="text-[10px] font-black uppercase tracking-wider text-amber-300/70">Medium</div>
-                </div>
-                <div className="rounded-xl border border-sky-400/15 bg-sky-500/10 p-3 text-center">
-                  <div className="text-lg font-black text-sky-300">{fixReport.fixes.filter((f) => (f.severity === 'low' || f.severity === 'info') && enabledFixes.has(f.findingId)).length}</div>
-                  <div className="text-[10px] font-black uppercase tracking-wider text-sky-300/70">Low/Info</div>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-amber-400/15 bg-amber-500/5 p-4 text-left">
-                <div className="flex items-start gap-2">
-                  <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-300" />
-                  <div>
-                    <p className="text-sm font-black text-amber-200">What happens next?</p>
-                    <p className="mt-1 text-xs text-amber-100/70">
-                      AlphaTekx will apply the selected fixes. You will then connect GitHub and create a Pull Request with all changes.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-              <button type="button" onClick={handleApprove} disabled={isApplying || fixableCount === 0}
-                className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 px-8 py-3.5 text-sm font-black text-white shadow-[0_18px_38px_rgba(16,185,129,0.35)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50">
-                {isApplying ? <Loader2 size={16} className="animate-spin" /> : <BadgeCheck size={16} />}
-                {isApplying ? 'Applying...' : `Approve & Apply ${fixableCount} Fix${fixableCount !== 1 ? 'es' : ''}`}
-              </button>
-              <button type="button" onClick={handleReject}
-                className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-6 py-3 text-sm font-black text-slate-400 transition hover:text-white">
-                Reject - Go Back
-              </button>
+              <span className="text-xs text-slate-500">{fixableCount} fix{fixableCount !== 1 ? 'es' : ''} selected</span>
             </div>
             {error && <div className="mt-4 rounded-2xl border border-rose-400/15 bg-rose-500/5 p-3 text-sm text-rose-100">{error}</div>}
           </section>
         )}
 
-        {/* ===== STEP: APPLYING ===== */}
-        {step === 'applying' && (
-          <section className="rounded-[28px] border border-violet-300/20 bg-[#0b0d14]/80 p-8 text-center shadow-[0_32px_120px_rgba(76,29,149,0.28)]">
-            <Loader2 size={48} className="mx-auto mb-4 animate-spin text-emerald-400" />
-            <h2 className="text-2xl font-black text-white">Applying Fixes</h2>
-            <p className="mt-2 text-sm text-slate-400">Applying {fixableCount} fix{fixableCount !== 1 ? 'es' : ''} to your site with UTF-8 encoding...</p>
-            <div className="mx-auto mt-6 max-w-md space-y-2">
-              {['Validating file encoding (UTF-8)', 'Removing BOM markers', 'Applying code replacements', 'Validating HTML output'].map((msg, i) => (
-                <div key={i} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3">
-                  <span className="grid size-6 shrink-0 place-items-center rounded-full bg-emerald-500/15 text-[10px] font-black text-emerald-300">{i + 1}</span>
-                  <p className="text-xs text-slate-300">{msg}</p>
-                  <CheckCircle2 size={14} className="ml-auto text-emerald-400" />
-                </div>
-              ))}
-            </div>
-            {error && <div className="mt-4 rounded-2xl border border-rose-400/15 bg-rose-500/5 p-3 text-sm text-rose-100">{error}</div>}
-          </section>
-        )}
-        {/* ===== STEP: GITHUB SETUP (Connect + Auth + Select Repo) ===== */}
-        {step === 'github-setup' && (
+        {step === 'delivery' && (
           <section className="rounded-[28px] border border-violet-300/20 bg-[#0b0d14]/80 p-5 shadow-[0_32px_120px_rgba(76,29,149,0.28)] sm:p-8">
-            <header className="mb-6">
-              <p className="text-[10px] font-black uppercase tracking-[0.22em] text-violet-300">Step 7 - GitHub Connection</p>
-              <h2 className="mt-2 text-2xl font-black text-white">Connect GitHub &amp; Select Repository</h2>
-              <p className="mt-1 text-sm text-slate-400">Connect your GitHub account and select the repo containing your website.</p>
+            <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-violet-300">Step 5 — Choose Delivery</p>
+                <h2 className="mt-2 text-2xl font-black text-white">How would you like to receive your fixes?</h2>
+                <p className="mt-1 text-sm text-slate-400">{fixableCount} fix{fixableCount !== 1 ? 'es' : ''} ready to deliver for <span className="font-mono text-white">{scannedUrl || url}</span></p>
+              </div>
+              <button type="button" onClick={handleBackToPreview} className="rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-xs font-black text-slate-400 transition hover:text-white">Back</button>
             </header>
 
-            {/* Not connected */}
-            {ghConnected === false && (
-              <div className="text-center">
-                <div className="mx-auto mb-4 grid size-16 place-items-center rounded-full border border-violet-400/30 bg-violet-500/10 text-violet-300">
-                  <Github size={28} />
-                </div>
-                <h3 className="text-xl font-black text-white">Connect Your GitHub Account</h3>
-                <p className="mt-2 text-sm text-slate-400">Sign in with the GitHub account that hosts your website repository.</p>
-
-                <div className="mx-auto mt-4 max-w-md rounded-2xl border border-amber-400/15 bg-amber-500/5 p-4 text-left">
-                  <div className="flex items-start gap-2">
-                    <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-300" />
-                    <div>
-                      <p className="text-sm font-black text-amber-200">Important</p>
-                      <p className="mt-1 text-xs text-amber-100/70">
-                        Make sure this is the GitHub account that holds your actual website code. We will create a Pull Request - we will NOT push directly to main.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <button onClick={handleConnectGitHub}
-                  className="mx-auto mt-6 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-violet-500 to-indigo-500 px-6 py-3 text-sm font-black text-white shadow-[0_18px_38px_rgba(109,40,217,0.4)] transition hover:brightness-110">
-                  <Github size={16} /> Connect GitHub Account
-                </button>
-
-                <div className="mt-4 flex items-center justify-center gap-3">
-                  <button type="button" onClick={() => setStep('applying')}
-                    className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-xs font-black text-slate-400 transition hover:text-white">Back</button>
-                </div>
+            {!deliveryMethod && (
+              <div className="grid gap-4 sm:grid-cols-2">
+                {DELIVERY_OPTIONS.map((opt) => {
+                  const Icon = opt.icon
+                  return (
+                    <button key={opt.id} onClick={() => handleSelectDelivery(opt.id)}
+                      className="group rounded-2xl border border-white/10 bg-white/[0.02] p-6 text-left transition hover:border-violet-400/30 hover:bg-violet-500/5">
+                      <div className={`mb-4 grid size-12 place-items-center rounded-xl bg-gradient-to-br ${opt.gradient} text-white shadow-lg`}>
+                        <Icon size={22} />
+                      </div>
+                      <h3 className="text-lg font-black text-white group-hover:text-violet-100">{opt.label}</h3>
+                      <p className="mt-1 text-sm text-slate-400">{opt.description}</p>
+                      <div className="mt-4 flex items-center gap-1 text-xs font-black text-violet-300">
+                        Select <ArrowRight size={12} />
+                      </div>
+                    </button>
+                  )
+                })}
               </div>
             )}
 
-            {/* Connected - loading repos */}
-            {ghConnected === null && (
-              <div className="flex items-center justify-center gap-3 py-8">
-                <Loader2 size={20} className="animate-spin text-violet-400" />
-                <p className="text-sm text-slate-400">Checking GitHub connection...</p>
-              </div>
-            )}
+            {deliveryMethod === 'github' && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3">
+                  <GitPullRequest size={18} className="text-violet-400" />
+                  <span className="text-sm font-black text-white">GitHub Pull Request</span>
+                  <button onClick={() => setDeliveryMethod(null)} className="ml-auto text-xs text-slate-500 hover:text-white">Change</button>
+                </div>
 
-            {/* Connected - select repo */}
-            {ghConnected === true && (
-              <div>
-                {ghUser && (
-                  <div className="mb-4 flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3">
-                    {ghUser.avatar_url && <img src={ghUser.avatar_url} alt="" className="size-8 rounded-full" />}
-                    <div className="flex-1">
-                      <p className="text-sm font-black text-white">{ghUser.login}</p>
-                      <p className="text-[11px] text-slate-500">GitHub account connected</p>
+                {ghConnected === false && (
+                  <div className="text-center">
+                    <div className="mx-auto mb-4 grid size-16 place-items-center rounded-full border border-violet-400/30 bg-violet-500/10 text-violet-300">
+                      <Github size={28} />
                     </div>
-                    <CheckCircle2 size={16} className="text-emerald-400" />
+                    <h3 className="text-xl font-black text-white">Connect Your GitHub Account</h3>
+                    <p className="mt-2 text-sm text-slate-400">Sign in with the GitHub account that hosts your website repository.</p>
+                    <div className="mx-auto mt-4 max-w-md rounded-2xl border border-amber-400/15 bg-amber-500/5 p-4 text-left">
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-300" />
+                        <div>
+                          <p className="text-sm font-black text-amber-200">Important</p>
+                          <p className="mt-1 text-xs text-amber-100/70">Make sure this is the GitHub account that holds your actual website code. We will create a Pull Request — we will NOT push directly to main.</p>
+                        </div>
+                      </div>
+                    </div>
+                    <button onClick={handleConnectGitHub}
+                      className="mx-auto mt-6 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-violet-500 to-indigo-500 px-6 py-3 text-sm font-black text-white shadow-[0_18px_38px_rgba(109,40,217,0.4)] transition hover:brightness-110">
+                      <Github size={16} /> Connect GitHub Account
+                    </button>
                   </div>
                 )}
 
-                <div className="mb-4 rounded-2xl border border-amber-400/15 bg-amber-500/5 p-4">
-                  <div className="flex items-start gap-2">
-                    <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-300" />
-                    <div>
-                      <p className="text-sm font-black text-amber-200">Select the correct repository</p>
-                      <p className="mt-1 text-xs text-amber-100/70">
-                        Make sure you select the repo holding your full website. AlphaTekx will create branch <code className="rounded bg-white/10 px-1 py-0.5 text-[11px]">alphatekx-fix-{'{timestamp}'}</code> and open a Pull Request.
-                      </p>
-                    </div>
+                {ghConnected === null && (
+                  <div className="flex items-center justify-center gap-3 py-8">
+                    <Loader2 size={20} className="animate-spin text-violet-400" />
+                    <p className="text-sm text-slate-400">Checking GitHub connection...</p>
                   </div>
-                </div>
+                )}
 
-                <div className="relative mb-4">
-                  <label className="mb-1 block text-[11px] font-medium text-slate-500">Repository</label>
-                  <button onClick={() => setRepoDropdownOpen(!repoDropdownOpen)} disabled={loadingRepos}
-                    className="flex w-full items-center justify-between gap-2 rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-slate-300 transition hover:border-white/20 disabled:opacity-50">
-                    {loadingRepos ? (
-                      <span className="flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Loading repos...</span>
-                    ) : selectedRepo ? (
-                      <span className="font-mono text-white">{selectedRepo}</span>
-                    ) : (
-                      <span className="text-slate-500">Select a repository</span>
+                {ghConnected === true && (
+                  <div>
+                    {ghUser && (
+                      <div className="mb-4 flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3">
+                        {ghUser.avatar_url && <img src={ghUser.avatar_url} alt="" className="size-8 rounded-full" />}
+                        <div className="flex-1">
+                          <p className="text-sm font-black text-white">{ghUser.login}</p>
+                          <p className="text-[11px] text-slate-500">GitHub account connected</p>
+                        </div>
+                        <CheckCircle2 size={16} className="text-emerald-400" />
+                      </div>
                     )}
-                    <ChevronDown size={14} className={`shrink-0 text-slate-500 transition ${repoDropdownOpen ? 'rotate-180' : ''}`} />
-                  </button>
-                  {repoDropdownOpen && (
-                    <div className="absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-2xl border border-white/10 bg-[#1a1c2d] shadow-2xl">
-                      {ghRepos.map((repo) => (
-                        <button key={repo.full_name} onClick={() => handleSelectRepo(repo)}
-                          className={`flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-white/[0.05] ${selectedRepo === repo.full_name ? 'bg-violet-500/10' : ''}`}>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="truncate font-mono text-xs text-white">{repo.full_name}</span>
-                              {repo.private && <span className="shrink-0 rounded bg-white/10 px-1.5 py-0.5 text-[9px] text-slate-400">private</span>}
-                            </div>
-                            <div className="mt-0.5 flex items-center gap-2 text-[10px] text-slate-500">
-                              <span>branch: {repo.default_branch}</span>
-                            </div>
-                          </div>
-                        </button>
-                      ))}
-                      {ghRepos.length === 0 && !loadingRepos && <div className="px-4 py-6 text-center text-xs text-slate-500">No repositories found</div>}
+
+                    <div className="relative mb-4">
+                      <label className="mb-1 block text-[11px] font-medium text-slate-500">Repository</label>
+                      <button onClick={() => setRepoDropdownOpen(!repoDropdownOpen)} disabled={loadingRepos}
+                        className="flex w-full items-center justify-between gap-2 rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-slate-300 transition hover:border-white/20 disabled:opacity-50">
+                        {loadingRepos ? (
+                          <span className="flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Loading repos...</span>
+                        ) : selectedRepo ? (
+                          <span className="font-mono text-white">{selectedRepo}</span>
+                        ) : (
+                          <span className="text-slate-500">Select a repository</span>
+                        )}
+                        <ChevronDown size={14} className={`shrink-0 text-slate-500 transition ${repoDropdownOpen ? 'rotate-180' : ''}`} />
+                      </button>
+                      {repoDropdownOpen && (
+                        <div className="absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-2xl border border-white/10 bg-[#1a1c2d] shadow-2xl">
+                          {ghRepos.map((repo) => (
+                            <button key={repo.full_name} onClick={() => handleSelectRepo(repo)}
+                              className={`flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-white/[0.05] ${selectedRepo === repo.full_name ? 'bg-violet-500/10' : ''}`}>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="truncate font-mono text-xs text-white">{repo.full_name}</span>
+                                  {repo.private && <span className="shrink-0 rounded bg-white/10 px-1.5 py-0.5 text-[9px] text-slate-400">private</span>}
+                                </div>
+                                <div className="mt-0.5 flex items-center gap-2 text-[10px] text-slate-500">
+                                  <span>branch: {repo.default_branch}</span>
+                                </div>
+                              </div>
+                            </button>
+                          ))}
+                          {ghRepos.length === 0 && !loadingRepos && <div className="px-4 py-6 text-center text-xs text-slate-500">No repositories found</div>}
+                        </div>
+                      )}
                     </div>
-                  )}
+
+                    {selectedRepo && (
+                      <label className="mb-4 flex cursor-pointer items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.02] p-4 transition hover:bg-white/[0.04]">
+                        <input type="checkbox" checked={repoConfirmed} onChange={(e) => setRepoConfirmed(e.target.checked)} className="mt-0.5 size-4 accent-violet-500" />
+                        <span className="text-xs text-slate-300">
+                          I confirm <strong className="text-white">{selectedRepo}</strong> is my full website repository and I want to create a Pull Request with fixes.
+                        </span>
+                      </label>
+                    )}
+
+                    {selectedRepo && repoConfirmed && (
+                      <button onClick={handleGitHubPush} disabled={isDelivering}
+                        className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 px-6 py-3 text-sm font-black text-white shadow-[0_18px_38px_rgba(16,185,129,0.35)] transition hover:brightness-110 disabled:opacity-50">
+                        {isDelivering ? <Loader2 size={16} className="animate-spin" /> : <GitPullRequest size={16} />}
+                        {isDelivering ? 'Creating PR...' : 'Push Fixes to GitHub'}
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {prLogs.length > 0 && (
+                  <div className="mt-4 space-y-2">
+                    {prLogs.map((log, i) => (
+                      <div key={i} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.02] px-4 py-2.5">
+                        {log.step && log.total && (
+                          <span className="grid size-6 shrink-0 place-items-center rounded-full bg-violet-500/15 text-[10px] font-black text-violet-300">{log.step}/{log.total}</span>
+                        )}
+                        <p className="text-xs text-slate-300">{log.text}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {deliveryMethod === 'zip' && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3">
+                  <Download size={18} className="text-blue-400" />
+                  <span className="text-sm font-black text-white">Download ZIP Archive</span>
+                  <button onClick={() => setDeliveryMethod(null)} className="ml-auto text-xs text-slate-500 hover:text-white">Change</button>
                 </div>
 
-                {selectedRepo && (
-                  <label className="mb-4 flex cursor-pointer items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.02] p-4 transition hover:bg-white/[0.04]">
-                    <input type="checkbox" checked={repoConfirmed} onChange={(e) => setRepoConfirmed(e.target.checked)} className="mt-0.5 size-4 accent-violet-500" />
-                    <span className="text-xs text-slate-300">
-                      I confirm <strong className="text-white">{selectedRepo}</strong> is my full website repository and I want to create a Pull Request with fixes.
-                    </span>
-                  </label>
-                )}
-
-                {selectedRepo && repoConfirmed && (
-                  <button onClick={handleContinueToPush}
-                    className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 px-6 py-3 text-sm font-black text-white shadow-[0_18px_38px_rgba(16,185,129,0.35)] transition hover:brightness-110">
-                    <GitPullRequest size={16} /> Push Fixes to GitHub
+                <div className="rounded-2xl border border-blue-400/15 bg-blue-500/5 p-6 text-center">
+                  <div className="mx-auto mb-4 grid size-16 place-items-center rounded-full border border-blue-400/30 bg-blue-500/10 text-blue-300">
+                    <Download size={28} />
+                  </div>
+                  <h3 className="text-xl font-black text-white">Download Restored Files</h3>
+                  <p className="mt-2 text-sm text-slate-400">Get a ZIP archive containing all {fixableCount} fixed files ready to deploy.</p>
+                  <div className="mx-auto mt-4 max-w-md rounded-2xl border border-white/10 bg-white/[0.02] p-4 text-left">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Contents</p>
+                    <ul className="mt-2 space-y-1 text-xs text-slate-300">
+                      <li className="flex items-center gap-2"><Check size={12} className="text-emerald-400" /> index.html (fixed)</li>
+                      <li className="flex items-center gap-2"><Check size={12} className="text-emerald-400" /> Fix report (JSON)</li>
+                      <li className="flex items-center gap-2"><Check size={12} className="text-emerald-400" /> Before/After screenshots</li>
+                    </ul>
+                  </div>
+                  <button onClick={handleDownloadZip} disabled={isDelivering}
+                    className="mx-auto mt-6 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-blue-500 to-cyan-500 px-6 py-3 text-sm font-black text-white shadow-[0_18px_38px_rgba(59,130,246,0.35)] transition hover:brightness-110 disabled:opacity-50">
+                    {isDelivering ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+                    {isDelivering ? 'Preparing...' : 'Download ZIP'}
                   </button>
-                )}
-
-                <div className="mt-4">
-                  <button type="button" onClick={() => setStep('applying')}
-                    className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-xs font-black text-slate-400 transition hover:text-white">Back</button>
                 </div>
               </div>
             )}
+
+            {deliveryMethod === 'code' && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3">
+                  <Code size={18} className="text-emerald-400" />
+                  <span className="text-sm font-black text-white">Copy Fixed Code</span>
+                  <button onClick={() => setDeliveryMethod(null)} className="ml-auto text-xs text-slate-500 hover:text-white">Change</button>
+                </div>
+
+                <div className="rounded-2xl border border-emerald-400/15 bg-emerald-500/5 p-6 text-center">
+                  <div className="mx-auto mb-4 grid size-16 place-items-center rounded-full border border-emerald-400/30 bg-emerald-500/10 text-emerald-300">
+                    <Code size={28} />
+                  </div>
+                  <h3 className="text-xl font-black text-white">Copy to Clipboard</h3>
+                  <p className="mt-2 text-sm text-slate-400">Copy the complete fixed HTML code to your clipboard. Paste it into your editor to replace the original.</p>
+
+                  <div className="mx-auto mt-4 max-w-lg overflow-hidden rounded-2xl border border-white/10 bg-[#0d1117] text-left">
+                    <div className="flex items-center gap-2 border-b border-white/10 px-4 py-2">
+                      <div className="flex gap-1.5"><div className="size-2.5 rounded-full bg-rose-500/50" /><div className="size-2.5 rounded-full bg-amber-500/50" /><div className="size-2.5 rounded-full bg-emerald-500/50" /></div>
+                      <span className="ml-2 text-[10px] font-black text-slate-500">FIXED HTML</span>
+                    </div>
+                    <pre className="max-h-48 overflow-auto p-4 font-mono text-[11px] leading-5 text-slate-300">{fixedHtml || 'No fixed code available'}</pre>
+                  </div>
+
+                  <button onClick={handleCopyCode}
+                    className="mx-auto mt-6 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 px-6 py-3 text-sm font-black text-white shadow-[0_18px_38px_rgba(16,185,129,0.35)] transition hover:brightness-110">
+                    {copiedToClipboard ? <CheckCircle2 size={16} /> : <Copy size={16} />}
+                    {copiedToClipboard ? 'Copied!' : 'Copy Fixed Code'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {deliveryMethod === 'deploy' && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3">
+                  <Send size={18} className="text-amber-400" />
+                  <span className="text-sm font-black text-white">Deploy Live</span>
+                  <button onClick={() => setDeliveryMethod(null)} className="ml-auto text-xs text-slate-500 hover:text-white">Change</button>
+                </div>
+
+                {!deployResult ? (
+                  <div className="rounded-2xl border border-amber-400/15 bg-amber-500/5 p-6 text-center">
+                    <div className="mx-auto mb-4 grid size-16 place-items-center rounded-full border border-amber-400/30 bg-amber-500/10 text-amber-300">
+                      <Globe size={28} />
+                    </div>
+                    <h3 className="text-xl font-black text-white">Deploy to Live URL</h3>
+                    <p className="mt-2 text-sm text-slate-400">Publish your fixed site to a live preview URL at alphatekx.name.ng.</p>
+                    <div className="mx-auto mt-4 max-w-md rounded-2xl border border-white/10 bg-white/[0.02] p-4 text-left">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Deploy URL Format</p>
+                      <p className="mt-1 font-mono text-xs text-violet-300">https://alphatekx.name.ng/app/restore-{'{scanId}'}</p>
+                    </div>
+                    <button onClick={handleDeployLive} disabled={isDelivering}
+                      className="mx-auto mt-6 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 px-6 py-3 text-sm font-black text-white shadow-[0_18px_38px_rgba(245,158,11,0.35)] transition hover:brightness-110 disabled:opacity-50">
+                      {isDelivering ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                      {isDelivering ? 'Deploying...' : 'Deploy Now'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-emerald-400/15 bg-emerald-500/5 p-6 text-center">
+                    <CheckCircle2 size={48} className="mx-auto mb-4 text-emerald-300" />
+                    <h3 className="text-xl font-black text-white">Deployed Successfully!</h3>
+                    <p className="mt-2 text-sm text-slate-400">Your fixed site is now live.</p>
+                    <a href={deployResult.deployUrl} target="_blank" rel="noreferrer"
+                      className="mx-auto mt-4 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 px-6 py-3 text-sm font-black text-white transition hover:brightness-110">
+                      <ExternalLink size={16} /> Open Live Site
+                    </a>
+                  </div>
+                )}
+              </div>
+            )}
+
             {error && <div className="mt-4 rounded-2xl border border-rose-400/15 bg-rose-500/5 p-3 text-sm text-rose-100">{error}</div>}
           </section>
         )}
-        {/* ===== STEP: PUSHING (Creating PR) ===== */}
-        {step === 'pushing' && (
-          <section className="rounded-[28px] border border-violet-300/20 bg-[#0b0d14]/80 p-6 shadow-[0_32px_120px_rgba(76,29,149,0.28)] sm:p-8">
-            <div className="mb-6 flex items-center gap-3">
-              <Loader2 size={20} className="animate-spin text-violet-400" />
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-violet-300">Step 8 - Pushing to GitHub</p>
-                <h2 className="mt-1 text-xl font-black text-white">Creating Pull Request</h2>
-                <p className="text-xs text-slate-400">Target: <span className="font-mono text-white">{selectedRepo}</span></p>
-              </div>
-            </div>
 
-            {prLogs.length > 0 && (
-              <div className="space-y-2">
-                {prLogs.map((log, i) => (
-                  <div key={i} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.02] px-4 py-2.5">
-                    {log.step && log.total && (
-                      <span className="grid size-6 shrink-0 place-items-center rounded-full bg-violet-500/15 text-[10px] font-black text-violet-300">{log.step}/{log.total}</span>
-                    )}
-                    <p className="text-xs text-slate-300">{log.text}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {!prResult && prLogs.length === 0 && (
-              <div className="space-y-2">
-                {['Creating backup branch', 'Applying fixes', 'Committing changes', 'Opening Pull Request'].map((msg, i) => (
-                  <div key={i} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3">
-                    <span className="grid size-6 shrink-0 place-items-center rounded-full bg-violet-500/15 text-[10px] font-black text-violet-300">{i + 1}</span>
-                    <p className="text-xs text-slate-300">{msg}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {error && <div className="mt-4 rounded-2xl border border-rose-400/15 bg-rose-500/5 p-3 text-sm text-rose-100">{error}</div>}
-          </section>
-        )}
-
-        {/* ===== STEP: COMPLETE ===== */}
         {step === 'complete' && (
           <section className="rounded-[28px] border border-emerald-400/20 bg-[radial-gradient(circle_at_top,_rgba(52,211,153,0.2),_rgba(17,19,31,0.9)_40%,_rgba(2,6,14,1)_72%)] p-8 text-center shadow-[0_32px_120px_rgba(16,185,129,0.15)]">
             {prResult?.noChanges ? (
@@ -965,7 +1012,7 @@ export default function RestorationFlow() {
                 <div className="mx-auto mb-4 grid size-20 place-items-center rounded-full border border-rose-400/30 bg-rose-500/10 text-rose-300"><AlertTriangle size={40} /></div>
                 <h2 className="text-3xl font-black text-white">Push Failed</h2>
                 <p className="mt-3 text-sm text-slate-400">Something went wrong. Check the error and try again.</p>
-                <button onClick={() => { setPrResult(null); setStep('github-setup'); setError(null) }}
+                <button onClick={() => { setPrResult(null); setDeliveryMethod('github'); setError(null) }}
                   className="mx-auto mt-6 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-violet-500 to-indigo-500 px-6 py-3 text-sm font-black text-white transition hover:brightness-110">Try Again</button>
               </>
             ) : (
@@ -973,7 +1020,8 @@ export default function RestorationFlow() {
                 <div className="mx-auto mb-4 grid size-20 place-items-center rounded-full border border-emerald-400/30 bg-emerald-500/10 text-emerald-300"><CheckCircle2 size={40} /></div>
                 <h2 className="text-3xl font-black text-white">Restoration Complete</h2>
                 <p className="mt-3 text-sm text-slate-400">
-                  {prResult?.fixesApplied ?? fixableCount} fix{(prResult?.fixesApplied ?? fixableCount) !== 1 ? 'es' : ''} applied and pushed to <span className="font-mono text-white">{selectedRepo}</span>
+                  {fixableCount} fix{fixableCount !== 1 ? 'es' : ''} applied and delivered
+                  {deliveryMethod === 'github' && selectedRepo ? <> to <span className="font-mono text-white">{selectedRepo}</span></> : null}
                 </p>
 
                 <div className="mx-auto mt-6 grid max-w-md grid-cols-2 gap-3">
@@ -994,14 +1042,33 @@ export default function RestorationFlow() {
                       <ExternalLink size={16} /> Open Pull Request #{prResult.prNumber}
                     </a>
                   )}
-
-                  <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 text-left">
-                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">PR Details</p>
-                    <p className="mt-1 text-xs text-white">{prResult?.prTitle || 'Fixes applied via AlphaTekx Restore Engine'}</p>
-                    <p className="mt-1 font-mono text-[11px] text-slate-500">{prResult?.branchName || 'alphatekx-fix'} -&gt; {prResult?.baseBranch || 'main'}</p>
-                  </div>
-
-                  <p className="text-xs text-slate-500">Review and merge the PR on GitHub. Your site will update automatically after merge.</p>
+                  {deployResult?.deployUrl && (
+                    <a href={deployResult.deployUrl} target="_blank" rel="noreferrer"
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 px-6 py-3 text-sm font-black text-white shadow-[0_18px_38px_rgba(245,158,11,0.35)] transition hover:brightness-110">
+                      <ExternalLink size={16} /> Open Live Site
+                    </a>
+                  )}
+                  {deliveryResult?.message && !prResult?.prUrl && !deployResult?.deployUrl && (
+                    <div className="rounded-2xl border border-emerald-400/15 bg-emerald-500/5 p-4">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 size={16} className="text-emerald-400" />
+                        <p className="text-sm text-emerald-200">{deliveryResult.message}</p>
+                      </div>
+                    </div>
+                  )}
+                  {prResult && (
+                    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 text-left">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">PR Details</p>
+                      <p className="mt-1 text-xs text-white">{prResult.prTitle || 'Fixes applied via AlphaTekx Restore Engine'}</p>
+                      <p className="mt-1 font-mono text-[11px] text-slate-500">{prResult.branchName || 'alphatekx-fix'} -&gt; {prResult.baseBranch || 'main'}</p>
+                    </div>
+                  )}
+                  <p className="text-xs text-slate-500">
+                    {deliveryMethod === 'github' ? 'Review and merge the PR on GitHub. Your site will update automatically after merge.' :
+                     deliveryMethod === 'zip' ? 'Extract the ZIP and deploy the fixed files to your hosting provider.' :
+                     deliveryMethod === 'code' ? 'Paste the copied code into your editor to replace the original file.' :
+                     'Your site is live! Share the URL or set up a custom domain.'}
+                  </p>
                 </div>
 
                 {scanId && <div className="mx-auto mt-8 max-w-2xl"><BeforeAfter scanId={scanId} /></div>}

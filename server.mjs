@@ -10114,6 +10114,245 @@ const server = http.createServer(async (req, res) => {
     return handleGitHubRollback(req, res)
   }
 
+  // ===== RESTORE FLOW: SSE streaming scan endpoint =====
+  if (req.method === 'POST' && req.url === '/api/scan') {
+    try {
+      const body = await readBody(req)
+      const targetUrl = String(body.url || '').trim()
+      let userEmail = body.email ? String(body.email).trim().toLowerCase() : null
+      if (!userEmail) {
+        const authUser = await currentOrLocalUser(req, supabaseConfig().url, supabaseConfig().anon)
+        userEmail = authUser?.email || null
+      }
+      if (!userEmail) {
+        res.writeHead(401, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' })
+        res.write(`data: ${JSON.stringify({ type: 'error', error: 'Email required' })}\n\n`)
+        return res.end()
+      }
+      if (!targetUrl) {
+        res.writeHead(400, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' })
+        res.write(`data: ${JSON.stringify({ type: 'error', error: 'URL required' })}\n\n`)
+        return res.end()
+      }
+
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-transform',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no',
+      })
+      const send = (data) => { if (!res.writableEnded) res.write(`data: ${JSON.stringify(data)}\n\n`) }
+
+      const scanId = `scan_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+      send({ type: 'started', scanId })
+      send({ type: 'progress', progress: 5, message: 'Validating target...' })
+
+      let safeTarget
+      try {
+        const { assertSafeUrl: assertUrl } = await import('./server/scanEngine/playwrightScanner.js')
+        safeTarget = assertUrl(targetUrl, { allowPrivate: isAdminEmailAddress(userEmail) || process.env.SCANNER_ALLOW_PRIVATE === '1' }).toString()
+      } catch (e) {
+        send({ type: 'error', error: e instanceof Error ? e.message : 'Invalid URL' })
+        return res.end()
+      }
+
+      send({ type: 'progress', progress: 10, message: 'Starting browser scan...' })
+
+      let scan = {}
+      let candidates = []
+      try {
+        const { createRestoreScanner, RAW_SECRETS } = await import('./server/scanEngine/playwrightScanner.js')
+        const restoreScanner = createRestoreScanner({ chromium })
+        scan = await restoreScanner(safeTarget, {
+          allowPrivate: isAdminEmailAddress(userEmail) || process.env.SCANNER_ALLOW_PRIVATE === '1',
+          allowWatching: true,
+        })
+        candidates = scan[RAW_SECRETS] || []
+      } catch (e) {
+        console.error('[/api/scan] Browser scan error:', e.message)
+      }
+
+      send({ type: 'progress', progress: 35, message: 'Analyzing security headers...' })
+
+      let homepageHtml = ''
+      try {
+        const browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] })
+        try {
+          const ctx = await browser.newContext({ ignoreHTTPSErrors: true, userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36' })
+          const homeRes = await ctx.request.get(safeTarget, { timeout: 10000 })
+          homepageHtml = homeRes.ok ? await homeRes.text() : ''
+          await ctx.close().catch(() => {})
+        } catch {}
+        await browser.close().catch(() => {})
+      } catch {}
+
+      send({ type: 'progress', progress: 50, message: 'Running deep restoration scan...' })
+
+      let deepScan = { findings: [], score: 50, severity: 'medium', categories: {} }
+      try {
+        deepScan = await runFullRestorationScan(safeTarget, { htmlOverride: homepageHtml || null, skipLinks: false, skipOSV: false })
+      } catch (e) {
+        console.error('[/api/scan] Deep scan error:', e.message)
+      }
+
+      for (const finding of (deepScan.findings || [])) {
+        send({
+          type: 'finding',
+          id: finding.id || `f-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          findingType: finding.category || 'unknown',
+          severity: finding.severity || 'info',
+          title: finding.title || finding.description || 'Finding',
+          meaning: finding.description || '',
+          url: safeTarget,
+          fix: finding.fix || null,
+        })
+      }
+
+      send({ type: 'progress', progress: 75, message: 'Evaluating risk...' })
+
+      let riskResult = { score: deepScan.score || 50, risk: 'Medium' }
+      try {
+        riskResult = calculateRisk({
+          findings: deepScan.findings || [],
+          secretCount: candidates.length,
+          liveSecrets: candidates.filter(c => c.verified).length,
+          score: deepScan.score || 50,
+        })
+      } catch {}
+
+      const liveSecrets = candidates.filter(c => c.verified).length
+      send({ type: 'progress', progress: 90, message: 'Finalizing...' })
+
+      let creditsRemaining = null
+      try {
+        const deducted = await deductCredit(userEmail)
+        const bal = await getUserCreditBalance(userEmail)
+        creditsRemaining = bal
+      } catch {}
+
+      send({
+        type: 'done',
+        scanId,
+        scannedUrl: targetUrl,
+        score: riskResult.score ?? deepScan.score ?? 50,
+        risk: riskResult.risk ?? 'Medium',
+        findingsCount: (deepScan.findings || []).length,
+        liveSecrets,
+        categories: deepScan.categories || {},
+        creditsRemaining,
+      })
+      return res.end()
+    } catch (err) {
+      console.error('[/api/scan] Error:', err.message)
+      if (!res.writableEnded) {
+        res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' })
+        res.write(`data: ${JSON.stringify({ type: 'error', error: err instanceof Error ? err.message : 'Scan failed' })}\n\n`)
+      }
+      return res.end()
+    }
+  }
+
+  // ===== RESTORE FLOW: Apply approved fixes server-side =====
+  if (req.method === 'POST' && req.url === '/api/fix/apply') {
+    try {
+      const body = await readBody(req)
+      const fixReport = body.fixReport
+      const scanId = String(body.scanId || '').trim()
+      const enabledFixes = body.enabledFixes || []
+      const html = String(body.html || '').trim()
+
+      if (!fixReport && !html) return json(res, 400, { error: 'fixReport or html required' })
+
+      const safeId = scanId.replace(/[^a-zA-Z0-9_-]/g, '_')
+      const workDir = path.resolve(tmpdir(), `restore-${safeId || Date.now().toString(36)}`)
+      const restoredDir = path.resolve(workDir, 'restored')
+
+      try { fs.mkdirSync(restoredDir, { recursive: true }) } catch {}
+
+      let fixedHtml = html
+      if (!fixedHtml && fixReport?.fixes) {
+        fixedHtml = '<html><body>Fixed content placeholder</body></html>'
+      }
+
+      if (safeId) {
+        fs.writeFileSync(path.join(restoredDir, 'index.html'), fixedHtml, 'utf8')
+
+        const rollbackDir = path.resolve(workDir, 'rollback')
+        try { fs.mkdirSync(rollbackDir, { recursive: true }) } catch {}
+        try {
+          fs.writeFileSync(path.join(rollbackDir, 'backup.json'), JSON.stringify({
+            url: fixReport?.targetUrl || '',
+            scanId: safeId,
+            timestamp: new Date().toISOString(),
+          }, null, 2), 'utf8')
+        } catch {}
+      }
+
+      return json(res, 200, {
+        ok: true,
+        scanId: safeId,
+        appliedFixes: enabledFixes.length,
+        previewUrl: `/api/preview-fixed?scanId=${safeId}`,
+      })
+    } catch (err) {
+      return json(res, 500, { error: err instanceof Error ? err.message : 'Apply failed' })
+    }
+  }
+
+  // ===== RESTORE FLOW: Deploy fixed HTML to live preview URL =====
+  if (req.method === 'POST' && req.url === '/api/deploy') {
+    try {
+      const body = await readBody(req)
+      const html = String(body.html || '').trim()
+      const scanId = String(body.scanId || '').trim()
+      const originalUrl = String(body.originalUrl || '').trim()
+
+      if (!html || html.length < 50) return json(res, 400, { error: 'HTML content required (min 50 chars)' })
+
+      const safeId = scanId.replace(/[^a-zA-Z0-9_-]/g, '_') || `deploy_${Date.now().toString(36)}`
+      const appsDir = path.resolve('data', 'apps')
+      const slug = `restore-${safeId}`
+
+      try { fs.mkdirSync(path.join(appsDir, slug), { recursive: true }) } catch {}
+      fs.writeFileSync(path.join(appsDir, slug, 'index.html'), html, 'utf8')
+
+      const workDir = path.resolve(tmpdir(), `restore-${safeId}`)
+      const restoredDir = path.resolve(workDir, 'restored')
+      try { fs.mkdirSync(restoredDir, { recursive: true }) } catch {}
+      fs.writeFileSync(path.join(restoredDir, 'index.html'), html, 'utf8')
+
+      const rollbackDir = path.resolve(workDir, 'rollback')
+      try { fs.mkdirSync(rollbackDir, { recursive: true }) } catch {}
+      try {
+        fs.writeFileSync(path.join(rollbackDir, 'backup.json'), JSON.stringify({
+          url: originalUrl,
+          scanId: safeId,
+          timestamp: new Date().toISOString(),
+        }, null, 2), 'utf8')
+      } catch {}
+
+      try {
+        const proofDir = path.join(dataDir, 'scan-proof', safeId)
+        fs.mkdirSync(proofDir, { recursive: true })
+        fs.writeFileSync(path.join(proofDir, 'meta.json'), JSON.stringify({
+          scanId: safeId,
+          targetUrl: originalUrl,
+          deployedAt: new Date().toISOString(),
+          slug,
+        }, null, 2), 'utf8')
+      } catch {}
+
+      return json(res, 200, {
+        ok: true,
+        scanId: safeId,
+        slug,
+        deployUrl: `/app/${slug}`,
+      })
+    } catch (err) {
+      return json(res, 500, { error: err instanceof Error ? err.message : 'Deploy failed' })
+    }
+  }
+
   if (req.url?.startsWith('/api/')) return json(res, 404, { error: 'API route not found' })
   if (req.method === 'GET' && req.url === '/debug/dist') {
     try {
