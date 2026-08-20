@@ -11,6 +11,7 @@ import { handlePreviewRoute, handleRestoreStreamRoute, handleFixStreamRoute, han
 import { handleGitHubAuth, handleGitHubCallback, handleGitHubStatus, handleGitHubRepos, handleGitHubApplyFix, handleGitHubRollback } from './server/githubDirectPush.mjs'
 import { handleDiagnoseRoute } from './server/diagnoseRoute.mjs'
 import { handleRestoreV2Route, handleRestorePushRoute } from './server/restorePipelineV2.mjs'
+import { runFullRestorationScan } from './server/scanEngine/restorationScanner.mjs'
 import { marketplaceHandler, fulfillMarketplaceOrder } from './server/marketplace.mjs'
 import { getRecords, getRecord, createRecord, updateRecord, deleteRecord, appEntitiesMigrationSql } from './server/appData.mjs'
 import { createAlphaBrain } from './server/alphaBrain.mjs'
@@ -9721,23 +9722,48 @@ const server = http.createServer(async (req, res) => {
       sendCard({ type: 'card', card: 'scanning', status: 'start', data: { scanId } })
       sendCard({ type: 'log', card: 'scanning', text: `> Received ${(html.length / 1024).toFixed(1)}KB of HTML code` })
 
-      // Detect issues in the HTML
+      // Detect issues using the deep restoration scanner
       const errorsFound = []
-      const errorChecks = [
-        { name: 'MISSING_VIEWPORT', pattern: /viewport/i, severity: 'high', description: 'Missing viewport meta tag — site will look broken on mobile', file: 'html' },
-        { name: 'MISSING_LANG', pattern: /lang=/i, severity: 'medium', description: 'Missing lang attribute on <html> tag', file: 'html' },
-        { name: 'MISSING_TITLE', pattern: /<title/i, severity: 'medium', description: 'Missing <title> tag — bad for SEO', file: 'html' },
-        { name: 'MISSING_CHARSET', pattern: /charset/i, severity: 'low', description: 'Missing charset meta tag', file: 'html' },
-        { name: 'MISSING_META_DESC', pattern: /meta.*description/i, severity: 'low', description: 'Missing meta description tag', file: 'html' },
-      ]
-
-      for (const check of errorChecks) {
-        if (!check.pattern.test(html)) {
-          errorsFound.push({ id: `ERR_${check.name}`, name: check.name, file: check.file, severity: check.severity, description: check.description })
+      try {
+        sendCard({ type: 'log', card: 'scanning', text: `> Running deep analysis (secrets, mixed content, accessibility, SEO, headers)...` })
+        const deepScan = await runFullRestorationScan('pasted-code', {
+          html,
+          headers: {},
+          isHttps: false,
+          skipLinks: true,
+          skipOSV: true,
+          packages: [],
+        })
+        for (const f of (deepScan.findings || [])) {
+          errorsFound.push({
+            id: `DEEP_${f.id}`,
+            name: f.id,
+            file: f.category,
+            severity: f.severity,
+            description: f.fixable ? `${f.title} — ${f.description} [FIX: ${f.fix}]` : `${f.title} — ${f.description}`,
+            fixable: f.fixable,
+            fix: f.fix,
+          })
+        }
+        sendCard({ type: 'log', card: 'scanning', text: `> Deep scan found ${errorsFound.length} issues (score: ${deepScan.score}/100)` })
+      } catch (deepErr) {
+        sendCard({ type: 'log', card: 'scanning', text: `> Deep scan fallback: ${deepErr.message}` })
+        // Fallback to basic checks
+        const errorChecks = [
+          { name: 'MISSING_VIEWPORT', pattern: /viewport/i, severity: 'high', description: 'Missing viewport meta tag', file: 'html' },
+          { name: 'MISSING_LANG', pattern: /lang=/i, severity: 'medium', description: 'Missing lang attribute', file: 'html' },
+          { name: 'MISSING_TITLE', pattern: /<title/i, severity: 'medium', description: 'Missing <title> tag', file: 'html' },
+          { name: 'MISSING_CHARSET', pattern: /charset/i, severity: 'low', description: 'Missing charset meta tag', file: 'html' },
+          { name: 'MISSING_META_DESC', pattern: /meta.*description/i, severity: 'low', description: 'Missing meta description', file: 'html' },
+        ]
+        for (const check of errorChecks) {
+          if (!check.pattern.test(html)) {
+            errorsFound.push({ id: `ERR_${check.name}`, name: check.name, file: check.file, severity: check.severity, description: check.description })
+          }
         }
       }
 
-      // Check for broken script references
+      // Additional HTML-specific checks
       const scriptSrcs = html.match(/<script[^>]*src="([^"]*)"[^>]*>/gi) || []
       for (const script of scriptSrcs.slice(0, 5)) {
         const srcMatch = script.match(/src="([^"]*)"/i)
@@ -9746,7 +9772,6 @@ const server = http.createServer(async (req, res) => {
         }
       }
 
-      // Check for broken images
       const imgTags = html.match(/<img[^>]*>/gi) || []
       let brokenImgCount = 0
       for (const img of imgTags) {
@@ -9757,12 +9782,6 @@ const server = http.createServer(async (req, res) => {
       }
       if (brokenImgCount > 0) {
         errorsFound.push({ id: 'ERR_IMG', name: 'BROKEN_IMAGES', file: 'html', severity: 'medium', description: `${brokenImgCount} images with broken or missing src attributes` })
-      }
-
-      // Check for missing alt text
-      const imgsWithoutAlt = imgTags.filter(img => !img.includes('alt=') && !img.includes('aria-label'))
-      if (imgsWithoutAlt.length > 0) {
-        errorsFound.push({ id: 'ERR_A11Y', name: 'MISSING_ALT_TEXT', file: 'html', severity: 'low', description: `${imgsWithoutAlt.length} images missing alt text (accessibility)` })
       }
 
       const errorSummary = errorsFound.length > 0

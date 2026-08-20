@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os'
 import { lookup } from 'node:dns'
 import { withContext } from './scanner/browserPool.mjs'
 import { alphaChat, alphaText } from '../alpha-core/index.ts'
+import { runFullRestorationScan } from './scanEngine/restorationScanner.mjs'
 import {
   emitRestorationStarted,
   emitRepositoryScanned,
@@ -498,8 +499,36 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
   const realCls = scanData.realCls || 0
   metrics.before.lcp = realLcp
 
-  scanData = { ...scanData, url: targetUrl, scanId, status: fetchStatus, technology: detectedTech, dns: dnsResult, htmlLength: originalHtml.length, lcp: realLcp, fcp: realFcp, cls: realCls, imgCount, linkCount, detectedPatterns: detectedPatterns.map(d => d.name), scannedAt: new Date().toISOString() }
-  sendCard({ type: 'log', card: 'scanning', text: `> Scan complete. ${detectedPatterns.length} patterns found, status ${fetchStatus}, tech: ${detectedTech}` })
+  // ===== DEEP RESTORATION SCAN: SSL, headers, mixed content, secrets, CVEs, SEO, a11y =====
+  let deepFindings = []
+  if (originalHtml && originalHtml.length > 100) {
+    sendCard({ type: 'log', card: 'scanning', text: `> Running deep restoration scan (SSL, security headers, mixed content, secrets, SEO, accessibility)...` })
+    sendStep({ id: 'deep-scan', label: 'Running deep security & quality scan...', icon: 'scan', status: 'active' })
+    try {
+      const parsedUrl = new URL(targetUrl)
+      const deepScan = await runFullRestorationScan(targetUrl, {
+        html: originalHtml,
+        headers: {}, // headers will be populated if available from fetch
+        isHttps: parsedUrl.protocol === 'https:',
+        skipLinks: false,
+        skipOSV: true, // skip package CVE check for now (no package.json available)
+        packages: [],
+      })
+      deepFindings = deepScan.findings || []
+
+      sendCard({ type: 'log', card: 'scanning', text: `> Deep scan score: ${deepScan.score}/100 (${deepScan.severity})` })
+      for (const f of deepFindings.slice(0, 15)) {
+        sendCard({ type: 'log', card: 'scanning', text: `> [${f.severity.toUpperCase()}] ${f.title}: ${f.description.slice(0, 120)}` })
+      }
+      sendStep({ id: 'deep-scan', label: `Deep scan complete — ${deepFindings.length} findings`, icon: 'scan', status: 'done', summary: `Score: ${deepScan.score}/100` })
+    } catch (err) {
+      sendCard({ type: 'log', card: 'scanning', text: `> Deep scan error: ${err.message}` })
+      sendStep({ id: 'deep-scan', label: 'Deep scan encountered an error', icon: 'scan', status: 'error', summary: err.message })
+    }
+  }
+
+  scanData = { ...scanData, url: targetUrl, scanId, status: fetchStatus, technology: detectedTech, dns: dnsResult, htmlLength: originalHtml.length, lcp: realLcp, fcp: realFcp, cls: realCls, imgCount, linkCount, detectedPatterns: detectedPatterns.map(d => d.name), deepFindings: deepFindings.length, scannedAt: new Date().toISOString() }
+  sendCard({ type: 'log', card: 'scanning', text: `> Scan complete. ${detectedPatterns.length} patterns found, ${deepFindings.length} deep findings, status ${fetchStatus}, tech: ${detectedTech}` })
   sendCard({ type: 'card', card: 'scanning', status: 'done', data: scanData })
 
   // ===== EMIT: REPOSITORY SCANNED =====
@@ -589,6 +618,19 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
     if (dp.name === 'wp-config' || dp.name === 'database error') {
       errorsFound.push({ id: `ERR_SEC_${errorsFound.length}`, name: 'SECURITY_EXPOSURE', file: dp.file, severity: 'critical', description: `${dp.name} detected — potential security risk` })
     }
+  }
+
+  // Merge deep restoration scanner findings
+  for (const f of deepFindings) {
+    errorsFound.push({
+      id: `DEEP_${f.id}`,
+      name: f.id,
+      file: f.category,
+      severity: f.severity,
+      description: f.fixable ? `${f.title} — ${f.description} [FIX: ${f.fix}]` : `${f.title} — ${f.description}`,
+      fixable: f.fixable,
+      fix: f.fix,
+    })
   }
 
   // Determine overall severity
