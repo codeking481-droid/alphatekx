@@ -1723,21 +1723,26 @@ export async function runFullRestorationScan(targetUrl, options = {}) {
   try {
     parsedUrl = new URL(targetUrl);
   } catch (_) {
-    allFindings.push(
-      makeFinding(
-        'info',
-        'critical',
-        'Invalid Target URL',
-        `Could not parse the target URL: "${targetUrl}". Please provide a valid URL.`,
-        false
-      )
-    );
-    return {
-      findings: allFindings,
-      score: 0,
-      severity: 'critical',
-      categories: {},
-    };
+    // If htmlOverride is provided, we don't need a valid URL (e.g. pasted code)
+    if (htmlOverride) {
+      parsedUrl = new URL('https://localhost/pasted-code');
+    } else {
+      allFindings.push(
+        makeFinding(
+          'info',
+          'critical',
+          'Invalid Target URL',
+          `Could not parse the target URL: "${targetUrl}". Please provide a valid URL.`,
+          false
+        )
+      );
+      return {
+        findings: allFindings,
+        score: 0,
+        severity: 'critical',
+        categories: {},
+      };
+    }
   }
 
   const isHttps = parsedUrl.protocol === 'https:';
@@ -1822,8 +1827,8 @@ export async function runFullRestorationScan(targetUrl, options = {}) {
     );
   }
 
-  // 1. SSL Check (only for HTTPS)
-  if (isHttps) {
+  // 1. SSL Check (only for HTTPS, and only when not using htmlOverride)
+  if (isHttps && !htmlOverride) {
     try {
       const sslFindings = await checkSSL(hostname, port);
       allFindings.push(...sslFindings);
