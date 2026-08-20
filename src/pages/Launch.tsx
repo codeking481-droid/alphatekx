@@ -41,8 +41,8 @@ export default function Launch() {
     try {
       const { publishCreationPath } = await import('../lib/deployCreation')
       const result = await publishCreationPath(creation, slug)
-      updateCreation(creation.id, { slug: result.slug, published: true, status: 'live', deploymentUrl: result.subdomainUrl || result.url, pathUrl: result.url })
-      setSlug(result.slug); setNotice(`Live at ${result.subdomainUrl || result.url}`)
+      updateCreation(creation.id, { slug: result.slug, published: true, status: 'live', deploymentUrl: result.url, pathUrl: result.url })
+      setSlug(result.slug); setNotice(`Live at ${result.url}`)
     } catch (e) { setNotice(e instanceof Error ? e.message : 'Failed.') } finally { setPublishing(false) }
   }
 
@@ -92,7 +92,7 @@ export default function Launch() {
       <div className="mx-auto max-w-4xl">
         <div className="mb-8 text-center">
           <h1 className="text-3xl font-bold md:text-4xl">Deploy</h1>
-          <p className="mt-2 text-sm text-white/55">Paste your HTML, pick a name, and go live on a real subdomain.</p>
+          <p className="mt-2 text-sm text-white/55">Paste your HTML, pick a name, and go live on alphatekx.name.ng/app/.</p>
         </div>
 
         {notice && <p role="status" className="mb-6 rounded-xl border border-violet-400/20 bg-violet-500/10 p-3 text-sm text-center">{notice}</p>}
@@ -104,11 +104,11 @@ export default function Launch() {
               App name
               <input value={pasteTitle} onChange={e => { const t = e.target.value; setPasteTitle(t); setPasteSlug(slugifyCreation(t)) }} className="field mt-2 w-full" placeholder="My portfolio" />
             </label>
-            <label className="text-xs font-medium text-white/70">
-              Subdomain
+              <label className="text-xs font-medium text-white/70">
+              Slug
               <div className="mt-2 flex min-h-12 items-center rounded-xl border border-violet-400/20 bg-violet-500/10 px-3 text-sm">
+                <span className="shrink-0 text-white/45">alphatekx.name.ng/app/</span>
                 <input value={pasteSlug} onChange={e => setPasteSlug(slugifyCreation(e.target.value))} className="min-w-0 flex-1 bg-transparent px-1 text-zinc-100 outline-none" placeholder="my-portfolio" />
-                <span className="shrink-0 text-white/45">.alphatekx.name.ng</span>
               </div>
             </label>
           </div>
@@ -140,10 +140,10 @@ export default function Launch() {
             <div className="mt-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4">
               <p className="text-sm font-medium text-emerald-300">Your site is live!</p>
               <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-                <a href={deployResult.subdomainUrl} target="_blank" rel="noreferrer" className="launch-action flex-1 justify-center gap-2"><Globe size={15}/>Open {deployResult.subdomainUrl}</a>
-                {deployResult.pathUrl && <a href={deployResult.pathUrl} target="_blank" rel="noreferrer" className="launch-action flex-1 justify-center gap-2"><ExternalLink size={15}/>Fallback</a>}
+                <a href={deployResult.pathUrl} target="_blank" rel="noreferrer" className="launch-action flex-1 justify-center gap-2"><Globe size={15}/>Open {deployResult.pathUrl}</a>
+                {deployResult.subdomainUrl && <a href={deployResult.subdomainUrl} target="_blank" rel="noreferrer" className="launch-action flex-1 justify-center gap-2"><ExternalLink size={15}/>Subdomain</a>}
               </div>
-              <button onClick={() => void copyUrl(deployResult.subdomainUrl)} className="launch-action mt-2 gap-2"><Copy size={14}/>Copy URL</button>
+              <button onClick={() => void copyUrl(deployResult.pathUrl)} className="launch-action mt-2 gap-2"><Copy size={14}/>Copy URL</button>
             </div>
           )}
 
@@ -179,9 +179,8 @@ export default function Launch() {
                 </div>
                 <div className="flex flex-col gap-2 sm:flex-row">
                   <div className="flex min-h-12 min-w-0 flex-1 items-center rounded-xl border border-violet-400/20 bg-violet-500/10 px-3 text-sm">
-                    <span className="hidden text-white/45 sm:inline">https://</span>
+                    <span className="hidden text-white/45 sm:inline">alphatekx.name.ng/app/</span>
                     <input value={slug} onChange={e => setSlug(slugifyCreation(e.target.value))} className="min-w-0 flex-1 bg-transparent px-1 text-zinc-100 outline-none" />
-                    <span className="hidden text-white/45 sm:inline">.alphatekx.name.ng</span>
                   </div>
                   <button onClick={() => void publish()} disabled={publishing || !slug} className="flex min-h-12 items-center justify-center gap-2 rounded-xl btn-alpha px-6 text-sm font-medium text-white transition-all disabled:opacity-50">
                     {publishing ? <LoaderCircle className="animate-spin" size={16}/> : <UploadCloud size={16}/>} Publish
@@ -191,10 +190,10 @@ export default function Launch() {
                   <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4">
                     <p className="text-sm font-medium text-emerald-300">Live</p>
                     <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-                      <a href={liveUrl} target="_blank" rel="noreferrer" className="launch-action flex-1 justify-center gap-2"><Globe size={15}/>{liveUrl}</a>
-                      {pathUrl && <a href={pathUrl} target="_blank" rel="noreferrer" className="launch-action flex-1 justify-center gap-2"><ExternalLink size={15}/>Fallback</a>}
+                      <a href={pathUrl || liveUrl} target="_blank" rel="noreferrer" className="launch-action flex-1 justify-center gap-2"><Globe size={15}/>{pathUrl || liveUrl}</a>
+                      {liveUrl !== pathUrl && <a href={liveUrl} target="_blank" rel="noreferrer" className="launch-action flex-1 justify-center gap-2"><ExternalLink size={15}/>Subdomain</a>}
                     </div>
-                    <button onClick={() => void copyUrl(liveUrl)} className="launch-action mt-2 gap-2"><Copy size={14}/>Copy</button>
+                    <button onClick={() => void copyUrl(pathUrl || liveUrl)} className="launch-action mt-2 gap-2"><Copy size={14}/>Copy</button>
                   </div>
                 )}
                 <div className="flex gap-2">

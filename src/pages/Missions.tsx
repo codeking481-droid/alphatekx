@@ -121,7 +121,7 @@ export default function Missions() {
   const deploy = () => {
     if (!activeMission || !creation) return
     updateMissionStatus(activeMission.id, 'deployed', 100)
-    updateCreation(creation.id, { status: 'deployed', deploymentUrl: `https://${activeMission.id.slice(0, 8)}.alphatekx.name.ng` })
+    updateCreation(creation.id, { status: 'deployed', deploymentUrl: `https://alphatekx.name.ng/app/${activeMission.id.slice(0, 8)}` })
     addActivity(activeMission.id, '[Deployment] Mission deployed to AlphaTekX launch pipeline.')
     setStatus('deployed')
   }

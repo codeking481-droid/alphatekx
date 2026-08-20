@@ -69,8 +69,8 @@ export default function HamburgerSidebar({
   }
 
   const copyUrl = async () => {
-    if (!deployResult?.subdomainUrl) return
-    await navigator.clipboard.writeText(deployResult.subdomainUrl)
+    if (!deployResult?.pathUrl) return
+    await navigator.clipboard.writeText(deployResult.pathUrl)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
@@ -258,17 +258,17 @@ export default function HamburgerSidebar({
                         />
                       </label>
 
-                      {/* Subdomain */}
+                      {/* Slug */}
                       <label className="block text-[11px] font-bold uppercase tracking-widest text-white/30">
-                        Subdomain
+                        Slug
                         <div className="mt-1.5 flex min-h-[38px] items-center rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 text-[13px] transition focus-within:border-[#D6FF00]/40">
+                          <span className="shrink-0 text-white/25 text-[11px]">alphatekx.name.ng/app/</span>
                           <input
                             value={pasteSlug}
                             onChange={e => setPasteSlug(slugifyCreation(e.target.value))}
                             className="min-w-0 flex-1 bg-transparent text-white outline-none placeholder:text-white/20"
                             placeholder="my-site"
                           />
-                          <span className="shrink-0 text-white/25 text-[11px]">.alphatekx.name.ng</span>
                         </div>
                       </label>
 
@@ -307,10 +307,10 @@ export default function HamburgerSidebar({
                           <Check size={16} className="text-emerald-400" />
                         </div>
                         <p className="text-[13px] font-bold text-emerald-300">Your site is live!</p>
-                        <p className="mt-1 break-all font-mono text-[12px] text-emerald-300/80">{deployResult.subdomainUrl}</p>
+                        <p className="mt-1 break-all font-mono text-[12px] text-emerald-300/80">{deployResult.pathUrl}</p>
                         <div className="mt-3 flex gap-2">
                           <a
-                            href={deployResult.subdomainUrl}
+                            href={deployResult.pathUrl}
                             target="_blank"
                             rel="noreferrer"
                             className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-emerald-500/15 px-3 py-2.5 text-[11px] font-bold text-emerald-300 transition hover:bg-emerald-500/25"
@@ -326,14 +326,14 @@ export default function HamburgerSidebar({
                             {copied ? 'Copied!' : 'Copy'}
                           </button>
                         </div>
-                        {deployResult.pathUrl && (
+                        {deployResult.subdomainUrl && (
                           <a
-                            href={deployResult.pathUrl}
+                            href={deployResult.subdomainUrl}
                             target="_blank"
                             rel="noreferrer"
                             className="mt-2 block text-[10px] text-white/30 underline underline-offset-2 hover:text-white/50"
                           >
-                            Fallback: {deployResult.pathUrl}
+                            Subdomain: {deployResult.subdomainUrl}
                           </a>
                         )}
                       </div>
