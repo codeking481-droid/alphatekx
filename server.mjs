@@ -8,7 +8,7 @@ import { schedule } from 'node-cron'
 import { chromium } from 'playwright'
 
 import { handlePreviewRoute, handleRestoreStreamRoute, handleFixStreamRoute, handleDownloadRoute, handlePreviewFixedRoute, handleScreenshotRoute } from './server/websiteRestoreStream.mjs'
-import { handleGitHubAuth, handleGitHubCallback, handleGitHubStatus, handleGitHubRepos, handleGitHubApplyFix, handleGitHubRollback } from './server/githubDirectPush.mjs'
+import { handleGitHubAuth, handleGitHubCallback, handleGitHubStatus, handleGitHubRepos, handleGitHubApplyFix, handleGitHubCreatePR, handleGitHubRollback } from './server/githubDirectPush.mjs'
 import { handleDiagnoseRoute } from './server/diagnoseRoute.mjs'
 import { handleRestoreV2Route, handleRestorePushRoute } from './server/restorePipelineV2.mjs'
 import { runFullRestorationScan } from './server/scanEngine/restorationScanner.mjs'
@@ -89,6 +89,7 @@ import { liveVerifier } from './server/scanEngine/liveVerifier.js'
 import { calculateRisk } from './server/scanEngine/riskScorer.js'
 import { createProof } from './server/scanEngine/proofEngine.js'
 import { makeFixPlan, runFixPlan } from './server/scanEngine/fixEngine.js'
+import { generateFixes } from './server/scanEngine/contentFixEngine.mjs'
 
 function loadEnv() {
   for (const filename of ['.env.local', '.env']) {
@@ -9514,6 +9515,109 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // ===== Auto Fix Engine: generates fix recommendations from scan findings =====
+  if (req.method === 'POST' && req.url === '/api/fix/auto') {
+    try {
+      const body = await readBody(req)
+      const scanId = String(body.scanId || '').trim()
+      const scanReport = body.scanReport || null
+      let userEmail = body.email ? String(body.email).trim().toLowerCase() : null
+      if (!userEmail) {
+        const authUser = await currentOrLocalUser(req, supabaseConfig().url, supabaseConfig().anon)
+        userEmail = authUser?.email || null
+      }
+      if (!userEmail) return json(res, 401, { error: 'Email required for auto-fix' })
+
+      let report = scanReport
+      if (!report && scanId) {
+        report = await loadStoredReport(scanId)
+        if (!report) return json(res, 404, { error: 'Scan report not found. Run a scan first.' })
+      }
+      if (!report) return json(res, 400, { error: 'Provide scanReport or scanId.' })
+
+      const fixReport = await generateFixes(report, {
+        html: body.html || '',
+        baseUrl: report.scannedUrl || report.url || '',
+      })
+
+      // Persist the fix report
+      const fixDir = path.join(dataDir, 'fix-reports')
+      try { fs.mkdirSync(fixDir, { recursive: true }) } catch {}
+      try {
+        fs.writeFileSync(path.join(fixDir, `${fixReport.fixId}.json`), JSON.stringify(fixReport, null, 2), 'utf8')
+      } catch {}
+
+      console.log(`[AutoFix] Generated ${fixReport.stats.generated} fixes for scan ${report.scanId || 'unknown'} (${fixReport.fixId})`)
+      return json(res, 200, { ok: true, fixReport })
+    } catch (error) {
+      return json(res, 500, { error: error instanceof Error ? error.message : 'Auto-fix generation failed.' })
+    }
+  }
+
+  // ===== Screenshot Service: capture + diff + serve =====
+  {
+    const url = new URL(req.url || '/', 'http://localhost')
+    const shotMatch = url.pathname.match(/^\/api\/screenshot\/([A-Za-z0-9_-]{1,64})\/([A-Za-z0-9_.-]+\.png)$/)
+    if (req.method === 'GET' && shotMatch) {
+      const [, scanId, fileName] = shotMatch
+      const filePath = path.join(process.cwd(), 'data', 'screenshots', scanId, path.basename(fileName))
+      try {
+        const stat = fs.statSync(filePath)
+        res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': stat.size, 'Cache-Control': 'public, max-age=3600' })
+        fs.createReadStream(filePath).pipe(res)
+      } catch {
+        return json(res, 404, { error: 'Screenshot not found' })
+      }
+      return
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/screenshot/list') {
+      const scanId = url.searchParams.get('scanId')
+      if (!scanId) return json(res, 400, { error: 'scanId required' })
+      try {
+        const { listScreenshots } = await import('./server/screenshotService.mjs')
+        const shots = listScreenshots(scanId)
+        return json(res, 200, { scanId, screenshots: shots })
+      } catch (e) {
+        return json(res, 500, { error: e instanceof Error ? e.message : 'Failed to list screenshots' })
+      }
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/screenshot/capture') {
+      try {
+        const body = await readBody(req)
+        const targetUrl = String(body.url || '').trim()
+        if (!targetUrl) return json(res, 400, { error: 'url required' })
+
+        const { captureScreenshot } = await import('./server/screenshotService.mjs')
+        const result = await captureScreenshot(targetUrl, {
+          label: String(body.label || 'capture'),
+          scanId: String(body.scanId || randomBytes(8).toString('hex')),
+          fullPage: Boolean(body.fullPage),
+          timeout: Number(body.timeout) || 25000,
+        })
+        return json(res, 200, { ok: true, screenshot: result })
+      } catch (e) {
+        return json(res, 500, { error: e instanceof Error ? e.message : 'Screenshot capture failed' })
+      }
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/screenshot/diff') {
+      try {
+        const body = await readBody(req)
+        const scanId = String(body.scanId || '').trim()
+        if (!scanId) return json(res, 400, { error: 'scanId required' })
+
+        const { generateDiff } = await import('./server/screenshotService.mjs')
+        const diff = await generateDiff(scanId)
+        if (!diff) return json(res, 404, { error: 'Before and after screenshots required for diff' })
+        return json(res, 200, { ok: true, diff })
+      } catch (e) {
+        return json(res, 500, { error: e instanceof Error ? e.message : 'Diff generation failed' })
+      }
+    }
+  }
+
   // ===== Verify Engine: re-scan the same target and produce the AFTER / diff proof =====
   if (req.method === 'POST' && req.url?.startsWith('/api/verify/')) {
     try {
@@ -9999,6 +10103,9 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'POST' && req.url === '/api/github/apply-fix') {
     return handleGitHubApplyFix(req, res)
+  }
+  if (req.method === 'POST' && req.url === '/api/github/create-pr') {
+    return handleGitHubCreatePR(req, res)
   }
   if (req.method === 'POST' && req.url === '/api/diagnose') {
     return handleDiagnoseRoute(req, res)

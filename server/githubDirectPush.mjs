@@ -8,6 +8,7 @@
  *   GET  /api/github/status            — check if connected
  *   GET  /api/github/repos             — list user repos
  *   POST /api/github/apply-fix         — clone, backup, copy fixed files, push to main
+ *   POST /api/github/create-pr         — clone, branch, commit fixes, create Pull Request
  *   POST /api/github/rollback          — force-push backup branch to main
  */
 
@@ -356,6 +357,251 @@ export async function handleGitHubApplyFix(req, res) {
     cleanupDir(githubDir)
     if (!res.writableEnded) res.end()
   }
+}
+
+// ─── Route: Create Pull Request with fixes ────────────────────────────────────
+
+export async function handleGitHubCreatePR(req, res) {
+  const token = getTokenFromRequest(req)
+  if (!token) return jsonResponse(res, 401, { error: 'Not connected to GitHub' })
+
+  let body = ''
+  for await (const chunk of req) body += chunk
+
+  let repoFullName, fixReport, scanId
+  try {
+    const parsed = JSON.parse(body)
+    repoFullName = parsed.repoFullName
+    fixReport = parsed.fixReport
+    scanId = parsed.scanId
+  } catch {
+    return jsonResponse(res, 400, { error: 'Invalid JSON body' })
+  }
+
+  if (!repoFullName) return jsonResponse(res, 400, { error: 'repoFullName required' })
+  if (!fixReport && !scanId) return jsonResponse(res, 400, { error: 'fixReport or scanId required' })
+
+  // If scanId but no fixReport, try to load the stored fix report
+  if (!fixReport && scanId) {
+    try {
+      const fs = await import('node:fs')
+      const pathMod = await import('node:path')
+      const fixDir = pathMod.join(process.cwd(), 'data', 'fix-reports')
+      const files = fs.readdirSync(fixDir)
+      // Find the most recent fix report for this scanId
+      for (const f of files.sort().reverse()) {
+        if (f.endsWith('.json')) {
+          const report = JSON.parse(fs.readFileSync(pathMod.join(fixDir, f), 'utf8'))
+          if (report.scanId === scanId) {
+            fixReport = report
+            break
+          }
+        }
+      }
+    } catch {}
+  }
+
+  if (!fixReport) return jsonResponse(res, 404, { error: 'No fix report found. Generate fixes first.' })
+
+  const fixes = fixReport.fixes || []
+  const fixCount = fixes.length
+  const timestamp = Date.now().toString(36)
+  const branchName = `alphatekx-fix-${timestamp}`
+
+  // SSE stream for progress
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  })
+  const sendEvent = (event) => {
+    if (!res.writableEnded) res.write(`data: ${JSON.stringify(event)}\n\n`)
+  }
+
+  const githubDir = path.resolve(tmpdir(), `github-pr-${scanId || timestamp}`)
+  let cloned = false
+
+  try {
+    // Step 1: Get repo info
+    sendEvent({ type: 'log', step: 1, total: 7, text: 'Connecting to repository...' })
+    const repoInfo = await githubApi(`/repos/${repoFullName}`, token)
+    const defaultBranch = repoInfo.default_branch || 'main'
+    sendEvent({ type: 'log', step: 1, total: 7, text: `Default branch: ${defaultBranch}` })
+
+    // Step 2: Clone
+    sendEvent({ type: 'log', step: 2, total: 7, text: 'Cloning repository...' })
+    if (fs.existsSync(githubDir)) fs.rmSync(githubDir, { recursive: true, force: true })
+    fs.mkdirSync(githubDir, { recursive: true })
+    const git = simpleGit(githubDir)
+    await git.clone(`https://${token}@github.com/${repoFullName}.git`, '.', { depth: 50 })
+    cloned = true
+    sendEvent({ type: 'log', step: 2, total: 7, text: 'Repository cloned.' })
+
+    // Step 3: Create and checkout fix branch
+    sendEvent({ type: 'log', step: 3, total: 7, text: `Creating branch: ${branchName}` })
+    await git.checkoutLocalBranch(branchName)
+    sendEvent({ type: 'log', step: 3, total: 7, text: `Branch created from ${defaultBranch}.` })
+
+    // Step 4: Apply fixes as file modifications
+    sendEvent({ type: 'log', step: 4, total: 7, text: `Applying ${fixCount} fixes...` })
+    let filesModified = 0
+    const changedFiles = []
+
+    for (const fix of fixes) {
+      if (!fix.original || !fix.fixed || fix.original === fix.fixed) continue
+
+      // Try to find the file containing the original snippet
+      const targetFile = await findFileContainingSnippet(githubDir, fix.original, fix.url)
+      if (targetFile) {
+        try {
+          const content = fs.readFileSync(targetFile, 'utf8')
+          if (content.includes(fix.original)) {
+            const updated = content.replace(fix.original, fix.fixed)
+            fs.writeFileSync(targetFile, updated, 'utf8')
+            const rel = path.relative(githubDir, targetFile)
+            changedFiles.push(rel)
+            filesModified++
+          }
+        } catch {}
+      }
+    }
+
+    sendEvent({ type: 'log', step: 4, total: 7, text: `${filesModified} file(s) modified: ${changedFiles.join(', ') || 'none'}` })
+
+    if (filesModified === 0) {
+      sendEvent({ type: 'log', step: 5, total: 7, text: 'No applicable changes found in repo files.' })
+      sendEvent({ type: 'done', data: { noChanges: true, branchName } })
+      cleanupDir(githubDir)
+      if (!res.writableEnded) res.end()
+      return
+    }
+
+    // Step 5: Stage and commit
+    sendEvent({ type: 'log', step: 5, total: 7, text: 'Committing changes...' })
+    await git.add('./*')
+    const fixSummary = fixes.slice(0, 10).map(f => `- ${f.description}`).join('\n')
+    const commitBody = `AlphaTekx Restoration — Fixed ${fixCount} issues\n\nChanges:\n${fixSummary}${fixCount > 10 ? `\n... and ${fixCount - 10} more` : ''}`
+    await git.commit(`AlphaTekx Restoration: Fixed ${fixCount} issue${fixCount !== 1 ? 's' : ''}`, commitBody)
+
+    // Step 6: Push branch
+    sendEvent({ type: 'log', step: 6, total: 7, text: `Pushing branch ${branchName}...` })
+    await git.push('origin', branchName, ['-u'])
+    sendEvent({ type: 'log', step: 6, total: 7, text: 'Branch pushed.' })
+
+    // Step 7: Create Pull Request via GitHub API
+    sendEvent({ type: 'log', step: 7, total: 7, text: 'Creating Pull Request...' })
+
+    const prTitle = `AlphaTekx Restoration: Fixed ${fixCount} issue${fixCount !== 1 ? 's' : ''}`
+    const severityBreakdown = {}
+    for (const fix of fixes) {
+      const sev = fix.severity || 'info'
+      severityBreakdown[sev] = (severityBreakdown[sev] || 0) + 1
+    }
+    const sevLine = Object.entries(severityBreakdown).map(([s, c]) => `${s}: ${c}`).join(' | ')
+
+    // Derive screenshot base URL from request
+    const host = req.headers.host || req.headers['x-forwarded-host'] || 'alphatekx.name.ng'
+    const proto = (req.headers['x-forwarded-proto'] || 'https').split(',')[0].trim()
+    const screenshotBaseUrl = `${proto}://${host}`
+
+    const prDescription = [
+      `## AlphaTekx Automated Restoration`,
+      ``,
+      `This pull request was automatically created by **AlphaTekx** to fix ${fixCount} issue${fixCount !== 1 ? 's' : ''} found during a content scan.`,
+      ``,
+      `### Summary`,
+      `- **Scan ID:** ${fixReport.scanId || 'N/A'}`,
+      `- **Target URL:** ${fixReport.targetUrl || 'N/A'}`,
+      `- **Fixes applied:** ${fixCount}`,
+      `- **Severity breakdown:** ${sevLine}`,
+      ``,
+      `### Screenshot Proof`,
+      fixReport.scanId ? `- **Before screenshot:** ![before](${screenshotBaseUrl}/api/screenshot/${fixReport.scanId}/before.png)` : '',
+      fixReport.scanId ? `- *After screenshot: will be captured after merge and redeploy*` : '',
+      ``,
+      `### Changes Made`,
+      ...fixes.slice(0, 20).map(f => `- **[${(f.severity || 'info').toUpperCase()}]** ${f.description}`),
+      fixes.length > 20 ? `- *... and ${fixCount - 20} more fixes*` : '',
+      ``,
+      `### Files Modified`,
+      ...changedFiles.map(f => `- \`${f}\``),
+      ``,
+      `---`,
+      `*Created by AlphaTekx Restoration Engine — ${new Date().toISOString()}*`,
+    ].join('\n')
+
+    const prResult = await githubApi(`/repos/${repoFullName}/pulls`, token, {
+      method: 'POST',
+      body: JSON.stringify({
+        title: prTitle,
+        body: prDescription,
+        head: branchName,
+        base: defaultBranch,
+      }),
+    })
+
+    sendEvent({ type: 'log', step: 7, total: 7, text: `Pull Request created: #${prResult.number}` })
+
+    sendEvent({
+      type: 'done',
+      data: {
+        prNumber: prResult.number,
+        prUrl: prResult.html_url,
+        prTitle,
+        branchName,
+        baseBranch: defaultBranch,
+        filesChanged: filesModified,
+        fixesApplied: fixCount,
+        noChanges: false,
+      },
+    })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[GITHUB-PR] Error:', msg)
+    sendEvent({ type: 'error', message: msg })
+    sendEvent({ type: 'done', data: { error: true, branchName } })
+  } finally {
+    cleanupDir(githubDir)
+    if (!res.writableEnded) res.end()
+  }
+}
+
+// ─── Utility: Find file containing a code snippet ─────────────────────────────
+
+async function findFileContainingSnippet(dir, snippet, urlHint) {
+  const glob = await import('fast-glob').catch(() => null)
+  if (glob) {
+    try {
+      const files = await glob.default(['**/*.{html,htm,js,jsx,ts,tsx,css,vue,svelte,php}'], { cwd: dir, absolute: true, ignore: ['**/node_modules/**', '**/.git/**', '**/dist/**', '**/build/**'] })
+      for (const f of files) {
+        try {
+          const content = fs.readFileSync(f, 'utf8')
+          if (content.includes(snippet)) return f
+        } catch {}
+      }
+    } catch {}
+  }
+
+  // Fallback: recursive walk
+  const walk = (d) => {
+    const entries = fs.readdirSync(d, { withFileTypes: true })
+    for (const e of entries) {
+      const full = path.join(d, e.name)
+      if (e.isDirectory()) {
+        if (['node_modules', '.git', 'dist', 'build'].includes(e.name)) continue
+        const found = walk(full)
+        if (found) return found
+      } else if (/\.(html?|js|jsx|ts|tsx|css|vue|svelte|php)$/i.test(e.name)) {
+        try {
+          const content = fs.readFileSync(full, 'utf8')
+          if (content.includes(snippet)) return full
+        } catch {}
+      }
+    }
+    return null
+  }
+  return walk(dir)
 }
 
 // ─── Route: Rollback ──────────────────────────────────────────────────────────

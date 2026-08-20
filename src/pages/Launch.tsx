@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Check, Copy, ExternalLink, Globe, LoaderCircle, UploadCloud, Wrench, X } from 'lucide-react'
+import { Check, Copy, ExternalLink, Globe, LoaderCircle, UploadCloud, X } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { deployPastedHtml, slugifyCreation } from '../lib/deployCreation'
 import { getCreations, hydrateMissionStore, subscribeStore, updateCreation } from '../lib/missionStore'
@@ -18,9 +18,7 @@ export default function Launch() {
   const [pasteSlug, setPasteSlug] = useState('')
   const [deploying, setDeploying] = useState(false)
   const [deployResult, setDeployResult] = useState<{ pathUrl: string; subdomainUrl: string } | null>(null)
-  const [restoreRunning, setRestoreRunning] = useState(false)
-  const [restoreSteps, setRestoreSteps] = useState<Array<{ label: string; status: string; summary?: string }>>([])
-  const [restoredHtml, setRestoredHtml] = useState<string | null>(null)
+
   const [searchParams] = useSearchParams()
   const [deployInfo, setDeployInfo] = useState<DeployInfo | null>(null)
 
@@ -54,34 +52,6 @@ export default function Launch() {
       setDeployResult(result); setNotice('Deployed!')
       await hydrateMissionStore(); setCreations(getCreations())
     } catch (e) { setNotice(e instanceof Error ? e.message : 'Deploy failed.') } finally { setDeploying(false) }
-  }
-
-  const restoreWithAlpha = async () => {
-    if (restoreRunning || !pasteHtml.trim()) return
-    setRestoreRunning(true); setRestoreSteps([]); setRestoredHtml(null); setNotice('')
-    try {
-      const res = await fetch('/api/restore/paste-html', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ html: pasteHtml }) })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const reader = res.body?.getReader(); if (!reader) throw new Error('No body')
-      const decoder = new TextDecoder(); let buffer = ''
-      while (true) {
-        const { done, value } = await reader.read(); if (done) break
-        buffer += decoder.decode(value, { stream: true }); const lines = buffer.split('\n'); buffer = lines.pop() || ''
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue
-          try {
-            const event = JSON.parse(line.slice(6))
-            if (event.type === 'thought_step' && event.step) {
-              setRestoreSteps(prev => { const idx = prev.findIndex(s => s.label === event.step.label); if (idx >= 0) { const n = [...prev]; n[idx] = { label: event.step.label, status: event.step.status, summary: event.step.summary }; return n } return [...prev, { label: event.step.label, status: event.step.status, summary: event.step.summary }] })
-            }
-            if (event.type === 'fixprompt' && event.scanSummary?.fixedHtml) {
-              setRestoredHtml(event.scanSummary.fixedHtml); setPasteHtml(event.scanSummary.fixedHtml)
-              setNotice(`Alpha fixed ${event.scanSummary.errorsFound} issues.`)
-            }
-          } catch {}
-        }
-      }
-    } catch (e) { setNotice(e instanceof Error ? e.message : 'Restore failed.') } finally { setRestoreRunning(false) }
   }
 
   const liveUrl = creation?.deploymentUrl
@@ -119,22 +89,6 @@ export default function Launch() {
           </label>
           <p className="mt-1 text-xs text-white/40">Max 900 KB. HTML, CSS, and JS all in one file.</p>
 
-          {/* Restore with Alpha steps */}
-          {restoreSteps.length > 0 && (
-            <div className="mt-4 rounded-xl border border-[#D6FF00]/20 bg-[#D6FF00]/5 p-4">
-              <p className="text-xs font-medium text-[#D6FF00] mb-3">Alpha's Analysis</p>
-              <div className="space-y-1.5">
-                {restoreSteps.map((step, i) => (
-                  <div key={i} className="flex items-center gap-2 text-xs">
-                    <span className={`size-1.5 rounded-full shrink-0 ${step.status === 'done' ? 'bg-emerald-400' : step.status === 'active' ? 'bg-[#D6FF00] animate-pulse' : step.status === 'error' ? 'bg-red-400' : 'bg-zinc-600'}`} />
-                    <span className="text-white/70">{step.label}</span>
-                    {step.summary && <span className="text-white/40 ml-auto truncate max-w-[180px]">{step.summary}</span>}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* Deploy result */}
           {deployResult && (
             <div className="mt-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4">
@@ -149,13 +103,9 @@ export default function Launch() {
 
           {/* Action buttons */}
           <div className="mt-5 flex gap-3">
-            <button onClick={() => void restoreWithAlpha()} disabled={restoreRunning || !pasteHtml.trim()} className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl border border-[#D6FF00]/30 bg-[#D6FF00]/10 px-5 text-sm font-medium text-[#D6FF00] transition-all disabled:opacity-40 hover:bg-[#D6FF00]/20">
-              {restoreRunning ? <LoaderCircle className="animate-spin" size={17}/> : <Wrench size={17}/>}
-              {restoreRunning ? 'Alpha fixing...' : restoredHtml ? 'Re-run fix' : 'Restore with Alpha'}
-            </button>
-            <button onClick={() => void deployCode()} disabled={deploying || !pasteTitle.trim() || !pasteSlug || !pasteHtml.trim()} className="flex min-h-12 items-center justify-center gap-2 rounded-xl btn-alpha px-6 text-sm font-medium text-white transition-all disabled:opacity-40">
+            <button onClick={() => void deployCode()} disabled={deploying || !pasteTitle.trim() || !pasteSlug || !pasteHtml.trim()} className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl btn-alpha px-6 text-sm font-medium text-white transition-all disabled:opacity-40">
               {deploying ? <LoaderCircle className="animate-spin" size={17}/> : <UploadCloud size={17}/>}
-              {restoredHtml ? 'Deploy fixed' : 'Deploy'}
+              Deploy
             </button>
           </div>
         </section>

@@ -28,6 +28,8 @@ const AdminAgents = lazy(() => import('./pages/AdminAgents'))
 const AdminWithdrawals = lazy(() => import('./pages/AdminWithdrawals'))
 const Billing = lazy(() => import('./pages/Billing'))
 const Launch = lazy(() => import('./pages/Launch'))
+const RestorationFlow = lazy(() => import('./pages/RestorationFlow'))
+const GitHubIntegration = lazy(() => import('./pages/GitHubIntegration'))
 
 const loader = <div className="workspace-living-bg grid min-h-screen place-items-center text-sm font-bold text-slate-300"><span className="skeleton rounded-xl px-6 py-3">Loading AlphaTekx…</span></div>
 const suspended = (page: ReactNode) => <Suspense fallback={loader}>{page}</Suspense>
@@ -61,6 +63,8 @@ export default function App() {
       <Route path="/dashboard" element={<Navigate to="/chat" replace />} />
       <Route path="/onboarding" element={<Navigate to="/chat" replace />} />
       <Route path="/scan" element={protectedPage(<ScanPage />)} />
+      <Route path="/restore-flow" element={protectedPage(<RestorationFlow />)} />
+      <Route path="/github" element={protectedPage(<GitHubIntegration />)} />
       <Route path="/restore" element={protectedPage(<RestorePage />)} />
       <Route path="/market" element={protectedPage(<MarketPage />)} />
       <Route path="/marketplace/new" element={protectedPage(<MarketplaceNew />)} />
