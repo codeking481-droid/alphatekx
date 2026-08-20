@@ -671,21 +671,21 @@ function ChatContent() {
           const sev = summary.severity || 'low'
           const scanUrl = summary.url || url
           const isNonGithub = !isGitHubRepoUrl(scanUrl)
-          let responseMsg = `I scanned **${scanUrl}** and found **${errCount} issues** (${sev} severity). Tech stack: ${tech}.\n\n`
+          let responseMsg = `I analyzed **${scanUrl}** and found **${errCount} issues** (${sev} severity). Tech stack: ${tech}.\n\n`
           if (errCount === 0) {
             responseMsg += `The site looks healthy — no critical issues detected.`
           } else if (isNonGithub) {
             responseMsg += `Here's what I found:\n\n`
             const errSummary = summary.summary || ''
             if (errSummary) responseMsg += `${errSummary}\n\n`
-            responseMsg += `This is a **live website**, not a GitHub repository. I can fix the issues and give you the result in two ways:\n\n`
+            responseMsg += `This is a **live website** — I can fix the issues and restore it in two ways:\n\n`
             responseMsg += `1. **Fix & Download** — I'll generate a fixed version of the HTML and you can download it as a ZIP\n`
-            responseMsg += `2. **Fix & Push to GitHub** — Give me a GitHub repo URL and I'll push the fixes there so it redeploys automatically`
+            responseMsg += `2. **Fix & Push to GitHub** — Give me a GitHub repo URL and I'll push the fixes so it redeploys automatically`
           } else {
             responseMsg += `Here's what I found:\n\n`
             const errSummary = summary.summary || ''
             if (errSummary) responseMsg += `${errSummary}\n\n`
-            responseMsg += `**What would you like me to do?**\n\n`
+            responseMsg += `**How would you like me to restore it?**\n\n`
             responseMsg += `1. **Fix & Push to GitHub** — I'll create a branch, push the fixes, and open a PR\n`
             responseMsg += `2. **Fix & Download** — I'll generate a fixed version you can download as a ZIP`
           }

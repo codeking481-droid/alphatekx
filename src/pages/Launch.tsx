@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Check, ChevronRight, Code2, Copy, Download, ExternalLink, Globe, LoaderCircle, RotateCcw, Server, Ship, UploadCloud, X } from 'lucide-react'
+import { Check, ChevronRight, Code2, Copy, Download, ExternalLink, Globe, LoaderCircle, RotateCcw, Server, Ship, UploadCloud, Wrench, X } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { deployPastedHtml, publishCreationPath, slugifyCreation } from '../lib/deployCreation'
 import { exportCreationZip } from '../lib/exportCreation'
@@ -29,6 +29,10 @@ export default function Launch() {
   const [pasteNotice, setPasteNotice] = useState('')
   const [pasteResult, setPasteResult] = useState<{ pathUrl: string; subdomainUrl: string } | null>(null)
   const [paste, setPaste] = useState({ title: '', slug: '', html: '' })
+  const [restoreMode, setRestoreMode] = useState(false)
+  const [restoreRunning, setRestoreRunning] = useState(false)
+  const [restoreSteps, setRestoreSteps] = useState<Array<{ label: string; status: string; summary?: string }>>([])
+  const [restoredHtml, setRestoredHtml] = useState<string | null>(null)
   const [searchParams] = useSearchParams()
   const [deployInfo, setDeployInfo] = useState<DeployInfo | null>(null)
   const [showDns, setShowDns] = useState(false)
@@ -111,6 +115,60 @@ export default function Launch() {
       setPasteDeploying(false)
     }
   }
+
+  const restoreWithAlpha = async () => {
+    if (restoreRunning || !paste.html.trim()) return
+    setRestoreRunning(true)
+    setRestoreSteps([])
+    setRestoredHtml(null)
+    setPasteNotice('')
+    try {
+      const res = await fetch('/api/restore/paste-html', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ html: paste.html }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const reader = res.body?.getReader()
+      if (!reader) throw new Error('No response body')
+      const decoder = new TextDecoder()
+      let buffer = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const event = JSON.parse(line.slice(6))
+              if (event.type === 'thought_step' && event.step) {
+                setRestoreSteps(prev => {
+                  const existing = prev.findIndex(s => s.label === event.step.label)
+                  if (existing >= 0) {
+                    const next = [...prev]
+                    next[existing] = { label: event.step.label, status: event.step.status, summary: event.step.summary }
+                    return next
+                  }
+                  return [...prev, { label: event.step.label, status: event.step.status, summary: event.step.summary }]
+                })
+              }
+              if (event.type === 'fixprompt' && event.scanSummary?.fixedHtml) {
+                setRestoredHtml(event.scanSummary.fixedHtml)
+                setPaste(prev => ({ ...prev, html: event.scanSummary.fixedHtml }))
+                setPasteNotice(`Alpha fixed ${event.scanSummary.errorsFound} issues in your code.`)
+              }
+            } catch {}
+          }
+        }
+      }
+      setRestoreRunning(false)
+    } catch (error) {
+      setPasteNotice(error instanceof Error ? error.message : 'Restore failed.')
+      setRestoreRunning(false)
+    }
+  }
   const liveUrl = creation?.deploymentUrl
   const pathUrl = creation?.pathUrl || (creation?.slug ? `https://alphatekx.name.ng/app/${creation.slug}` : undefined)
 
@@ -120,7 +178,10 @@ export default function Launch() {
         <h1 className="text-2xl font-semibold md:text-3xl">Launch</h1>
         <p className="mt-2 text-sm text-white/55">Publish a finished creation to a real <code className="rounded bg-violet-500/10 px-1.5 py-0.5 text-xs">*.alphatekx.name.ng</code> subdomain.</p>
       </div>
-      <button onClick={() => { setPasteOpen(true); setPasteNotice(''); setPasteResult(null) }} className="flex min-h-11 items-center gap-2 rounded-full border border-violet-400/20 bg-violet-500/10 px-4 text-sm font-medium transition-all hover:border-[#E56B2D] hover:bg-violet-500/10"><Code2 size={16}/>Deploy pasted code</button>
+      <div className="flex gap-2">
+        <button onClick={() => { setPasteOpen(true); setRestoreMode(true); setPasteNotice(''); setPasteResult(null); setRestoreSteps([]); setRestoredHtml(null) }} className="flex min-h-11 items-center gap-2 rounded-full border border-[#D6FF00]/20 bg-[#D6FF00]/10 px-4 text-sm font-medium transition-all hover:border-[#D6FF00] hover:bg-[#D6FF00]/15"><Wrench size={16}/>Restore with Alpha</button>
+        <button onClick={() => { setPasteOpen(true); setRestoreMode(false); setPasteNotice(''); setPasteResult(null) }} className="flex min-h-11 items-center gap-2 rounded-full border border-violet-400/20 bg-violet-500/10 px-4 text-sm font-medium transition-all hover:border-[#E56B2D] hover:bg-violet-500/10"><Code2 size={16}/>Deploy pasted code</button>
+      </div>
     </div>
 
     <div className="mt-8 grid grid-cols-3 gap-2 lg:grid-cols-6">
@@ -217,15 +278,31 @@ export default function Launch() {
       </div> : <div className="mt-6 rounded-xl border border-dashed border-violet-400/20 p-10 text-center"><div className="mx-auto grid size-12 place-items-center rounded-full bg-violet-500/10"><UploadCloud size={20} className="text-white/40"/></div><h2 className="mt-4 font-semibold">No creation selected</h2><p className="mt-2 text-sm text-white/55">Build a mission first, then return here to launch it.</p></div>}
     </section>
 
-    {pasteOpen && <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-[#0A0F1E]/75 p-4" onMouseDown={() => !pasteDeploying && setPasteOpen(false)}>
+    {pasteOpen && <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-[#0A0F1E]/75 p-4" onMouseDown={() => !pasteDeploying && !restoreRunning && setPasteOpen(false)}>
       <div className="my-6 w-full max-w-2xl rounded-2xl border border-violet-400/20 liquid-glass p-6 shadow-xl sm:p-8" onMouseDown={event => event.stopPropagation()}>
-        <div className="flex items-start justify-between gap-4"><div><h2 className="text-lg font-semibold">Deploy pasted HTML</h2><p className="mt-1 text-sm text-white/55">Paste one complete HTML file. AlphaTekX will publish it as a standalone app.</p></div><button onClick={() => setPasteOpen(false)} disabled={pasteDeploying} className="grid size-11 shrink-0 place-items-center rounded-lg hover:bg-violet-500/10 disabled:opacity-40" aria-label="Close pasted code deployment"><X size={18}/></button></div>
+        <div className="flex items-start justify-between gap-4"><div><h2 className="text-lg font-semibold">{restoreMode ? 'Restore with Alpha' : 'Deploy pasted HTML'}</h2><p className="mt-1 text-sm text-white/55">{restoreMode ? 'Paste your code and Alpha will analyze and fix any issues before deploying.' : 'Paste one complete HTML file. AlphaTekX will publish it as a standalone app.'}</p></div><button onClick={() => setPasteOpen(false)} disabled={pasteDeploying || restoreRunning} className="grid size-11 shrink-0 place-items-center rounded-lg hover:bg-violet-500/10 disabled:opacity-40" aria-label="Close"><X size={18}/></button></div>
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
           <label className="text-xs font-medium text-white/70">App name<input value={paste.title} onChange={event => { const title = event.target.value; setPaste(current => ({ ...current, title, slug: slugifyCreation(title) })) }} className="field mt-2" placeholder="My portfolio"/></label>
           <label className="text-xs font-medium text-white/70">Subdomain<input value={paste.slug} onChange={event => setPaste(current => ({ ...current, slug: slugifyCreation(event.target.value) }))} className="field mt-2" placeholder="my-portfolio"/></label>
         </div>
         <label className="mt-4 block text-xs font-medium text-white/70">Full HTML code<textarea value={paste.html} onChange={event => setPaste(current => ({ ...current, html: event.target.value }))} className="mt-2 min-h-72 w-full resize-y rounded-xl border border-violet-400/20 bg-violet-500/10 p-3 font-mono text-xs leading-5 text-zinc-100 outline-none focus:border-[#E56B2D]" placeholder={'<!doctype html>\n<html>\n  <head>...</head>\n  <body>...</body>\n</html>'} spellCheck={false}/></label>
         <p className="mt-2 text-xs text-white/45">Maximum 900 KB. HTML, CSS, and JavaScript may all be included in this one file.</p>
+
+        {restoreMode && restoreSteps.length > 0 && (
+          <div className="mt-4 rounded-xl border border-[#D6FF00]/20 bg-[#D6FF00]/5 p-4">
+            <p className="text-xs font-medium text-[#D6FF00] mb-3">Alpha's Analysis</p>
+            <div className="space-y-2">
+              {restoreSteps.map((step, i) => (
+                <div key={i} className="flex items-center gap-2 text-xs">
+                  <span className={`size-2 rounded-full ${step.status === 'done' ? 'bg-emerald-400' : step.status === 'active' ? 'bg-[#D6FF00] animate-pulse' : step.status === 'error' ? 'bg-red-400' : 'bg-zinc-500'}`}/>
+                  <span className="text-white/70">{step.label}</span>
+                  {step.summary && <span className="text-white/40 ml-auto truncate max-w-[200px]">{step.summary}</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {pasteNotice && <p role="status" className="mt-4 rounded-lg border border-violet-400/20 bg-violet-500/10 p-3 text-sm">{pasteNotice}</p>}
         {pasteResult && (
           <div className="mt-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4">
@@ -234,7 +311,19 @@ export default function Launch() {
             <button onClick={() => void copyLiveUrl(pasteResult.subdomainUrl)} className="launch-action mt-3 gap-2"><Copy size={15}/>Copy live URL</button>
           </div>
         )}
-        <button onClick={() => void deployCode()} disabled={pasteDeploying || !paste.title.trim() || !paste.slug || !paste.html.trim()} className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl btn-alpha px-5 text-sm font-medium text-white transition-all disabled:opacity-40">{pasteDeploying ? <LoaderCircle className="animate-spin" size={17}/> : <UploadCloud size={17}/>}Deploy code</button>
+
+        <div className="mt-5 flex gap-2">
+          {restoreMode && (
+            <button onClick={() => void restoreWithAlpha()} disabled={restoreRunning || !paste.html.trim()} className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl border border-[#D6FF00]/30 bg-[#D6FF00]/10 px-5 text-sm font-medium text-[#D6FF00] transition-all disabled:opacity-40 hover:bg-[#D6FF00]/20">
+              {restoreRunning ? <LoaderCircle className="animate-spin" size={17}/> : <Wrench size={17}/>}
+              {restoreRunning ? 'Alpha is fixing...' : restoredHtml ? 'Re-run Alpha fix' : 'Restore with Alpha'}
+            </button>
+          )}
+          <button onClick={() => void deployCode()} disabled={pasteDeploying || !paste.title.trim() || !paste.slug || !paste.html.trim()} className={`flex min-h-12 items-center justify-center gap-2 rounded-xl btn-alpha px-5 text-sm font-medium text-white transition-all disabled:opacity-40 ${restoreMode ? '' : 'w-full'}`}>
+            {pasteDeploying ? <LoaderCircle className="animate-spin" size={17}/> : <UploadCloud size={17}/>}
+            {restoredHtml ? 'Deploy fixed code' : 'Deploy code'}
+          </button>
+        </div>
       </div>
     </div>}
   </div></div>

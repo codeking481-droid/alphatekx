@@ -95,7 +95,7 @@ async function runRestoreV2(targetUrl, mode, sendEvent, sendStep, sendCard, res,
   // ══════════════════════════════════════════════════════════════════════════
   // PHASE 1: DEEP CRAZY SCAN
   // ══════════════════════════════════════════════════════════════════════════
-  sendStep({ id: 'scan', label: 'Deep scanning repository...', icon: 'clock', status: 'active' })
+  sendStep({ id: 'scan', label: 'Alpha analyzing site code for issues...', icon: 'clock', status: 'active' })
 
   // 1a: Clone from target URL
   // Parse owner/repo from URL or detect it's a live site URL (not a repo)
@@ -105,7 +105,7 @@ async function runRestoreV2(targetUrl, mode, sendEvent, sendStep, sendCard, res,
 
   if (repoInfo) {
     // It's a GitHub repo URL — clone it
-    sendStep({ id: 'clone', label: `Cloning ${repoInfo.fullName}...`, icon: 'clock', status: 'active' })
+    sendStep({ id: 'clone', label: `Fetching site source code...`, icon: 'clock', status: 'active' })
     try {
       fs.mkdirSync(githubDir, { recursive: true })
       const token = getTokenFromCookie(req)
@@ -118,7 +118,7 @@ async function runRestoreV2(targetUrl, mode, sendEvent, sendStep, sendCard, res,
         const branchRes = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: githubDir, encoding: 'utf8', timeout: 5000, windowsHide: true })
         defaultBranch = branchRes.stdout.trim()
       } catch {}
-      sendStep({ id: 'clone', label: 'Repository cloned', icon: 'clock', status: 'done', summary: `${repoInfo.fullName} (${defaultBranch})` })
+      sendStep({ id: 'clone', label: 'Source code fetched', icon: 'clock', status: 'done', summary: `${repoInfo.fullName} (${defaultBranch})` })
     } catch (err) {
       sendStep({ id: 'clone', label: 'Clone failed', icon: 'clock', status: 'error', summary: err.message?.slice(0, 200) })
     }
@@ -130,10 +130,10 @@ async function runRestoreV2(targetUrl, mode, sendEvent, sendStep, sendCard, res,
   // 1b: X-Ray scan (if we have a cloned repo)
   let scanGraph = null
   if (isRepoClone && fs.existsSync(githubDir)) {
-    sendStep({ id: 'xray', label: 'Running X-Ray scan...', icon: 'clock', status: 'active' })
+    sendStep({ id: 'xray', label: 'Scanning codebase for broken patterns...', icon: 'clock', status: 'active' })
     try {
       scanGraph = await scanRepoStreaming(githubDir, (msg) => sendStep({ id: 'xray-log', label: msg, icon: 'clock', status: 'active' }))
-      sendStep({ id: 'xray', label: 'X-Ray scan complete', icon: 'clock', status: 'done', summary: `${scanGraph.totalFiles} files · ${scanGraph.stack.frameworks.join(', ') || 'unknown stack'}` })
+      sendStep({ id: 'xray', label: 'Codebase analysis complete', icon: 'clock', status: 'done', summary: `${scanGraph.totalFiles} files · ${scanGraph.stack.frameworks.join(', ') || 'unknown stack'}` })
     } catch (err) {
       sendStep({ id: 'xray', label: 'X-Ray failed', icon: 'clock', status: 'error', summary: err.message?.slice(0, 200) })
     }
@@ -160,7 +160,7 @@ async function runRestoreV2(targetUrl, mode, sendEvent, sendStep, sendCard, res,
   sendEvent({ type: 'screenshot_before', data: screenshotBefore })
 
   // 1e: Diagnostic evidence + hypotheses
-  sendStep({ id: 'diagnostic', label: 'Running diagnostic analysis...', icon: 'plan', status: 'active' })
+  sendStep({ id: 'diagnostic', label: 'Diagnosing root causes of site failure...', icon: 'plan', status: 'active' })
   let hypotheses = []
   let primaryHypothesis = null
   if (isRepoClone && fs.existsSync(githubDir)) {
@@ -170,7 +170,7 @@ async function runRestoreV2(targetUrl, mode, sendEvent, sendStep, sendCard, res,
       const ranking = rankHypotheses(rawHypotheses, restorationId)
       hypotheses = ranking.ranked || []
       primaryHypothesis = ranking.primary || null
-      sendStep({ id: 'diagnostic', label: 'Diagnostic complete', icon: 'plan', status: 'done', summary: `${hypotheses.length} hypotheses, primary: ${primaryHypothesis?.title || 'none'}` })
+      sendStep({ id: 'diagnostic', label: 'Diagnosis complete — found root causes', icon: 'plan', status: 'done', summary: `${hypotheses.length} hypotheses, primary: ${primaryHypothesis?.title || 'none'}` })
     } catch (err) {
       sendStep({ id: 'diagnostic', label: 'Diagnostic failed', icon: 'plan', status: 'error', summary: err.message?.slice(0, 200) })
     }
@@ -203,7 +203,7 @@ async function runRestoreV2(targetUrl, mode, sendEvent, sendStep, sendCard, res,
     },
   })
 
-  sendStep({ id: 'scan', label: 'Scan complete', icon: 'clock', status: 'done', summary: `${hypotheses.length} hypotheses found` })
+  sendStep({ id: 'scan', label: 'Site analysis complete', icon: 'clock', status: 'done', summary: `${hypotheses.length} issues found` })
 
   if (mode === 'scan-only' || !primaryHypothesis) {
     sendEvent({ type: 'pipeline_paused', reason: mode === 'scan-only' ? 'scan-only mode' : 'no fixable hypothesis found', restorationId })
@@ -215,7 +215,7 @@ async function runRestoreV2(targetUrl, mode, sendEvent, sendStep, sendCard, res,
   // ══════════════════════════════════════════════════════════════════════════
   // PHASE 2: SANDBOX FIX (Experiment Engine)
   // ══════════════════════════════════════════════════════════════════════════
-  sendStep({ id: 'experiment', label: 'Testing fix in sandbox...', icon: 'test', status: 'active' })
+  sendStep({ id: 'experiment', label: 'Testing fix in isolated sandbox...', icon: 'test', status: 'active' })
 
   const experimentResult = await runExperiment(githubDir, primaryHypothesis, {
     restorationId,
@@ -234,19 +234,19 @@ async function runRestoreV2(targetUrl, mode, sendEvent, sendStep, sendCard, res,
   })
 
   if (!experimentResult.passed) {
-    sendStep({ id: 'experiment', label: 'Experiment FAILED', icon: 'test', status: 'error', summary: 'Fix did not pass build verification' })
+    sendStep({ id: 'experiment', label: 'Fix did not resolve the issues', icon: 'test', status: 'error', summary: 'Fix did not pass build verification' })
     sendEvent({ type: 'pipeline_paused', reason: 'experiment failed', restorationId })
     sendEvent({ type: 'pipeline_done', restorationId })
     if (!res.writableEnded) res.end()
     return
   }
 
-  sendStep({ id: 'experiment', label: 'Experiment PASSED', icon: 'test', status: 'done', summary: `Fix verified in sandbox` })
+  sendStep({ id: 'experiment', label: 'Fix verified — site will work after deploy', icon: 'test', status: 'done', summary: `Fix verified in sandbox` })
 
   // ══════════════════════════════════════════════════════════════════════════
   // PHASE 3: WAIT FOR GITHUB GATE (client sends /api/restore/push)
   // ══════════════════════════════════════════════════════════════════════════
-  sendStep({ id: 'github-gate', label: 'Connect GitHub to apply fix', icon: 'plan', status: 'active' })
+  sendStep({ id: 'github-gate', label: 'Connect GitHub to push the fix', icon: 'plan', status: 'active' })
   sendEvent({ type: 'github_gate_required', restorationId, experimentId: `${restorationId}-experiment` })
 
   // Pipeline pauses here — the client will call /api/restore/push when user connects GitHub
@@ -314,13 +314,13 @@ async function runPushAndVerify(restorationId, repoFullName, token, sendEvent, s
   const fixBranch = `alphatekx/fix-${shortId}`
 
   // ═══ PHASE 4: APPLY + PUSH + PR ═══
-  sendStep({ id: 'push', label: 'Cloning real repository...', icon: 'plan', status: 'active' })
+  sendStep({ id: 'push', label: 'Preparing to push fix to repository...', icon: 'plan', status: 'active' })
 
   const git = simpleGit()
   fs.mkdirSync(realRepoPath, { recursive: true })
   try {
     await git.clone(`https://${token}@github.com/${repoFullName}.git`, realRepoPath, { depth: 50 })
-    sendStep({ id: 'push-clone', label: 'Repository cloned', icon: 'plan', status: 'done', summary: repoFullName })
+    sendStep({ id: 'push-clone', label: 'Repository ready for fix', icon: 'plan', status: 'done', summary: repoFullName })
   } catch (err) {
     sendStep({ id: 'push-clone', label: 'Clone failed', icon: 'plan', status: 'error', summary: err.message?.slice(0, 200) })
     sendEvent({ type: 'push_failed', restorationId, error: err.message })
@@ -331,7 +331,7 @@ async function runPushAndVerify(restorationId, repoFullName, token, sendEvent, s
   const repoGit = simpleGit(realRepoPath)
 
   // Create fix branch
-  sendStep({ id: 'branch', label: `Creating branch ${fixBranch}...`, icon: 'plan', status: 'active' })
+  sendStep({ id: 'branch', label: `Creating fix branch...`, icon: 'plan', status: 'active' })
   try {
     await repoGit.checkoutLocalBranch(fixBranch)
     sendStep({ id: 'branch', label: 'Branch created', icon: 'plan', status: 'done', summary: fixBranch })
@@ -343,7 +343,7 @@ async function runPushAndVerify(restorationId, repoFullName, token, sendEvent, s
   }
 
   // Apply experiment fixes to real repo
-  sendStep({ id: 'apply', label: 'Applying fix to repository...', icon: 'plan', status: 'active' })
+  sendStep({ id: 'apply', label: 'Applying fix to site source...', icon: 'plan', status: 'active' })
   let filesChanged = 0
   if (fs.existsSync(experimentPath)) {
     const diff = copyModifiedFiles(experimentPath, realRepoPath)

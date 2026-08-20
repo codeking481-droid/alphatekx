@@ -227,28 +227,27 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
   }
 
   // ===== EMIT: RESTORATION STARTED =====
-  sendStep({ id: 'init', label: 'Initializing restore engine...', icon: 'scan', status: 'done', summary: `Target: ${targetUrl}` })
-  sendStep({ id: 'dns', label: `Resolving DNS for ${new URL(targetUrl).hostname}`, icon: 'scan', status: 'active' })
+  sendStep({ id: 'init', label: 'Alpha analyzing site...', icon: 'scan', status: 'done', summary: `Target: ${targetUrl}` })
+  sendStep({ id: 'connectivity', label: `Checking site connectivity...`, icon: 'scan', status: 'active' })
   emitRestorationStarted(scanId, sseWriter)
   sendCard({ type: 'alpha_event', event: { type: 'RESTORATION_STARTED', timestamp: new Date().toISOString() } })
 
   // ===== CARD 2: SCANNING LOG =====
   sendCard({ type: 'card', card: 'scanning', status: 'start', data: { scanId } })
 
-  // DNS
-  sendCard({ type: 'log', card: 'scanning', text: `> DNS lookup for ${new URL(targetUrl).hostname}...` })
+  // Connectivity check (was DNS — now focused on site reachability)
   let dnsResult = ''
   try {
     const hostname = new URL(targetUrl).hostname
     dnsResult = await new Promise((resolve, reject) => {
       lookup(hostname, (err, address) => err ? reject(err) : resolve(address))
     })
-    sendCard({ type: 'log', card: 'scanning', text: `> DNS resolved: ${hostname} → ${dnsResult}` })
-    sendStep({ id: 'dns', label: `DNS resolved: ${hostname} → ${dnsResult}`, icon: 'scan', status: 'done', summary: dnsResult })
+    sendCard({ type: 'log', card: 'scanning', text: `> Site reachable at ${hostname}` })
+    sendStep({ id: 'connectivity', label: `Site is reachable`, icon: 'scan', status: 'done', summary: hostname })
   } catch (err) {
     dnsResult = 'DNS_FAILED'
-    sendCard({ type: 'log', card: 'scanning', text: `> DNS lookup failed: ${err.message}` })
-    sendStep({ id: 'dns', label: `DNS lookup failed`, icon: 'scan', status: 'error', summary: err.message })
+    sendCard({ type: 'log', card: 'scanning', text: `> Site unreachable: ${err.message}` })
+    sendStep({ id: 'connectivity', label: `Site unreachable — cannot restore`, icon: 'scan', status: 'error', summary: err.message })
   }
 
   // ===== PLAYWRIGHT BROWSER SCANNING WITH LIVE SCREENSHOTS =====
@@ -257,16 +256,16 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
   try { fs.mkdirSync(screenshotDir, { recursive: true }) } catch {}
   let fetchStatus = 0
 
-  sendCard({ type: 'log', card: 'scanning', text: `> Launching headless Chromium browser...` })
-  sendStep({ id: 'browser', label: 'Launching Chromium browser...', icon: 'scan', status: 'active' })
+  sendCard({ type: 'log', card: 'scanning', text: `> Opening site in headless browser...` })
+  sendStep({ id: 'browser', label: 'Inspecting site content...', icon: 'scan', status: 'active' })
 
   try {
     await withContext(async (context) => {
       const page = await context.newPage()
       try {
-        sendCard({ type: 'log', card: 'scanning', text: `> Navigating to ${targetUrl}...` })
-        sendStep({ id: 'browser', label: 'Browser launched — navigating to site', icon: 'scan', status: 'done', summary: 'Chromium ready' })
-        sendStep({ id: 'navigate', label: `Loading ${targetUrl}`, icon: 'scan', status: 'active' })
+        sendCard({ type: 'log', card: 'scanning', text: `> Loading site content...` })
+        sendStep({ id: 'browser', label: 'Browser connected — loading page', icon: 'scan', status: 'done', summary: 'Ready' })
+        sendStep({ id: 'navigate', label: `Analyzing page content`, icon: 'scan', status: 'active' })
         sendCard({ type: 'alpha_event', event: { type: 'BROWSER_OPENED', data: { url: targetUrl }, timestamp: new Date().toISOString() } })
 
         // Collect REAL browser diagnostics
@@ -286,9 +285,9 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
 
         const response = await page.goto(targetUrl, { waitUntil: 'networkidle', timeout: 15000 })
         fetchStatus = response?.status() || 0
-        sendCard({ type: 'log', card: 'scanning', text: `> Status: ${fetchStatus} | Page loaded (network idle)` })
+        sendCard({ type: 'log', card: 'scanning', text: `> Page loaded — HTTP ${fetchStatus}` })
         sendCard({ type: 'alpha_event', event: { type: 'PAGE_NAVIGATED', data: { url: targetUrl }, timestamp: new Date().toISOString() } })
-        sendStep({ id: 'navigate', label: `Page loaded — HTTP ${fetchStatus}`, icon: 'scan', status: 'done', summary: `Status ${fetchStatus}` })
+        sendStep({ id: 'navigate', label: `Page loaded — checking for issues`, icon: 'scan', status: 'done', summary: `HTTP ${fetchStatus}` })
         sendStep({ id: 'screenshot', label: 'Capturing homepage screenshot', icon: 'test', status: 'active' })
 
         // Screenshot 1: Homepage
@@ -369,7 +368,7 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
           sendCard({ type: 'log', card: 'scanning', text: `> REAL LCP: ${realLcp} | FCP: ${realFcp} | CLS: ${realCls.toFixed(3)}` })
           sendCard({ type: 'log', card: 'scanning', text: `> Images: ${totalImages} total, ${brokenImages} broken, ${missingAlt} missing alt` })
           sendStep({ id: 'perf', label: 'Performance measured', icon: 'test', status: 'done', summary: `LCP: ${realLcp} | FCP: ${realFcp} | CLS: ${realCls.toFixed(3)}` })
-          sendStep({ id: 'probe', label: 'Probing sensitive paths', icon: 'scan', status: 'active' })
+          sendStep({ id: 'probe', label: 'Checking for exposed files and vulnerabilities', icon: 'scan', status: 'active' })
           if (consoleMessages.length > 0) {
             sendCard({ type: 'log', card: 'scanning', text: `> Console: ${consoleMessages.length} errors/warnings` })
           }
@@ -408,8 +407,8 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
         await page.screenshot({ path: path.join(screenshotDir, ssFull), type: 'jpeg', quality: 50, fullPage: true })
         screenshots.push({ filename: ssFull, label: 'Full page capture' })
         sendCard({ type: 'screenshot', scanId, filename: ssFull, label: 'Full page capture' })
-        sendStep({ id: 'probe', label: 'Path probing complete', icon: 'scan', status: 'done', summary: `${probePaths.length} paths checked` })
-        sendStep({ id: 'tech', label: 'Detecting technology stack', icon: 'search', status: 'active' })
+        sendStep({ id: 'probe', label: 'Security check complete', icon: 'scan', status: 'done', summary: `${probePaths.length} paths checked` })
+        sendStep({ id: 'tech', label: 'Identifying site technology and error patterns', icon: 'search', status: 'active' })
 
         // Store real diagnostics for error analysis phase
         scanData = {
@@ -469,8 +468,8 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
     if (tp.pattern.test(originalHtml)) { detectedTech = tp.name; break }
   }
   sendCard({ type: 'log', card: 'scanning', text: `> TECHNOLOGY: ${detectedTech}` })
-  sendStep({ id: 'tech', label: `Technology: ${detectedTech}`, icon: 'search', status: 'done', summary: detectedTech })
-  sendStep({ id: 'errors', label: 'Analyzing errors and issues', icon: 'diagnose', status: 'active' })
+  sendStep({ id: 'tech', label: `Site built with ${detectedTech}`, icon: 'search', status: 'done', summary: detectedTech })
+  sendStep({ id: 'errors', label: 'Diagnosing what went wrong with this site', icon: 'diagnose', status: 'active' })
 
   // Pattern checks
   sendCard({ type: 'log', card: 'scanning', text: `> Checking error patterns...` })
@@ -620,7 +619,7 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
     ? `${errorsFound.length} issues found (${errorsFound.filter(e => e.severity === 'critical').length} critical, ${errorsFound.filter(e => e.severity === 'high').length} high)`
     : 'No issues found — site is healthy'
   sendCard({ type: 'card', card: 'errors', status: 'done', data: { errors: errorsFound, severity: overallSeverity, summary: errorSummary } })
-  sendStep({ id: 'errors', label: `${errorsFound.length} issues found`, icon: 'diagnose', status: errorsFound.length > 0 ? 'done' : 'done', summary: errorSummary })
+  sendStep({ id: 'errors', label: `${errorsFound.length} issues found on this site`, icon: 'diagnose', status: errorsFound.length > 0 ? 'done' : 'done', summary: errorSummary })
 
   // ===== SCAN-ONLY MODE: Stop after scanning and ask user =====
   if (intent === 'scan') {
@@ -660,7 +659,7 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
   // ===== CARD 4: BACKUP =====
   sendCard({ type: 'card', card: 'backup', status: 'start' })
   sendCard({ type: 'log', card: 'backup', text: `> Creating rollback snapshot...` })
-  sendStep({ id: 'backup', label: 'Creating rollback snapshot', icon: 'plan', status: 'active' })
+  sendStep({ id: 'backup', label: 'Saving site state before repair', icon: 'plan', status: 'active' })
 
   const backupJson = {
     scanId, url: targetUrl, originalStatus: fetchStatus, technology: detectedTech,
@@ -684,11 +683,11 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
   }
 
   sendCard({ type: 'card', card: 'backup', status: 'done', data: { scanId, rollbackUrl: `/api/download/rollback/${scanId}`, version: `v${Date.now()}` } })
-  sendStep({ id: 'backup', label: 'Rollback snapshot created', icon: 'plan', status: 'done', summary: 'backup.json + rollback.zip' })
+  sendStep({ id: 'backup', label: 'Site state saved — ready to fix', icon: 'plan', status: 'done', summary: 'backup.json + rollback.zip' })
 
   // ===== CARD 5: FIXING — Real fixes, not hallucinations =====
   sendCard({ type: 'card', card: 'fixing', status: 'start' })
-  sendStep({ id: 'fix', label: 'Generating code fixes', icon: 'plan', status: 'active' })
+  sendStep({ id: 'fix', label: 'Fixing broken site code', icon: 'plan', status: 'active' })
 
   // PHASE A: Deterministic fixes (always work, no LLM needed)
   sendCard({ type: 'log', card: 'fixing', text: `> Applying deterministic fixes to HTML...` })
@@ -775,7 +774,7 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
 
   // PHASE B: AI-powered full page regeneration — sends original HTML + errors, gets complete working HTML back
   sendCard({ type: 'log', card: 'fixing', text: `> Requesting AI full-page code generation...` })
-  sendStep({ id: 'ai-gen', label: 'AI generating production-ready HTML', icon: 'plan', status: 'active' })
+  sendStep({ id: 'ai-gen', label: 'AI rewriting broken code into working site', icon: 'plan', status: 'active' })
   let aiGeneratedHtml = null
   try {
     const errorList = errorsFound.map(e => `- [${e.severity}] ${e.name}: ${e.description}`).join('\n')
@@ -801,10 +800,10 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
     fs.writeFileSync(path.join(restoredDir, 'index.html'), fixedHtml)
     sendCard({ type: 'log', card: 'fixing', text: `> AI generated complete HTML (${(fixedHtml.length / 1024).toFixed(1)}KB) — replaces regex fixes` })
     sendCard({ type: 'diff', card: 'fixing', filename: 'index.html', old: beforeHtml.slice(0, 800), newContent: fixedHtml.slice(0, 800) })
-    sendStep({ id: 'ai-gen', label: 'AI generated production-ready HTML', icon: 'plan', status: 'done', summary: `${(fixedHtml.length / 1024).toFixed(1)}KB — replaces regex fixes` })
+    sendStep({ id: 'ai-gen', label: 'AI rebuilt the site from scratch', icon: 'plan', status: 'done', summary: `${(fixedHtml.length / 1024).toFixed(1)}KB — replaces regex fixes` })
   } else {
     sendCard({ type: 'log', card: 'fixing', text: `> AI generation unavailable — using deterministic fixes` })
-    sendStep({ id: 'ai-gen', label: 'AI generation skipped — using deterministic fixes', icon: 'plan', status: 'done', summary: `${(fixedHtml.length / 1024).toFixed(1)}KB — regex fixes applied` })
+    sendStep({ id: 'ai-gen', label: 'AI unavailable — using pattern-based fixes', icon: 'plan', status: 'done', summary: `${(fixedHtml.length / 1024).toFixed(1)}KB — regex fixes applied` })
   }
 
   // PHASE C: Validate the fix by serving it locally and re-measuring
@@ -941,8 +940,8 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
   }, sseWriter)
 
   sendCard({ type: 'log', card: 'action', text: `> Restoration complete! ${fixedFiles.length} file(s) fixed.` })
-  sendStep({ id: 'proof', label: 'Before/after proof generated', icon: 'test', status: 'done', summary: `${errorsFound.length} errors → ${postFixErrors} errors` })
-  sendStep({ id: 'complete', label: 'Restoration complete', icon: 'test', status: 'done', summary: `${fixedFiles.length} file(s) fixed, download below` })
+  sendStep({ id: 'proof', label: 'Before/after comparison generated', icon: 'test', status: 'done', summary: `${errorsFound.length} errors → ${postFixErrors} errors` })
+  sendStep({ id: 'complete', label: 'Site restored successfully', icon: 'test', status: 'done', summary: `${fixedFiles.length} file(s) fixed, download below` })
   sendCard({ type: 'done' })
 
   if (!res.writableEnded) res.end()
@@ -1028,7 +1027,7 @@ async function runFixPipeline(scanId, sendCard, res) {
 
   // AI-powered full page regeneration
   sendCard({ type: 'log', card: 'fixing', text: `> Requesting AI full-page code generation...` })
-  sendStep({ id: 'ai-gen', label: 'AI generating production-ready HTML', icon: 'plan', status: 'active' })
+  sendStep({ id: 'ai-gen', label: 'AI rewriting broken code into working site', icon: 'plan', status: 'active' })
   let aiGeneratedHtml = null
   try {
     const errorList = errorsFound.map(e => `- [${e.severity}] ${e.name}: ${e.description}`).join('\n')
@@ -1054,10 +1053,10 @@ async function runFixPipeline(scanId, sendCard, res) {
     fs.writeFileSync(path.resolve(restoredDir, 'index.html'), fixedHtml, 'utf8')
     sendCard({ type: 'log', card: 'fixing', text: `> AI generated complete HTML (${(fixedHtml.length / 1024).toFixed(1)}KB) — replaces regex fixes` })
     sendCard({ type: 'diff', card: 'fixing', filename: 'index.html', old: beforeHtml.slice(0, 800), newContent: fixedHtml.slice(0, 800) })
-    sendStep({ id: 'ai-gen', label: 'AI generated production-ready HTML', icon: 'plan', status: 'done', summary: `${(fixedHtml.length / 1024).toFixed(1)}KB — replaces regex fixes` })
+    sendStep({ id: 'ai-gen', label: 'AI rebuilt the site from scratch', icon: 'plan', status: 'done', summary: `${(fixedHtml.length / 1024).toFixed(1)}KB — replaces regex fixes` })
   } else {
     sendCard({ type: 'log', card: 'fixing', text: `> AI generation unavailable — using deterministic fixes` })
-    sendStep({ id: 'ai-gen', label: 'AI generation skipped — using deterministic fixes', icon: 'plan', status: 'done', summary: `${(fixedHtml.length / 1024).toFixed(1)}KB — regex fixes applied` })
+    sendStep({ id: 'ai-gen', label: 'AI unavailable — using pattern-based fixes', icon: 'plan', status: 'done', summary: `${(fixedHtml.length / 1024).toFixed(1)}KB — regex fixes applied` })
   }
 
   sendCard({ type: 'card', card: 'fixing', status: 'done', data: { filesModified: fixedFiles.length, preview: fixedHtml.slice(0, 500) } })

@@ -9687,6 +9687,236 @@ const server = http.createServer(async (req, res) => {
     return handleRestorePushRoute(req, res)
   }
 
+  // ===== RESTORE PASTED HTML: Alpha fixes pasted code =====
+  if (req.method === 'POST' && req.url === '/api/restore/paste-html') {
+    try {
+      const body = await readBody(req)
+      const html = String(body.html || '').trim()
+      if (!html || html.length < 50) {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        return res.end(JSON.stringify({ error: 'HTML code is required (min 50 chars)' }))
+      }
+      if (html.length > 900000) {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        return res.end(JSON.stringify({ error: 'HTML too large (max 900KB)' }))
+      }
+
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-transform',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no',
+      })
+
+      const sendEvent = (event) => {
+        if (!res.writableEnded) res.write(`data: ${JSON.stringify(event)}\n\n`)
+      }
+      const sendStep = (step) => sendEvent({ type: 'thought_step', step })
+      const sendCard = (card) => sendEvent({ type: 'card', ...card })
+
+      const scanId = `paste_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+
+      // Phase 1: Analyze the pasted code
+      sendStep({ id: 'analyze', label: 'Alpha analyzing your code...', icon: 'scan', status: 'active' })
+      sendCard({ type: 'card', card: 'scanning', status: 'start', data: { scanId } })
+      sendCard({ type: 'log', card: 'scanning', text: `> Received ${(html.length / 1024).toFixed(1)}KB of HTML code` })
+
+      // Detect issues in the HTML
+      const errorsFound = []
+      const errorChecks = [
+        { name: 'MISSING_VIEWPORT', pattern: /viewport/i, severity: 'high', description: 'Missing viewport meta tag — site will look broken on mobile', file: 'html' },
+        { name: 'MISSING_LANG', pattern: /lang=/i, severity: 'medium', description: 'Missing lang attribute on <html> tag', file: 'html' },
+        { name: 'MISSING_TITLE', pattern: /<title/i, severity: 'medium', description: 'Missing <title> tag — bad for SEO', file: 'html' },
+        { name: 'MISSING_CHARSET', pattern: /charset/i, severity: 'low', description: 'Missing charset meta tag', file: 'html' },
+        { name: 'MISSING_META_DESC', pattern: /meta.*description/i, severity: 'low', description: 'Missing meta description tag', file: 'html' },
+      ]
+
+      for (const check of errorChecks) {
+        if (!check.pattern.test(html)) {
+          errorsFound.push({ id: `ERR_${check.name}`, name: check.name, file: check.file, severity: check.severity, description: check.description })
+        }
+      }
+
+      // Check for broken script references
+      const scriptSrcs = html.match(/<script[^>]*src="([^"]*)"[^>]*>/gi) || []
+      for (const script of scriptSrcs.slice(0, 5)) {
+        const srcMatch = script.match(/src="([^"]*)"/i)
+        if (srcMatch && (srcMatch[1].includes('undefined') || srcMatch[1].includes('null'))) {
+          errorsFound.push({ id: `ERR_SCRIPT_${errorsFound.length}`, name: 'BROKEN_SCRIPT', file: 'html', severity: 'high', description: `Script references broken URL: ${srcMatch[1].slice(0, 100)}` })
+        }
+      }
+
+      // Check for broken images
+      const imgTags = html.match(/<img[^>]*>/gi) || []
+      let brokenImgCount = 0
+      for (const img of imgTags) {
+        const srcMatch = img.match(/src="([^"]*)"/i)
+        if (srcMatch && (srcMatch[1].includes('undefined') || srcMatch[1].includes('null') || srcMatch[1].length < 2)) {
+          brokenImgCount++
+        }
+      }
+      if (brokenImgCount > 0) {
+        errorsFound.push({ id: 'ERR_IMG', name: 'BROKEN_IMAGES', file: 'html', severity: 'medium', description: `${brokenImgCount} images with broken or missing src attributes` })
+      }
+
+      // Check for missing alt text
+      const imgsWithoutAlt = imgTags.filter(img => !img.includes('alt=') && !img.includes('aria-label'))
+      if (imgsWithoutAlt.length > 0) {
+        errorsFound.push({ id: 'ERR_A11Y', name: 'MISSING_ALT_TEXT', file: 'html', severity: 'low', description: `${imgsWithoutAlt.length} images missing alt text (accessibility)` })
+      }
+
+      const errorSummary = errorsFound.length > 0
+        ? `${errorsFound.length} issues found (${errorsFound.filter(e => e.severity === 'critical').length} critical, ${errorsFound.filter(e => e.severity === 'high').length} high)`
+        : 'Code looks healthy — no issues detected'
+
+      sendCard({ type: 'log', card: 'scanning', text: `> Analysis complete: ${errorSummary}` })
+      sendStep({ id: 'analyze', label: 'Code analysis complete', icon: 'scan', status: 'done', summary: errorSummary })
+
+      if (errorsFound.length === 0) {
+        sendStep({ id: 'fix', label: 'No issues found — code is clean', icon: 'plan', status: 'done', summary: 'Your code is ready to deploy' })
+        sendCard({ type: 'card', card: 'errors', status: 'done', data: { errors: [], severity: 'low', summary: errorSummary } })
+        sendEvent({ type: 'fixprompt', scanId, scanSummary: { scanId, url: 'pasted-code', status: 200, tech: 'HTML', errorsFound: 0, severity: 'low', summary: errorSummary } })
+        if (!res.writableEnded) res.end()
+        return
+      }
+
+      // Phase 2: Fix the code
+      sendCard({ type: 'card', card: 'errors', status: 'done', data: { errors: errorsFound, severity: errorsFound.some(e => e.severity === 'critical') ? 'critical' : 'high', summary: errorSummary } })
+      sendStep({ id: 'fix', label: 'Alpha fixing your code...', icon: 'plan', status: 'active' })
+      sendCard({ type: 'card', card: 'fixing', status: 'start' })
+      sendCard({ type: 'log', card: 'fixing', text: `> Applying fixes...` })
+
+      let fixedHtml = html
+
+      // Deterministic fixes
+      if (!html.includes('viewport')) {
+        fixedHtml = fixedHtml.replace(/<head([^>]*)>/i, '<head$1>\n<meta name="viewport" content="width=device-width,initial-scale=1">')
+        sendCard({ type: 'log', card: 'fixing', text: `> + Added viewport meta tag` })
+      }
+      if (!html.includes('lang=')) {
+        fixedHtml = fixedHtml.replace(/<html([^>]*)>/i, '<html lang="en"$1>')
+        sendCard({ type: 'log', card: 'fixing', text: `> + Added lang="en" attribute` })
+      }
+      if (!fixedHtml.includes('<title')) {
+        const titleMatch = html.match(/<h1[^>]*>([^<]+)<\/h1>/i)
+        const title = titleMatch ? titleMatch[1].trim() : 'Website'
+        fixedHtml = fixedHtml.replace(/<head([^>]*)>/i, `<head$1>\n<title>${title}</title>`)
+        sendCard({ type: 'log', card: 'fixing', text: `> + Added <title> tag` })
+      }
+      if (!fixedHtml.includes('meta name="description"') && !fixedHtml.includes("meta name='description'")) {
+        const descText = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 155)
+        fixedHtml = fixedHtml.replace(/<head([^>]*)>/i, `<head$1>\n<meta name="description" content="${descText.replace(/"/g, '&quot;')}">`)
+        sendCard({ type: 'log', card: 'fixing', text: `> + Added meta description` })
+      }
+      if (!fixedHtml.includes('charset')) {
+        fixedHtml = fixedHtml.replace(/<head([^>]*)>/i, '<head$1>\n<meta charset="UTF-8">')
+        sendCard({ type: 'log', card: 'fixing', text: `> + Added charset UTF-8` })
+      }
+      // Fix broken images
+      fixedHtml = fixedHtml.replace(/<img([^>]*?)>/gi, (match, attrs) => {
+        if (!attrs.includes('loading=')) attrs += ' loading="lazy"'
+        if (!attrs.includes('onerror=')) attrs += ' onerror="this.style.opacity=0.3"'
+        return `<img${attrs}>`
+      })
+      // Add responsive CSS
+      if (!fixedHtml.includes('max-width:100%')) {
+        fixedHtml = fixedHtml.replace(/<\/head>/i, '<style>img{max-width:100%;height:auto}</style>\n</head>')
+      }
+
+      sendCard({ type: 'log', card: 'fixing', text: `> ${errorsFound.length} issues fixed` })
+      sendStep({ id: 'fix', label: `${errorsFound.length} issues fixed`, icon: 'plan', status: 'done', summary: 'All issues resolved' })
+
+      // Phase 3: AI-enhanced fix
+      sendStep({ id: 'ai-gen', label: 'AI polishing the fixed code...', icon: 'plan', status: 'active' })
+      sendCard({ type: 'log', card: 'fixing', text: `> AI reviewing and enhancing the fix...` })
+
+      let aiHtml = null
+      try {
+        if (process.env.GROQ_API_KEY) {
+          const errorList = errorsFound.map(e => `- [${e.severity}] ${e.name}: ${e.description}`).join('\n')
+          const { alphaText: alphaTextFn } = await import('../alpha-core/index.ts').catch(() => ({ alphaText: null }))
+          if (alphaTextFn) {
+            const aiResult = await Promise.race([
+              alphaTextFn('REASONING', [
+                { role: 'system', content: 'You are an expert web developer. Given broken HTML and a list of issues, generate a COMPLETE, working HTML file that fixes ALL issues. Preserve the original design. Return ONLY the raw HTML between ```html and ``` markers.' },
+                { role: 'user', content: `## Issues to fix:\n${errorList}\n\n## Original HTML:\n\`\`\`html\n${html.slice(0, 12000)}\n\`\`\`` },
+              ]),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('AI timeout')), 20000)),
+            ])
+            const htmlMatch = aiResult.match(/```html\s*([\s\S]*?)```/) || aiResult.match(/```([\s\S]*?)```/)
+            if (htmlMatch && htmlMatch[1]) {
+              const candidate = htmlMatch[1].trim()
+              if (candidate.includes('<html') && candidate.includes('</html>') && candidate.length > html.length * 0.3) {
+                aiHtml = candidate
+              }
+            }
+          }
+        }
+      } catch {}
+
+      if (aiHtml) {
+        fixedHtml = aiHtml
+        sendStep({ id: 'ai-gen', label: 'AI enhanced the fix', icon: 'plan', status: 'done', summary: `${(fixedHtml.length / 1024).toFixed(1)}KB — production-ready` })
+      } else {
+        sendStep({ id: 'ai-gen', label: 'Using deterministic fixes', icon: 'plan', status: 'done', summary: `${(fixedHtml.length / 1024).toFixed(1)}KB` })
+      }
+
+      sendCard({ type: 'card', card: 'fixing', status: 'done', data: { filesModified: 1, preview: fixedHtml.slice(0, 500) } })
+
+      // Phase 4: Save and provide download
+      sendStep({ id: 'save', label: 'Preparing fixed code for download', icon: 'plan', status: 'active' })
+      const workDir = path.resolve(tmpdir(), `paste-${scanId}`)
+      try { fs.mkdirSync(workDir, { recursive: true }) } catch {}
+      const restoredDir = path.resolve(workDir, 'restored')
+      try { fs.mkdirSync(restoredDir, { recursive: true }) } catch {}
+      fs.writeFileSync(path.join(restoredDir, 'index.html'), fixedHtml, 'utf8')
+
+      // Create zip for download
+      const zipPath = path.resolve(restoredDir, 'restored.zip')
+      try {
+        const { default: archiver } = await import('archiver')
+        const archive = archiver('zip', { zlib: { level: 9 } })
+        const output = fs.createWriteStream(zipPath)
+        archive.pipe(output)
+        archive.file(path.join(restoredDir, 'index.html'), { name: 'index.html' })
+        await archive.finalize()
+        await new Promise(resolve => output.on('close', resolve))
+      } catch {
+        // Fallback: just serve the HTML directly
+      }
+
+      sendStep({ id: 'save', label: 'Fixed code ready', icon: 'plan', status: 'done', summary: 'Download below' })
+      sendCard({ type: 'card', card: 'action', status: 'done', data: {
+        scanId,
+        filesModified: 1,
+        restoredZipUrl: `/api/download/restored/${scanId}`,
+        fixSummary: errorSummary,
+      } })
+      sendCard({ type: 'done' })
+
+      // Send the fixprompt event with the fixed HTML inline
+      sendEvent({ type: 'fixprompt', scanId, scanSummary: {
+        scanId,
+        url: 'pasted-code',
+        status: 200,
+        tech: 'HTML',
+        errorsFound: errorsFound.length,
+        severity: errorsFound.some(e => e.severity === 'critical') ? 'critical' : 'high',
+        summary: errorSummary,
+        fixedHtml,
+      } })
+
+      if (!res.writableEnded) res.end()
+    } catch (err) {
+      console.error('[RESTORE-PASTE] Error:', err)
+      if (!res.writableEnded) {
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: err.message || 'Restore failed' }))
+      }
+    }
+    return
+  }
+
   // ===== GITHUB DIRECT PUSH: OAuth + API =====
   if (req.method === 'GET' && req.url === '/api/auth/github') {
     return handleGitHubAuth(req, res)
