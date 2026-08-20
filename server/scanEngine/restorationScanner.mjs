@@ -1,6 +1,7 @@
 import * as cheerio from 'cheerio';
 import tls from 'node:tls';
 import crypto from 'node:crypto';
+import { detectMalware } from './malwareDetector.mjs';
 
 let findingCounter = 0;
 function makeFinding(category, severity, title, description, fixable = false, fix = null) {
@@ -1714,7 +1715,7 @@ export function detectSecrets(html) {
 }
 
 export async function runFullRestorationScan(targetUrl, options = {}) {
-  const { skipLinks = false, skipOSV = false, packages = [] } = options;
+  const { skipLinks = false, skipOSV = false, packages = [], htmlOverride = null, headersOverride = null } = options;
   resetCounter();
 
   const allFindings = [];
@@ -1743,50 +1744,55 @@ export async function runFullRestorationScan(targetUrl, options = {}) {
   const hostname = parsedUrl.hostname;
   const port = parsedUrl.port ? parseInt(parsedUrl.port, 10) : (isHttps ? 443 : 80);
 
-  // Fetch the page
   let html = '';
   let responseHeaders = {};
   let responseStatus = 0;
 
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-    const response = await fetch(targetUrl, {
-      redirect: 'follow',
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'AlphaTekX-RestorationScanner/1.0',
-      },
-    });
-    clearTimeout(timeoutId);
-    responseStatus = response.status;
+  if (htmlOverride) {
+    html = htmlOverride;
+    responseHeaders = headersOverride || {};
+  } else {
+    // Fetch the page
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+      const response = await fetch(targetUrl, {
+        redirect: 'follow',
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'AlphaTekX-RestorationScanner/1.0',
+        },
+      });
+      clearTimeout(timeoutId);
+      responseStatus = response.status;
 
-    const responseHeadersRaw = {};
-    response.headers.forEach((value, key) => {
-      responseHeadersRaw[key.toLowerCase()] = value;
-    });
-    responseHeaders = responseHeadersRaw;
+      const responseHeadersRaw = {};
+      response.headers.forEach((value, key) => {
+        responseHeadersRaw[key.toLowerCase()] = value;
+      });
+      responseHeaders = responseHeadersRaw;
 
-    const contentType = responseHeadersRaw['content-type'] || '';
-    if (contentType.includes('text/html') || contentType.includes('text/plain') || contentType === '') {
-      html = await response.text();
+      const contentType = responseHeadersRaw['content-type'] || '';
+      if (contentType.includes('text/html') || contentType.includes('text/plain') || contentType === '') {
+        html = await response.text();
+      }
+    } catch (err) {
+      allFindings.push(
+        makeFinding(
+          'links',
+          'critical',
+          'Failed to Fetch Target URL',
+          `Could not retrieve the page at ${targetUrl}. Error: ${err.message}`,
+          false
+        )
+      );
+      return {
+        findings: allFindings,
+        score: 0,
+        severity: 'critical',
+        categories: {},
+      };
     }
-  } catch (err) {
-    allFindings.push(
-      makeFinding(
-        'links',
-        'critical',
-        'Failed to Fetch Target URL',
-        `Could not retrieve the page at ${targetUrl}. Error: ${err.message}`,
-        false
-      )
-    );
-    return {
-      findings: allFindings,
-      score: 0,
-      severity: 'critical',
-      categories: {},
-    };
   }
 
   // HTTP status check
@@ -1950,6 +1956,24 @@ export async function runFullRestorationScan(targetUrl, options = {}) {
           'low',
           'Secrets Detection Error',
           `An error occurred during secrets detection: ${err.message}`,
+          false
+        )
+      );
+    }
+  }
+
+  // 9. Malware / Obfuscated Code Detection
+  if (html) {
+    try {
+      const malwareFindings = detectMalware(html);
+      allFindings.push(...malwareFindings);
+    } catch (err) {
+      allFindings.push(
+        makeFinding(
+          'malware',
+          'low',
+          'Malware Detection Error',
+          `An error occurred during malware detection: ${err.message}`,
           false
         )
       );

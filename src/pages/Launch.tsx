@@ -1,21 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Check, ChevronRight, Code2, Copy, Download, ExternalLink, Globe, LoaderCircle, RotateCcw, Server, Ship, UploadCloud, Wrench, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Check, Copy, ExternalLink, Globe, LoaderCircle, UploadCloud, Wrench, X } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
-import { deployPastedHtml, publishCreationPath, slugifyCreation } from '../lib/deployCreation'
-import { exportCreationZip } from '../lib/exportCreation'
-import { getCreations, hydrateMissionStore, rollbackCreation, subscribeStore, updateCreation } from '../lib/missionStore'
+import { deployPastedHtml, slugifyCreation } from '../lib/deployCreation'
+import { getCreations, hydrateMissionStore, subscribeStore, updateCreation } from '../lib/missionStore'
 
-const stages = ['Idea', 'Plan', 'Build', 'Test', 'Deploy', 'Live']
-const envTemplate = '# Project environment\nVITE_SUPABASE_URL=\nVITE_SUPABASE_ANON_KEY=\n'
-
-type DeployInfo = {
-  publicAppUrl: string
-  serviceUrl: string
-  serviceHostname: string
-  wildcardDomain: string
-  dnsRecords: Array<{ type: string; name: string; value: string; note: string }>
-  instructions: string
-}
+type DeployInfo = { publicAppUrl: string; serviceUrl: string; wildcardDomain: string; dnsRecords: Array<{ type: string; name: string; value: string }> }
 
 export default function Launch() {
   const [creations, setCreations] = useState(getCreations())
@@ -24,307 +13,202 @@ export default function Launch() {
   const [domain, setDomain] = useState('')
   const [slug, setSlug] = useState('')
   const [publishing, setPublishing] = useState(false)
-  const [pasteOpen, setPasteOpen] = useState(false)
-  const [pasteDeploying, setPasteDeploying] = useState(false)
-  const [pasteNotice, setPasteNotice] = useState('')
-  const [pasteResult, setPasteResult] = useState<{ pathUrl: string; subdomainUrl: string } | null>(null)
-  const [paste, setPaste] = useState({ title: '', slug: '', html: '' })
-  const [restoreMode, setRestoreMode] = useState(false)
+  const [pasteHtml, setPasteHtml] = useState('')
+  const [pasteTitle, setPasteTitle] = useState('')
+  const [pasteSlug, setPasteSlug] = useState('')
+  const [deploying, setDeploying] = useState(false)
+  const [deployResult, setDeployResult] = useState<{ pathUrl: string; subdomainUrl: string } | null>(null)
   const [restoreRunning, setRestoreRunning] = useState(false)
   const [restoreSteps, setRestoreSteps] = useState<Array<{ label: string; status: string; summary?: string }>>([])
   const [restoredHtml, setRestoredHtml] = useState<string | null>(null)
   const [searchParams] = useSearchParams()
   const [deployInfo, setDeployInfo] = useState<DeployInfo | null>(null)
-  const [showDns, setShowDns] = useState(false)
 
   useEffect(() => subscribeStore(() => setCreations(getCreations())), [])
   useEffect(() => {
-    if (selected) return
     const requested = searchParams.get('creation') || ''
-    if (requested && creations.some(item => item.id === requested)) setSelected(requested)
+    if (requested && creations.some(c => c.id === requested)) setSelected(requested)
     else if (creations[0]) setSelected(creations[0].id)
-  }, [creations, searchParams, selected])
-  const creation = creations.find(item => item.id === selected)
-  useEffect(() => {
-    setDomain(creation?.customDomain ?? '')
-    setSlug(creation?.slug ?? slugifyCreation(creation?.title ?? 'my-app'))
-    setNotice('')
-  }, [creation?.id])
+  }, [creations, searchParams])
+  const creation = creations.find(c => c.id === selected)
+  useEffect(() => { if (creation) { setDomain(creation.customDomain ?? ''); setSlug(creation.slug ?? slugifyCreation(creation.title ?? 'my-app')); setNotice('') } }, [creation?.id])
+  useEffect(() => { void fetch('/api/deploy/info').then(r => r.json()).then(d => setDeployInfo(d as DeployInfo)).catch(() => null) }, [])
 
-  useEffect(() => {
-    void fetch('/api/deploy/info')
-      .then(res => res.json())
-      .then(data => setDeployInfo(data as DeployInfo))
-      .catch(() => null)
-  }, [])
-
-  const tables = useMemo(() => {
-    const code = (creation?.code ?? '').toLowerCase()
-    return ['profiles', code.includes('order') ? 'orders' : null, code.includes('product') ? 'products' : null, code.includes('booking') ? 'bookings' : null, code.includes('message') ? 'messages' : null].filter(Boolean) as string[]
-  }, [creation])
-
-  const copyEnv = async () => { await navigator.clipboard.writeText(envTemplate); setNotice('Environment template copied.') }
-  const handoff = async (target: 'Vercel' | 'Render' | 'Docker') => {
-    if (!creation) return
-    await exportCreationZip(creation)
-    if (target === 'Vercel') window.open('https://vercel.com/new', '_blank', 'noopener,noreferrer')
-    if (target === 'Render') window.open('https://dashboard.render.com/select-repo?type=web', '_blank', 'noopener,noreferrer')
-    setNotice(`${target} package prepared and downloaded.`)
-  }
+  const copyUrl = async (url?: string) => { if (url) { await navigator.clipboard.writeText(url); setNotice('URL copied.') } }
   const publish = async () => {
     if (!creation || publishing) return
-    setPublishing(true)
-    setNotice('Publishing your app...')
+    setPublishing(true); setNotice('Publishing...')
     try {
+      const { publishCreationPath } = await import('../lib/deployCreation')
       const result = await publishCreationPath(creation, slug)
       updateCreation(creation.id, { slug: result.slug, published: true, status: 'live', deploymentUrl: result.subdomainUrl || result.url, pathUrl: result.url })
-      setSlug(result.slug)
-      setNotice(`Your app is live at ${result.subdomainUrl || result.url}`)
-      setShowDns(true)
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'Publication failed.')
-    } finally {
-      setPublishing(false)
-    }
+      setSlug(result.slug); setNotice(`Live at ${result.subdomainUrl || result.url}`)
+    } catch (e) { setNotice(e instanceof Error ? e.message : 'Failed.') } finally { setPublishing(false) }
   }
-  const copyLiveUrl = async (url?: string) => {
-    if (!url) return
-    await navigator.clipboard.writeText(url)
-    setNotice('Live URL copied.')
-  }
-  const saveDomain = () => {
-    if (!creation) return
-    updateCreation(creation.id, { customDomain: domain })
-    setNotice('Custom domain preference saved. DNS connection will be added in the subdomain phase.')
-  }
+
   const deployCode = async () => {
-    if (pasteDeploying) return
-    setPasteDeploying(true)
-    setPasteNotice('Deploying your HTML...')
-    setPasteResult(null)
+    if (deploying || !pasteTitle.trim() || !pasteSlug || !pasteHtml.trim()) return
+    setDeploying(true); setDeployResult(null); setNotice('Deploying...')
     try {
-      const result = await deployPastedHtml(paste)
-      setPasteResult(result)
-      setPasteNotice('Your pasted code is deployed.')
-      await hydrateMissionStore()
-      setCreations(getCreations())
-      setShowDns(true)
-    } catch (error) {
-      setPasteNotice(error instanceof Error ? error.message : 'Code deployment failed.')
-    } finally {
-      setPasteDeploying(false)
-    }
+      const result = await deployPastedHtml({ title: pasteTitle, slug: pasteSlug, html: pasteHtml })
+      setDeployResult(result); setNotice('Deployed!')
+      await hydrateMissionStore(); setCreations(getCreations())
+    } catch (e) { setNotice(e instanceof Error ? e.message : 'Deploy failed.') } finally { setDeploying(false) }
   }
 
   const restoreWithAlpha = async () => {
-    if (restoreRunning || !paste.html.trim()) return
-    setRestoreRunning(true)
-    setRestoreSteps([])
-    setRestoredHtml(null)
-    setPasteNotice('')
+    if (restoreRunning || !pasteHtml.trim()) return
+    setRestoreRunning(true); setRestoreSteps([]); setRestoredHtml(null); setNotice('')
     try {
-      const res = await fetch('/api/restore/paste-html', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ html: paste.html }),
-      })
+      const res = await fetch('/api/restore/paste-html', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ html: pasteHtml }) })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const reader = res.body?.getReader()
-      if (!reader) throw new Error('No response body')
-      const decoder = new TextDecoder()
-      let buffer = ''
+      const reader = res.body?.getReader(); if (!reader) throw new Error('No body')
+      const decoder = new TextDecoder(); let buffer = ''
       while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
+        const { done, value } = await reader.read(); if (done) break
+        buffer += decoder.decode(value, { stream: true }); const lines = buffer.split('\n'); buffer = lines.pop() || ''
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const event = JSON.parse(line.slice(6))
-              if (event.type === 'thought_step' && event.step) {
-                setRestoreSteps(prev => {
-                  const existing = prev.findIndex(s => s.label === event.step.label)
-                  if (existing >= 0) {
-                    const next = [...prev]
-                    next[existing] = { label: event.step.label, status: event.step.status, summary: event.step.summary }
-                    return next
-                  }
-                  return [...prev, { label: event.step.label, status: event.step.status, summary: event.step.summary }]
-                })
-              }
-              if (event.type === 'fixprompt' && event.scanSummary?.fixedHtml) {
-                setRestoredHtml(event.scanSummary.fixedHtml)
-                setPaste(prev => ({ ...prev, html: event.scanSummary.fixedHtml }))
-                setPasteNotice(`Alpha fixed ${event.scanSummary.errorsFound} issues in your code.`)
-              }
-            } catch {}
-          }
+          if (!line.startsWith('data: ')) continue
+          try {
+            const event = JSON.parse(line.slice(6))
+            if (event.type === 'thought_step' && event.step) {
+              setRestoreSteps(prev => { const idx = prev.findIndex(s => s.label === event.step.label); if (idx >= 0) { const n = [...prev]; n[idx] = { label: event.step.label, status: event.step.status, summary: event.step.summary }; return n } return [...prev, { label: event.step.label, status: event.step.status, summary: event.step.summary }] })
+            }
+            if (event.type === 'fixprompt' && event.scanSummary?.fixedHtml) {
+              setRestoredHtml(event.scanSummary.fixedHtml); setPasteHtml(event.scanSummary.fixedHtml)
+              setNotice(`Alpha fixed ${event.scanSummary.errorsFound} issues.`)
+            }
+          } catch {}
         }
       }
-      setRestoreRunning(false)
-    } catch (error) {
-      setPasteNotice(error instanceof Error ? error.message : 'Restore failed.')
-      setRestoreRunning(false)
-    }
+    } catch (e) { setNotice(e instanceof Error ? e.message : 'Restore failed.') } finally { setRestoreRunning(false) }
   }
+
   const liveUrl = creation?.deploymentUrl
   const pathUrl = creation?.pathUrl || (creation?.slug ? `https://alphatekx.name.ng/app/${creation.slug}` : undefined)
 
-  return <div className="min-h-screen px-4 py-8 md:px-10"><div className="mx-auto max-w-6xl">
-    <div className="flex flex-wrap items-start justify-between gap-4">
-      <div>
-        <h1 className="text-2xl font-semibold md:text-3xl">Launch</h1>
-        <p className="mt-2 text-sm text-white/55">Publish a finished creation to a real <code className="rounded bg-violet-500/10 px-1.5 py-0.5 text-xs">*.alphatekx.name.ng</code> subdomain.</p>
-      </div>
-      <div className="flex gap-2">
-        <button onClick={() => { setPasteOpen(true); setRestoreMode(true); setPasteNotice(''); setPasteResult(null); setRestoreSteps([]); setRestoredHtml(null) }} className="flex min-h-11 items-center gap-2 rounded-full border border-[#D6FF00]/20 bg-[#D6FF00]/10 px-4 text-sm font-medium transition-all hover:border-[#D6FF00] hover:bg-[#D6FF00]/15"><Wrench size={16}/>Restore with Alpha</button>
-        <button onClick={() => { setPasteOpen(true); setRestoreMode(false); setPasteNotice(''); setPasteResult(null) }} className="flex min-h-11 items-center gap-2 rounded-full border border-violet-400/20 bg-violet-500/10 px-4 text-sm font-medium transition-all hover:border-[#E56B2D] hover:bg-violet-500/10"><Code2 size={16}/>Deploy pasted code</button>
-      </div>
-    </div>
-
-    <div className="mt-8 grid grid-cols-3 gap-2 lg:grid-cols-6">
-      {stages.map((stage, index) => <div key={stage} className="flex min-h-14 items-center gap-2 rounded-xl border border-violet-400/20 liquid-glass p-3 shadow-sm"><span className={`grid size-6 place-items-center rounded-full text-xs ${index === stages.length - 1 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-violet-500/10'}`}>{index === stages.length - 1 ? <Check size={13}/> : index + 1}</span><span className="text-xs font-medium">{stage}</span></div>)}
-    </div>
-
-    <section className="mt-6 rounded-2xl border border-violet-400/20 liquid-glass p-5 shadow-sm md:p-8">
-      <label className="block text-xs font-medium text-white/70">Choose a creation</label>
-      <select value={selected} onChange={event => setSelected(event.target.value)} className="field mt-2">
-        <option value="">Select a creation</option>
-        {creations.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}
-      </select>
-
-      {creation ? <div className="mt-6 space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-xl font-semibold">{creation.title}</h2>
-            <p className="mt-1 text-sm text-white/55">{creation.files.length} files generated</p>
-          </div>
-          <span className={`rounded-full px-3 py-1 text-xs font-medium capitalize ${creation.status === 'live' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-violet-500/10 text-zinc-300'}`}>{creation.status}</span>
+  return (
+    <div className="min-h-screen px-4 py-8 md:px-10">
+      <div className="mx-auto max-w-4xl">
+        <div className="mb-8 text-center">
+          <h1 className="text-3xl font-bold md:text-4xl">Deploy</h1>
+          <p className="mt-2 text-sm text-white/55">Paste your HTML, pick a name, and go live on a real subdomain.</p>
         </div>
 
-        {notice && <p role="status" className="rounded-lg border border-violet-400/20 bg-violet-500/10 p-3 text-sm">{notice}</p>}
+        {notice && <p role="status" className="mb-6 rounded-xl border border-violet-400/20 bg-violet-500/10 p-3 text-sm text-center">{notice}</p>}
 
-        <div className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-5">
-          <div className="flex items-start gap-4">
-            <span className="grid size-12 shrink-0 place-items-center rounded-xl btn-alpha text-white"><UploadCloud size={20}/></span>
-            <div className="min-w-0 flex-1">
-              <h3 className="text-base font-semibold">Publish on AlphaTekX</h3>
-              <p className="mt-1 text-sm text-white/55">Your app will be available at <span className="font-medium text-white/80">https://your-slug.alphatekx.name.ng</span>.</p>
-            </div>
+        {/* ── MAIN: Paste & Deploy ── */}
+        <section className="rounded-2xl border border-violet-400/20 liquid-glass p-6 shadow-sm md:p-8">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="text-xs font-medium text-white/70">
+              App name
+              <input value={pasteTitle} onChange={e => { const t = e.target.value; setPasteTitle(t); setPasteSlug(slugifyCreation(t)) }} className="field mt-2 w-full" placeholder="My portfolio" />
+            </label>
+            <label className="text-xs font-medium text-white/70">
+              Subdomain
+              <div className="mt-2 flex min-h-12 items-center rounded-xl border border-violet-400/20 bg-violet-500/10 px-3 text-sm">
+                <input value={pasteSlug} onChange={e => setPasteSlug(slugifyCreation(e.target.value))} className="min-w-0 flex-1 bg-transparent px-1 text-zinc-100 outline-none" placeholder="my-portfolio" />
+                <span className="shrink-0 text-white/45">.alphatekx.name.ng</span>
+              </div>
+            </label>
           </div>
 
-          <label className="mt-5 block text-xs font-medium text-white/70" htmlFor="creation-slug">App address</label>
-          <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-            <div className="flex min-h-12 min-w-0 flex-1 items-center rounded-xl border border-violet-400/20 bg-violet-500/10 px-3 text-sm">
-              <span className="hidden text-white/45 sm:inline">https://</span>
-              <input id="creation-slug" value={slug} onChange={event => setSlug(slugifyCreation(event.target.value))} className="min-w-0 flex-1 bg-transparent px-1 text-zinc-100 outline-none" aria-label="Published app slug"/>
-              <span className="hidden text-white/45 sm:inline">.alphatekx.name.ng</span>
-            </div>
-            <button onClick={() => void publish()} disabled={publishing || !slug} className="flex min-h-12 items-center justify-center gap-2 rounded-xl btn-alpha px-6 text-sm font-medium text-white transition-all disabled:opacity-50">
-              {publishing ? <LoaderCircle className="animate-spin" size={16}/> : <UploadCloud size={16}/>} {creation.deploymentUrl ? 'Republish' : 'Publish'}
-            </button>
-          </div>
+          <label className="mt-4 block text-xs font-medium text-white/70">
+            HTML code
+            <textarea value={pasteHtml} onChange={e => setPasteHtml(e.target.value)} className="mt-2 min-h-64 w-full resize-y rounded-xl border border-violet-400/20 bg-violet-500/10 p-3 font-mono text-xs leading-5 text-zinc-100 outline-none focus:border-[#D6FF00]" placeholder={'<!doctype html>\n<html>\n  <head>...</head>\n  <body>...</body>\n</html>'} spellCheck={false} />
+          </label>
+          <p className="mt-1 text-xs text-white/40">Max 900 KB. HTML, CSS, and JS all in one file.</p>
 
-          {liveUrl && (
-            <div className="mt-5 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4">
-              <p className="text-sm font-medium text-emerald-300">Your app is live</p>
+          {/* Restore with Alpha steps */}
+          {restoreSteps.length > 0 && (
+            <div className="mt-4 rounded-xl border border-[#D6FF00]/20 bg-[#D6FF00]/5 p-4">
+              <p className="text-xs font-medium text-[#D6FF00] mb-3">Alpha's Analysis</p>
+              <div className="space-y-1.5">
+                {restoreSteps.map((step, i) => (
+                  <div key={i} className="flex items-center gap-2 text-xs">
+                    <span className={`size-1.5 rounded-full shrink-0 ${step.status === 'done' ? 'bg-emerald-400' : step.status === 'active' ? 'bg-[#D6FF00] animate-pulse' : step.status === 'error' ? 'bg-red-400' : 'bg-zinc-600'}`} />
+                    <span className="text-white/70">{step.label}</span>
+                    {step.summary && <span className="text-white/40 ml-auto truncate max-w-[180px]">{step.summary}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Deploy result */}
+          {deployResult && (
+            <div className="mt-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4">
+              <p className="text-sm font-medium text-emerald-300">Your site is live!</p>
               <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-                <a href={liveUrl} target="_blank" rel="noreferrer" className="launch-action flex-1 justify-center gap-2"><Globe size={16}/>{liveUrl}</a>
-                {pathUrl && <a href={pathUrl} target="_blank" rel="noreferrer" className="launch-action flex-1 justify-center gap-2"><ExternalLink size={16}/>Open path fallback</a>}
+                <a href={deployResult.subdomainUrl} target="_blank" rel="noreferrer" className="launch-action flex-1 justify-center gap-2"><Globe size={15}/>Open {deployResult.subdomainUrl}</a>
+                {deployResult.pathUrl && <a href={deployResult.pathUrl} target="_blank" rel="noreferrer" className="launch-action flex-1 justify-center gap-2"><ExternalLink size={15}/>Fallback</a>}
               </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button onClick={() => void copyLiveUrl(liveUrl)} className="launch-action gap-2"><Copy size={15}/>Copy subdomain</button>
-                {pathUrl && <button onClick={() => void copyLiveUrl(pathUrl)} className="launch-action gap-2"><Copy size={15}/>Copy fallback</button>}
-              </div>
+              <button onClick={() => void copyUrl(deployResult.subdomainUrl)} className="launch-action mt-2 gap-2"><Copy size={14}/>Copy URL</button>
             </div>
           )}
 
-          {showDns && deployInfo && (
-            <div className="mt-5 rounded-xl border border-violet-400/20 bg-violet-500/10 p-4">
-              <div className="flex items-center gap-2 text-sm font-semibold"><Globe size={16}/> Subdomain DNS setup</div>
-              <p className="mt-2 text-sm text-white/55">To make every slug a real subdomain, add this wildcard record at your DNS provider and add <code className="rounded bg-violet-500/10 px-1">{deployInfo.wildcardDomain}</code> in your Render Dashboard.</p>
-              <div className="mt-3 overflow-x-auto rounded-lg border border-violet-400/20">
-                <table className="w-full text-left text-sm"><thead className="bg-violet-500/10 text-xs text-white/55"><tr><th className="px-4 py-2">Type</th><th className="px-4 py-2">Name</th><th className="px-4 py-2">Value</th></tr></thead><tbody>{deployInfo.dnsRecords.map((record, i) => <tr key={i} className="border-t border-violet-400/20"><td className="px-4 py-3 font-mono text-xs">{record.type}</td><td className="px-4 py-3 font-mono text-xs">{record.name}</td><td className="px-4 py-3 font-mono text-xs">{record.value}</td></tr>)}</tbody></table>
-              </div>
-              <button onClick={() => void copyLiveUrl(`CNAME * ${deployInfo.dnsRecords[0]?.value || ''}`)} className="launch-action mt-3 gap-2"><Copy size={15}/>Copy DNS record</button>
-            </div>
-          )}
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <button onClick={() => void exportCreationZip(creation)} className="launch-action gap-2 justify-center"><Download size={16}/>Project ZIP</button>
-          <button onClick={() => void handoff('Vercel')} className="launch-action gap-2 justify-center"><ExternalLink size={16}/>Vercel</button>
-          <button onClick={() => void handoff('Render')} className="launch-action gap-2 justify-center"><Server size={16}/>Render</button>
-          <button onClick={() => void handoff('Docker')} className="launch-action gap-2 justify-center"><Ship size={16}/>Docker</button>
-        </div>
-        <button onClick={() => void copyEnv()} className="launch-action w-full gap-2 justify-center"><Copy size={16}/>Copy environment template</button>
-
-        <div className="grid gap-5 lg:grid-cols-2">
-          <div className="rounded-xl border border-violet-400/20 p-5">
-            <h3 className="text-sm font-semibold">Database tables</h3>
-            <p className="mt-2 text-xs text-white/55">Suggested tables for this creation.</p>
-            <div className="mt-4 flex flex-wrap gap-2">{tables.map(table => <span key={table} className="rounded-md bg-violet-500/10 px-3 py-2 font-mono text-xs">{table}</span>)}</div>
-          </div>
-          <div className="rounded-xl border border-violet-400/20 p-5">
-            <h3 className="text-sm font-semibold">Custom domain</h3>
-            <div className="mt-4 flex gap-2"><input value={domain} onChange={event => setDomain(event.target.value)} className="min-h-11 min-w-0 flex-1 rounded-lg border border-violet-400/20 bg-violet-500/10 px-3 text-sm text-zinc-100 outline-none" placeholder="app.yourdomain.com"/><button onClick={saveDomain} className="rounded-lg btn-alpha px-4 text-sm font-medium text-white">Save</button></div>
-          </div>
-        </div>
-
-        <h3 className="text-sm font-semibold">Version history</h3>
-        <div className="mt-3 space-y-2">{(creation.versions ?? []).slice().reverse().map(version => <div key={version.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-violet-400/20 p-4"><div><p className="text-sm font-medium">{version.label}</p><p className="mt-1 text-xs text-white/55">{new Date(version.createdAt).toLocaleString()}</p></div><button onClick={() => { rollbackCreation(creation.id, version.id); setNotice(`Restored ${version.label}.`) }} className="flex min-h-10 items-center gap-2 rounded-lg border border-violet-400/20 px-3 text-xs transition-all hover:bg-violet-500/10"><RotateCcw size={14}/>Restore</button></div>)}</div>
-      </div> : <div className="mt-6 rounded-xl border border-dashed border-violet-400/20 p-10 text-center"><div className="mx-auto grid size-12 place-items-center rounded-full bg-violet-500/10"><UploadCloud size={20} className="text-white/40"/></div><h2 className="mt-4 font-semibold">No creation selected</h2><p className="mt-2 text-sm text-white/55">Build a mission first, then return here to launch it.</p></div>}
-    </section>
-
-    {pasteOpen && <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-[#0A0F1E]/75 p-4" onMouseDown={() => !pasteDeploying && !restoreRunning && setPasteOpen(false)}>
-      <div className="my-6 w-full max-w-2xl rounded-2xl border border-violet-400/20 liquid-glass p-6 shadow-xl sm:p-8" onMouseDown={event => event.stopPropagation()}>
-        <div className="flex items-start justify-between gap-4"><div><h2 className="text-lg font-semibold">{restoreMode ? 'Restore with Alpha' : 'Deploy pasted HTML'}</h2><p className="mt-1 text-sm text-white/55">{restoreMode ? 'Paste your code and Alpha will analyze and fix any issues before deploying.' : 'Paste one complete HTML file. AlphaTekX will publish it as a standalone app.'}</p></div><button onClick={() => setPasteOpen(false)} disabled={pasteDeploying || restoreRunning} className="grid size-11 shrink-0 place-items-center rounded-lg hover:bg-violet-500/10 disabled:opacity-40" aria-label="Close"><X size={18}/></button></div>
-        <div className="mt-6 grid gap-4 sm:grid-cols-2">
-          <label className="text-xs font-medium text-white/70">App name<input value={paste.title} onChange={event => { const title = event.target.value; setPaste(current => ({ ...current, title, slug: slugifyCreation(title) })) }} className="field mt-2" placeholder="My portfolio"/></label>
-          <label className="text-xs font-medium text-white/70">Subdomain<input value={paste.slug} onChange={event => setPaste(current => ({ ...current, slug: slugifyCreation(event.target.value) }))} className="field mt-2" placeholder="my-portfolio"/></label>
-        </div>
-        <label className="mt-4 block text-xs font-medium text-white/70">Full HTML code<textarea value={paste.html} onChange={event => setPaste(current => ({ ...current, html: event.target.value }))} className="mt-2 min-h-72 w-full resize-y rounded-xl border border-violet-400/20 bg-violet-500/10 p-3 font-mono text-xs leading-5 text-zinc-100 outline-none focus:border-[#E56B2D]" placeholder={'<!doctype html>\n<html>\n  <head>...</head>\n  <body>...</body>\n</html>'} spellCheck={false}/></label>
-        <p className="mt-2 text-xs text-white/45">Maximum 900 KB. HTML, CSS, and JavaScript may all be included in this one file.</p>
-
-        {restoreMode && restoreSteps.length > 0 && (
-          <div className="mt-4 rounded-xl border border-[#D6FF00]/20 bg-[#D6FF00]/5 p-4">
-            <p className="text-xs font-medium text-[#D6FF00] mb-3">Alpha's Analysis</p>
-            <div className="space-y-2">
-              {restoreSteps.map((step, i) => (
-                <div key={i} className="flex items-center gap-2 text-xs">
-                  <span className={`size-2 rounded-full ${step.status === 'done' ? 'bg-emerald-400' : step.status === 'active' ? 'bg-[#D6FF00] animate-pulse' : step.status === 'error' ? 'bg-red-400' : 'bg-zinc-500'}`}/>
-                  <span className="text-white/70">{step.label}</span>
-                  {step.summary && <span className="text-white/40 ml-auto truncate max-w-[200px]">{step.summary}</span>}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {pasteNotice && <p role="status" className="mt-4 rounded-lg border border-violet-400/20 bg-violet-500/10 p-3 text-sm">{pasteNotice}</p>}
-        {pasteResult && (
-          <div className="mt-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4">
-            <p className="text-sm font-medium text-emerald-300">Pasted code is live</p>
-            <div className="mt-2 flex flex-col gap-2 sm:flex-row"><a href={pasteResult.subdomainUrl} target="_blank" rel="noreferrer" className="launch-action flex-1 justify-center gap-2"><Globe size={15}/>Open {pasteResult.subdomainUrl}</a><a href={pasteResult.pathUrl} target="_blank" rel="noreferrer" className="launch-action flex-1 justify-center gap-2"><ExternalLink size={15}/>Open fallback</a></div>
-            <button onClick={() => void copyLiveUrl(pasteResult.subdomainUrl)} className="launch-action mt-3 gap-2"><Copy size={15}/>Copy live URL</button>
-          </div>
-        )}
-
-        <div className="mt-5 flex gap-2">
-          {restoreMode && (
-            <button onClick={() => void restoreWithAlpha()} disabled={restoreRunning || !paste.html.trim()} className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl border border-[#D6FF00]/30 bg-[#D6FF00]/10 px-5 text-sm font-medium text-[#D6FF00] transition-all disabled:opacity-40 hover:bg-[#D6FF00]/20">
+          {/* Action buttons */}
+          <div className="mt-5 flex gap-3">
+            <button onClick={() => void restoreWithAlpha()} disabled={restoreRunning || !pasteHtml.trim()} className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl border border-[#D6FF00]/30 bg-[#D6FF00]/10 px-5 text-sm font-medium text-[#D6FF00] transition-all disabled:opacity-40 hover:bg-[#D6FF00]/20">
               {restoreRunning ? <LoaderCircle className="animate-spin" size={17}/> : <Wrench size={17}/>}
-              {restoreRunning ? 'Alpha is fixing...' : restoredHtml ? 'Re-run Alpha fix' : 'Restore with Alpha'}
+              {restoreRunning ? 'Alpha fixing...' : restoredHtml ? 'Re-run fix' : 'Restore with Alpha'}
             </button>
-          )}
-          <button onClick={() => void deployCode()} disabled={pasteDeploying || !paste.title.trim() || !paste.slug || !paste.html.trim()} className={`flex min-h-12 items-center justify-center gap-2 rounded-xl btn-alpha px-5 text-sm font-medium text-white transition-all disabled:opacity-40 ${restoreMode ? '' : 'w-full'}`}>
-            {pasteDeploying ? <LoaderCircle className="animate-spin" size={17}/> : <UploadCloud size={17}/>}
-            {restoredHtml ? 'Deploy fixed code' : 'Deploy code'}
-          </button>
-        </div>
+            <button onClick={() => void deployCode()} disabled={deploying || !pasteTitle.trim() || !pasteSlug || !pasteHtml.trim()} className="flex min-h-12 items-center justify-center gap-2 rounded-xl btn-alpha px-6 text-sm font-medium text-white transition-all disabled:opacity-40">
+              {deploying ? <LoaderCircle className="animate-spin" size={17}/> : <UploadCloud size={17}/>}
+              {restoredHtml ? 'Deploy fixed' : 'Deploy'}
+            </button>
+          </div>
+        </section>
+
+        {/* ── EXISTING CREATIONS ── */}
+        {creations.length > 0 && (
+          <section className="mt-6 rounded-2xl border border-violet-400/20 liquid-glass p-5 shadow-sm md:p-8">
+            <h2 className="text-sm font-semibold">Existing creations</h2>
+            <select value={selected} onChange={e => setSelected(e.target.value)} className="field mt-3 w-full">
+              <option value="">Select a creation</option>
+              {creations.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
+            </select>
+            {creation && (
+              <div className="mt-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-base font-semibold">{creation.title}</h3>
+                    <p className="text-xs text-white/50">{creation.files.length} files</p>
+                  </div>
+                  <span className={`rounded-full px-3 py-1 text-xs font-medium capitalize ${creation.status === 'live' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-violet-500/10 text-zinc-300'}`}>{creation.status}</span>
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <div className="flex min-h-12 min-w-0 flex-1 items-center rounded-xl border border-violet-400/20 bg-violet-500/10 px-3 text-sm">
+                    <span className="hidden text-white/45 sm:inline">https://</span>
+                    <input value={slug} onChange={e => setSlug(slugifyCreation(e.target.value))} className="min-w-0 flex-1 bg-transparent px-1 text-zinc-100 outline-none" />
+                    <span className="hidden text-white/45 sm:inline">.alphatekx.name.ng</span>
+                  </div>
+                  <button onClick={() => void publish()} disabled={publishing || !slug} className="flex min-h-12 items-center justify-center gap-2 rounded-xl btn-alpha px-6 text-sm font-medium text-white transition-all disabled:opacity-50">
+                    {publishing ? <LoaderCircle className="animate-spin" size={16}/> : <UploadCloud size={16}/>} Publish
+                  </button>
+                </div>
+                {liveUrl && (
+                  <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4">
+                    <p className="text-sm font-medium text-emerald-300">Live</p>
+                    <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                      <a href={liveUrl} target="_blank" rel="noreferrer" className="launch-action flex-1 justify-center gap-2"><Globe size={15}/>{liveUrl}</a>
+                      {pathUrl && <a href={pathUrl} target="_blank" rel="noreferrer" className="launch-action flex-1 justify-center gap-2"><ExternalLink size={15}/>Fallback</a>}
+                    </div>
+                    <button onClick={() => void copyUrl(liveUrl)} className="launch-action mt-2 gap-2"><Copy size={14}/>Copy</button>
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <label className="flex min-h-10 flex-1 items-center gap-2 rounded-lg border border-violet-400/20 bg-violet-500/10 px-3 text-sm">
+                    <Globe size={14} className="shrink-0 text-white/40" />
+                    <input value={domain} onChange={e => setDomain(e.target.value)} className="min-w-0 flex-1 bg-transparent text-zinc-100 outline-none" placeholder="Custom domain" />
+                  </label>
+                  <button onClick={() => { if (creation) { updateCreation(creation.id, { customDomain: domain }); setNotice('Domain saved.') } }} className="rounded-lg btn-alpha px-4 text-sm font-medium text-white">Save</button>
+                </div>
+              </div>
+            )}
+          </section>
+        )}
       </div>
-    </div>}
-  </div></div>
+    </div>
+  )
 }

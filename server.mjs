@@ -12,6 +12,7 @@ import { handleGitHubAuth, handleGitHubCallback, handleGitHubStatus, handleGitHu
 import { handleDiagnoseRoute } from './server/diagnoseRoute.mjs'
 import { handleRestoreV2Route, handleRestorePushRoute } from './server/restorePipelineV2.mjs'
 import { runFullRestorationScan } from './server/scanEngine/restorationScanner.mjs'
+import { registerMonitor, unregisterMonitor, getMonitorStatus, getAllMonitors, checkHealth } from './server/scanEngine/uptimeMonitor.mjs'
 import { marketplaceHandler, fulfillMarketplaceOrder } from './server/marketplace.mjs'
 import { getRecords, getRecord, createRecord, updateRecord, deleteRecord, appEntitiesMigrationSql } from './server/appData.mjs'
 import { createAlphaBrain } from './server/alphaBrain.mjs'
@@ -9831,6 +9832,22 @@ const server = http.createServer(async (req, res) => {
         fixedHtml = fixedHtml.replace(/<head([^>]*)>/i, '<head$1>\n<meta charset="UTF-8">')
         sendCard({ type: 'log', card: 'fixing', text: `> + Added charset UTF-8` })
       }
+      // Add OG tags if missing
+      if (!fixedHtml.includes('og:title')) {
+        const ogTitle = paste.title || 'Website'
+        fixedHtml = fixedHtml.replace(/<\/head>/i, `<meta property="og:title" content="${ogTitle.replace(/"/g, '&quot;')}">\n<meta property="og:type" content="website">\n</head>`)
+        sendCard({ type: 'log', card: 'fixing', text: `> + Added Open Graph meta tags` })
+      }
+      // Add twitter:card if missing
+      if (!fixedHtml.includes('twitter:card')) {
+        fixedHtml = fixedHtml.replace(/<\/head>/i, `<meta name="twitter:card" content="summary_large_image">\n</head>`)
+        sendCard({ type: 'log', card: 'fixing', text: `> + Added Twitter Card meta tag` })
+      }
+      // Add canonical if missing
+      if (!fixedHtml.includes('rel="canonical"') && !fixedHtml.includes("rel='canonical'")) {
+        fixedHtml = fixedHtml.replace(/<\/head>/i, `<link rel="canonical" href="https://alphatekx.name.ng">\n</head>`)
+        sendCard({ type: 'log', card: 'fixing', text: `> + Added canonical URL` })
+      }
       // Fix broken images
       fixedHtml = fixedHtml.replace(/<img([^>]*?)>/gi, (match, attrs) => {
         if (!attrs.includes('loading=')) attrs += ' loading="lazy"'
@@ -9934,6 +9951,38 @@ const server = http.createServer(async (req, res) => {
       }
     }
     return
+  }
+
+  // ===== UPTIME MONITORING =====
+  if (req.method === 'GET' && req.url === '/api/uptime/monitors') {
+    return json(res, 200, { monitors: getAllMonitors() })
+  }
+  if (req.method === 'GET' && req.url?.startsWith('/api/uptime/check/')) {
+    const checkUrl = decodeURIComponent(req.url.slice('/api/uptime/check/'.length))
+    try {
+      const result = await checkHealth(checkUrl)
+      return json(res, 200, result)
+    } catch (e) {
+      return json(res, 500, { error: e.message })
+    }
+  }
+  if (req.method === 'POST' && req.url === '/api/uptime/register') {
+    try {
+      const body = await readBody(req)
+      const monitor = registerMonitor(body.url, { intervalMs: body.intervalMs || 60000, userId: body.userId || 'anonymous' })
+      return json(res, 201, monitor)
+    } catch (e) {
+      return json(res, 400, { error: e.message })
+    }
+  }
+  if (req.method === 'POST' && req.url === '/api/uptime/unregister') {
+    try {
+      const body = await readBody(req)
+      const result = unregisterMonitor(body.monitorId)
+      return json(res, 200, result)
+    } catch (e) {
+      return json(res, 400, { error: e.message })
+    }
   }
 
   // ===== GITHUB DIRECT PUSH: OAuth + API =====

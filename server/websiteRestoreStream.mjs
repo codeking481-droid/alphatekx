@@ -25,6 +25,7 @@ import {
   emitTestFinished,
   emitRestorationCompleted,
   emitReasoningTrace,
+  emitExperimentStarted,
 } from '../alpha-core/event-bus.ts'
 
 /**
@@ -66,6 +67,20 @@ async function groqText(messages, model) {
     console.error(`[RESSTREAM] AI text error:`, err.message)
     return `LLM error: ${err.message}`
   }
+}
+
+/**
+ * Start a heartbeat that emits periodic progress events to keep the UI alive.
+ * Returns a stop function to clear the interval.
+ */
+function startHeartbeat(scanId, sendStep, intervalMs = 8000) {
+  let count = 0
+  const labels = ['Still processing...', 'Analyzing patterns...', 'Checking code...', 'Running checks...']
+  const timer = setInterval(() => {
+    sendStep({ id: 'heartbeat', label: labels[count % labels.length], icon: 'scan', status: 'active', summary: `Step ${count + 1}` })
+    count++
+  }, intervalMs)
+  return () => { try { clearInterval(timer) } catch {} }
 }
 
 export function handlePreviewRoute(req, res) {
@@ -232,6 +247,9 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
   sendStep({ id: 'connectivity', label: `Checking site connectivity...`, icon: 'scan', status: 'active' })
   emitRestorationStarted(scanId, sseWriter)
   sendCard({ type: 'alpha_event', event: { type: 'RESTORATION_STARTED', timestamp: new Date().toISOString() } })
+
+  // Start heartbeat to keep UI alive during long operations
+  const stopHeartbeat = startHeartbeat(scanId, sendStep)
 
   // ===== CARD 2: SCANNING LOG =====
   sendCard({ type: 'card', card: 'scanning', status: 'start', data: { scanId } })
@@ -643,19 +661,19 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
     emitErrorDetected(scanId, err.description, err.file, undefined, sseWriter)
   }
 
-  if (errorsFound.length > 0) {
-    const hypotheses = errorsFound.slice(0, 3).map((err, i) => ({
-      cause: err.name,
-      confidence: Math.round(90 - (i * 20)),
-    }))
-    emitHypothesisCreated(scanId, hypotheses, sseWriter)
-    emitReasoningTrace(scanId, {
-      assessment: `Found ${errorsFound.length} issues from real browser diagnostics. Prioritizing by severity.`,
-      hypotheses,
-      evidence: `Status: ${fetchStatus}, LCP: ${realLcp}, CLS: ${realCls}, JS Errors: ${browserErrors.length}, Network Fails: ${networkFailures.length}`,
-      decision: 'Fixing real errors found by browser analysis',
-    }, sseWriter)
-  }
+  // Always emit DIAGNOSING events so the pipeline advances past INVESTIGATING
+  const hypotheses = errorsFound.length > 0
+    ? errorsFound.slice(0, 3).map((err, i) => ({ cause: err.name, confidence: Math.round(90 - (i * 20)) }))
+    : [{ cause: 'SITE_HEALTHY', confidence: 95 }]
+  emitHypothesisCreated(scanId, hypotheses, sseWriter)
+  emitReasoningTrace(scanId, {
+    assessment: errorsFound.length > 0
+      ? `Found ${errorsFound.length} issues from real browser diagnostics. Prioritizing by severity.`
+      : `Scan complete — ${errorsFound.length} issues found. Site appears functional.`,
+    hypotheses,
+    evidence: `Status: ${fetchStatus}, LCP: ${realLcp}, CLS: ${realCls}, JS Errors: ${browserErrors.length}, Network Fails: ${networkFailures.length}`,
+    decision: errorsFound.length > 0 ? 'Fixing real errors found by browser analysis' : 'Site looks healthy — minor improvements may apply',
+  }, sseWriter)
 
   const errorSummary = errorsFound.length > 0
     ? `${errorsFound.length} issues found (${errorsFound.filter(e => e.severity === 'critical').length} critical, ${errorsFound.filter(e => e.severity === 'high').length} high)`
@@ -694,6 +712,7 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
       }))
     } catch {}
     sendCard({ type: 'fixprompt', scanId, scanSummary })
+    stopHeartbeat()
     if (!res.writableEnded) res.end()
     return
   }
@@ -730,6 +749,10 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
   // ===== CARD 5: FIXING — Real fixes, not hallucinations =====
   sendCard({ type: 'card', card: 'fixing', status: 'start' })
   sendStep({ id: 'fix', label: 'Fixing broken site code', icon: 'plan', status: 'active' })
+
+  // Emit REPRODUCING stage events
+  emitExperimentStarted(scanId, 1, sseWriter)
+  emitCommandStarted(scanId, 'applying-deterministic-fixes', sseWriter)
 
   // PHASE A: Deterministic fixes (always work, no LLM needed)
   sendCard({ type: 'log', card: 'fixing', text: `> Applying deterministic fixes to HTML...` })
@@ -813,6 +836,10 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
   fs.writeFileSync(path.join(restoredDir, 'index.html'), fixedHtml)
   fixedFiles.push({ filename: 'index.html', path: path.join(restoredDir, 'index.html') })
   sendCard({ type: 'log', card: 'fixing', text: `> Deterministic fixes applied to index.html (${(fixedHtml.length / 1024).toFixed(1)}KB)` })
+
+  // Emit RESTORING stage events — file was modified
+  emitFileModified(scanId, 'index.html', `Applied ${errorsFound.length} fixes to index.html`, sseWriter)
+  emitCommandFinished(scanId, 'applying-deterministic-fixes', `${fixedFiles.length} files modified`, true, sseWriter)
 
   // PHASE B: AI-powered full page regeneration — sends original HTML + errors, gets complete working HTML back
   sendCard({ type: 'log', card: 'fixing', text: `> Requesting AI full-page code generation...` })
@@ -913,6 +940,19 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
   sendStep({ id: 'fix', label: `${fixedFiles.length} file(s) fixed`, icon: 'plan', status: 'done', summary: `Deterministic + AI fixes applied` })
   sendStep({ id: 'validate', label: 'Validating fixes with Playwright', icon: 'test', status: 'active' })
 
+  // ===== VERIFY LOOP: Re-scan fixed HTML to confirm improvement =====
+  let verifyResult = null
+  try {
+    sendCard({ type: 'log', card: 'fixing', text: `> Running verify loop — re-scanning fixed code...` })
+    sendStep({ id: 'verify-loop', label: 'Re-scanning to confirm fixes worked', icon: 'test', status: 'active' })
+    const { verifyAfterFix } = await import('./scanEngine/verifyLoop.mjs')
+    verifyResult = await verifyAfterFix(scanId, originalHtml, fixedHtml, targetUrl, sseWriter)
+    sendCard({ type: 'log', card: 'fixing', text: `> Verify: ${verifyResult.summary}` })
+    sendStep({ id: 'verify-loop', label: verifyResult.summary, icon: 'test', status: verifyResult.fixed ? 'done' : 'error', summary: `${verifyResult.beforeScore} → ${verifyResult.afterScore}` })
+  } catch (err) {
+    sendCard({ type: 'log', card: 'fixing', text: `> Verify loop skipped: ${err.message}` })
+  }
+
   // ===== Create restored.zip =====
   let restoredZipPath = ''
   try {
@@ -972,6 +1012,7 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
   } })
 
   // ===== EMIT: TEST & COMPLETION =====
+  stopHeartbeat()
   emitTestStarted(scanId, 1, sseWriter)
   emitTestFinished(scanId, 1, 0, sseWriter)
   emitRestorationCompleted(scanId, {
