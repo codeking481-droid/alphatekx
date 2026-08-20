@@ -188,20 +188,6 @@ function ChatContent() {
     }
   }, [messages])
 
-  // Auto-trigger fix when user said "fix/restore" and scan just finished
-  useEffect(() => {
-    if (lastIntentRef.current !== 'full' || autoFixTriggeredRef.current) return
-    const lastMsg = messages[messages.length - 1]
-    if (!lastMsg?.restoreCards?.fixprompt || lastMsg.restoreCards?.fixing) return
-    const fp = lastMsg.restoreCards.fixprompt
-    if (!fp || fp.errorsFound === 0) return
-    autoFixTriggeredRef.current = true
-    // Auto-trigger fix for non-GitHub live sites (fix & download)
-    if (!isGitHubRepoUrl(fp.url)) {
-      void handleFixNow(fp.scanId, fp.url)
-    }
-  }, [messages, handleFixNow])
-
   const scrollToBottom = useCallback(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
@@ -781,6 +767,20 @@ function ChatContent() {
       scrollToBottom()
     }
   }, [updateLastMessage, scrollToBottom, handleRestoreEvent])
+
+  // Auto-trigger fix when user said "fix/restore" and scan just finished
+  useEffect(() => {
+    if (lastIntentRef.current !== 'full' || autoFixTriggeredRef.current) return
+    const lastMsg = messages[messages.length - 1]
+    if (!lastMsg?.restoreCards?.fixprompt || lastMsg.restoreCards?.fixing) return
+    const fp = lastMsg.restoreCards.fixprompt
+    if (!fp || fp.errorsFound === 0) return
+    autoFixTriggeredRef.current = true
+    // Auto-trigger fix for non-GitHub live sites (fix & download)
+    if (!isGitHubRepoUrl(fp.url)) {
+      void handleFixNow(fp.scanId, fp.url)
+    }
+  }, [messages, handleFixNow])
 
   const handleCreateAndPush = useCallback(async (scanId: string, originalUrl: string, repoUrl: string) => {
     if (!isGitHubRepoUrl(repoUrl)) {
