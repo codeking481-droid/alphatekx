@@ -1,0 +1,148 @@
+﻿data: {"type":"alpha_event","event":{"type":"RESTORATION_STARTED","timestamp":"2026-08-19T23:32:17.437Z"}}
+
+data: {"type":"alpha_event","event":{"type":"RESTORATION_STARTED","timestamp":"2026-08-19T23:32:17.440Z"}}
+
+data: {"type":"card","card":"scanning","status":"start","data":{"scanId":"wr_mt0q7x5kfd6xzc"}}
+
+data: {"type":"log","card":"scanning","text":"> DNS lookup for example.com..."}
+
+data: {"type":"log","card":"scanning","text":"> DNS resolved: example.com ΓåÆ 104.20.23.154"}
+
+data: {"type":"log","card":"scanning","text":"> Launching headless Chromium browser..."}
+
+data: {"type":"log","card":"scanning","text":"> Navigating to https://example.com..."}
+
+data: {"type":"alpha_event","event":{"type":"BROWSER_OPENED","data":{"url":"https://example.com"},"timestamp":"2026-08-19T23:32:18.103Z"}}
+
+data: {"type":"log","card":"scanning","text":"> Status: 200 | Page loaded (network idle)"}
+
+data: {"type":"alpha_event","event":{"type":"PAGE_NAVIGATED","data":{"url":"https://example.com"},"timestamp":"2026-08-19T23:32:21.965Z"}}
+
+data: {"type":"screenshot","scanId":"wr_mt0q7x5kfd6xzc","filename":"01-homepage.jpg","label":"Homepage loaded (HTTP 200)"}
+
+data: {"type":"log","card":"scanning","text":"> HTML captured: 0.5KB"}
+
+data: {"type":"log","card":"scanning","text":"> REAL LCP: 3.40s | FCP: 3.40s | CLS: 0.000"}
+
+data: {"type":"log","card":"scanning","text":"> Images: 0 total, 0 broken, 0 missing alt"}
+
+data: {"type":"log","card":"scanning","text":"> Checking /wp-admin..."}
+
+data: {"type":"log","card":"scanning","text":"> Checking /.env..."}
+
+data: {"type":"log","card":"scanning","text":"> Checking /wp-config.php.bak..."}
+
+data: {"type":"log","card":"scanning","text":"> Checking /.git/config..."}
+
+data: {"type":"log","card":"scanning","text":"> Checking /server-status..."}
+
+data: {"type":"screenshot","scanId":"wr_mt0q7x5kfd6xzc","filename":"02-probe.jpg","label":"/wp-admin ΓåÆ HTTP 404"}
+
+data: {"type":"log","card":"scanning","text":"> /wp-admin: HTTP 404"}
+
+data: {"type":"screenshot","scanId":"wr_mt0q7x5kfd6xzc","filename":"04-probe.jpg","label":"/wp-config.php.bak ΓåÆ HTTP 404"}
+
+data: {"type":"log","card":"scanning","text":"> /wp-config.php.bak: HTTP 404"}
+
+data: {"type":"screenshot","scanId":"wr_mt0q7x5kfd6xzc","filename":"03-probe.jpg","label":"/.env ΓåÆ HTTP 404"}
+
+data: {"type":"log","card":"scanning","text":"> /.env: HTTP 404"}
+
+data: {"type":"screenshot","scanId":"wr_mt0q7x5kfd6xzc","filename":"05-probe.jpg","label":"/.git/config ΓåÆ HTTP 404"}
+
+data: {"type":"log","card":"scanning","text":"> /.git/config: HTTP 404"}
+
+data: {"type":"screenshot","scanId":"wr_mt0q7x5kfd6xzc","filename":"06-probe.jpg","label":"/server-status ΓåÆ HTTP 404"}
+
+data: {"type":"log","card":"scanning","text":"> /server-status: HTTP 404"}
+
+data: {"type":"screenshot","scanId":"wr_mt0q7x5kfd6xzc","filename":"7-fullpage.jpg","label":"Full page capture"}
+
+data: {"type":"log","card":"scanning","text":"> TECH detection ΓÇö analyzing HTML patterns..."}
+
+data: {"type":"log","card":"scanning","text":"> TECHNOLOGY: unknown"}
+
+data: {"type":"log","card":"scanning","text":"> Checking error patterns..."}
+
+data: {"type":"log","card":"scanning","text":"> Page elements: 0 images, 1 links"}
+
+data: {"type":"log","card":"scanning","text":"> Scan complete. 0 patterns found, status 200, tech: unknown"}
+
+data: {"type":"card","card":"scanning","status":"done","data":{"browserErrors":[],"networkFailures":[],"consoleMessages":[],"realLcp":"3.40s","realFcp":"3.40s","realCls":0,"brokenImages":0,"missingAlt":0,"totalImages":0,"url":"https://example.com","scanId":"wr_mt0q7x5kfd6xzc","status":200,"technology":"unknown","dns":"104.20.23.154","htmlLength":559,"lcp":"3.40s","fcp":"3.40s","cls":0,"imgCount":0,"linkCount":1,"detectedPatterns":[],"scannedAt":"2026-08-19T23:32:24.254Z"}}
+
+data: {"type":"alpha_event","event":{"type":"REPOSITORY_SCANNED","timestamp":"2026-08-19T23:32:24.255Z","data":{"totalFiles":1,"stack":{"runtime":["unknown"],"frameworks":[],"languages":[],"tools":[],"packageManagers":[]},"entryPoints":[{"type":"frontend-route","path":"https://example.com","file":"index.html"}]}}}
+
+data: {"type":"card","card":"errors","status":"start"}
+
+data: {"type":"log","card":"errors","text":"> ERROR ERR_LCP: SLOW_LCP at performance [medium] ΓÇö LCP is 3.40s (should be < 2.5s)"}
+
+data: {"type":"alpha_event","event":{"type":"ERROR_DETECTED","timestamp":"2026-08-19T23:32:24.256Z","data":{"message":"LCP is 3.40s (should be < 2.5s)","file":"performance"}}}
+
+data: {"type":"log","card":"errors","text":"> ERROR ERR_META: MISSING_META_DESC at html [low] ΓÇö Missing meta description tag"}
+
+data: {"type":"alpha_event","event":{"type":"ERROR_DETECTED","timestamp":"2026-08-19T23:32:24.260Z","data":{"message":"Missing meta description tag","file":"html"}}}
+
+data: {"type":"alpha_event","event":{"type":"HYPOTHESIS_CREATED","timestamp":"2026-08-19T23:32:24.263Z","data":{"hypotheses":[{"cause":"SLOW_LCP","confidence":90},{"cause":"MISSING_META_DESC","confidence":70}]}}}
+
+data: {"type":"alpha_event","event":{"type":"REASONING_TRACE","timestamp":"2026-08-19T23:32:24.264Z","data":{"assessment":"Found 2 issues from real browser diagnostics. Prioritizing by severity.","hypotheses":[{"cause":"SLOW_LCP","confidence":90},{"cause":"MISSING_META_DESC","confidence":70}],"evidence":"Status: 200, LCP: 3.40s, CLS: 0, JS Errors: 0, Network Fails: 0","decision":"Fixing real errors found by browser analysis"}}}
+
+data: {"type":"card","card":"errors","status":"done","data":{"errors":[{"id":"ERR_LCP","name":"SLOW_LCP","file":"performance","severity":"medium","description":"LCP is 3.40s (should be < 2.5s)"},{"id":"ERR_META","name":"MISSING_META_DESC","file":"html","severity":"low","description":"Missing meta description tag"}],"severity":"medium","summary":"2 issues found (0 critical, 0 high)"}}
+
+data: {"type":"card","card":"backup","status":"start"}
+
+data: {"type":"log","card":"backup","text":"> Creating rollback snapshot..."}
+
+data: {"type":"log","card":"backup","text":"> Saved backup.json (1.4KB)"}
+
+data: {"type":"log","card":"backup","text":"> Rollback zip created: rollback.zip"}
+
+data: {"type":"card","card":"backup","status":"done","data":{"scanId":"wr_mt0q7x5kfd6xzc","rollbackUrl":"/api/download/rollback/wr_mt0q7x5kfd6xzc","version":"v1787182344272"}}
+
+data: {"type":"card","card":"fixing","status":"start"}
+
+data: {"type":"log","card":"fixing","text":"> Applying deterministic fixes to HTML..."}
+
+data: {"type":"log","card":"fixing","text":"> + Added meta description"}
+
+data: {"type":"log","card":"fixing","text":"> + Added lazy loading to images"}
+
+data: {"type":"log","card":"fixing","text":"> + Removed scripts referencing broken URLs"}
+
+data: {"type":"log","card":"fixing","text":"> + Added charset UTF-8"}
+
+data: {"type":"log","card":"fixing","text":"> + Added responsive image CSS"}
+
+data: {"type":"log","card":"fixing","text":"> Deterministic fixes applied to index.html (0.8KB)"}
+
+data: {"type":"log","card":"fixing","text":"> Generating AI quality improvements..."}
+
+data: {"type":"log","card":"fixing","text":"> AI improvements applied (0.8KB total)"}
+
+data: {"type":"log","card":"fixing","text":"> Validating fix with Playwright..."}
+
+data: {"type":"screenshot","scanId":"wr_mt0q7x5kfd6xzc","filename":"after-fix.jpg","label":"After fix applied"}
+
+data: {"type":"log","card":"fixing","text":"> Post-fix LCP: 0.04s | JS Errors: 0"}
+
+data: {"type":"card","card":"fixing","status":"done","data":{"filesModified":1,"preview":"<!DOCTYPE html><html lang=\"en\"><head>\n<meta charset=\"UTF-8\">\n<meta name=\"description\" content=\"Example Domain body{background:#eee;width:60vw;margin:15vh auto;font-family:system-ui,sans-serif}h1{font-size:1.5em}div{opacity:0.8}a:link,a:visited{color:\"><title>Example Domain</title><link rel=\"icon\" href=\"data:,\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><style>body{background:#eee;width:60vw;margin:15vh auto;font-family:system-ui,sans-serif}h1{font-size:1.5em}div{opacity:","postFixLcp":"0.04s"}}
+
+data: {"type":"log","card":"fixing","text":"> restored.zip created with 1 file(s)"}
+
+data: {"type":"card","card":"goldproof","status":"start"}
+
+data: {"type":"log","card":"goldproof","text":"> Generating before/after proof..."}
+
+data: {"type":"card","card":"goldproof","status":"done","data":{"before":{"url":"https://example.com","status":200,"lcp":"3.40s","errors":2,"tech":"unknown"},"after":{"url":"https://example.com","status":200,"lcp":"0.04s","errors":0,"tech":"unknown","previewUrl":"/api/preview-fixed?scanId=wr_mt0q7x5kfd6xzc"},"scanId":"wr_mt0q7x5kfd6xzc","fixesCount":1,"realMetrics":true,"screenshotBefore":{"filename":"01-homepage.jpg","label":"Homepage loaded (HTTP 200)"},"screenshotAfter":{"filename":"after-fix.jpg","label":"After fix applied"},"improvement":{"lcpChange":"3.40s ΓåÆ 0.04s","errorsFixed":2,"issuesResolved":1}}}
+
+data: {"type":"card","card":"action","status":"done","data":{"scanId":"wr_mt0q7x5kfd6xzc","filesModified":1,"restoredZipUrl":"/api/download/restored/wr_mt0q7x5kfd6xzc","rollbackUrl":"/api/download/rollback/wr_mt0q7x5kfd6xzc","redeploySteps":["1. Download the \"restored.zip\" file above","2. Upload to your hosting provider (Render, Vercel, cPanel, etc.)","3. Extract over existing files","4. Clear browser cache and test the site","5. If issues persist, download \"rollback.zip\" to restore the original state"],"metrics":{"before":{"statusCode":200,"lcp":"3.40s","errors":0},"after":{"lcp":"0.04s","statusCode":200,"errors":0}}}}
+
+data: {"type":"alpha_event","event":{"type":"TEST_STARTED","timestamp":"2026-08-19T23:32:27.210Z","data":{"count":1}}}
+
+data: {"type":"alpha_event","event":{"type":"TEST_FINISHED","timestamp":"2026-08-19T23:32:27.212Z","data":{"passed":1,"failed":0}}}
+
+data: {"type":"alpha_event","event":{"type":"RESTORATION_COMPLETED","timestamp":"2026-08-19T23:32:27.214Z","data":{"healthBefore":80,"healthAfter":100,"filesModified":1,"testsPassed":1}}}
+
+data: {"type":"log","card":"action","text":"> Restoration complete! 1 file(s) fixed."}
+
+data: {"type":"done"}
+

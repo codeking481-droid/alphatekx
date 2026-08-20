@@ -1,0 +1,78 @@
+﻿data: {"type":"pipeline_start","restorationId":"rv2_mt0q8itxboob2y","targetUrl":"https://github.com/codeking481-droid/alphatekx","mode":"scan-only","timestamp":"2026-08-19T23:32:45.525Z"}
+
+data: {"type":"thought_step","step":{"id":"scan","label":"Deep scanning repository...","icon":"clock","status":"active"}}
+
+data: {"type":"thought_step","step":{"id":"clone","label":"Cloning codeking481-droid/alphatekx...","icon":"clock","status":"active"}}
+
+data: {"type":"thought_step","step":{"id":"clone","label":"Repository cloned","icon":"clock","status":"done","summary":"codeking481-droid/alphatekx (main)"}}
+
+data: {"type":"thought_step","step":{"id":"xray","label":"Running X-Ray scan...","icon":"clock","status":"active"}}
+
+data: {"type":"thought_step","step":{"id":"xray-log","label":"Walking directory tree...","icon":"clock","status":"active"}}
+
+data: {"type":"thought_step","step":{"id":"xray-log","label":"Found 469 files, 72 dirs","icon":"clock","status":"active"}}
+
+data: {"type":"thought_step","step":{"id":"xray-log","label":"Detecting tech stack...","icon":"clock","status":"active"}}
+
+data: {"type":"thought_step","step":{"id":"xray-log","label":"Stack: node, nextjs","icon":"clock","status":"active"}}
+
+data: {"type":"thought_step","step":{"id":"xray-log","label":"Finding entry points...","icon":"clock","status":"active"}}
+
+data: {"type":"thought_step","step":{"id":"xray-log","label":"Found 119 entry points","icon":"clock","status":"active"}}
+
+data: {"type":"thought_step","step":{"id":"xray-log","label":"Scanning config files...","icon":"clock","status":"active"}}
+
+data: {"type":"thought_step","step":{"id":"xray-log","label":"Found 5/11 config files","icon":"clock","status":"active"}}
+
+data: {"type":"thought_step","step":{"id":"xray-log","label":"Parsing dependencies...","icon":"clock","status":"active"}}
+
+data: {"type":"thought_step","step":{"id":"xray-log","label":"Found 101 dependencies","icon":"clock","status":"active"}}
+
+data: {"type":"thought_step","step":{"id":"xray-log","label":"Running npm audit...","icon":"clock","status":"active"}}
+
+data: {"type":"thought_step","step":{"id":"xray-log","label":"npm audit: 0 vulnerabilities","icon":"clock","status":"active"}}
+
+data: {"type":"thought_step","step":{"id":"xray-log","label":"Querying OSV for known vulnerabilities...","icon":"clock","status":"active"}}
+
+data: {"type":"thought_step","step":{"id":"xray-log","label":"OSV: 0 vulnerabilities found","icon":"clock","status":"active"}}
+
+data: {"type":"thought_step","step":{"id":"xray-log","label":"Total unique vulnerabilities: 0","icon":"clock","status":"active"}}
+
+data: {"type":"thought_step","step":{"id":"xray-log","label":"Building ownership map...","icon":"clock","status":"active"}}
+
+data: {"type":"thought_step","step":{"id":"xray-log","label":"Mapped 7 ownership domains","icon":"clock","status":"active"}}
+
+data: {"type":"thought_step","step":{"id":"xray","label":"X-Ray scan complete","icon":"clock","status":"done","summary":"469 files ┬╖ nextjs"}}
+
+data: {"type":"thought_step","step":{"type":"thought_step","step":{"id":"deep-build","label":"Deep build analysis...","icon":"test","status":"active"}}}
+
+data: {"type":"thought_step","step":{"type":"thought_step","step":{"id":"deep-install","label":"npm install errors","icon":"plan","status":"error","summary":"\n"}}}
+
+data: {"type":"thought_step","step":{"id":"screenshot-before","label":"Capturing before screenshot...","icon":"test","status":"active"}}
+
+data: {"type":"thought_step","step":{"type":"thought_step","step":{"id":"before-install","label":"Installing deps (before)...","icon":"plan","status":"active"}}}
+
+data: {"type":"thought_step","step":{"type":"thought_step","step":{"id":"before-install","label":"Install failed (before)","icon":"plan","status":"error","summary":"spawn npm ENOENT"}}}
+
+data: {"type":"thought_step","step":{"type":"thought_step","step":{"id":"before-build","label":"Building project (before)...","icon":"test","status":"active"}}}
+
+data: {"type":"thought_step","step":{"type":"thought_step","step":{"id":"before-build","label":"Build skipped (before)","icon":"test","status":"error","summary":"Deps not installed"}}}
+
+data: {"type":"thought_step","step":{"type":"thought_step","step":{"id":"before-screenshot","label":"Capturing screenshot (before)...","icon":"test","status":"active"}}}
+
+data: {"type":"thought_step","step":{"type":"thought_step","step":{"id":"before-screenshot","label":"Screenshot skipped (before)","icon":"test","status":"done","summary":"Build failed"}}}
+
+data: {"type":"screenshot_before","data":{"screenshotPath":null,"buildOk":false,"buildOutput":"Skipped: npm install failed","buildDurationMs":7}}
+
+data: {"type":"thought_step","step":{"id":"diagnostic","label":"Running diagnostic analysis...","icon":"plan","status":"active"}}
+
+data: {"type":"thought_step","step":{"id":"diagnostic","label":"Diagnostic complete","icon":"plan","status":"done","summary":"3 hypotheses, primary: none"}}
+
+data: {"type":"scan_complete","restorationId":"rv2_mt0q8itxboob2y","data":{"scanGraph":{"files":469,"stack":{"runtime":["node"],"frameworks":["nextjs"],"languages":["typescript"],"tools":["docker","vercel"],"packageManagers":["npm"]},"frameworks":["nextjs"]},"buildAnalysis":{"buildOk":false,"errorCount":0},"screenshotBefore":null,"hypotheses":[{"id":"H1","confidence":91},{"id":"H2","confidence":5},{"id":"H3","confidence":4}],"primaryHypothesis":{"id":"H1","confidence":91}}}
+
+data: {"type":"thought_step","step":{"id":"scan","label":"Scan complete","icon":"clock","status":"done","summary":"3 hypotheses found"}}
+
+data: {"type":"pipeline_paused","reason":"scan-only mode","restorationId":"rv2_mt0q8itxboob2y"}
+
+data: {"type":"pipeline_done","restorationId":"rv2_mt0q8itxboob2y"}
+
