@@ -124,10 +124,9 @@ function isGitHubRepoUrl(url: string): boolean {
 }
 
 function detectRestoreIntent(text: string): 'scan' | 'full' {
-  // Default to full (scan + fix) — user pasting a URL wants it fixed, not just scanned
   const lower = text.toLowerCase()
-  if (/\b(scan|audit|check|analyze|inspect|diagnose)\b/i.test(lower) && !/\b(fix|repair|restore|heal|resurrect|apply|commit|push|deploy|merge)\b/i.test(lower)) return 'scan'
-  return 'full'
+  // Always scan first for non-GitHub URLs — ask before fixing
+  return 'scan'
 }
 
 function uid() {
@@ -666,7 +665,31 @@ function ChatContent() {
             severity: summary.severity || 'unknown',
             summary: summary.summary || '',
           }
-          break
+          // Show a proper conversation message after scan
+          const errCount = summary.errorsFound || 0
+          const tech = summary.tech || 'unknown'
+          const sev = summary.severity || 'low'
+          const scanUrl = summary.url || url
+          const isNonGithub = !isGitHubRepoUrl(scanUrl)
+          let responseMsg = `I scanned **${scanUrl}** and found **${errCount} issues** (${sev} severity). Tech stack: ${tech}.\n\n`
+          if (errCount === 0) {
+            responseMsg += `The site looks healthy — no critical issues detected.`
+          } else if (isNonGithub) {
+            responseMsg += `Here's what I found:\n\n`
+            const errSummary = summary.summary || ''
+            if (errSummary) responseMsg += `${errSummary}\n\n`
+            responseMsg += `This is a **live website**, not a GitHub repository. I can fix the issues and give you the result in two ways:\n\n`
+            responseMsg += `1. **Fix & Download** — I'll generate a fixed version of the HTML and you can download it as a ZIP\n`
+            responseMsg += `2. **Fix & Push to GitHub** — Give me a GitHub repo URL and I'll push the fixes there so it redeploys automatically`
+          } else {
+            responseMsg += `Here's what I found:\n\n`
+            const errSummary = summary.summary || ''
+            if (errSummary) responseMsg += `${errSummary}\n\n`
+            responseMsg += `**What would you like me to do?**\n\n`
+            responseMsg += `1. **Fix & Push to GitHub** — I'll create a branch, push the fixes, and open a PR\n`
+            responseMsg += `2. **Fix & Download** — I'll generate a fixed version you can download as a ZIP`
+          }
+          return { ...prev, restoreCards: cards, content: responseMsg }
         }
         case 'error': {
           cards.isRunning = false
@@ -731,6 +754,124 @@ function ChatContent() {
       }
     } finally {
       setIsGenerating(false)
+      scrollToBottom()
+    }
+  }, [updateLastMessage, scrollToBottom, handleRestoreEvent])
+
+  const handleCreateAndPush = useCallback(async (scanId: string, originalUrl: string, repoUrl: string) => {
+    if (!isGitHubRepoUrl(repoUrl)) {
+      updateLastMessage((prev) => ({
+        ...prev,
+        content: (prev.content || '') + '\n\nThat doesn\'t look like a GitHub repo URL (expected `github.com/user/repo`). Please try again.',
+      }))
+      scrollToBottom()
+      return
+    }
+
+    setIsGenerating(true)
+    updateLastMessage((prev) => {
+      const cards = { ...(prev.restoreCards || {}) }
+      cards.fixprompt = undefined
+      cards.isRunning = true
+      return { ...prev, restoreCards: cards }
+    })
+    scrollToBottom()
+
+    try {
+      abortRef.current = new AbortController()
+
+      // Step 1: Fix the site
+      updateLastMessage((prev) => ({
+        ...prev,
+        content: `Got it — pushing fixes to **${repoUrl}**. Let me generate the fix and push a PR...`,
+        thoughtSteps: [...(prev.thoughtSteps || []), {
+          id: uid(),
+          status: 'active',
+          label: `Fixing ${originalUrl}`,
+          detail: 'Applying AI-generated fixes to scanned issues',
+        }],
+      }))
+      scrollToBottom()
+
+      const fixRes = await fetch(`/api/restore/fix?scanId=${encodeURIComponent(scanId)}`, {
+        signal: abortRef.current.signal,
+      })
+      if (!fixRes.ok) throw new Error(`Fix failed: HTTP ${fixRes.status}`)
+
+      // Consume fix stream until done
+      const fixReader = fixRes.body?.getReader()
+      if (fixReader) {
+        const decoder = new TextDecoder()
+        let buf = ''
+        while (true) {
+          const { done, value } = await fixReader.read()
+          if (done) break
+          buf += decoder.decode(value, { stream: true })
+          const lines = buf.split('\n')
+          buf = lines.pop() || ''
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try { handleRestoreEvent(JSON.parse(line.slice(6)), originalUrl) } catch {}
+            }
+          }
+        }
+      }
+
+      // Step 2: Push to GitHub
+      updateLastMessage((prev) => {
+        const steps = [...(prev.thoughtSteps || [])]
+        steps.push({
+          id: uid(),
+          status: 'completed',
+          label: `Fix ready, pushing to ${repoUrl}`,
+          detail: 'Creating branch and pushing changes',
+        })
+        return { ...prev, thoughtSteps: steps }
+      })
+      scrollToBottom()
+
+      const pushRes = await fetch('/api/restore/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scanId, repoFullName: repoUrl.replace('https://github.com/', '') }),
+        signal: abortRef.current.signal,
+      })
+      if (!pushRes.ok) throw new Error(`Push failed: HTTP ${pushRes.status}`)
+
+      const pushReader = pushRes.body?.getReader()
+      if (pushReader) {
+        const decoder = new TextDecoder()
+        let buf = ''
+        while (true) {
+          const { done, value } = await pushReader.read()
+          if (done) break
+          buf += decoder.decode(value, { stream: true })
+          const lines = buf.split('\n')
+          buf = lines.pop() || ''
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try { handleRestoreEvent(JSON.parse(line.slice(6)), originalUrl) } catch {}
+            }
+          }
+        }
+      }
+
+      updateLastMessage((prev) => ({
+        ...prev,
+        content: `Done! Fixes pushed to **${repoUrl}**. Your site should redeploy automatically once the CI/CD pipeline picks up the changes.`,
+      }))
+      scrollToBottom()
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        updateLastMessage((prev) => ({
+          ...prev,
+          content: prev.content || `Push to GitHub failed: ${err.message}`,
+        }))
+        scrollToBottom()
+      }
+    } finally {
+      setIsGenerating(false)
+      abortRef.current = null
       scrollToBottom()
     }
   }, [updateLastMessage, scrollToBottom, handleRestoreEvent])
@@ -997,6 +1138,8 @@ function ChatContent() {
                                 severity={msg.restoreCards.fixprompt.severity}
                                 summary={msg.restoreCards.fixprompt.summary}
                                 onFixNow={() => handleFixNow(msg.restoreCards!.fixprompt!.scanId, msg.restoreCards!.fixprompt!.url)}
+                                onFixAndPush={(scanId, url, repoUrl) => handleCreateAndPush(scanId, url, repoUrl)}
+                                isNonGithub={!isGitHubRepoUrl(msg.restoreCards.fixprompt.url)}
                               />
                             )}
                             {/* Card 4: Backup */}

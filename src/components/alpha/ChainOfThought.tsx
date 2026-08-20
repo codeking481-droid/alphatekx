@@ -1,352 +1,384 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { Brain, ChevronRight, Check, X, Search, Wrench, FlaskConical, Globe, Film, AlertCircle } from 'lucide-react'
-import { motion, AnimatePresence } from 'framer-motion'
-
-export type TavilySource = {
-  title: string
-  url: string
-  score: number
-  snippet: string
-}
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Brain,
+  Search,
+  Wrench,
+  FlaskConical,
+  Globe,
+  Film,
+  Shield,
+  Cpu,
+  ChevronDown,
+  CheckCircle2,
+  AlertCircle,
+  Clock,
+  Circle,
+} from "lucide-react";
 
 export type ThoughtStep = {
-  id: string
-  label: string
-  icon: 'scan' | 'diagnose' | 'plan' | 'test' | 'search' | 'film'
-  status: 'pending' | 'active' | 'done' | 'error'
-  summary?: string
-  details?: string[]
-  logs?: string[]
-  tavilySources?: TavilySource[]
-}
+  id: string;
+  label: string;
+  icon: "scan" | "diagnose" | "plan" | "test" | "search" | "film" | "shield" | "fix";
+  status: "pending" | "active" | "done" | "error";
+  summary?: string;
+  details?: string[];
+  logs?: string[];
+  tavilySources?: { title: string; url: string; score?: number; snippet: string }[];
+};
 
-const iconMap: Record<string, typeof Brain> = {
+const ICON_MAP: Record<ThoughtStep["icon"], React.FC<{ size?: number; className?: string }>> = {
   scan: Brain,
   diagnose: Search,
   plan: Wrench,
   test: FlaskConical,
   search: Globe,
   film: Film,
+  shield: Shield,
+  fix: Cpu,
+};
+
+const STATUS_COLORS = {
+  pending: "border-zinc-600 bg-zinc-800/40",
+  active: "border-[#D6FF00]/60 bg-[#D6FF00]/5",
+  done: "border-emerald-500/60 bg-emerald-500/5",
+  error: "border-red-500/60 bg-red-500/5",
+};
+
+const STEP_ICON_COLORS = {
+  pending: "text-zinc-500",
+  active: "text-[#D6FF00]",
+  done: "text-emerald-400",
+  error: "text-red-400",
+};
+
+function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return s > 0 ? `${m}m ${s}s` : `${m}m`;
 }
 
-function useElapsedMs(active: boolean, startTime: number) {
-  const [elapsed, setElapsed] = useState(0)
-  useEffect(() => {
-    if (!active) return
-    const id = setInterval(() => setElapsed(Date.now() - startTime), 100)
-    return () => clearInterval(id)
-  }, [active, startTime])
-  return elapsed
+function StatusDot({ status }: { status: ThoughtStep["status"] }) {
+  return (
+    <span className="relative flex h-3 w-3 shrink-0 items-center justify-center">
+      {status === "active" && (
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-50" />
+      )}
+      {status === "active" && (
+        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_2px_rgba(74,222,128,0.6)]" />
+      )}
+      {status === "done" && (
+        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_10px_3px_rgba(74,222,128,0.5)]" />
+      )}
+      {status === "error" && (
+        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500 shadow-[0_0_10px_3px_rgba(239,68,68,0.5)]" />
+      )}
+      {status === "pending" && (
+        <span className="relative inline-flex h-2.5 w-2.5 rounded-full border border-zinc-500 bg-transparent" />
+      )}
+    </span>
+  );
 }
 
-function formatSeconds(ms: number): string {
-  const s = Math.floor(ms / 1000)
-  if (s < 1) return 'a moment'
-  if (s === 1) return '1 second'
-  return `${s} seconds`
+function StepIcon({ icon, status }: { icon: ThoughtStep["icon"]; status: ThoughtStep["status"] }) {
+  const IconComponent = ICON_MAP[icon];
+  return (
+    <div
+      className={`flex h-8 w-8 items-center justify-center rounded-lg border ${STATUS_COLORS[status]} ${STEP_ICON_COLORS[status]}`}
+    >
+      <IconComponent size={16} />
+    </div>
+  );
 }
 
-export default function ChainOfThought({ steps }: { steps: ThoughtStep[] }) {
-  const [collapsed, setCollapsed] = useState(false)
-  const [expandedSteps, setExpandedSteps] = useState<Record<string, boolean>>({})
-  const [showLogs, setShowLogs] = useState<Record<string, boolean>>({})
-  const startTimeRef = useRef(Date.now())
-  const hasActive = steps.some((s) => s.status === 'active')
-  const allDone = steps.length > 0 && steps.every((s) => s.status === 'done' || s.status === 'error')
-  const elapsed = useElapsedMs(hasActive, startTimeRef.current)
-
-  const toggleStep = useCallback((id: string) => {
-    setExpandedSteps((p) => ({ ...p, [id]: !p[id] }))
-  }, [])
-
-  const toggleLogs = useCallback((id: string) => {
-    setShowLogs((p) => ({ ...p, [id]: !p[id] }))
-  }, [])
-
-  if (!steps.length) return null
-
-  const doneCount = steps.filter((s) => s.status === 'done').length
-  const errorCount = steps.filter((s) => s.status === 'error').length
+function ThoughtStepComponent({
+  step,
+  index,
+  isLast,
+}: {
+  step: ThoughtStep;
+  index: number;
+  isLast: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const hasExpandable = (step.details && (Array.isArray(step.details) ? step.details.length > 0 : true)) || (step.logs && step.logs.length > 0) || (step.tavilySources && step.tavilySources.length > 0);
 
   return (
     <motion.div
-      layout
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
-      className="group relative overflow-hidden rounded-xl border border-[#D6FF00]/10 bg-[#0a0f1e]/80 backdrop-blur-sm"
-      style={{ borderLeftWidth: '2.5px', borderLeftColor: '#D6FF00' }}
+      initial={{ opacity: 0, x: -12 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.35, delay: index * 0.08, ease: [0.23, 1, 0.32, 1] }}
+      className="relative flex gap-3"
     >
-      {/* Shimmer overlay when thinking */}
-      {hasActive && (
-        <div className="pointer-events-none absolute inset-0 overflow-hidden">
-          <motion.div
-            className="absolute inset-0 opacity-[0.04]"
-            style={{
-              background: 'linear-gradient(90deg, transparent 0%, #D6FF00 50%, transparent 100%)',
-              backgroundSize: '200% 100%',
-            }}
-            animate={{ backgroundPosition: ['200% 0', '-200% 0'] }}
-            transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
-          />
-        </div>
-      )}
+      <div className="flex flex-col items-center">
+        <StatusDot status={step.status} />
+        {!isLast && (
+          <div className="mt-1 w-px flex-1 bg-gradient-to-b from-zinc-600/80 to-transparent" />
+        )}
+      </div>
 
-      {/* Header — always visible, click to collapse/expand */}
-      <button
-        onClick={() => setCollapsed((c) => !c)}
-        className="relative flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-white/[0.02]"
-      >
-        <div className="relative flex items-center gap-2.5">
-          {hasActive ? (
-            <div className="relative">
-              <Brain size={14} className="text-[#D6FF00] animate-pulse" />
-              <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-[#D6FF00]">
-                <span className="absolute inset-0 animate-ping rounded-full bg-[#D6FF00] opacity-40" />
-              </span>
-            </div>
-          ) : allDone ? (
-            <Check size={14} className="text-[#D6FF00]" strokeWidth={3} />
-          ) : (
-            <Brain size={14} className="text-white/30" />
-          )}
-
+      <div className="flex-1 pb-4">
+        <div className="flex items-center gap-2">
+          <StepIcon icon={step.icon} status={step.status} />
           <span
-            className={`text-[12px] font-semibold ${
-              hasActive ? 'text-[#D6FF00]' : allDone ? 'text-white/60' : 'text-white/40'
+            className={`text-sm italic ${
+              step.status === "active"
+                ? "text-zinc-200"
+                : step.status === "done"
+                  ? "text-zinc-400"
+                  : step.status === "error"
+                    ? "text-red-300"
+                    : "text-zinc-500"
             }`}
           >
-            {hasActive ? (
-              <>Thinking{collapsed && <span className="text-[#D6FF00]/60">... {formatSeconds(elapsed)}</span>}</>
-            ) : allDone ? (
-              <>Thought for {formatSeconds(elapsed)}</>
-            ) : (
-              'Thinking'
-            )}
+            {step.label}
           </span>
+          {step.status === "active" && (
+            <motion.span
+              animate={{ opacity: [0.4, 1, 0.4] }}
+              transition={{ duration: 1.5, repeat: Infinity }}
+              className="ml-1 inline-block h-1 w-1 rounded-full bg-[#D6FF00]"
+            />
+          )}
+          {step.status === "error" && (
+            <AlertCircle size={14} className="ml-1 text-red-400" />
+          )}
+          {step.status === "done" && (
+            <CheckCircle2 size={14} className="ml-1 text-emerald-400" />
+          )}
         </div>
 
-        <div className="ml-auto flex items-center gap-2">
-          {!hasActive && steps.length > 0 && (
-            <span className="text-[10px] font-medium text-white/20">
-              {doneCount}{errorCount > 0 && <span className="text-red-400/60"> · {errorCount} failed</span>}
-            </span>
-          )}
-          <motion.div
-            animate={{ rotate: collapsed ? -90 : 0 }}
-            transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+        {step.summary && (
+          <p className="mt-1 pl-10 text-xs text-zinc-400 italic leading-relaxed">{step.summary}</p>
+        )}
+
+        {hasExpandable && (
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="mt-1 ml-10 flex items-center gap-1 text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors"
           >
-            <ChevronRight size={14} className="text-white/20" />
-          </motion.div>
+            <motion.span animate={{ rotate: expanded ? 180 : 0 }} transition={{ duration: 0.2 }}>
+              <ChevronDown size={12} />
+            </motion.span>
+            {expanded ? "Less" : "Details"}
+          </button>
+        )}
+
+        <AnimatePresence>
+          {expanded && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.25, ease: [0.23, 1, 0.32, 1] }}
+              className="overflow-hidden"
+            >
+              <div className="mt-2 ml-10 rounded-lg border border-zinc-700/50 bg-zinc-900/50 p-3 space-y-2">
+                {step.details && (
+                  <div className="space-y-1">
+                    {(Array.isArray(step.details) ? step.details : [step.details]).map((d, i) => (
+                      <p key={i} className="text-xs text-zinc-300 leading-relaxed">{d}</p>
+                    ))}
+                  </div>
+                )}
+
+                {step.logs && step.logs.length > 0 && (
+                  <div className="rounded-md bg-black/40 p-2 max-h-32 overflow-y-auto">
+                    <p className="mb-1 text-[10px] font-mono uppercase tracking-wider text-zinc-500">
+                      Logs
+                    </p>
+                    {step.logs.map((log, i) => (
+                      <p key={i} className="font-mono text-[11px] text-zinc-400 leading-relaxed">
+                        <span className="text-zinc-600">{">"} </span>
+                        {log}
+                      </p>
+                    ))}
+                  </div>
+                )}
+
+                {step.tavilySources && step.tavilySources.length > 0 && (
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] font-mono uppercase tracking-wider text-zinc-500">
+                      Sources
+                    </p>
+                    {step.tavilySources.map((src, i) => (
+                      <div
+                        key={i}
+                        className="rounded-md border border-zinc-700/30 bg-zinc-800/30 p-2"
+                      >
+                        <p className="text-[11px] text-zinc-200 font-medium truncate">{src.title}</p>
+                        <p className="text-[10px] text-zinc-500 truncate">{src.url}</p>
+                        {src.snippet && (
+                          <p className="mt-1 text-[10px] text-zinc-400 italic leading-relaxed">
+                            {src.snippet}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </motion.div>
+  );
+}
+
+interface ChainOfThoughtProps {
+  steps: ThoughtStep[];
+  isActive?: boolean;
+  startTime?: number | null;
+  className?: string;
+}
+
+export default function ChainOfThought({
+  steps,
+  isActive: isActiveProp,
+  startTime: startTimeProp,
+  className = "",
+}: ChainOfThoughtProps) {
+  const [collapsed, setCollapsed] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const startTimeRef = useRef(startTimeProp || Date.now());
+
+  const hasActiveStep = steps.some((s) => s.status === "active");
+  const allDone = steps.length > 0 && steps.every((s) => s.status === "done" || s.status === "error");
+  const isActive = isActiveProp ?? hasActiveStep;
+
+  const startTimer = useCallback(() => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    intervalRef.current = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000));
+    }, 1000);
+  }, []);
+
+  const stopTimer = useCallback(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isActive) {
+      setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000));
+      startTimer();
+    } else {
+      stopTimer();
+    }
+    return stopTimer;
+  }, [isActive, startTimer, stopTimer]);
+
+  const displayDuration = elapsed > 0 ? elapsed : 0;
+
+  const headerIcon = (() => {
+    if (isActive) return <Brain size={16} className="text-[#D6FF00]" />;
+    const allDone = steps.length > 0 && steps.every((s) => s.status === "done");
+    if (allDone) return <CheckCircle2 size={16} className="text-emerald-400" />;
+    const hasError = steps.some((s) => s.status === "error");
+    if (hasError) return <AlertCircle size={16} className="text-red-400" />;
+    return <Brain size={16} className="text-zinc-400" />;
+  })();
+
+  const headerLabel = isActive
+    ? `Thinking... ${formatDuration(displayDuration)}`
+    : displayDuration > 0
+      ? `Thought for ${formatDuration(displayDuration)}`
+      : "Chain of Thought";
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
+      className={`relative overflow-hidden rounded-xl border border-zinc-800 bg-gradient-to-br from-zinc-900 via-zinc-900/95 to-zinc-950 shadow-2xl ${className}`}
+      style={{ borderLeft: "3px solid #D6FF00" }}
+    >
+      {isActive && (
+        <motion.div
+          className="absolute inset-0 pointer-events-none"
+          animate={{
+            background: [
+              "linear-gradient(90deg, transparent 0%, rgba(214,255,0,0.03) 50%, transparent 100%)",
+              "linear-gradient(90deg, transparent 0%, rgba(214,255,0,0.06) 50%, transparent 100%)",
+              "linear-gradient(90deg, transparent 0%, rgba(214,255,0,0.03) 50%, transparent 100%)",
+            ],
+          }}
+          transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+        />
+      )}
+
+      {isActive && (
+        <motion.div
+          className="absolute top-0 left-0 h-full w-[2px]"
+          animate={{ opacity: [0.3, 1, 0.3] }}
+          transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+          style={{ background: "linear-gradient(180deg, #D6FF00, transparent)" }}
+        />
+      )}
+
+      <button
+        onClick={() => setCollapsed(!collapsed)}
+        className="relative z-10 flex w-full items-center justify-between px-4 py-3 hover:bg-white/[0.02] transition-colors"
+      >
+        <div className="flex items-center gap-2.5">
+          <motion.span
+            animate={
+              isActive
+                ? { scale: [1, 1.15, 1], opacity: [0.8, 1, 0.8] }
+                : { scale: 1, opacity: 1 }
+            }
+            transition={
+              isActive ? { duration: 1.5, repeat: Infinity, ease: "easeInOut" } : { duration: 0.3 }
+            }
+          >
+            {headerIcon}
+          </motion.span>
+          <span className="text-sm font-medium text-zinc-300 tracking-tight">{headerLabel}</span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-mono text-zinc-600">
+            {steps.filter((s) => s.status === "done").length}/{steps.length}
+          </span>
+          <motion.span animate={{ rotate: collapsed ? 0 : 180 }} transition={{ duration: 0.2 }}>
+            <ChevronDown size={14} className="text-zinc-500" />
+          </motion.span>
         </div>
       </button>
 
-      {/* Body — collapsible */}
       <AnimatePresence initial={false}>
         {!collapsed && (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
+            animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.25, ease: [0.23, 1, 0.32, 1] }}
+            transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
             className="overflow-hidden"
           >
-            <div className="relative border-t border-white/[0.04] px-4 py-2">
-              {/* Vertical timeline line */}
-              <div className="absolute left-[23px] top-4 bottom-3 w-px bg-gradient-to-b from-[#D6FF00]/20 via-white/[0.04] to-transparent" />
-
-              {steps.map((step, index) => {
-                const Icon = iconMap[step.icon] || Brain
-                const isActive = step.status === 'active'
-                const isDone = step.status === 'done'
-                const isError = step.status === 'error'
-                const isExpanded = expandedSteps[step.id]
-                const hasContent = step.summary || (step.details && step.details.length > 0) || (step.logs && step.logs.length > 0) || (step.tavilySources && step.tavilySources.length > 0)
-
-                return (
-                  <motion.div
+            <div className="relative z-10 px-4 pb-4 pt-1">
+              <div className="space-y-0">
+                {steps.map((step, index) => (
+                  <ThoughtStepComponent
                     key={step.id}
-                    initial={{ opacity: 0, x: -4 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ duration: 0.25, delay: index * 0.04, ease: [0.23, 1, 0.32, 1] }}
-                    className="relative"
-                  >
-                    {/* Step row */}
-                    <div className="flex items-start gap-3 py-2 pl-1">
-                      {/* Status dot */}
-                      <div className="relative mt-[5px] flex shrink-0 items-center justify-center">
-                        {isActive ? (
-                          <span className="relative flex h-[9px] w-[9px] items-center justify-center">
-                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#D6FF00] opacity-30" />
-                            <span className="relative inline-flex h-[5px] w-[5px] rounded-full bg-[#D6FF00] shadow-[0_0_6px_#D6FF00]" />
-                          </span>
-                        ) : isDone ? (
-                          <span className="flex h-[9px] w-[9px] items-center justify-center rounded-full bg-[#D6FF00]/80 shadow-[0_0_4px_rgba(214,255,0,0.2)]" />
-                        ) : isError ? (
-                          <span className="flex h-[9px] w-[9px] items-center justify-center rounded-full bg-red-500/80 shadow-[0_0_4px_rgba(239,68,68,0.2)]" />
-                        ) : (
-                          <span className="h-[9px] w-[9px] rounded-full border border-white/10 bg-transparent" />
-                        )}
-                      </div>
+                    step={step}
+                    index={index}
+                    isLast={index === steps.length - 1}
+                  />
+                ))}
+              </div>
 
-                      {/* Step content */}
-                      <div className="min-w-0 flex-1">
-                        <button
-                          onClick={() => hasContent && toggleStep(step.id)}
-                          className={`flex w-full items-center gap-2 text-left ${
-                            hasContent ? 'cursor-pointer group/step' : 'cursor-default'
-                          }`}
-                        >
-                          <span
-                            className={`text-[12px] font-medium italic ${
-                              isActive
-                                ? 'text-[#D6FF00]/90'
-                                : isDone
-                                  ? 'text-white/40'
-                                  : isError
-                                    ? 'text-red-400/70'
-                                    : 'text-white/20'
-                            }`}
-                          >
-                            {step.label}
-                          </span>
-
-                          {isActive && (
-                            <motion.span
-                              className="inline-block h-[14px] w-[1.5px] bg-[#D6FF00]/70"
-                              animate={{ opacity: [1, 0.2, 1] }}
-                              transition={{ duration: 0.8, repeat: Infinity, ease: 'easeInOut' }}
-                            />
-                          )}
-
-                          {hasContent && !isActive && (
-                            <motion.div
-                              animate={{ rotate: isExpanded ? 90 : 0 }}
-                              transition={{ duration: 0.15 }}
-                            >
-                              <ChevronRight size={10} className="text-white/15 group-hover/step:text-white/30 transition-colors" />
-                            </motion.div>
-                          )}
-                        </button>
-
-                        {/* Summary — inline italic like DeepSeek */}
-                        {!isExpanded && step.summary && !isActive && (
-                          <motion.p
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: 'auto' }}
-                            className="mt-0.5 text-[11px] italic text-white/25 leading-relaxed line-clamp-1"
-                          >
-                            {step.summary}
-                          </motion.p>
-                        )}
-
-                        {/* Expanded details */}
-                        <AnimatePresence initial={false}>
-                          {isExpanded && (
-                            <motion.div
-                              initial={{ height: 0, opacity: 0 }}
-                              animate={{ height: 'auto', opacity: 1 }}
-                              exit={{ height: 0, opacity: 0 }}
-                              transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
-                              className="overflow-hidden"
-                            >
-                              {/* Summary */}
-                              {step.summary && (
-                                <p className="mt-1.5 text-[11px] italic text-white/35 leading-relaxed">
-                                  {step.summary}
-                                </p>
-                              )}
-
-                              {/* Details */}
-                              {step.details && step.details.length > 0 && (
-                                <ul className="mt-2 space-y-1">
-                                  {step.details.map((detail, i) => (
-                                    <motion.li
-                                      key={i}
-                                      initial={{ opacity: 0, x: -3 }}
-                                      animate={{ opacity: 1, x: 0 }}
-                                      transition={{ delay: i * 0.03 }}
-                                      className="flex items-start gap-2 text-[11px] italic text-white/30 leading-relaxed"
-                                    >
-                                      <span className="mt-[5px] h-[3px] w-[3px] shrink-0 rounded-full bg-[#D6FF00]/30" />
-                                      {detail}
-                                    </motion.li>
-                                  ))}
-                                </ul>
-                              )}
-
-                              {/* Tavily Sources */}
-                              {step.tavilySources && step.tavilySources.length > 0 && (
-                                <div className="mt-2.5 space-y-1.5">
-                                  {step.tavilySources.map((source, i) => (
-                                    <motion.div
-                                      key={i}
-                                      initial={{ opacity: 0 }}
-                                      animate={{ opacity: 1 }}
-                                      transition={{ delay: i * 0.05 }}
-                                      className="flex items-center gap-2 rounded-md bg-white/[0.02] px-2.5 py-1.5 border border-white/[0.03]"
-                                    >
-                                      <Globe size={9} className="shrink-0 text-[#D6FF00]/40" />
-                                      <a
-                                        href={source.url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-[10px] font-medium text-[#D6FF00]/50 hover:text-[#D6FF00]/80 truncate transition-colors"
-                                      >
-                                        {source.title}
-                                      </a>
-                                      <span className="ml-auto shrink-0 text-[9px] text-white/15">
-                                        {(source.score * 100).toFixed(0)}%
-                                      </span>
-                                    </motion.div>
-                                  ))}
-                                </div>
-                              )}
-
-                              {/* Logs */}
-                              {step.logs && step.logs.length > 0 && (
-                                <div className="mt-2.5">
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); toggleLogs(step.id) }}
-                                    className="flex items-center gap-1.5 text-[10px] font-medium text-white/15 hover:text-white/30 transition-colors"
-                                  >
-                                    <span className={`h-1 w-1 rounded-full transition-colors ${showLogs[step.id] ? 'bg-[#D6FF00]/60' : 'bg-white/15'}`} />
-                                    {showLogs[step.id] ? 'Hide logs' : 'Show logs'}
-                                  </button>
-                                  <AnimatePresence initial={false}>
-                                    {showLogs[step.id] && (
-                                      <motion.div
-                                        initial={{ height: 0, opacity: 0 }}
-                                        animate={{ height: 'auto', opacity: 1 }}
-                                        exit={{ height: 0, opacity: 0 }}
-                                        transition={{ duration: 0.15 }}
-                                        className="overflow-hidden"
-                                      >
-                                        <div className="mt-1.5 rounded-md bg-black/30 p-2.5 font-mono text-[10px] leading-relaxed text-white/20">
-                                          {step.logs.map((log, i) => (
-                                            <div key={i} className="flex gap-2">
-                                              <span className="shrink-0 text-white/8">{String(i + 1).padStart(2, '0')}</span>
-                                              <span>{log}</span>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      </motion.div>
-                                    )}
-                                  </AnimatePresence>
-                                </div>
-                              )}
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </div>
-                    </div>
-                  </motion.div>
-                )
-              })}
+              {steps.length === 0 && (
+                <p className="py-4 text-center text-xs text-zinc-600 italic">No steps yet...</p>
+              )}
             </div>
           </motion.div>
         )}
       </AnimatePresence>
     </motion.div>
-  )
+  );
 }

@@ -705,6 +705,7 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
   if (!originalHtml.includes('lang=')) {
     fixedHtml = fixedHtml.replace(/<html([^>]*)>/i, '<html lang="en"$1>')
     sendCard({ type: 'log', card: 'fixing', text: `> + Added lang="en" attribute` })
+    sendCard({ type: 'diff', card: 'fixing', filename: 'index.html', old: '<html>', newContent: '<html lang="en">' })
   }
 
   // Fix 3: Add title if missing
@@ -713,6 +714,7 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
     const title = titleMatch ? titleMatch[1].trim() : 'Website'
     fixedHtml = fixedHtml.replace(/<head([^>]*)>/i, `<head$1>\n<title>${title}</title>`)
     sendCard({ type: 'log', card: 'fixing', text: `> + Added <title> tag: "${title}"` })
+    sendCard({ type: 'diff', card: 'fixing', filename: 'index.html', old: '<head> (no title)', newContent: `<head>\n  <title>${title}</title>` })
   }
 
   // Fix 4: Add meta description if missing
@@ -720,17 +722,18 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
     const descText = originalHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 155)
     fixedHtml = fixedHtml.replace(/<head([^>]*)>/i, `<head$1>\n<meta name="description" content="${descText.replace(/"/g, '&quot;')}">`)
     sendCard({ type: 'log', card: 'fixing', text: `> + Added meta description` })
+    sendCard({ type: 'diff', card: 'fixing', filename: 'index.html', old: '<head> (no meta description)', newContent: `<meta name="description" content="${descText.slice(0, 80)}...">` })
   }
 
   // Fix 5: Fix broken images (remove broken src, add placeholder styling)
   if (scanData.brokenImages > 0) {
     fixedHtml = fixedHtml.replace(/<img([^>]*?)>/gi, (match, attrs) => {
-      // Add error handler and lazy loading to all images
       if (!attrs.includes('loading=')) attrs += ' loading="lazy"'
       if (!attrs.includes('onerror=')) attrs += ' onerror="this.style.opacity=0.3;this.alt=\'[Image unavailable]\'"'
       return `<img${attrs}>`
     })
     sendCard({ type: 'log', card: 'fixing', text: `> + Added error handlers to ${scanData.totalImages} images (fixes ${scanData.brokenImages} broken)` })
+    sendCard({ type: 'diff', card: 'fixing', filename: 'index.html', old: `<img src="..."> (no error handling)`, newContent: `<img src="..." loading="lazy" onerror="this.style.opacity=0.3">` })
   }
 
   // Fix 6: Add lazy loading to all images
@@ -747,6 +750,7 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
   if (!fixedHtml.includes('charset')) {
     fixedHtml = fixedHtml.replace(/<head([^>]*)>/i, '<head$1>\n<meta charset="UTF-8">')
     sendCard({ type: 'log', card: 'fixing', text: `> + Added charset UTF-8` })
+    sendCard({ type: 'diff', card: 'fixing', filename: 'index.html', old: '<head> (no charset)', newContent: '<meta charset="UTF-8">' })
   }
 
   // Fix 9: Add CSS for responsive images
@@ -754,12 +758,14 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
   if (!fixedHtml.includes('max-width:100%')) {
     fixedHtml = fixedHtml.replace(/<\/head>/i, `${responsiveStyle}\n</head>`)
     sendCard({ type: 'log', card: 'fixing', text: `> + Added responsive image CSS` })
+    sendCard({ type: 'diff', card: 'fixing', filename: 'index.html', old: '</head> (no responsive CSS)', newContent: '<style>img{max-width:100%;height:auto}</style>\n</head>' })
   }
 
   // Fix 10: Add accessibility improvements
   if (fixedHtml.includes('<nav') && !fixedHtml.includes('role="navigation"')) {
     fixedHtml = fixedHtml.replace(/<nav([^>]*)>/gi, '<nav role="navigation"$1>')
     sendCard({ type: 'log', card: 'fixing', text: `> + Added ARIA navigation role` })
+    sendCard({ type: 'diff', card: 'fixing', filename: 'index.html', old: '<nav>', newContent: '<nav role="navigation">' })
   }
 
   // Save the deterministic fixes
@@ -767,35 +773,38 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
   fixedFiles.push({ filename: 'index.html', path: path.join(restoredDir, 'index.html') })
   sendCard({ type: 'log', card: 'fixing', text: `> Deterministic fixes applied to index.html (${(fixedHtml.length / 1024).toFixed(1)}KB)` })
 
-  // PHASE B: AI-enhanced improvements (quality upgrades on top of deterministic fixes)
-  sendCard({ type: 'log', card: 'fixing', text: `> Generating AI quality improvements...` })
+  // PHASE B: AI-powered full page regeneration — sends original HTML + errors, gets complete working HTML back
+  sendCard({ type: 'log', card: 'fixing', text: `> Requesting AI full-page code generation...` })
+  sendStep({ id: 'ai-gen', label: 'AI generating production-ready HTML', icon: 'plan', status: 'active' })
+  let aiGeneratedHtml = null
   try {
-    const aiImprovements = await groqChat([
-      { role: 'system', content: `You are a website quality optimizer. Given HTML that already has basic fixes applied, suggest 3-5 specific IMPROVEMENTS. Return ONLY JSON: { "improvements": [{ "type": "performance|seo|accessibility|security", "description": "what to improve", "code": "the specific HTML/CSS/JS snippet to add" }], "summary": "one-line summary" }` },
-      { role: 'user', content: `URL: ${targetUrl}\nTech: ${detectedTech}\nErrors found: ${errorsFound.map(e => e.name).join(', ')}\nHTML length: ${fixedHtml.length} bytes` },
+    const errorList = errorsFound.map(e => `- [${e.severity}] ${e.name}: ${e.description}`).join('\n')
+    const aiResult = await groqText([
+      { role: 'system', content: `You are an expert web developer specializing in website restoration. Given the ORIGINAL broken HTML and a list of errors detected by browser analysis, generate a COMPLETE, working, production-ready HTML file that fixes ALL listed issues. The HTML must be self-contained, valid, and visually faithful to the original design. Preserve the original structure, images, links, and styling as much as possible while fixing all errors. Return ONLY the raw HTML between \`\`\`html and \`\`\` markers. No explanations outside the code block.` },
+      { role: 'user', content: `## Errors to fix:\n${errorList}\n\n## Technology: ${detectedTech}\n\n## Original HTML:\n\`\`\`html\n${originalHtml.slice(0, 12000)}\n\`\`\`` },
     ], 'compound-beta-mini')
 
-    if (aiImprovements.improvements) {
-      for (const imp of aiImprovements.improvements.slice(0, 5)) {
-        sendCard({ type: 'log', card: 'fixing', text: `> AI: [${imp.type}] ${imp.description}` })
-
-        // Apply the improvement if it's a safe HTML snippet
-        if (imp.code && imp.code.includes('<') && imp.code.includes('>')) {
-          // Insert before </head> for meta/link tags, before </body> for scripts
-          if (imp.code.includes('<meta') || imp.code.includes('<link')) {
-            fixedHtml = fixedHtml.replace(/<\/head>/i, `${imp.code}\n</head>`)
-          } else {
-            fixedHtml = fixedHtml.replace(/<\/body>/i, `${imp.code}\n</body>`)
-          }
-        }
+    const htmlMatch = aiResult.match(/```html\s*([\s\S]*?)```/) || aiResult.match(/```([\s\S]*?)```/)
+    if (htmlMatch && htmlMatch[1]) {
+      const candidate = htmlMatch[1].trim()
+      if (candidate.includes('<html') && candidate.includes('</html>') && candidate.length > originalHtml.length * 0.3) {
+        aiGeneratedHtml = candidate
       }
-
-      // Rewrite the file with AI improvements
-      fs.writeFileSync(path.join(restoredDir, 'index.html'), fixedHtml)
-      sendCard({ type: 'log', card: 'fixing', text: `> AI improvements applied (${(fixedHtml.length / 1024).toFixed(1)}KB total)` })
     }
   } catch (err) {
-    sendCard({ type: 'log', card: 'fixing', text: `> AI improvements skipped: ${err.message}` })
+    sendCard({ type: 'log', card: 'fixing', text: `> AI generation failed: ${err.message}` })
+  }
+
+  if (aiGeneratedHtml) {
+    const beforeHtml = fixedHtml
+    fixedHtml = aiGeneratedHtml
+    fs.writeFileSync(path.join(restoredDir, 'index.html'), fixedHtml)
+    sendCard({ type: 'log', card: 'fixing', text: `> AI generated complete HTML (${(fixedHtml.length / 1024).toFixed(1)}KB) — replaces regex fixes` })
+    sendCard({ type: 'diff', card: 'fixing', filename: 'index.html', old: beforeHtml.slice(0, 800), newContent: fixedHtml.slice(0, 800) })
+    sendStep({ id: 'ai-gen', label: 'AI generated production-ready HTML', icon: 'plan', status: 'done', summary: `${(fixedHtml.length / 1024).toFixed(1)}KB — replaces regex fixes` })
+  } else {
+    sendCard({ type: 'log', card: 'fixing', text: `> AI generation unavailable — using deterministic fixes` })
+    sendStep({ id: 'ai-gen', label: 'AI generation skipped — using deterministic fixes', icon: 'plan', status: 'done', summary: `${(fixedHtml.length / 1024).toFixed(1)}KB — regex fixes applied` })
   }
 
   // PHASE C: Validate the fix by serving it locally and re-measuring
@@ -961,6 +970,9 @@ async function runFixPipeline(scanId, sendCard, res) {
   const sseWriter = (data) => {
     if (!res.writableEnded) res.write(data)
   }
+  const sendStep = (step) => {
+    if (!res.writableEnded) res.write(`data: ${JSON.stringify({ type: 'thought_step', step })}\n\n`)
+  }
 
   emitRestorationStarted(scanId, sseWriter)
   sendCard({ type: 'alpha_event', event: { type: 'RESTORATION_STARTED', timestamp: new Date().toISOString() } })
@@ -1013,6 +1025,40 @@ async function runFixPipeline(scanId, sendCard, res) {
   // Save
   try { fs.mkdirSync(restoredDir, { recursive: true }) } catch {}
   fs.writeFileSync(path.resolve(restoredDir, 'index.html'), fixedHtml, 'utf8')
+
+  // AI-powered full page regeneration
+  sendCard({ type: 'log', card: 'fixing', text: `> Requesting AI full-page code generation...` })
+  sendStep({ id: 'ai-gen', label: 'AI generating production-ready HTML', icon: 'plan', status: 'active' })
+  let aiGeneratedHtml = null
+  try {
+    const errorList = errorsFound.map(e => `- [${e.severity}] ${e.name}: ${e.description}`).join('\n')
+    const aiResult = await groqText([
+      { role: 'system', content: `You are an expert web developer specializing in website restoration. Given the ORIGINAL broken HTML and a list of errors detected by browser analysis, generate a COMPLETE, working, production-ready HTML file that fixes ALL listed issues. The HTML must be self-contained, valid, and visually faithful to the original design. Preserve the original structure, images, links, and styling as much as possible while fixing all errors. Return ONLY the raw HTML between \`\`\`html and \`\`\` markers. No explanations outside the code block.` },
+      { role: 'user', content: `## Errors to fix:\n${errorList}\n\n## Technology: ${scanData?.technology || 'unknown'}\n\n## Original HTML:\n\`\`\`html\n${originalHtml.slice(0, 12000)}\n\`\`\`` },
+    ], 'compound-beta-mini')
+
+    const htmlMatch = aiResult.match(/```html\s*([\s\S]*?)```/) || aiResult.match(/```([\s\S]*?)```/)
+    if (htmlMatch && htmlMatch[1]) {
+      const candidate = htmlMatch[1].trim()
+      if (candidate.includes('<html') && candidate.includes('</html>') && candidate.length > originalHtml.length * 0.3) {
+        aiGeneratedHtml = candidate
+      }
+    }
+  } catch (err) {
+    sendCard({ type: 'log', card: 'fixing', text: `> AI generation failed: ${err.message}` })
+  }
+
+  if (aiGeneratedHtml) {
+    const beforeHtml = fixedHtml
+    fixedHtml = aiGeneratedHtml
+    fs.writeFileSync(path.resolve(restoredDir, 'index.html'), fixedHtml, 'utf8')
+    sendCard({ type: 'log', card: 'fixing', text: `> AI generated complete HTML (${(fixedHtml.length / 1024).toFixed(1)}KB) — replaces regex fixes` })
+    sendCard({ type: 'diff', card: 'fixing', filename: 'index.html', old: beforeHtml.slice(0, 800), newContent: fixedHtml.slice(0, 800) })
+    sendStep({ id: 'ai-gen', label: 'AI generated production-ready HTML', icon: 'plan', status: 'done', summary: `${(fixedHtml.length / 1024).toFixed(1)}KB — replaces regex fixes` })
+  } else {
+    sendCard({ type: 'log', card: 'fixing', text: `> AI generation unavailable — using deterministic fixes` })
+    sendStep({ id: 'ai-gen', label: 'AI generation skipped — using deterministic fixes', icon: 'plan', status: 'done', summary: `${(fixedHtml.length / 1024).toFixed(1)}KB — regex fixes applied` })
+  }
 
   sendCard({ type: 'card', card: 'fixing', status: 'done', data: { filesModified: fixedFiles.length, preview: fixedHtml.slice(0, 500) } })
 
