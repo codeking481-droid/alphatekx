@@ -125,7 +125,10 @@ function isGitHubRepoUrl(url: string): boolean {
 
 function detectRestoreIntent(text: string): 'scan' | 'full' {
   const lower = text.toLowerCase()
-  // Always scan first for non-GitHub URLs — ask before fixing
+  const fixKeywords = /\b(?:fix|restore|repair|solve|patch|heal|improve|optimize|make\s+better|clean\s*up|rebuild|overhaul|remedy|correct|rectify|update|upgrade|debug|troubleshoot)\b/
+  const scanKeywords = /\b(?:scan|check|analyze|analyse|review|audit|inspect|examine|look\s*at|diagnose|test|probe|assess|evaluate|survey|report|find|detect|identify)\b/
+  if (fixKeywords.test(lower)) return 'full'
+  if (scanKeywords.test(lower)) return 'scan'
   return 'scan'
 }
 
@@ -168,6 +171,8 @@ function ChatContent() {
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const detectedUrlRef = useRef<string | null>(null)
+  const lastIntentRef = useRef<'scan' | 'full'>('scan')
+  const autoFixTriggeredRef = useRef(false)
 
   useEffect(() => {
     void hydrateChatHistory()
@@ -182,6 +187,20 @@ function ChatContent() {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
   }, [messages])
+
+  // Auto-trigger fix when user said "fix/restore" and scan just finished
+  useEffect(() => {
+    if (lastIntentRef.current !== 'full' || autoFixTriggeredRef.current) return
+    const lastMsg = messages[messages.length - 1]
+    if (!lastMsg?.restoreCards?.fixprompt || lastMsg.restoreCards?.fixing) return
+    const fp = lastMsg.restoreCards.fixprompt
+    if (!fp || fp.errorsFound === 0) return
+    autoFixTriggeredRef.current = true
+    // Auto-trigger fix for non-GitHub live sites (fix & download)
+    if (!isGitHubRepoUrl(fp.url)) {
+      void handleFixNow(fp.scanId, fp.url)
+    }
+  }, [messages, handleFixNow])
 
   const scrollToBottom = useCallback(() => {
     if (scrollRef.current) {
@@ -264,6 +283,8 @@ function ChatContent() {
       try {
         abortRef.current = new AbortController()
         const intent = detectRestoreIntent(sendText)
+        lastIntentRef.current = intent
+        autoFixTriggeredRef.current = false
         let streamUrl: string
 
         if (isGitHubRepoUrl(detectedUrl)) {
@@ -671,9 +692,12 @@ function ChatContent() {
           const sev = summary.severity || 'low'
           const scanUrl = summary.url || url
           const isNonGithub = !isGitHubRepoUrl(scanUrl)
+          const isAutoFix = lastIntentRef.current === 'full' && errCount > 0
           let responseMsg = `I analyzed **${scanUrl}** and found **${errCount} issues** (${sev} severity). Tech stack: ${tech}.\n\n`
           if (errCount === 0) {
             responseMsg += `The site looks healthy — no critical issues detected.`
+          } else if (isAutoFix) {
+            responseMsg += `Found ${errCount} issues. **Fixing now...**`
           } else if (isNonGithub) {
             responseMsg += `Here's what I found:\n\n`
             const errSummary = summary.summary || ''
