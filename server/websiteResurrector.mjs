@@ -9,6 +9,7 @@ import { searchForFixes, searchForStatus } from './tavilySearch.mjs'
 
 export function isWebsiteRequest(message) {
   const lower = message.toLowerCase()
+  if (/alphatekx\.name\.ng/i.test(message)) return false
   const websiteKeywords = [
     'website', 'site', 'web page', 'landing page', 'homepage', 'html', 'css',
     'react', 'nextjs', 'next.js', 'wordpress', 'shopify', 'squarespace',

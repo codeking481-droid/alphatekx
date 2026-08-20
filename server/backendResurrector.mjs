@@ -9,6 +9,7 @@ import { searchForFixes } from './tavilySearch.mjs'
 
 export function isBackendRequest(message) {
   const lower = message.toLowerCase()
+  if (/alphatekx\.name\.ng/i.test(message)) return false
   const backendKeywords = [
     'api', 'backend', 'server', 'database', 'db', 'postgres', 'mysql', 'mongodb',
     'redis', 'node', 'express', 'fastapi', 'django', 'flask', 'supabase',

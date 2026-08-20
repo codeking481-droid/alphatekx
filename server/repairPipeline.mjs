@@ -37,6 +37,7 @@ export function isVideoRequest(message) {
  */
 export function isRepairRequest(message) {
   const lower = message.toLowerCase()
+  if (/alphatekx\.name\.ng/i.test(message)) return false
   const repairKeywords = [
     'restore', 'fix', 'repair', 'broken', 'error', 'bug', 'crash',
     'not working', 'down', 'deploy', 'website', 'app', 'backend',

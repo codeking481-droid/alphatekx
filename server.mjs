@@ -4828,7 +4828,7 @@ async function checkGlobalProjectAvailability(name, config, excludeId = '') {
         if (Array.isArray(rows) && rows.length) {
           const conflict = rows.find(r => r.slug === slug) || rows[0]
           result.exists = conflict
-          result.reason = conflict.slug === slug ? `The address ${slug}.alphatekx.name.ng is already taken.` : `The name "${conflict.title || nameLower}" is already in use.`
+          result.reason = conflict.slug === slug ? `The address alphatekx.name.ng/app/${slug} is already taken.` : `The name "${conflict.title || nameLower}" is already in use.`
           result.suggestions = generateNameSuggestions(nameLower, slug)
           return result
         }
@@ -4838,12 +4838,12 @@ async function checkGlobalProjectAvailability(name, config, excludeId = '') {
   const local = readLocalDeployment(slug)
   if (local && (!excludeId || local.id !== excludeId)) {
     result.exists = local
-    result.reason = `The address ${slug}.alphatekx.name.ng is already taken.`
+    result.reason = `The address alphatekx.name.ng/app/${slug} is already taken.`
     result.suggestions = generateNameSuggestions(nameLower, slug)
     return result
   }
   result.available = true
-  result.urlPreview = `https://${slug}.alphatekx.name.ng`
+  result.urlPreview = `https://alphatekx.name.ng/app/${slug}`
   result.pathPreview = `https://alphatekx.name.ng/app/${slug}`
   return result
 }
@@ -7272,15 +7272,14 @@ async function publishPastedHtml(req, res) {
     const excludeId = existing?.id || ''
     const pastedAvailability = await checkGlobalProjectAvailability(slug, config, excludeId)
     if (!pastedAvailability.available) return json(res, 409, { error: pastedAvailability.reason, suggestions: pastedAvailability.suggestions, available: false })
-    if (existing && existing.user_id !== user.id) return json(res, 409, { error: 'That subdomain is already in use.' })
+    if (existing && existing.user_id !== user.id) return json(res, 409, { error: 'That app address is already in use.' })
     const pathUrl = `${baseUrl}/app/${slug}`
-    const subdomainUrl = `https://${slug}.alphatekx.name.ng`
     let creationId = existing?.id || randomUUID()
     if (existing) {
       const updatedResponse = await fetch(`${config.url}/rest/v1/creations?id=eq.${encodeURIComponent(creationId)}&user_id=eq.${encodeURIComponent(user.id)}`, {
         method: 'PATCH',
         headers: { ...headers, Prefer: 'return=representation' },
-        body: JSON.stringify({ title, code: html, type: 'html', files: [{ path: 'index.html', code: html }], owner_id: user.id, published: true, status: 'live', deployment_url: subdomainUrl }),
+        body: JSON.stringify({ title, code: html, type: 'html', files: [{ path: 'index.html', code: html }], owner_id: user.id, published: true, status: 'live', deployment_url: pathUrl }),
       })
       const updated = await updatedResponse.json()
       if (!updatedResponse.ok || !updated?.length) {
@@ -7299,7 +7298,7 @@ async function publishPastedHtml(req, res) {
       }
       const creationResponse = await fetch(`${config.url}/rest/v1/creations`, {
         method: 'POST', headers: { ...headers, Prefer: 'return=representation' },
-        body: JSON.stringify({ id: creationId, mission_id: missionId, user_id: user.id, owner_id: user.id, slug, title, code: html, type: 'html', status: 'live', files: [{ path: 'index.html', code: html }], published: true, deployment_url: subdomainUrl }),
+        body: JSON.stringify({ id: creationId, mission_id: missionId, user_id: user.id, owner_id: user.id, slug, title, code: html, type: 'html', status: 'live', files: [{ path: 'index.html', code: html }], published: true, deployment_url: pathUrl }),
       })
       const created = await creationResponse.json()
       if (!creationResponse.ok || !created?.length) {
@@ -7308,7 +7307,7 @@ async function publishPastedHtml(req, res) {
         return json(res, 500, { error: created.message || 'Could not save this deployment. Run supabase/path-deploy.sql first.' })
       }
     }
-    return json(res, 200, { creationId, slug, pathUrl, subdomainUrl })
+    return json(res, 200, { creationId, slug, pathUrl, url: pathUrl, subdomainUrl: `https://${slug}.alphatekx.name.ng` })
   } catch (error) {
     return json(res, 500, { error: error instanceof Error ? error.message : 'Code deployment failed.' })
   }
