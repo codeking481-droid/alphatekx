@@ -27,6 +27,7 @@ const Admin = lazy(() => import('./pages/Admin'))
 const AdminAgents = lazy(() => import('./pages/AdminAgents'))
 const AdminWithdrawals = lazy(() => import('./pages/AdminWithdrawals'))
 const Billing = lazy(() => import('./pages/Billing'))
+const Launch = lazy(() => import('./pages/Launch'))
 
 const loader = <div className="workspace-living-bg grid min-h-screen place-items-center text-sm font-bold text-slate-300"><span className="skeleton rounded-xl px-6 py-3">Loading AlphaTekx…</span></div>
 const suspended = (page: ReactNode) => <Suspense fallback={loader}>{page}</Suspense>
@@ -78,6 +79,7 @@ export default function App() {
       <Route path="/leads" element={toDashboard} />
       <Route path="/ceo" element={toDashboard} />
       <Route path="/billing" element={protectedPage(<Billing />)} />
+      <Route path="/deploy" element={protectedPage(<Launch />)} />
       <Route path="/settings" element={protectedPage(<Settings />)} />
       <Route path="/help" element={protectedPage(<ContentPage slug="help" workspace />)} />
 
