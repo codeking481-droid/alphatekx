@@ -4996,7 +4996,7 @@ function readJsonFile(file, defaultValue = []) {
   } catch { return defaultValue }
 }
 function writeJsonFile(file, data) {
-  try { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify(data, null, 2)); return true } catch { return false }
+  try { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8'); return true } catch { return false }
 }
 function localUserFromRequest(req) {
   const header = String(req.headers['x-local-user'] || '')
@@ -9399,7 +9399,7 @@ const server = http.createServer(async (req, res) => {
           counts: { exposedPaths: (scan.exposedPaths || []).length, secrets: (scan.secrets || []).length, liveSecrets: liveSecrets.filter(s => s.isLive).length },
           maskedSecrets: (scan.secrets || []).slice(0, 10).map(s => ({ kind: s.kind, maskedValue: s.maskedValue })),
           before: { score: risk.score, screenshot: scan.screenshotPath },
-        }, null, 2))
+        }, null, 2), 'utf8')
       } catch { /* meta persistence is best-effort */ }
 
       const deducted = await deductCredit(userEmail)

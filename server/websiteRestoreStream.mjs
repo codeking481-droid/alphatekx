@@ -11,6 +11,7 @@ import { lookup } from 'node:dns'
 import { withContext } from './scanner/browserPool.mjs'
 import { alphaChat, alphaText } from '../alpha-core/index.ts'
 import { runFullRestorationScan } from './scanEngine/restorationScanner.mjs'
+import { sanitizeEncoding, validateHtml } from './scanEngine/fileUtils.js'
 import {
   emitRestorationStarted,
   emitRepositoryScanned,
@@ -317,8 +318,8 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
         sendStep({ id: 'screenshot', label: 'Homepage screenshot captured', icon: 'test', status: 'done', summary: `HTTP ${fetchStatus}` })
         sendStep({ id: 'perf', label: 'Measuring performance metrics', icon: 'test', status: 'active' })
 
-        // Capture HTML
-        originalHtml = await page.content()
+        // Capture HTML — sanitize encoding to prevent BOM/UTF-16 corruption
+        originalHtml = sanitizeEncoding(await page.content())
         sendCard({ type: 'log', card: 'scanning', text: `> HTML captured: ${(originalHtml.length / 1024).toFixed(1)}KB` })
 
         // Measure REAL performance metrics via browser
@@ -457,7 +458,7 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
       })
       clearTimeout(timer)
       fetchStatus = fetchRes.status
-      originalHtml = await fetchRes.text()
+      originalHtml = sanitizeEncoding(await fetchRes.text())
       sendCard({ type: 'log', card: 'scanning', text: `> Status: ${fetchStatus} | Size: ${(originalHtml.length / 1024).toFixed(1)}KB` })
     } catch (fetchErr) {
       fetchStatus = 0
@@ -709,7 +710,7 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
         rollbackDir,
         errorsFound,
         scanData,
-      }))
+      }), 'utf8')
     } catch {}
     sendCard({ type: 'fixprompt', scanId, scanSummary })
     stopHeartbeat()
@@ -728,7 +729,7 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
     errors: errorsFound, scanData,
   }
   try {
-    fs.writeFileSync(path.join(rollbackDir, 'backup.json'), JSON.stringify(backupJson, null, 2))
+    fs.writeFileSync(path.join(rollbackDir, 'backup.json'), JSON.stringify(backupJson, null, 2), 'utf8')
     sendCard({ type: 'log', card: 'backup', text: `> Saved backup.json (${(JSON.stringify(backupJson).length / 1024).toFixed(1)}KB)` })
   } catch (err) {
     sendCard({ type: 'log', card: 'backup', text: `> Backup save failed: ${err.message}` })
@@ -832,8 +833,9 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
     sendCard({ type: 'diff', card: 'fixing', filename: 'index.html', old: '<nav>', newContent: '<nav role="navigation">' })
   }
 
-  // Save the deterministic fixes
-  fs.writeFileSync(path.join(restoredDir, 'index.html'), fixedHtml)
+  // Save the deterministic fixes — sanitize encoding to prevent BOM/UTF-16 corruption
+  fixedHtml = sanitizeEncoding(fixedHtml)
+  fs.writeFileSync(path.join(restoredDir, 'index.html'), fixedHtml, 'utf8')
   fixedFiles.push({ filename: 'index.html', path: path.join(restoredDir, 'index.html') })
   sendCard({ type: 'log', card: 'fixing', text: `> Deterministic fixes applied to index.html (${(fixedHtml.length / 1024).toFixed(1)}KB)` })
 
@@ -854,7 +856,7 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
 
     const htmlMatch = aiResult.match(/```html\s*([\s\S]*?)```/) || aiResult.match(/```([\s\S]*?)```/)
     if (htmlMatch && htmlMatch[1]) {
-      const candidate = htmlMatch[1].trim()
+      const candidate = sanitizeEncoding(htmlMatch[1].trim())
       if (candidate.includes('<html') && candidate.includes('</html>') && candidate.length > originalHtml.length * 0.3) {
         aiGeneratedHtml = candidate
       }
@@ -865,8 +867,14 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
 
   if (aiGeneratedHtml) {
     const beforeHtml = fixedHtml
-    fixedHtml = aiGeneratedHtml
-    fs.writeFileSync(path.join(restoredDir, 'index.html'), fixedHtml)
+    fixedHtml = sanitizeEncoding(aiGeneratedHtml)
+    // Validate AI output is real English HTML, not encoding garbage
+    const htmlCheck = validateHtml(fixedHtml)
+    if (!htmlCheck.valid) {
+      sendCard({ type: 'log', card: 'fixing', text: `> AI output rejected: ${htmlCheck.reason} — keeping deterministic fixes` })
+      fixedHtml = beforeHtml
+    }
+    fs.writeFileSync(path.join(restoredDir, 'index.html'), fixedHtml, 'utf8')
     sendCard({ type: 'log', card: 'fixing', text: `> AI generated complete HTML (${(fixedHtml.length / 1024).toFixed(1)}KB) — replaces regex fixes` })
     sendCard({ type: 'diff', card: 'fixing', filename: 'index.html', old: beforeHtml.slice(0, 800), newContent: fixedHtml.slice(0, 800) })
     sendStep({ id: 'ai-gen', label: 'AI rebuilt the site from scratch', icon: 'plan', status: 'done', summary: `${(fixedHtml.length / 1024).toFixed(1)}KB — replaces regex fixes` })
@@ -1047,7 +1055,8 @@ async function runFixPipeline(scanId, sendCard, res) {
     return
   }
 
-  const { url: targetUrl, originalHtml, workDir, restoredDir, rollbackDir, errorsFound: savedErrors, scanData } = state
+  const { url: targetUrl, originalHtml: rawHtml, workDir, restoredDir, rollbackDir, errorsFound: savedErrors, scanData } = state
+  const originalHtml = sanitizeEncoding(rawHtml || '')
 
   const sseWriter = (data) => {
     if (!res.writableEnded) res.write(data)
@@ -1104,7 +1113,8 @@ async function runFixPipeline(scanId, sendCard, res) {
   })
   fixedFiles.push({ filename: 'index.html' })
 
-  // Save
+  // Save — sanitize encoding to prevent BOM/UTF-16 corruption
+  fixedHtml = sanitizeEncoding(fixedHtml)
   try { fs.mkdirSync(restoredDir, { recursive: true }) } catch {}
   fs.writeFileSync(path.resolve(restoredDir, 'index.html'), fixedHtml, 'utf8')
 
@@ -1121,7 +1131,7 @@ async function runFixPipeline(scanId, sendCard, res) {
 
     const htmlMatch = aiResult.match(/```html\s*([\s\S]*?)```/) || aiResult.match(/```([\s\S]*?)```/)
     if (htmlMatch && htmlMatch[1]) {
-      const candidate = htmlMatch[1].trim()
+      const candidate = sanitizeEncoding(htmlMatch[1].trim())
       if (candidate.includes('<html') && candidate.includes('</html>') && candidate.length > originalHtml.length * 0.3) {
         aiGeneratedHtml = candidate
       }
@@ -1132,7 +1142,13 @@ async function runFixPipeline(scanId, sendCard, res) {
 
   if (aiGeneratedHtml) {
     const beforeHtml = fixedHtml
-    fixedHtml = aiGeneratedHtml
+    fixedHtml = sanitizeEncoding(aiGeneratedHtml)
+    // Validate AI output is real English HTML, not encoding garbage
+    const htmlCheck2 = validateHtml(fixedHtml)
+    if (!htmlCheck2.valid) {
+      sendCard({ type: 'log', card: 'fixing', text: `> AI output rejected: ${htmlCheck2.reason} — keeping deterministic fixes` })
+      fixedHtml = beforeHtml
+    }
     fs.writeFileSync(path.resolve(restoredDir, 'index.html'), fixedHtml, 'utf8')
     sendCard({ type: 'log', card: 'fixing', text: `> AI generated complete HTML (${(fixedHtml.length / 1024).toFixed(1)}KB) — replaces regex fixes` })
     sendCard({ type: 'diff', card: 'fixing', filename: 'index.html', old: beforeHtml.slice(0, 800), newContent: fixedHtml.slice(0, 800) })
