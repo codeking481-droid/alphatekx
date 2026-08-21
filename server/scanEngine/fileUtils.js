@@ -2,6 +2,7 @@
 // Prevents encoding corruption (BOM, UTF-16, wrong charset) that breaks scans.
 
 import fs from 'node:fs'
+import path from 'node:path'
 
 /**
  * Strip BOM (U+FEFF), null bytes (\u0000), and other encoding artifacts from a string.
@@ -96,4 +97,51 @@ export function applyReplacements(content, replacements) {
     }
   }
   return result
+}
+
+/**
+ * FileHandler — the ONLY way the Restore Engine touches HTML/text files.
+ * Guarantees every read and write is UTF-8, BOM-free, null-byte-free,
+ * and that restored output is valid English HTML (never CJK mojibake).
+ */
+export class FileHandler {
+  /** Read a file as UTF-8, stripping BOM + null bytes. */
+  static readFile(filePath) {
+    let content = fs.readFileSync(filePath, 'utf8')
+    if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1)
+    content = content.replace(/\u0000/g, '')
+    return sanitizeEncoding(content)
+  }
+
+  /** Sanitize then write a file strictly as UTF-8. */
+  static writeFile(filePath, content) {
+    const clean = sanitizeEncoding(String(content ?? ''))
+    fs.mkdirSync(path.dirname(filePath), { recursive: true })
+    fs.writeFileSync(filePath, clean, 'utf8')
+    return clean
+  }
+
+  /** True when content looks like a real HTML document. */
+  static validateHTML(content) {
+    return validateHtml(content).valid
+  }
+
+  /** True when content has NO Chinese/Japanese/Korean corruption characters. */
+  static isEnglish(content) {
+    if (typeof content !== 'string' || !content) return false
+    const hasAsian = /[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/.test(content)
+    return !hasAsian && !content.includes('\u0000')
+  }
+
+  /**
+   * Read an existing restored file; if it is corrupt/mojibake, return the fallback.
+   * Used when serving restored HTML so users NEVER see encoding garbage.
+   */
+  static readValidHtml(filePath, fallbackHtml) {
+    try {
+      const content = this.readFile(filePath)
+      if (this.validateHTML(content) && this.isEnglish(content)) return content
+    } catch {}
+    return fallbackHtml
+  }
 }

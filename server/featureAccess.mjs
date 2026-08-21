@@ -54,7 +54,7 @@ function readLocal() {
 function writeLocal() {
   try {
     fs.mkdirSync(path.dirname(localFile), { recursive: true })
-    fs.writeFileSync(localFile, JSON.stringify({ features: [...featureCache.values()], betaUsers: [...betaUsers], audit: auditCache }, null, 2))
+    fs.writeFileSync(localFile, JSON.stringify({ features: [...featureCache.values()], betaUsers: [...betaUsers], audit: auditCache }, null, 2), 'utf8')
   } catch {}
 }
 

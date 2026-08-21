@@ -14,7 +14,7 @@ function readApp(slug) {
 }
 
 function writeApp(slug, data) {
-  fs.writeFileSync(appFile(slug), JSON.stringify(data, null, 2))
+  fs.writeFileSync(appFile(slug), JSON.stringify(data, null, 2), 'utf8')
 }
 
 function getRecords(slug, entity, query = {}) {

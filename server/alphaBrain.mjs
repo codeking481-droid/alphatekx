@@ -30,7 +30,7 @@ function readJsonFile(file, defaultValue) {
 function writeJsonFile(file, data) {
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true })
-    fs.writeFileSync(file, JSON.stringify(data, null, 2))
+    fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8')
     return true
   } catch { return false }
 }

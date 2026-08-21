@@ -30,6 +30,35 @@ export async function checkNameAvailability(name: string): Promise<AvailabilityR
   return payload as AvailabilityResult
 }
 
+export type QuickAvailability = { available: boolean; name: string; message: string; reason?: string; suggestions?: string[]; urlPreview?: string }
+
+// GET /api/check-availability?name={name} — real-time name checker for the deploy tool
+export async function checkDeployName(name: string): Promise<QuickAvailability> {
+  const response = await fetch(`/api/check-availability?name=${encodeURIComponent(name)}`, { headers: localUserHeaders() })
+  const payload = await response.json()
+  if (!response.ok) throw new Error(payload.error || payload.message || 'Availability check failed.')
+  return payload as QuickAvailability
+}
+
+export type DeployResult = { success: boolean; url: string; name: string; message: string; subdomainUrl?: string }
+
+// POST /api/deploy { name, html } — saves the site and registers the name
+export async function deploySite(input: { name: string; html: string; title?: string }): Promise<DeployResult> {
+  const session = supabase ? (await supabase.auth.getSession()).data.session : null
+  const response = await fetch('/api/deploy', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...localUserHeaders(),
+      ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
+    },
+    body: JSON.stringify({ name: input.name, title: input.title, html: input.html }),
+  })
+  const payload = await response.json()
+  if (!response.ok || !payload.success) throw new Error(payload.error || payload.message || 'Deploy failed.')
+  return payload as DeployResult
+}
+
 export async function publishCreationPath(creation: Creation, requestedSlug: string) {
   const session = supabase ? (await supabase.auth.getSession()).data.session : null
   const slug = slugifyCreation(requestedSlug)

@@ -85,7 +85,7 @@ function readJsonFile(file, defaultValue = []) {
   try { if (!fs.existsSync(file)) return defaultValue; return JSON.parse(fs.readFileSync(file, 'utf8')) } catch { return defaultValue }
 }
 function writeJsonFile(file, data) {
-  try { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify(data, null, 2)); return true } catch { return false }
+  try { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8'); return true } catch { return false }
 }
 
 const json = (res, status, body) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)) }

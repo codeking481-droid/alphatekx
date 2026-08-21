@@ -11,7 +11,7 @@ import { lookup } from 'node:dns'
 import { withContext } from './scanner/browserPool.mjs'
 import { alphaChat, alphaText } from '../alpha-core/index.ts'
 import { runFullRestorationScan } from './scanEngine/restorationScanner.mjs'
-import { sanitizeEncoding, validateHtml } from './scanEngine/fileUtils.js'
+import { sanitizeEncoding, validateHtml, FileHandler } from './scanEngine/fileUtils.js'
 import {
   emitRestorationStarted,
   emitRepositoryScanned,
@@ -833,9 +833,9 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
     sendCard({ type: 'diff', card: 'fixing', filename: 'index.html', old: '<nav>', newContent: '<nav role="navigation">' })
   }
 
-  // Save the deterministic fixes — sanitize encoding to prevent BOM/UTF-16 corruption
+  // Save the deterministic fixes — FileHandler guarantees UTF-8, no BOM/null bytes
   fixedHtml = sanitizeEncoding(fixedHtml)
-  fs.writeFileSync(path.join(restoredDir, 'index.html'), fixedHtml, 'utf8')
+  fixedHtml = FileHandler.writeFile(path.join(restoredDir, 'index.html'), fixedHtml)
   fixedFiles.push({ filename: 'index.html', path: path.join(restoredDir, 'index.html') })
   sendCard({ type: 'log', card: 'fixing', text: `> Deterministic fixes applied to index.html (${(fixedHtml.length / 1024).toFixed(1)}KB)` })
 
@@ -857,7 +857,9 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
     const htmlMatch = aiResult.match(/```html\s*([\s\S]*?)```/) || aiResult.match(/```([\s\S]*?)```/)
     if (htmlMatch && htmlMatch[1]) {
       const candidate = sanitizeEncoding(htmlMatch[1].trim())
-      if (candidate.includes('<html') && candidate.includes('</html>') && candidate.length > originalHtml.length * 0.3) {
+      // Accept ONLY valid English HTML — reject CJK mojibake from the model
+      if (candidate.includes('<html') && candidate.includes('</html>') && candidate.length > originalHtml.length * 0.3
+          && FileHandler.validateHTML(candidate) && FileHandler.isEnglish(candidate)) {
         aiGeneratedHtml = candidate
       }
     }
@@ -870,11 +872,11 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
     fixedHtml = sanitizeEncoding(aiGeneratedHtml)
     // Validate AI output is real English HTML, not encoding garbage
     const htmlCheck = validateHtml(fixedHtml)
-    if (!htmlCheck.valid) {
-      sendCard({ type: 'log', card: 'fixing', text: `> AI output rejected: ${htmlCheck.reason} — keeping deterministic fixes` })
+    if (!htmlCheck.valid || !FileHandler.isEnglish(fixedHtml)) {
+      sendCard({ type: 'log', card: 'fixing', text: `> AI output rejected: ${htmlCheck.reason || 'non-English content'} — keeping deterministic fixes` })
       fixedHtml = beforeHtml
     }
-    fs.writeFileSync(path.join(restoredDir, 'index.html'), fixedHtml, 'utf8')
+    fixedHtml = FileHandler.writeFile(path.join(restoredDir, 'index.html'), fixedHtml)
     sendCard({ type: 'log', card: 'fixing', text: `> AI generated complete HTML (${(fixedHtml.length / 1024).toFixed(1)}KB) — replaces regex fixes` })
     sendCard({ type: 'diff', card: 'fixing', filename: 'index.html', old: beforeHtml.slice(0, 800), newContent: fixedHtml.slice(0, 800) })
     sendStep({ id: 'ai-gen', label: 'AI rebuilt the site from scratch', icon: 'plan', status: 'done', summary: `${(fixedHtml.length / 1024).toFixed(1)}KB — replaces regex fixes` })
@@ -965,7 +967,7 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
   let restoredZipPath = ''
   try {
     restoredZipPath = path.resolve(workDir, 'restored.zip')
-    const zipFiles = fixedFiles.map(f => ({ name: f.filename, data: fs.readFileSync(f.path, 'utf8') }))
+    const zipFiles = fixedFiles.map(f => ({ name: f.filename, data: FileHandler.readFile(f.path) }))
     if (zipFiles.length > 0) {
       createMinimalZip(restoredZipPath, zipFiles)
       sendCard({ type: 'log', card: 'fixing', text: `> restored.zip created with ${zipFiles.length} file(s)` })
@@ -1113,10 +1115,10 @@ async function runFixPipeline(scanId, sendCard, res) {
   })
   fixedFiles.push({ filename: 'index.html' })
 
-  // Save — sanitize encoding to prevent BOM/UTF-16 corruption
+  // Save — FileHandler guarantees UTF-8, no BOM/null bytes
   fixedHtml = sanitizeEncoding(fixedHtml)
   try { fs.mkdirSync(restoredDir, { recursive: true }) } catch {}
-  fs.writeFileSync(path.resolve(restoredDir, 'index.html'), fixedHtml, 'utf8')
+  fixedHtml = FileHandler.writeFile(path.resolve(restoredDir, 'index.html'), fixedHtml)
 
   // AI-powered full page regeneration
   sendCard({ type: 'log', card: 'fixing', text: `> Requesting AI full-page code generation...` })
@@ -1132,7 +1134,9 @@ async function runFixPipeline(scanId, sendCard, res) {
     const htmlMatch = aiResult.match(/```html\s*([\s\S]*?)```/) || aiResult.match(/```([\s\S]*?)```/)
     if (htmlMatch && htmlMatch[1]) {
       const candidate = sanitizeEncoding(htmlMatch[1].trim())
-      if (candidate.includes('<html') && candidate.includes('</html>') && candidate.length > originalHtml.length * 0.3) {
+      // Accept ONLY valid English HTML — reject CJK mojibake from the model
+      if (candidate.includes('<html') && candidate.includes('</html>') && candidate.length > originalHtml.length * 0.3
+          && FileHandler.validateHTML(candidate) && FileHandler.isEnglish(candidate)) {
         aiGeneratedHtml = candidate
       }
     }
@@ -1145,11 +1149,11 @@ async function runFixPipeline(scanId, sendCard, res) {
     fixedHtml = sanitizeEncoding(aiGeneratedHtml)
     // Validate AI output is real English HTML, not encoding garbage
     const htmlCheck2 = validateHtml(fixedHtml)
-    if (!htmlCheck2.valid) {
-      sendCard({ type: 'log', card: 'fixing', text: `> AI output rejected: ${htmlCheck2.reason} — keeping deterministic fixes` })
+    if (!htmlCheck2.valid || !FileHandler.isEnglish(fixedHtml)) {
+      sendCard({ type: 'log', card: 'fixing', text: `> AI output rejected: ${htmlCheck2.reason || 'non-English content'} — keeping deterministic fixes` })
       fixedHtml = beforeHtml
     }
-    fs.writeFileSync(path.resolve(restoredDir, 'index.html'), fixedHtml, 'utf8')
+    fixedHtml = FileHandler.writeFile(path.resolve(restoredDir, 'index.html'), fixedHtml)
     sendCard({ type: 'log', card: 'fixing', text: `> AI generated complete HTML (${(fixedHtml.length / 1024).toFixed(1)}KB) — replaces regex fixes` })
     sendCard({ type: 'diff', card: 'fixing', filename: 'index.html', old: beforeHtml.slice(0, 800), newContent: fixedHtml.slice(0, 800) })
     sendStep({ id: 'ai-gen', label: 'AI rebuilt the site from scratch', icon: 'plan', status: 'done', summary: `${(fixedHtml.length / 1024).toFixed(1)}KB — replaces regex fixes` })
@@ -1382,8 +1386,10 @@ export function handlePreviewFixedRoute(req, res) {
   if (!scanId) return jsonResponse(res, 400, { error: 'Missing scanId' })
 
   const indexPath = path.resolve(tmpdir(), `restore-${scanId}`, 'restored', 'index.html')
-  if (fs.existsSync(indexPath)) {
-    const html = fs.readFileSync(indexPath, 'utf8')
+  // FileHandler.readValidHtml NEVER returns encoding garbage — falls back to clean English HTML
+  const fallback = '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="UTF-8">\n<title>Restored Site</title>\n</head>\n<body style="background:#0A0A0A;color:#D6FF00;font-family:monospace;padding:40px;text-align:center">\n<h1>Welcome</h1>\n<p>The fixed version is ready. Download restored.zip to view the full site.</p>\n</body>\n</html>'
+  const html = FileHandler.readValidHtml(indexPath, fallback)
+  if (html !== fallback) {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache', 'Access-Control-Allow-Origin': '*' })
     return res.end(html)
   }
@@ -1391,15 +1397,18 @@ export function handlePreviewFixedRoute(req, res) {
   // Fallback: serve original URL via preview proxy
   const backupPath = path.resolve(tmpdir(), `restore-${scanId}`, 'rollback', 'backup.json')
   if (fs.existsSync(backupPath)) {
-    const backup = JSON.parse(fs.readFileSync(backupPath, 'utf8'))
-    if (backup.url) {
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache', 'Access-Control-Allow-Origin': '*' })
-      return res.end(backup.originalHtml || '<html><body>Fixed version preview</body></html>')
-    }
+    try {
+      const backup = JSON.parse(FileHandler.readFile(backupPath))
+      const original = sanitizeEncoding(String(backup.originalHtml || ''))
+      if (backup.url && original && FileHandler.isEnglish(original)) {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache', 'Access-Control-Allow-Origin': '*' })
+        return res.end(original)
+      }
+    } catch {}
   }
 
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' })
-  res.end('<html><body style="background:#0A0A0A;color:#D6FF00;font-family:monospace;padding:40px;text-align:center"><h2>Fixed version ready</h2><p>Download restored.zip to view the fix.</p></body></html>')
+  res.end(fallback)
 }
 
 export function handleScreenshotRoute(req, res) {

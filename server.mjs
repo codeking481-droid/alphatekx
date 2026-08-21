@@ -8,6 +8,7 @@ import { schedule } from 'node-cron'
 import { chromium } from 'playwright'
 
 import { handlePreviewRoute, handleRestoreStreamRoute, handleFixStreamRoute, handleDownloadRoute, handlePreviewFixedRoute, handleScreenshotRoute } from './server/websiteRestoreStream.mjs'
+import { FileHandler, sanitizeEncoding } from './server/scanEngine/fileUtils.js'
 import { handleGitHubAuth, handleGitHubCallback, handleGitHubStatus, handleGitHubRepos, handleGitHubApplyFix, handleGitHubCreatePR, handleGitHubRollback } from './server/githubDirectPush.mjs'
 import { handleDiagnoseRoute } from './server/diagnoseRoute.mjs'
 import { handleRestoreV2Route, handleRestorePushRoute } from './server/restorePipelineV2.mjs'
@@ -4860,6 +4861,83 @@ async function handleCheckAvailability(req, res) {
   return json(res, 200, result)
 }
 
+// GET /api/check-availability?name={name} — simple spec-format name checker
+async function handleQuickAvailability(req, res) {
+  const ip = getClientIp(req)
+  if (!checkAvailabilityRateLimit(ip)) return json(res, 429, { available: false, message: 'Too many checks. Slow down.' })
+  const url = new URL(req.url || '/', publicAppUrl())
+  const rawName = String(url.searchParams.get('name') || '')
+  if (!rawName.trim()) return json(res, 400, { available: false, name: '', message: '❌ Name is required' })
+  const name = slugifyName(rawName)
+  const config = supabaseConfig()
+  const result = await checkGlobalProjectAvailability(name, config)
+  if (result.available) {
+    return json(res, 200, { available: true, name, slug: result.slug, message: '✅ Available!', urlPreview: result.urlPreview })
+  }
+  return json(res, 200, {
+    available: false,
+    name,
+    slug: result.slug,
+    message: result.invalid ? '❌ Invalid name' : result.reserved ? '❌ Reserved name' : '❌ Already taken',
+    reason: result.reason,
+    suggestions: result.suggestions?.length ? result.suggestions : generateNameSuggestions(name, result.slug),
+  })
+}
+
+// POST /api/deploy { name, html } — spec-format deploy endpoint
+async function handleDeployEndpoint(req, res) {
+  const config = supabaseConfig()
+  const baseUrl = String(process.env.PUBLIC_APP_URL || 'https://alphatekx.name.ng').replace(/\/$/, '')
+  try {
+    const user = await currentOrLocalUser(req, config.url, config.anon)
+    if (!user) return json(res, 401, { success: false, error: 'Authentication required.' })
+    const body = await readBody(req)
+    const rawName = String(body.name || '').trim()
+    const name = slugifyName(rawName)
+    if (!rawName) return json(res, 400, { success: false, name, error: 'Name is required.' })
+    if (!validProjectName(name)) {
+      return json(res, 400, { success: false, name, error: 'Use 3-30 lowercase letters, numbers, or hyphens. Must start and end with a letter or number.' })
+    }
+    // UTF-8 safety gate — strip BOM/null bytes, then reject encoding-corrupted HTML
+    const html = sanitizeEncoding(String(body.html || '')).trim()
+    if (!/<(?:!doctype\s+html|html|body)[\s>]/i.test(html)) {
+      return json(res, 400, { success: false, name, error: 'Provide a complete HTML document.' })
+    }
+    if (!FileHandler.isEnglish(html)) {
+      return json(res, 400, { success: false, name, error: 'HTML contains corrupted non-English characters. Save the file as UTF-8 and try again.' })
+    }
+    if (Buffer.byteLength(html, 'utf8') > 900_000) {
+      return json(res, 413, { success: false, name, error: 'HTML must be smaller than 900 KB.' })
+    }
+    const availability = await checkGlobalProjectAvailability(name, config)
+    if (!availability.available) {
+      return json(res, 409, {
+        success: false,
+        available: false,
+        name,
+        message: '❌ Already taken',
+        error: availability.reason,
+        suggestions: availability.suggestions?.length ? availability.suggestions : generateNameSuggestions(name, name),
+      })
+    }
+    const title = String(body.title || rawName).trim().slice(0, 120) || name
+    const result = await localPublishPasted({ title, slug: name, html }, baseUrl)
+    if (result.status !== 200) {
+      return json(res, result.status, { success: false, name, error: result.body?.error || 'Deploy failed.' })
+    }
+    const url = result.body.url || `${baseUrl}/app/${name}`
+    return json(res, 200, {
+      success: true,
+      url,
+      name,
+      message: '✅ Site deployed successfully!',
+      subdomainUrl: result.body.subdomainUrl,
+    })
+  } catch (error) {
+    return json(res, 500, { success: false, error: error instanceof Error ? error.message : 'Deploy failed.' })
+  }
+}
+
 const scriptJson = (value) => JSON.stringify(value).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029')
 
 export function normalizePublishedCode(rawCode) {
@@ -4951,6 +5029,34 @@ function writeLocalDeployment(slug, data) {
     fs.mkdirSync(deploymentsDir, { recursive: true })
     const file = deploymentPath(slug)
     fs.writeFileSync(file, JSON.stringify({ ...data, slug, updatedAt: new Date().toISOString() }), 'utf8')
+    return true
+  } catch { return false }
+}
+
+// ─── deployments.json registry — every deployed name lives here ──────────────
+const deploymentRegistryFile = path.join(deploymentsDir, 'deployments.json')
+
+function readDeploymentRegistry() {
+  try {
+    if (!fs.existsSync(deploymentRegistryFile)) return { sites: [] }
+    const raw = fs.readFileSync(deploymentRegistryFile, 'utf8')
+    const parsed = JSON.parse(raw.charCodeAt(0) === 0xFEFF ? raw.slice(1) : raw)
+    return Array.isArray(parsed?.sites) ? { sites: parsed.sites } : { sites: [] }
+  } catch { return { sites: [] } }
+}
+
+function registerDeployedSite(name, url) {
+  try {
+    const registry = readDeploymentRegistry()
+    const existing = registry.sites.find(s => s.name === name)
+    if (existing) {
+      existing.url = url
+      existing.updated = new Date().toISOString().slice(0, 10)
+    } else {
+      registry.sites.push({ name, url, created: new Date().toISOString().slice(0, 10) })
+    }
+    fs.mkdirSync(deploymentsDir, { recursive: true })
+    fs.writeFileSync(deploymentRegistryFile, JSON.stringify(registry, null, 2), 'utf8')
     return true
   } catch { return false }
 }
@@ -7176,6 +7282,7 @@ async function localPublishCreation(body, baseUrl) {
   if (!creation.code.trim()) return { status: 400, body: { error: 'This creation has no application code to publish.' } }
   if (!writeLocalDeployment(slug, creation)) return { status: 500, body: { error: 'Could not write deployment to disk.' } }
   const url = `${baseUrl}/app/${slug}`
+  registerDeployedSite(slug, url)
   return { status: 200, body: { slug, path: `/app/${slug}`, url, subdomainUrl: `https://${slug}.alphatekx.name.ng` } }
 }
 
@@ -7192,6 +7299,7 @@ async function localPublishPasted(body, baseUrl) {
   const creation = { id: creationId, slug, title, code: html, type: 'html', files: [{ path: 'index.html', code: html }] }
   if (!writeLocalDeployment(slug, creation)) return { status: 500, body: { error: 'Could not write deployment to disk.' } }
   const url = `${baseUrl}/app/${slug}`
+  registerDeployedSite(slug, url)
   return { status: 200, body: { creationId, slug, url, pathUrl: url, subdomainUrl: `https://${slug}.alphatekx.name.ng` } }
 }
 
@@ -7238,6 +7346,7 @@ async function publishCreationPath(req, res) {
       return json(res, result.status, result.body)
     }
     const subdomainUrl = `https://${slug}.alphatekx.name.ng`
+    registerDeployedSite(slug, deploymentUrl)
     return json(res, 200, { slug, path: `/app/${slug}`, url: deploymentUrl, subdomainUrl })
   } catch (error) {
     return json(res, 500, { error: error instanceof Error ? error.message : 'Publication failed.' })
@@ -7308,6 +7417,7 @@ async function publishPastedHtml(req, res) {
         return json(res, 500, { error: created.message || 'Could not save this deployment. Run supabase/path-deploy.sql first.' })
       }
     }
+    registerDeployedSite(slug, pathUrl)
     return json(res, 200, { creationId, slug, pathUrl, url: pathUrl, subdomainUrl: `https://${slug}.alphatekx.name.ng` })
   } catch (error) {
     return json(res, 500, { error: error instanceof Error ? error.message : 'Code deployment failed.' })
@@ -8789,6 +8899,10 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'POST' && req.url === '/api/marketplace/purchase') return purchaseMarketplace(req, res)
   if (req.method === 'POST' && req.url === '/api/missions/build') return buildMissionFiles(req, res)
+  if (req.method === 'GET' && req.url?.startsWith('/api/check-availability')) {
+    try { return await handleQuickAvailability(req, res) } catch (error) { return json(res, 500, { available: false, error: error instanceof Error ? error.message : 'Availability check failed' }) }
+  }
+  if (req.method === 'POST' && req.url === '/api/deploy') return handleDeployEndpoint(req, res)
   if (req.method === 'GET' && req.url?.startsWith('/api/projects/check-availability')) {
     try { return await handleCheckAvailability(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Availability check failed' }) }
   }

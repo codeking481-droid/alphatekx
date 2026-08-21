@@ -10,7 +10,7 @@ function localRead(file) {
 }
 
 function localWrite(file, rows) {
-  fs.writeFileSync(file, JSON.stringify(rows, null, 2))
+  fs.writeFileSync(file, JSON.stringify(rows, null, 2), 'utf8')
 }
 
 function normalize(row) {

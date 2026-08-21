@@ -1,10 +1,17 @@
-import { useEffect, useState } from 'react'
-import { Check, Copy, ExternalLink, Globe, LoaderCircle, UploadCloud, X } from 'lucide-react'
-import { useSearchParams } from 'react-router-dom'
-import { deployPastedHtml, slugifyCreation } from '../lib/deployCreation'
+import { useEffect, useRef, useState } from 'react'
+import { Check, Copy, ExternalLink, Globe, LoaderCircle, UploadCloud, Upload, X } from 'lucide-react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { checkDeployName, deploySite, slugifyCreation } from '../lib/deployCreation'
 import { getCreations, hydrateMissionStore, subscribeStore, updateCreation } from '../lib/missionStore'
 
 type DeployInfo = { publicAppUrl: string; serviceUrl: string; wildcardDomain: string; dnsRecords: Array<{ type: string; name: string; value: string }> }
+type NameCheck = {
+  state: 'idle' | 'too-short' | 'checking' | 'available' | 'taken'
+  message: string
+  suggestions: string[]
+}
+
+const initialCheck: NameCheck = { state: 'idle', message: '', suggestions: [] }
 
 export default function Launch() {
   const [creations, setCreations] = useState(getCreations())
@@ -16,8 +23,11 @@ export default function Launch() {
   const [pasteHtml, setPasteHtml] = useState('')
   const [pasteTitle, setPasteTitle] = useState('')
   const [pasteSlug, setPasteSlug] = useState('')
+  const [nameCheck, setNameCheck] = useState<NameCheck>(initialCheck)
   const [deploying, setDeploying] = useState(false)
-  const [deployResult, setDeployResult] = useState<{ pathUrl: string; subdomainUrl: string } | null>(null)
+  const [deployResult, setDeployResult] = useState<{ url: string; subdomainUrl?: string } | null>(null)
+  const [copied, setCopied] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [searchParams] = useSearchParams()
   const [deployInfo, setDeployInfo] = useState<DeployInfo | null>(null)
@@ -32,7 +42,58 @@ export default function Launch() {
   useEffect(() => { if (creation) { setDomain(creation.customDomain ?? ''); setSlug(creation.slug ?? slugifyCreation(creation.title ?? 'my-app')); setNotice('') } }, [creation?.id])
   useEffect(() => { void fetch('/api/deploy/info').then(r => r.json()).then(d => setDeployInfo(d as DeployInfo)).catch(() => null) }, [])
 
-  const copyUrl = async (url?: string) => { if (url) { await navigator.clipboard.writeText(url); setNotice('URL copied.') } }
+  // ── NAME CHECKING SYSTEM: real-time availability as the user types ──
+  useEffect(() => {
+    const name = pasteSlug.trim()
+    if (!name || name.length < 3) {
+      setNameCheck(name ? { state: 'too-short', message: 'Type at least 3 characters', suggestions: [] } : initialCheck)
+      return
+    }
+    setNameCheck({ state: 'checking', message: 'Checking availability...', suggestions: [] })
+    const controller = new AbortController()
+    const timer = window.setTimeout(async () => {
+      try {
+        const data = await checkDeployName(name)
+        if (data.available) {
+          setNameCheck({ state: 'available', message: `✅ "${name}" is available!`, suggestions: [] })
+        } else {
+          setNameCheck({
+            state: 'taken',
+            message: data.reason || `❌ "${name}" is taken.`,
+            suggestions: data.suggestions || [],
+          })
+        }
+      } catch (err) {
+        setNameCheck({ state: 'idle', message: err instanceof Error ? err.message : 'Could not check name.', suggestions: [] })
+      }
+    }, 400)
+    return () => { controller.abort(); window.clearTimeout(timer) }
+  }, [pasteSlug])
+
+  const nameIsAvailable = nameCheck.state === 'available'
+  const canDeploy = nameIsAvailable && !!pasteTitle.trim() && !!pasteHtml.trim() && !deploying
+
+  const copyUrl = async (url?: string) => {
+    if (!url) return
+    await navigator.clipboard.writeText(url)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  const handleFileUpload = async (file: File | undefined) => {
+    if (!file) return
+    if (file.size > 900_000) { setNotice('File must be smaller than 900 KB.'); return }
+    try {
+      // ALWAYS read uploads as UTF-8 — prevents encoding corruption
+      const text = await file.text()
+      if (!pasteTitle.trim()) setPasteTitle(file.name.replace(/\.html?$/i, '').slice(0, 60))
+      setPasteHtml(text)
+      setNotice(`Loaded ${file.name} (${(file.size / 1024).toFixed(1)} KB).`)
+    } catch {
+      setNotice('Could not read that file as UTF-8 text.')
+    }
+  }
+
   const publish = async () => {
     if (!creation || publishing) return
     setPublishing(true); setNotice('Publishing...')
@@ -45,69 +106,121 @@ export default function Launch() {
   }
 
   const deployCode = async () => {
-    if (deploying || !pasteTitle.trim() || !pasteSlug || !pasteHtml.trim()) return
+    if (!canDeploy) return
     setDeploying(true); setDeployResult(null); setNotice('Deploying...')
     try {
-      const result = await deployPastedHtml({ title: pasteTitle, slug: pasteSlug, html: pasteHtml })
-      setDeployResult(result); setNotice('Deployed!')
+      const result = await deploySite({ name: pasteSlug, title: pasteTitle, html: pasteHtml })
+      setDeployResult({ url: result.url, subdomainUrl: result.subdomainUrl }); setNotice('')
       await hydrateMissionStore(); setCreations(getCreations())
     } catch (e) { setNotice(e instanceof Error ? e.message : 'Deploy failed.') } finally { setDeploying(false) }
   }
 
+  const resetDeploy = () => {
+    setPasteHtml(''); setPasteTitle(''); setPasteSlug('')
+    setDeployResult(null); setNotice(''); setNameCheck(initialCheck)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
   const liveUrl = creation?.deploymentUrl
   const pathUrl = creation?.pathUrl || (creation?.slug ? `https://alphatekx.name.ng/app/${creation.slug}` : undefined)
+
+  const statusColor =
+    nameCheck.state === 'available' ? 'text-emerald-400'
+    : nameCheck.state === 'taken' ? 'text-red-400'
+    : nameCheck.state === 'checking' ? 'text-white/50'
+    : 'text-white/35'
 
   return (
     <div className="min-h-screen px-4 py-8 md:px-10">
       <div className="mx-auto max-w-4xl">
         <div className="mb-8 text-center">
           <h1 className="text-3xl font-bold md:text-4xl">Deploy</h1>
-          <p className="mt-2 text-sm text-white/55">Paste your HTML, pick a name, and go live on alphatekx.name.ng/app/.</p>
+          <p className="mt-2 text-sm text-white/55">Pick a name, paste your HTML, and go live on alphatekx.name.ng/app/.</p>
         </div>
 
-        {notice && <p role="status" className="mb-6 rounded-xl border border-violet-400/20 bg-violet-500/10 p-3 text-sm text-center">{notice}</p>}
+        {notice && (
+          <p role="status" className="mb-6 flex items-center justify-between gap-3 rounded-xl border border-violet-400/20 bg-violet-500/10 p-3 text-sm">
+            <span>{notice}</span>
+            <button onClick={() => setNotice('')} className="shrink-0 text-white/40 hover:text-white"><X size={14} /></button>
+          </p>
+        )}
 
-        {/* ── MAIN: Paste & Deploy ── */}
+        {/* ── MAIN: Name check → HTML → Deploy ── */}
         <section className="rounded-2xl border border-violet-400/20 liquid-glass p-6 shadow-sm md:p-8">
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="text-xs font-medium text-white/70">
               App name
               <input value={pasteTitle} onChange={e => { const t = e.target.value; setPasteTitle(t); setPasteSlug(slugifyCreation(t)) }} className="field mt-2 w-full" placeholder="My portfolio" />
             </label>
-              <label className="text-xs font-medium text-white/70">
-              Slug
-              <div className="mt-2 flex min-h-12 items-center rounded-xl border border-violet-400/20 bg-violet-500/10 px-3 text-sm">
+            <label className="text-xs font-medium text-white/70">
+              Site name (URL)
+              <div className="mt-2 flex min-h-12 items-center rounded-xl border border-violet-400/20 bg-violet-500/10 px-3 text-sm focus-within:border-[#D6FF00]/60">
                 <span className="shrink-0 text-white/45">alphatekx.name.ng/app/</span>
                 <input value={pasteSlug} onChange={e => setPasteSlug(slugifyCreation(e.target.value))} className="min-w-0 flex-1 bg-transparent px-1 text-zinc-100 outline-none" placeholder="my-portfolio" />
+                {nameCheck.state === 'checking' && <LoaderCircle size={14} className="shrink-0 animate-spin text-white/40" />}
+                {nameCheck.state === 'available' && <Check size={14} className="shrink-0 text-emerald-400" />}
+                {nameCheck.state === 'taken' && <X size={14} className="shrink-0 text-red-400" />}
               </div>
             </label>
           </div>
 
-          <label className="mt-4 block text-xs font-medium text-white/70">
+          {/* Live availability status */}
+          <div aria-live="polite" className={`mt-2 min-h-5 text-xs font-medium ${statusColor}`}>
+            {nameCheck.message}
+            {nameCheck.state === 'taken' && nameCheck.suggestions.length > 0 && (
+              <span className="ml-1 inline-flex flex-wrap items-center gap-1.5 align-middle">
+                <span className="text-white/40">Try:</span>
+                {nameCheck.suggestions.map(s => (
+                  <button key={s} onClick={() => setPasteSlug(s)} className="rounded-full border border-[#D6FF00]/30 bg-[#D6FF00]/10 px-2 py-0.5 font-mono text-[11px] text-[#D6FF00] transition hover:bg-[#D6FF00]/20">
+                    {s}
+                  </button>
+                ))}
+              </span>
+            )}
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 rounded-xl border border-violet-400/20 bg-violet-500/10 px-4 py-2.5 text-xs font-medium text-zinc-100 transition hover:bg-violet-500/20">
+              <Upload size={14} />
+              Upload .html file
+            </button>
+            <input ref={fileInputRef} type="file" accept=".html,.htm,text/html" className="hidden" onChange={e => void handleFileUpload(e.target.files?.[0])} />
+            <span className="text-xs text-white/35">or paste below · max 900 KB · read as UTF-8</span>
+          </div>
+
+          <label className="mt-3 block text-xs font-medium text-white/70">
             HTML code
             <textarea value={pasteHtml} onChange={e => setPasteHtml(e.target.value)} className="mt-2 min-h-64 w-full resize-y rounded-xl border border-violet-400/20 bg-violet-500/10 p-3 font-mono text-xs leading-5 text-zinc-100 outline-none focus:border-[#D6FF00]" placeholder={'<!doctype html>\n<html>\n  <head>...</head>\n  <body>...</body>\n</html>'} spellCheck={false} />
           </label>
-          <p className="mt-1 text-xs text-white/40">Max 900 KB. HTML, CSS, and JS all in one file.</p>
 
           {/* Deploy result */}
           {deployResult && (
             <div className="mt-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4">
-              <p className="text-sm font-medium text-emerald-300">Your site is live!</p>
-              <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-                <a href={deployResult.pathUrl} target="_blank" rel="noreferrer" className="launch-action flex-1 justify-center gap-2"><Globe size={15}/>Open {deployResult.pathUrl}</a>
+              <p className="flex items-center gap-2 text-sm font-medium text-emerald-300"><Check size={15} /> Your site is live!</p>
+              <p className="mt-1 break-all font-mono text-xs text-emerald-300/80">{deployResult.url}</p>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                <a href={deployResult.url} target="_blank" rel="noreferrer" className="launch-action flex-1 justify-center gap-2"><Globe size={15}/>Open site</a>
                 {deployResult.subdomainUrl && <a href={deployResult.subdomainUrl} target="_blank" rel="noreferrer" className="launch-action flex-1 justify-center gap-2"><ExternalLink size={15}/>Subdomain</a>}
+                <button onClick={() => void copyUrl(deployResult.url)} className="launch-action flex-1 justify-center gap-2">{copied ? <Check size={14} className="text-emerald-400"/> : <Copy size={14}/>}{copied ? 'Copied!' : 'Copy URL'}</button>
               </div>
-              <button onClick={() => void copyUrl(deployResult.pathUrl)} className="launch-action mt-2 gap-2"><Copy size={14}/>Copy URL</button>
+              <button onClick={resetDeploy} className="mt-3 w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-4 py-2 text-xs font-bold text-white/50 transition hover:bg-white/[0.06] hover:text-white">
+                Deploy another
+              </button>
             </div>
           )}
 
-          {/* Action buttons */}
-          <div className="mt-5 flex gap-3">
-            <button onClick={() => void deployCode()} disabled={deploying || !pasteTitle.trim() || !pasteSlug || !pasteHtml.trim()} className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl btn-alpha px-6 text-sm font-medium text-white transition-all disabled:opacity-40">
+          {/* Action button — locked until the name is confirmed available */}
+          {!deployResult && (
+            <button onClick={() => void deployCode()} disabled={!canDeploy}
+              title={!nameIsAvailable ? 'Pick an available name first' : undefined}
+              className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl btn-alpha px-6 text-sm font-medium text-white transition-all disabled:cursor-not-allowed disabled:opacity-40">
               {deploying ? <LoaderCircle className="animate-spin" size={17}/> : <UploadCloud size={17}/>}
-              Deploy
+              {deploying ? 'Deploying...' : nameIsAvailable ? '🚀 Deploy' : 'Deploy'}
             </button>
-          </div>
+          )}
+          {!deployResult && !nameIsAvailable && (
+            <p className="mt-2 text-center text-[11px] text-white/35">The deploy button unlocks once your site name is confirmed available.</p>
+          )}
         </section>
 
         {/* ── EXISTING CREATIONS ── */}
@@ -157,6 +270,10 @@ export default function Launch() {
             )}
           </section>
         )}
+
+        <p className="mt-6 text-center text-xs text-white/30">
+          <Link to="/chat" className="underline underline-offset-2 hover:text-white/60">Back to chat</Link>
+        </p>
       </div>
     </div>
   )

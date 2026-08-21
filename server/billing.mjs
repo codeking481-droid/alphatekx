@@ -17,7 +17,7 @@ function readJsonFile(file, defaultValue) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')) } catch { return defaultValue }
 }
 function writeJsonFile(file, value) {
-  try { fs.writeFileSync(file, JSON.stringify(value, null, 2)) } catch {}
+  try { fs.writeFileSync(file, JSON.stringify(value, null, 2), 'utf8') } catch {}
 }
 
 function serviceHeaders(serviceKey, extra = {}) {
