@@ -138,6 +138,121 @@ export function createRestorationEngine(deps = {}) {
     return { ok: response.ok, status: response.status, finalUrl: response.url || url, contentType, html: text }
   }
 
+  // ─── Dead resource detection: links, images, scripts, stylesheets ───────────
+  const RESOURCE_TIMEOUT_MS = 5000
+  const MAX_RESOURCE_CHECKS = 60
+  const RESOURCE_CONCURRENCY = 8
+
+  function escapeRegExp(value) {
+    return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  }
+
+  function extractPageResources(html, baseUrl) {
+    const source = String(html)
+    const out = { links: [], images: [], scripts: [], styles: [] }
+    const seen = new Set()
+    const consider = (kind, bucket, raw) => {
+      const value = String(raw || '').trim()
+      if (!value || /^(data:|mailto:|tel:|javascript:|about:|#)/i.test(value)) return
+      let abs
+      try { abs = new URL(value, baseUrl).toString() } catch { return }
+      if (!/^https?:/i.test(abs)) return
+      const key = `${kind}|${abs}`
+      if (seen.has(key)) return
+      seen.add(key)
+      out[bucket].push({ kind, raw: value, abs })
+    }
+    for (const m of source.matchAll(/<a\b[^>]*?\bhref\s*=\s*["']([^"']+)["']/gi)) consider('link', 'links', m[1])
+    for (const m of source.matchAll(/<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/gi)) consider('image', 'images', m[1])
+    for (const m of source.matchAll(/<script\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/gi)) consider('script', 'scripts', m[1])
+    for (const m of source.matchAll(/<link\b[^>]*?\bhref\s*=\s*["']([^"']+)["']/gi)) consider('style', 'styles', m[1])
+    return out
+  }
+
+  async function probeUrl(absUrl) {
+    for (const method of ['HEAD', 'GET']) {
+      try {
+        const response = await fetch(absUrl, {
+          method,
+          redirect: 'follow',
+          signal: AbortSignal.timeout(RESOURCE_TIMEOUT_MS),
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AlphaTekxRestoreEngine/1.0)' },
+        })
+        if (method === 'GET') response.body?.cancel().catch(() => {})
+        if (method === 'HEAD' && (response.status === 405 || response.status === 501)) continue
+        return response.status
+      } catch {
+        if (method === 'GET') return 0
+      }
+    }
+    return 0
+  }
+
+  async function mapWithLimit(items, limit, worker) {
+    const results = new Array(items.length)
+    let cursor = 0
+    const runners = Array.from({ length: Math.min(limit, items.length) || 1 }, async () => {
+      while (cursor < items.length) {
+        const index = cursor++
+        results[index] = await worker(items[index], index)
+      }
+    })
+    await Promise.all(runners)
+    return results
+  }
+
+  async function findBrokenResources(html, baseUrl) {
+    const groups = extractPageResources(html, baseUrl)
+    const stats = {
+      total_links: groups.links.length,
+      total_images: groups.images.length,
+      total_scripts: groups.scripts.length,
+      total_styles: groups.styles.length,
+    }
+    const all = [...groups.links, ...groups.images, ...groups.scripts, ...groups.styles].slice(0, MAX_RESOURCE_CHECKS)
+    stats.checked = all.length
+    const statuses = await mapWithLimit(all, RESOURCE_CONCURRENCY, (item) => probeUrl(item.abs))
+    const brokenRecords = all
+      .map((item, i) => ({ ...item, status: statuses[i] }))
+      .filter((r) => r.status < 200 || r.status >= 400)
+
+    const findings = []
+    let counter = 0
+    const describe = (type, severity, label, records) => {
+      if (!records.length) return
+      const sample = records[0]
+      const statusText = sample.status === 0 ? 'unreachable' : `HTTP ${sample.status}`
+      findings.push({
+        id: `r-${++counter}`,
+        type,
+        severity,
+        description: `${records.length} broken ${label} detected (${statusText}: ${sample.raw}).`,
+        count: records.length,
+        evidence: String(sample.raw).slice(0, 200),
+      })
+    }
+    describe('broken_script', 'critical', 'script(s)', brokenRecords.filter((r) => r.kind === 'script'))
+    describe('broken_style', 'high', 'stylesheet(s)', brokenRecords.filter((r) => r.kind === 'style'))
+    describe('broken_link', 'high', 'link(s)', brokenRecords.filter((r) => r.kind === 'link'))
+    describe('broken_image', 'high', 'image(s)', brokenRecords.filter((r) => r.kind === 'image'))
+
+    return { findings, brokenRecords, stats }
+  }
+
+  function removeBrokenResource(html, rec) {
+    const raw = escapeRegExp(rec.raw)
+    if (rec.kind === 'image') {
+      return html.replace(new RegExp(`<img\\b[^>]*?\\bsrc\\s*=\\s*["']${raw}["'][^>]*>`, 'gi'), '<!-- broken image removed -->')
+    }
+    if (rec.kind === 'script') {
+      return html.replace(new RegExp(`<script\\b[^>]*?\\bsrc\\s*=\\s*["']${raw}["'][^>]*>[\\s\\S]*?</script>`, 'gi'), '<!-- broken script removed -->')
+    }
+    if (rec.kind === 'style') {
+      return html.replace(new RegExp(`<link\\b[^>]*?\\bhref\\s*=\\s*["']${raw}["'][^>]*>`, 'gi'), '<!-- broken stylesheet removed -->')
+    }
+    return html.replace(new RegExp(`<a\\b[^>]*?\\bhref\\s*=\\s*["']${raw}["'][^>]*>([\\s\\S]*?)</a>`, 'gi'), '$1')
+  }
+
   function detectIssues(html) {
     const findings = []
     let counter = 0
@@ -225,6 +340,10 @@ export function createRestorationEngine(deps = {}) {
       case 'missing_lang': return 'Add lang="en" to the <html> tag.'
       case 'missing_description': return 'Insert meta description tag.'
       case 'img_missing_alt': return 'Add alt attributes to all <img> tags.'
+      case 'broken_link': return 'Unwrap dead links while keeping the visible text.'
+      case 'broken_image': return 'Remove images that no longer load.'
+      case 'broken_script': return 'Remove scripts that fail to load (they can break the page).'
+      case 'broken_style': return 'Remove stylesheets that fail to load.'
       default: return 'Apply deterministic repair.'
     }
   }
@@ -240,13 +359,32 @@ export function createRestorationEngine(deps = {}) {
       case 'missing_lang': return '<html lang="en">'
       case 'missing_description': return '<meta name="description" content="Restored by AlphaTekX">'
       case 'img_missing_alt': return '<img src="..." alt="">'
+      case 'broken_link': return 'visible text (dead link removed)'
+      case 'broken_image': return '<!-- broken image removed -->'
+      case 'broken_script': return '<!-- broken script removed -->'
+      case 'broken_style': return '<!-- broken stylesheet removed -->'
       default: return '(auto-repair)'
     }
   }
 
-  function applyFixesToHtml(html, enabledTypes) {
+  function applyFixesToHtml(html, enabledTypes, resourceFixes = []) {
     let out = String(html)
     const applied = []
+
+    if (Array.isArray(resourceFixes) && resourceFixes.length) {
+      const resourceKinds = [
+        ['script', 'broken_script'],
+        ['style', 'broken_style'],
+        ['image', 'broken_image'],
+        ['link', 'broken_link'],
+      ]
+      for (const [kind, type] of resourceKinds) {
+        if (!enabledTypes.has(type)) continue
+        const records = resourceFixes.filter((r) => r.kind === kind)
+        for (const rec of records) out = removeBrokenResource(out, rec)
+        if (records.length) applied.push(type)
+      }
+    }
 
     if (enabledTypes.has('corrupted_encoding')) {
       out = sanitizeEncoding(out)
@@ -432,6 +570,19 @@ export function createRestorationEngine(deps = {}) {
     session.originalHtml = page.html
     session.finalUrl = page.finalUrl
     session.findings = detectIssues(session.originalHtml)
+
+    // Live resource check — every link, image, script, stylesheet is probed
+    try {
+      const resources = await findBrokenResources(session.originalHtml, page.finalUrl)
+      session.findings.push(...resources.findings)
+      session.resourceFixes = resources.brokenRecords
+      session.resourceStats = resources.stats
+    } catch (err) {
+      log(`[engine] resource check failed for ${url}: ${err.message}`)
+      session.resourceFixes = []
+      session.resourceStats = null
+    }
+
     session.beforeScore = scoreFor(session.findings)
     session.fixes = []
     session.enabledFixes = []
@@ -447,7 +598,9 @@ export function createRestorationEngine(deps = {}) {
     session.state = 'SCAN_COMPLETE'
     touch(session)
 
-    return json(res, 200, successResponse(session, `Scan complete: ${session.findings.length} issue${session.findings.length === 1 ? '' : 's'} found.`, [
+    const brokenResources = Array.isArray(session.resourceFixes) ? session.resourceFixes.length : 0
+    const scanMessage = `Scan complete: ${session.findings.length} issue${session.findings.length === 1 ? '' : 's'} found${brokenResources ? ` (${brokenResources} broken resource${brokenResources === 1 ? '' : 's'})` : ''}.`
+    return json(res, 200, successResponse(session, scanMessage, [
       { id: 'generate_fixes', label: 'Generate Fixes', endpoint: 'POST /api/engine/fix' },
     ]))
   }
@@ -498,7 +651,7 @@ export function createRestorationEngine(deps = {}) {
     session.state = 'APPLYING_FIXES'
     touch(session)
 
-    const { html: fixedHtml, applied } = applyFixesToHtml(session.originalHtml, enabledTypes)
+    const { html: fixedHtml, applied } = applyFixesToHtml(session.originalHtml, enabledTypes, session.resourceFixes)
     const validation = validateHtml(fixedHtml)
     if (!validation.valid) {
       session.state = 'FIXES_READY'
@@ -715,6 +868,8 @@ export function createRestorationEngine(deps = {}) {
       sessionId: session.id,
       url: session.url,
       findings: session.findings,
+      resourceStats: session.resourceStats || null,
+      resourceFixes: session.resourceFixes || [],
       fixes: session.fixes,
       enabledFixes: session.enabledFixes,
       option: session.option,

@@ -111,6 +111,12 @@ export default function RestoreEngineChat({ url, suggestedName }: { url: string;
       setFindings(found)
       const total = found.reduce((n, f) => n + (f.count || 1), 0)
       push(`✅ Scan complete! Found ${total} issue${total === 1 ? '' : 's'} · Score: ${scanned.score ?? '--'}/100`)
+      const broken = found.filter((f) => f.type.startsWith('broken_'))
+      if (broken.length) {
+        const stats = scanned.resourceStats
+        if (stats && typeof stats.checked === 'number') push(`🌐 Checked ${stats.checked} links, images, scripts & stylesheets...`)
+        push(`❌ ${broken.map((f) => `${f.count} broken ${f.type.replace('broken_', '')}${(f.count || 1) > 1 ? 's' : ''}`).join(', ')} — removing them`)
+      }
       await sleep(350)
       setPhase('fix')
       push('🔧 Generating fixes...')

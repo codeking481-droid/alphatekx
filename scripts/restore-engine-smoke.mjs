@@ -15,16 +15,39 @@ const check = (label, ok, extra = '') => {
   if (ok) { pass++; console.log(`PASS ${label}`) } else { fail++; console.log(`FAIL ${label} ${extra}`) }
 }
 
-const BROKEN_HTML = '\uFEFF<!DOCTYPE html>\n<html>\n<head>\n<title></title>\n</head>\n<body>\u0000\n' +
+  const BROKEN_HTML = '\uFEFF<!DOCTYPE html>\n<html>\n<head>\n<title></title>\n<link rel="stylesheet" href="/style.css">\n<link rel="stylesheet" href="/gone.css">\n</head>\n<body>\u0000\n' +
+  '<img src="/ok.png">\n' +
+  '<img src="/missing.png">\n' +
   '<img src="http://cdn.example-broken.test/logo.png">\n' +
+  '<a href="/page2">working page</a>\n' +
+  '<a href="/dead-link">dead link</a>\n' +
   '<a href="http://insecure.example-broken.test/page">insecure link</a>\n' +
+  '<script src="/app.js"></script>\n' +
+  '<script src="/gone.js"></script>\n' +
   '<script>var apiKey = "sk-proj-abcdefghijklmnop1234567890";</script>\n' +
   '</body>\n</html>'
 
-const fixture = http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-  res.end(BROKEN_HTML)
-})
+  const GOOD_ROUTES = {
+    '/ok.png': { 'Content-Type': 'image/png', body: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00]) },
+    '/app.js': { 'Content-Type': 'application/javascript', body: 'console.log("ok")' },
+    '/style.css': { 'Content-Type': 'text/css', body: 'body { color: #111; }' },
+    '/page2': { 'Content-Type': 'text/html; charset=utf-8', body: '<!DOCTYPE html><html><head><title>Page2</title></head><body>fine</body></html>' },
+  }
+
+  const fixture = http.createServer((req, res) => {
+    const pathname = new URL(req.url || '/', 'http://127.0.0.1').pathname
+    if (pathname === '/broken.html') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+      return res.end(BROKEN_HTML)
+    }
+    const good = GOOD_ROUTES[pathname]
+    if (good) {
+      res.writeHead(200, { 'Content-Type': good['Content-Type'] })
+      return res.end(good.body)
+    }
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
+    res.end('not found')
+  })
 await new Promise((r) => fixture.listen(fixturePort, '127.0.0.1', r))
 
 const server = spawn(process.execPath, ['--experimental-strip-types', 'server.mjs'], {
@@ -70,6 +93,12 @@ try {
   check('scan detects mixed content', types3.includes('mixed_content'), JSON.stringify(types3))
   check('scan detects missing charset/viewport/title/lang/desc/img-alt',
     ['missing_charset', 'missing_viewport', 'missing_title', 'missing_lang', 'missing_description', 'img_missing_alt'].every(t => types3.includes(t)), JSON.stringify(types3))
+  check('scan detects dead link', types3.includes('broken_link'), JSON.stringify(types3))
+  check('scan detects broken image', types3.includes('broken_image'), JSON.stringify(types3))
+  check('scan detects broken script', types3.includes('broken_script'), JSON.stringify(types3))
+  check('scan detects broken stylesheet', types3.includes('broken_style'), JSON.stringify(types3))
+  check('resource stats recorded', !!state3.resourceStats && state3.resourceStats.checked >= 8 && state3.resourceStats.total_links >= 3 && state3.resourceStats.total_images >= 3, JSON.stringify(state3.resourceStats))
+  check('broken resources recorded for apply', Array.isArray(state3.resourceFixes) && state3.resourceFixes.length === 6, JSON.stringify(state3.resourceFixes?.map(r => r.raw)))
   check('before score degraded below 50', typeof j3.summary.before_score === 'number' && j3.summary.before_score < 50, String(j3.summary.before_score))
 
   // 4. Scan status endpoint
@@ -108,6 +137,12 @@ try {
   check('secret redacted', !code8.includes('sk-proj-abcdefghijklmnop') && code8.includes('REDACTED'))
   check('mixed content upgraded to https', !/(src|href)=["']http:\/\//i.test(code8))
   check('img alt added', /<img[^>]*alt="/i.test(code8))
+  check('dead link removed, text kept', !code8.includes('href="/dead-link"') && code8.includes('dead link'))
+  check('broken image removed', !code8.includes('/missing.png'))
+  check('external broken image removed', !code8.includes('example-broken.test/logo.png'))
+  check('broken script removed', !code8.includes('/gone.js'))
+  check('broken stylesheet removed', !code8.includes('/gone.css'))
+  check('working resources kept', ['/ok.png', '/app.js', '/style.css', '/page2'].every(p => code8.includes(p)), JSON.stringify(['/ok.png', '/app.js', '/style.css', '/page2'].filter(p => !code8.includes(p))))
 
   // 9. Delivery gating: verify blocked before action completes
   await post('/api/engine/delivery', { sessionId: sid, option: 'download' })
