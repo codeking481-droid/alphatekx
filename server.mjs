@@ -15,7 +15,7 @@ import { handleGitHubAuth, handleGitHubCallback, handleGitHubStatus, handleGitHu
 import { handleDiagnoseRoute } from './server/diagnoseRoute.mjs'
 import { handleRestoreV2Route, handleRestorePushRoute } from './server/restorePipelineV2.mjs'
 import { handleRestoreV3Route, handleV3DownloadRoute, handleV3ArtifactRoute, handleV3ContentRoute } from './server/alphaRestorationPipeline.mjs'
-import { saveDeployment, getDeployment, deploymentExists, deleteDeployment, listDeployments, isDeploymentStoreConfigured, checkDeploymentStoreHealth, schemaMissingMessage } from './server/deploymentStore.mjs'
+import { saveDeployment, getDeployment, deploymentExists, deleteDeployment, listDeployments, isDeploymentStoreConfigured, checkDeploymentStoreHealth, runSupabaseStartupCheck, schemaMissingMessage } from './server/deploymentStore.mjs'
 import { runFullRestorationScan } from './server/scanEngine/restorationScanner.mjs'
 import { marketplaceHandler, fulfillMarketplaceOrder } from './server/marketplace.mjs'
 import { getRecords, getRecord, createRecord, updateRecord, deleteRecord, appEntitiesMigrationSql } from './server/appData.mjs'
@@ -10659,13 +10659,7 @@ if (!process.env.VERCEL) {
   }
 
   server.listen(port, () => process.stdout.write(`[AlphaTekX] listening on ${port}\n`))
-  checkDeploymentStoreHealth()
-    .then((health) => {
-      if (!health.configured) return console.warn('[DEPLOY] Supabase deployment store not configured (SUPABASE_URL / SUPABASE_SERVICE_KEY missing).')
-      if (!health.tableReady) { console.warn('[DEPLOY] ⚠️', schemaMissingMessage()); return }
-      process.stdout.write('[DEPLOY] Permanent storage ready: Supabase deployments table ✓\n')
-    })
-    .catch(() => {})
+  runSupabaseStartupCheck().catch((err) => console.error('[SUPABASE] health check crashed:', err instanceof Error ? err.message : err))
   schedule('* * * * *', async () => {
     if (schedulerState.isRunning) return
     schedulerState.isRunning = true

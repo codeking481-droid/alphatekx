@@ -168,10 +168,62 @@ function normalizeRow(row) {
 /** Quick connectivity/schema probe used at boot and by the migration script. */
 export async function checkDeploymentStoreHealth() {
   const db = getClient()
-  if (!db) return { configured: false, tableReady: false }
+  if (!db) return { configured: false, connected: false, tableReady: false }
   const { error } = await db.from(TABLE).select('id').limit(1)
   if (error) {
-    return { configured: true, tableReady: !isSchemaMissing(error), schemaMissing: isSchemaMissing(error), message: describeError(error) }
+    const schemaMissing = isSchemaMissing(error)
+    const message = describeError(error)
+    // A schema-missing response means PostgREST answered — the connection itself works.
+    if (schemaMissing) return { configured: true, connected: true, tableReady: false, schemaMissing, message }
+    return { configured: true, connected: false, tableReady: false, schemaMissing: false, message }
   }
-  return { configured: true, tableReady: true }
+  return { configured: true, connected: true, tableReady: true, schemaMissing: false }
+}
+
+function deploymentStoreEnv() {
+  const url = String(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim()
+  const keyName = process.env.SUPABASE_SERVICE_KEY ? 'SUPABASE_SERVICE_KEY'
+    : process.env.SUPABASE_SERVICE_ROLE_KEY ? 'SUPABASE_SERVICE_ROLE_KEY'
+    : null
+  return { url, keyName }
+}
+
+/**
+ * Startup health check with loud, unambiguous logging so Render logs show
+ * exactly what is wrong: connection vs configuration vs missing table.
+ */
+export async function runSupabaseStartupCheck() {
+  console.log('[SUPABASE] Running startup connection health check...')
+  const { url, keyName } = deploymentStoreEnv()
+  if (!url || !keyName) {
+    console.error('❌ Supabase connection failed: environment variables missing.')
+    console.error(`   SUPABASE_URL/VITE_SUPABASE_URL: ${url ? 'set (' + safeUrlHost(url) + ')' : 'MISSING'}`)
+    console.error(`   SUPABASE_SERVICE_KEY/SUPABASE_SERVICE_ROLE_KEY: ${keyName ? 'set (' + keyName + ')' : 'MISSING'}`)
+    console.error('   Fix: add both vars in Render → Environment, then redeploy.')
+    return
+  }
+
+  const health = await checkDeploymentStoreHealth()
+
+  if (health.connected) {
+    console.log(`✅ Supabase connected successfully (${safeUrlHost(url)})`)
+  } else {
+    console.error('❌ Supabase connection failed:', health.message)
+    console.error('   Check SUPABASE_URL and SUPABASE_SERVICE_KEY point at the SAME project.')
+    return
+  }
+
+  if (health.tableReady) {
+    console.log("✅ Table 'deployments' found")
+  } else {
+    console.error("❌ Table 'deployments' not found")
+    console.error('   ', schemaMissingMessage(health))
+    console.error(`   Note: you ran the SQL, but this project (${safeUrlHost(url)}) cannot see it.`)
+    console.error('   Fix 1: confirm you ran supabase/deployments-table.sql in THIS project\'s SQL editor.')
+    console.error('   Fix 2: refresh the API schema — SQL editor: NOTIFY pgrst, \'reload schema\';')
+  }
+}
+
+function safeUrlHost(url) {
+  try { return new URL(url).host } catch { return 'invalid-url' }
 }

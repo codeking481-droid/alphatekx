@@ -157,7 +157,8 @@ try {
   await new Promise(r => setTimeout(r, 500)) // allow boot health log to flush
 
   // Boot health probe should report the store ready
-  check('boot health probe reports permanent storage ready', /\[DEPLOY\] Permanent storage ready/.test(bootLog), bootLog.slice(-400))
+  check('boot health probe reports Supabase connected + table found',
+    /✅ Supabase connected successfully/.test(bootLog) && /✅ Table 'deployments' found/.test(bootLog), bootLog.slice(-400))
 
   // 1. Deploy → permanent storage
   const deployRes = await request('/api/deploy', {
