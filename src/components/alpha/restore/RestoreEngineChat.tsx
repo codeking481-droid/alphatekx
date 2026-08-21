@@ -49,7 +49,7 @@ const options: Array<{ kind: OptionKind; label: string; icon: typeof Github }> =
   { kind: 'deploy', label: 'Deploy', icon: Globe },
 ]
 
-export default function RestoreEngineChat({ url }: { url: string }) {
+export default function RestoreEngineChat({ url, suggestedName }: { url: string; suggestedName?: string }) {
   const [phase, setPhase] = useState<Phase>('scan')
   const [lines, setLines] = useState<string[]>([`🔗 ${url}`])
   const [findings, setFindings] = useState<Finding[]>([])
@@ -63,7 +63,7 @@ export default function RestoreEngineChat({ url }: { url: string }) {
   const [prUrl, setPrUrl] = useState('')
   const [code, setCode] = useState('')
   const [copied, setCopied] = useState(false)
-  const [siteName, setSiteName] = useState('')
+  const [siteName, setSiteName] = useState(suggestedName ?? '')
   const [nameMsg, setNameMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [deployUrl, setDeployUrl] = useState('')
   const [utf8Clean, setUtf8Clean] = useState<boolean | null>(null)

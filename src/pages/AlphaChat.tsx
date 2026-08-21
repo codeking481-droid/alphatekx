@@ -125,6 +125,16 @@ function isGitHubRepoUrl(url: string): boolean {
   } catch { return false }
 }
 
+// When the scanned URL is an already-deployed site (/app/{name}), suggest that
+// name at deploy time so redeploying UPDATES the user's existing live site.
+function deployedSiteName(url: string): string {
+  try {
+    const parsed = new URL(url)
+    const match = parsed.pathname.match(/^\/app\/([a-z0-9-]+)/i)
+    return match ? match[1] : ''
+  } catch { return '' }
+}
+
 function detectRestoreIntent(text: string): 'scan' | 'full' {
   const lower = text.toLowerCase()
   const fixKeywords = /\b(?:fix|restore|repair|solve|patch|heal|improve|optimize|make\s+better|clean\s*up|rebuild|overhaul|remedy|correct|rectify|update|upgrade|debug|troubleshoot)\b/
@@ -1139,7 +1149,7 @@ function ChatContent() {
                         {/* Chat-based Restoration Engine — scan, fix, deliver, verify inside the conversation */}
                         {msg.restoreEngine && (
                           <div className="mt-3">
-                            <RestoreEngineChat url={msg.restoreEngine.url} />
+                            <RestoreEngineChat url={msg.restoreEngine.url} suggestedName={deployedSiteName(msg.restoreEngine.url) || undefined} />
                           </div>
                         )}
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, Copy, ExternalLink, Globe, LoaderCircle, UploadCloud, Upload, X } from 'lucide-react'
+import { Check, Copy, ExternalLink, Globe, LoaderCircle, MessageSquare, UploadCloud, Upload, X } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { checkDeployName, deploySite, slugifyCreation } from '../lib/deployCreation'
 import { getCreations, hydrateMissionStore, subscribeStore, updateCreation } from '../lib/missionStore'
@@ -207,9 +207,11 @@ export default function Launch() {
                 {deployResult.subdomainUrl && <a href={deployResult.subdomainUrl} target="_blank" rel="noreferrer" className="launch-action flex-1 justify-center gap-2"><ExternalLink size={15}/>Subdomain</a>}
                 <button onClick={() => void copyUrl(deployResult.url)} className="launch-action flex-1 justify-center gap-2">{copied ? <Check size={14} className="text-emerald-400"/> : <Copy size={14}/>}{copied ? 'Copied!' : 'Copy URL'}</button>
               </div>
-              <button onClick={resetDeploy} className="mt-3 w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-4 py-2 text-xs font-bold text-white/50 transition hover:bg-white/[0.06] hover:text-white">
-                Deploy another
-              </button>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                <Link to="/chat" className="launch-action flex flex-1 items-center justify-center gap-2"><MessageSquare size={15}/>Go to Chat</Link>
+                <button onClick={resetDeploy} className="launch-action flex flex-1 items-center justify-center gap-2"><UploadCloud size={14}/>{deployResult.updated ? 'Deploy another update' : 'Deploy another'}</button>
+              </div>
+              <p className="mt-3 text-center text-[11px] text-white/35">Want to scan, fix, or restore this site later? Ask Alpha in the chat — it can redeploy updates to this same address.</p>
             </div>
           )}
 
