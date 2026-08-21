@@ -60,7 +60,9 @@ function getTokenFromCookie(req) {
 
 export function handleRestoreV2Route(req, res) {
   const parsed = new URL(req.url, 'http://localhost')
-  const targetUrl = parsed.searchParams.get('url')
+  // Accept bare domains ("mysite.com") — default to https:// like a browser would
+  const rawUrl = (parsed.searchParams.get('url') || '').trim()
+  const targetUrl = rawUrl && !/^https?:\/\//i.test(rawUrl) ? 'https://' + rawUrl.replace(/^\/+/, '') : rawUrl
   const mode = parsed.searchParams.get('mode') || 'full' // 'full' | 'scan-only'
   if (!targetUrl) {
     res.writeHead(400, { 'Content-Type': 'application/json' })
@@ -131,21 +133,24 @@ async function runRestoreV2(targetUrl, mode, sendEvent, sendStep, sendCard, res,
   } else {
     // Live site URL — the site must load before any restoration work
     let siteLoaded = false
-    try {
-      const controller = new AbortController()
-      const timer = setTimeout(() => controller.abort(), 15000)
-      await fetch(targetUrl, {
-        signal: controller.signal,
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 AlphaTekX/1.0' },
-        redirect: 'follow',
-      })
-      clearTimeout(timer)
-      siteLoaded = true // any HTTP response means the site loads
-    } catch {
-      siteLoaded = false
+    let probeErr = ''
+    for (let attempt = 0; attempt < 2 && !siteLoaded; attempt++) {
+      try {
+        const controller = new AbortController()
+        const timer = setTimeout(() => controller.abort(), 12000)
+        await fetch(targetUrl, {
+          signal: controller.signal,
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 AlphaTekX/1.0' },
+          redirect: 'follow',
+        })
+        clearTimeout(timer)
+        siteLoaded = true // any HTTP response means the site loads
+      } catch (err) {
+        probeErr = err?.message || 'network error'
+      }
     }
     if (!siteLoaded) {
-      sendStep({ id: 'clone', label: 'Site did not load', icon: 'clock', status: 'error', summary: 'Not reachable' })
+      sendStep({ id: 'clone', label: 'Site did not load', icon: 'clock', status: 'error', summary: probeErr.slice(0, 120) })
       sendCard({ type: 'error', message: SITE_NOT_LOADING })
       sendEvent({ type: 'pipeline_done', restorationId })
       if (!res.writableEnded) res.end()

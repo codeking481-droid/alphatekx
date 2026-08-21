@@ -164,7 +164,9 @@ function rewriteRelativeUrls(html, origin) {
 
 export function handleRestoreStreamRoute(req, res) {
   const parsed = new URL(req.url, 'http://localhost')
-  const targetUrl = parsed.searchParams.get('url')
+  // Accept bare domains ("mysite.com") — default to https:// like a browser would
+  const rawUrl = (parsed.searchParams.get('url') || '').trim()
+  const targetUrl = rawUrl && !/^https?:\/\//i.test(rawUrl) ? 'https://' + rawUrl.replace(/^\/+/, '') : rawUrl
   const intent = parsed.searchParams.get('intent') || 'auto' // 'scan' | 'fix' | 'auto'
   const userMessage = parsed.searchParams.get('message') || ''
   if (!targetUrl) {
@@ -260,33 +262,29 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
   // ===== CARD 2: SCANNING LOG =====
   sendCard({ type: 'card', card: 'scanning', status: 'start', data: { scanId } })
 
-  // ===== LOAD GATE: the site must load before any restoration work =====
+  // ===== LOAD PROBE: quick reachability signal (the real-browser scan below is the authoritative test) =====
   let siteLoaded = false
-  try {
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), 15000)
-    await fetch(targetUrl, {
-      signal: controller.signal,
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 AlphaTekX/1.0' },
-      redirect: 'follow',
-    })
-    clearTimeout(timer)
-    siteLoaded = true // any HTTP response means the site loads — code can be scanned
-  } catch {
-    siteLoaded = false
+  for (let attempt = 0; attempt < 2 && !siteLoaded; attempt++) {
+    try {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 12000)
+      await fetch(targetUrl, {
+        signal: controller.signal,
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 AlphaTekX/1.0' },
+        redirect: 'follow',
+      })
+      clearTimeout(timer)
+      siteLoaded = true // any HTTP response means the site loads — code can be scanned
+    } catch {}
   }
-
-  if (!siteLoaded) {
-    sendCard({ type: 'log', card: 'scanning', text: `> Site did not load` })
-    sendStep({ id: 'connectivity', label: 'Site did not load', icon: 'scan', status: 'error', summary: 'Not reachable' })
-    stopHeartbeat()
-    sendCard({ type: 'card', card: 'scanning', status: 'done', data: { scanId, url: targetUrl, status: 0 } })
-    sendCard({ type: 'error', message: SITE_NOT_LOADING })
-    if (!res.writableEnded) res.end()
-    return
+  if (siteLoaded) {
+    sendCard({ type: 'log', card: 'scanning', text: `> Site loaded` })
+    sendStep({ id: 'connectivity', label: `Site loaded`, icon: 'scan', status: 'done' })
+  } else {
+    // Probe failed — do NOT abort here. The headless browser gets the final say;
+    // a fetch-level failure can be a bot block, TLS quirk, or transient network error.
+    sendCard({ type: 'log', card: 'scanning', text: `> Direct fetch failed — trying full browser load...` })
   }
-  sendCard({ type: 'log', card: 'scanning', text: `> Site loaded` })
-  sendStep({ id: 'connectivity', label: `Site loaded`, icon: 'scan', status: 'done' })
 
   // ===== PLAYWRIGHT BROWSER SCANNING WITH LIVE SCREENSHOTS =====
   const screenshots = []

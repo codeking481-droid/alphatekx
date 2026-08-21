@@ -316,6 +316,57 @@ export async function runConversationChat(message, history, sendEvent, llmCall) 
     },
   })
 
+  // STEP 2.5: If the message mentions a website URL, actually test that it loads.
+  // The LLM must never guess whether a site is up — it only relays REAL probe results.
+  const SITE_NOT_LOADING = 'The site is not loading. Please check your hosting provider or domain DNS settings. Once your site is live, send me the URL and I will restore it.'
+  const extractTargetUrl = (text) => {
+    const t = String(text || '')
+    const explicit = t.match(/https?:\/\/[^\s"'<>]+/i)
+    if (explicit) return explicit[0]
+    const bare = t.match(/\b([a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+(?:com|net|org|io|co|app|dev|ng|me|ai|xyz|online|site|store|tech|cloud|vercel\.app|netlify\.app|pages\.dev|workers\.dev|github\.io|herokuapp\.com|onrender\.com|name\.ng)(?:\/[^\s"'<>]*)?/i)
+    return bare ? 'https://' + bare[0] : null
+  }
+  let urlCheckContext = ''
+  const mentionedUrl = extractTargetUrl(message)
+  if (mentionedUrl) {
+    sendEvent({
+      type: 'thought_step',
+      step: { id: 'loadcheck', label: `Testing that ${mentionedUrl} loads...`, icon: 'scan', status: 'active' },
+    })
+    let probeOk = false
+    let probeStatus = 0
+    let probeErr = ''
+    for (let attempt = 0; attempt < 2 && !probeOk; attempt++) {
+      try {
+        const controller = new AbortController()
+        const timer = setTimeout(() => controller.abort(), 12000)
+        const res = await fetch(mentionedUrl, {
+          signal: controller.signal,
+          redirect: 'follow',
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 AlphaTekX/1.0' },
+        })
+        clearTimeout(timer)
+        probeStatus = res.status
+        probeOk = true // any HTTP response means the site loads
+      } catch (err) {
+        probeErr = err?.message || 'network error'
+      }
+    }
+    sendEvent({
+      type: 'thought_step',
+      step: {
+        id: 'loadcheck',
+        label: probeOk ? `Site loads — HTTP ${probeStatus}` : 'Site did not load',
+        icon: 'scan',
+        status: probeOk ? 'done' : 'error',
+        summary: probeOk ? `${mentionedUrl} responded with HTTP ${probeStatus}` : `${mentionedUrl}: ${probeErr}`,
+      },
+    })
+    urlCheckContext = probeOk
+      ? `\n\nREAL URL CHECK (performed by the server just now): ${mentionedUrl} LOADED and returned HTTP ${probeStatus}. The site IS live. Never claim this site is down, unreachable, or not loading.`
+      : `\n\nREAL URL CHECK (performed by the server just now): ${mentionedUrl} did NOT load (${probeErr}). Tell the user exactly: "${SITE_NOT_LOADING}" Do not offer to debug DNS, SSL, or hosting — AlphaTekX does not investigate those.`
+  }
+
   // STEP 3: Compose the answer
   sendEvent({
     type: 'thought_step',
@@ -340,9 +391,9 @@ You can help with:
 - Video editing and restoration (route to Video Resurrector)
 - Performance optimization (LCP, Core Web Vitals)
 
-Important: AlphaTekX restores code. If a user's site URL does not load, tell them: "The site is not loading. Please check your hosting provider or domain DNS settings. Once your site is live, send me the URL and I will restore it." Never investigate DNS records, SSL certificates, server status, hosting providers, server logs, or config files.
+AlphaTekX restores code only. It does not investigate DNS records, SSL certificates, server status, hosting providers, server logs, or config files.
 
-Keep responses under 300 words unless the user asks for detail. Use markdown formatting.${webContext}`
+Keep responses under 300 words unless the user asks for detail. Use markdown formatting.${webContext}${urlCheckContext}`
 
   const messages = [
     { role: 'system', content: systemPrompt },

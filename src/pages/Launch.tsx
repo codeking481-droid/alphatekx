@@ -26,6 +26,9 @@ export default function Launch() {
   const [nameCheck, setNameCheck] = useState<NameCheck>(initialCheck)
   const [deploying, setDeploying] = useState(false)
   const [deployResult, setDeployResult] = useState<{ url: string; subdomainUrl?: string; updated?: boolean } | null>(null)
+  // When updating an existing site (Update button in "My deployed sites"), skip the
+  // name-availability gate entirely — the user already owns that name.
+  const [updateTarget, setUpdateTarget] = useState<string>('')
   const [copied, setCopied] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const deploySectionRef = useRef<HTMLElement | null>(null)
@@ -93,8 +96,8 @@ export default function Launch() {
   }, [pasteSlug])
 
   const nameIsAvailable = nameCheck.state === 'available' || nameCheck.state === 'owned'
-  const isOwnedName = nameCheck.state === 'owned'
-  const canDeploy = nameIsAvailable && !!pasteTitle.trim() && !!pasteHtml.trim() && !deploying
+  const isOwnedName = nameCheck.state === 'owned' || Boolean(updateTarget)
+  const canDeploy = (updateTarget || nameIsAvailable) && !!pasteTitle.trim() && !!pasteHtml.trim() && !deploying
 
   const copyUrl = async (url?: string) => {
     if (!url) return
@@ -141,12 +144,13 @@ export default function Launch() {
 
   const resetDeploy = () => {
     setPasteHtml(''); setPasteTitle(''); setPasteSlug('')
-    setDeployResult(null); setNotice(''); setNameCheck(initialCheck)
+    setDeployResult(null); setNotice(''); setNameCheck(initialCheck); setUpdateTarget('')
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
   const startUpdateSite = (site: MyDeployedSite) => {
     resetDeploy()
+    setUpdateTarget(site.slug)
     setPasteTitle(site.title || site.name)
     setPasteSlug(site.slug)
     setNotice(`Updating "${site.name}" — upload or paste the new HTML, then press Update Live Site.`)
@@ -267,13 +271,13 @@ export default function Launch() {
           {/* Action button — locked until the name is confirmed available or owned */}
           {!deployResult && (
             <button onClick={() => void deployCode()} disabled={!canDeploy}
-              title={!nameIsAvailable ? 'Pick an available name first' : undefined}
+              title={!canDeploy ? (!updateTarget && !nameIsAvailable ? 'Pick an available name first' : 'Add a title and your HTML code first') : undefined}
               className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl btn-alpha px-6 text-sm font-medium text-white transition-all disabled:cursor-not-allowed disabled:opacity-40">
               {deploying ? <LoaderCircle className="animate-spin" size={17}/> : <UploadCloud size={17}/>}
               {deploying ? 'Deploying...' : isOwnedName ? '🚀 Update Live Site' : nameIsAvailable ? '🚀 Deploy' : 'Deploy'}
             </button>
           )}
-          {!deployResult && !nameIsAvailable && (
+          {!deployResult && !nameIsAvailable && !updateTarget && (
             <p className="mt-2 text-center text-[11px] text-white/35">The deploy button unlocks once your site name is confirmed available.</p>
           )}
         </section>
