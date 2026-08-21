@@ -1216,7 +1216,7 @@ function jsonResponse(res, code, data) {
  * Creates a minimal ZIP file (no external dependency).
  * Supports STORE method only (no compression), enough for text files.
  */
-function createMinimalZip(outPath, files) {
+export function createMinimalZip(outPath, files) {
   const entries = []
   let offset = 0
 
@@ -1331,7 +1331,7 @@ function createMinimalZip(outPath, files) {
   fs.writeFileSync(outPath, zipBuffer)
 }
 
-function crc32(buf) {
+export function crc32(buf) {
   let crc = 0xFFFFFFFF
   for (let i = 0; i < buf.length; i++) {
     crc ^= buf[i]

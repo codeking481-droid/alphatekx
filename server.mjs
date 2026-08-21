@@ -8,6 +8,7 @@ import { schedule } from 'node-cron'
 import { chromium } from 'playwright'
 
 import { handlePreviewRoute, handleRestoreStreamRoute, handleFixStreamRoute, handleDownloadRoute, handlePreviewFixedRoute, handleScreenshotRoute } from './server/websiteRestoreStream.mjs'
+import { createRestorationEngine } from './server/restorationEngine.mjs'
 import { FileHandler, sanitizeEncoding } from './server/scanEngine/fileUtils.js'
 import { handleGitHubAuth, handleGitHubCallback, handleGitHubStatus, handleGitHubRepos, handleGitHubApplyFix, handleGitHubCreatePR, handleGitHubRollback } from './server/githubDirectPush.mjs'
 import { handleDiagnoseRoute } from './server/diagnoseRoute.mjs'
@@ -7567,12 +7568,33 @@ function isRateLimited(req) {
   return entry.count > RATE_LIMIT_MAX
 }
 
+const restorationEngineRoute = createRestorationEngine({
+  requireUser: async (req) => {
+    const config = supabaseConfig()
+    return currentOrLocalUser(req, config.url, config.anon)
+  },
+  publishPasted: async ({ name, title, html }) => {
+    const config = supabaseConfig()
+    const baseUrl = String(process.env.PUBLIC_APP_URL || 'https://alphatekx.name.ng').replace(/\/$/, '')
+    const slug = slugifyName(name)
+    if (!validProjectName(slug)) return { status: 400, body: { error: 'Use 3-30 lowercase letters, numbers, or hyphens. Must start and end with a letter or number.' } }
+    const availability = await checkGlobalProjectAvailability(slug, config)
+    if (!availability.available) return { status: 409, body: { error: availability.reason, suggestions: availability.suggestions } }
+    return localPublishPasted({ title: title || slug, slug, html }, baseUrl)
+  },
+  log: (message) => console.log(message),
+})
+
 const server = http.createServer(async (req, res) => {
   applyCors(req, res)
   addSecurityHeaders(res)
   try {
   if (isRateLimited(req)) return json(res, 429, { error: 'Too many requests. Please slow down.' })
   if (req.method === 'OPTIONS') return json(res, 204, {})
+  if (String(req.url || '').startsWith('/api/engine/')) {
+    const handled = await restorationEngineRoute(req, res)
+    if (handled) return
+  }
   if (String(req.url || '').startsWith('/api/')) await refreshFeatureConfig(supabaseConfig()).catch(() => {})
   if ((req.method === 'GET' || req.method === 'POST') && String(req.url || '').startsWith('/api/connectors/whatsapp/webhook')) {
     try { return await whatsappWebhookHandler(req, res) } catch { return json(res, 500, { error: 'WhatsApp could not process this webhook.' }) }
