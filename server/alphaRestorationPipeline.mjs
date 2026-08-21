@@ -1,14 +1,21 @@
 /**
- * ALPHATEKX RESTORATION PIPELINE V3 — FINAL PRODUCTION VERSION
+ * ALPHATEKX RESTORATION PIPELINE V4 — AGENTIC EDITION
  *
  * 7 STEPS. IN ORDER. NOTHING SKIPPED. NOTHING ADDED.
  *   1. RECONNAISSANCE  — load site, screenshot BEFORE, extract design tokens, sweep interactions
- *   2. DIAGNOSE        — 25 checks, find EVERY issue
+ *   2. DIAGNOSE        — deep static scan + REAL-BROWSER probe (console errors,
+ *                        uncaught exceptions, failed subresources, blank render)
  *   3. FIX PLAN        — one fix per issue, before/after/severity
- *   4. EXECUTE REPAIRS — apply EVERY fix, one by one, in order
+ *   4. EXECUTE REPAIRS — rule-based fixes + LLM REPAIR AGENT for damage rules
+ *                        can't touch (crashing scripts, blank renders)
  *   5. RECONSTRUCT     — reassemble, validate UTF-8 / English / HTML, save files
  *   6. VERIFY          — re-scan, screenshot AFTER, before/after scores
  *   7. DELIVER         — GitHub PR · download zips · copy code · deploy
+ *
+ * AGENT LOOP: steps 3→6 repeat up to 3 cycles until the health score hits the
+ * target or stops improving — Alpha iterates like a human engineer, live.
+ * SITE MEMORY: per-hostname history in Supabase gives Alpha "welcome back"
+ * context; every run is recorded for next time.
  *
  * Everything flows through the chain of thought: every action emits a
  * thought_step event so the user watches Alpha reason in real time.
@@ -19,6 +26,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import JSZip from 'jszip'
+import { probeRenderedPage, isRenderProbeAvailable } from './renderedDiagnostics.mjs'
+import { llmRepairBatch } from './llmRepairAgent.mjs'
+import { getSiteMemory, recordRestoration } from './siteMemory.mjs'
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url))
 const ARTIFACTS_ROOT = path.resolve(MODULE_DIR, '..', 'data', 'restorations')
@@ -279,9 +289,11 @@ function looksLikePlaceholder(value) {
   return /your[_-]|xxxxx|example|changeme|placeholder|\$\{|process\.env|<[a-z_]+>|\{\{|\.\.\.|redacted/i.test(value || '')
 }
 
-async function diagnose(html, opts = {}) {
-  const { baseUrl = '', https = true, skipNetworkChecks = false } = opts
+export async function diagnose(html, opts = {}) {
+  const { baseUrl = '', https = true, skipNetworkChecks = false, rendered = null } = opts
   const issues = []
+  const renderFailures = []
+  const reportedAssetUrls = new Set()
   let seq = 0
   const nextId = () => `ISSUE-${String(++seq).padStart(3, '0')}`
 
@@ -361,6 +373,7 @@ async function diagnose(html, opts = {}) {
       if (hrefs.size >= 40) break
     }
     const targets = [...hrefs.keys()]
+    for (const u of targets) reportedAssetUrls.add(u)
     const probes = skipNetworkChecks
       ? targets.map((t) => ({ url: t, ok: true, skipped: true }))
       : await pooled(targets, 6, async (t) => ({ url: t, ...(await probeUrl(t)) }))
@@ -390,6 +403,7 @@ async function diagnose(html, opts = {}) {
       if (srcs.size >= 25) break
     }
     const targets = [...srcs.keys()]
+    for (const u of targets) reportedAssetUrls.add(u)
     const probes = skipNetworkChecks
       ? targets.map((t) => ({ url: t, ok: true, skipped: true }))
       : await pooled(targets, 6, async (t) => ({ url: t, ...(await probeUrl(t)) }))
@@ -639,6 +653,46 @@ async function diagnose(html, opts = {}) {
     }
   }
 
+  // 26–28 — REAL-BROWSER RUNTIME DAMAGE (rendered probe)
+  if (rendered && rendered.ok) {
+    const r = rendered
+    const crashSeverity = r.blankRender ? 'critical' : 'high'
+    for (const e of r.pageErrors.slice(0, 3)) {
+      push('runtime_error', crashSeverity, `Uncaught JavaScript exception crashes the page at runtime: ${clip(e.message, 130)}`, NaN, clip(e.message, 160), 'Repair or neutralize the failing script')
+    }
+    for (const e of r.consoleErrors.slice(0, 4)) {
+      push('runtime_error', r.blankRender ? 'high' : 'medium', `Browser console error at runtime: ${clip(e.text, 130)}`, NaN, clip(e.text, 160), 'Fix the JavaScript that throws this error')
+    }
+
+    if (r.blankRender) {
+      push('blank_render', 'critical', `Page loads but renders blank in a real browser (${r.stats.elements} elements, ${r.stats.textLength} visible chars after full JS execution)`, 0, clip(r.gotoError || 'blank viewport', 120), 'Diagnose why rendering fails and rebuild the broken render path')
+    }
+
+    const seen = new Set()
+    const assetIssues = []
+    for (const f of [...r.failedRequests, ...r.badResponses.map((b) => ({ url: b.url, failure: `HTTP ${b.status}`, resourceType: b.resourceType }))]) {
+      let normalized = f.url
+      try { normalized = new URL(f.url).href } catch {}
+      if (reportedAssetUrls.has(normalized) || seen.has(normalized)) continue
+      seen.add(normalized)
+      assetIssues.push(f)
+    }
+    renderFailures.push(...assetIssues)
+    const heavy = assetIssues.filter((f) => /stylesheet|script|document|font/i.test(f.resourceType || ''))
+    let reported = 0
+    for (const f of heavy.slice(0, 5)) {
+      push('failed_asset', 'high', `${(f.resourceType || 'resource').replace(/^\w/, (c) => c.toUpperCase())} fails to load in the browser (${clip(f.failure || '', 60)})`, html.indexOf((f.url || '').slice(0, 48)) >= 0 ? html.indexOf((f.url || '').slice(0, 48)) : NaN, clip(f.url, 160), 'Remove or repair the dead reference so the page stops requesting it')
+      reported++
+    }
+    const light = assetIssues.length - heavy.length
+    if (light > 0) {
+      push('failed_asset', 'medium', `${light} additional subresource(s) fail to load in the browser`, NaN, '(multiple)', 'Clean up remaining dead references')
+    }
+    void reported
+  } else if (rendered && !rendered.ok && rendered.reason) {
+    push('info_probe_skipped', 'low', `Live-browser probe unavailable (${clip(rendered.reason, 80)}) — static analysis only`, NaN, '(probe skipped)', 'No action required')
+  }
+
   const summary = {
     total: issues.length,
     critical: issues.filter((i) => i.severity === 'critical').length,
@@ -646,7 +700,7 @@ async function diagnose(html, opts = {}) {
     medium: issues.filter((i) => i.severity === 'medium').length,
     low: issues.filter((i) => i.severity === 'low').length,
   }
-  return { issues, summary, score: calculateScore(issues) }
+  return { issues, summary, score: calculateScore(issues), renderFailures, renderStats: rendered?.ok ? rendered.stats : null, blankRender: Boolean(rendered?.blankRender) }
 }
 
 // ─── STEP 3: Fix plan ────────────────────────────────────────────────────────
@@ -677,6 +731,9 @@ const FIX_DESCRIPTIONS = {
   missing_og_tags: 'Inject Open Graph tags',
   missing_canonical_tag: 'Inject the canonical link',
   missing_alt_text: 'Generate descriptive alt text',
+  runtime_error: 'AI-repair the crashing script or neutralize the failing code path',
+  blank_render: 'AI-diagnose why the page renders nothing and rebuild the render path',
+  failed_asset: 'Remove or repair references to assets that fail in a real browser',
 }
 
 function buildFixPlan(diagnosis) {
@@ -723,7 +780,7 @@ function altFromSrc(src) {
   }
 }
 
-function executeRepairs(originalHtml, diagnosis, opts = {}) {
+export function executeRepairs(originalHtml, diagnosis, opts = {}) {
   const { finalUrl = '', hostname = '' } = opts
   let html = originalHtml
   const log = []
@@ -1077,6 +1134,57 @@ function executeRepairs(originalHtml, diagnosis, opts = {}) {
         break
       }
 
+      case 'runtime_error': {
+        // No-LLM safety net: when the browser reports "X is not defined",
+        // surgically remove the offending call lines. The LLM repair agent
+        // (when configured) does richer rewrites on top of this.
+        const idents = [...String(issue.before || '').matchAll(/\b([A-Za-z_$][\w$]*) is not defined/g)].map((m) => m[1])
+        for (const ident of new Set(idents)) {
+          if (!/^[A-Za-z_$][\w$]{2,}$/.test(ident)) continue
+          const beforeIdent = html
+          const lineRe = new RegExp(`^[^\\n]*\\b${ident}\\s*\\([^\\n]*$`, 'gm')
+          html = html.replace(lineRe, `/* alphatekx: removed call to undefined ${ident} */`)
+          if (html !== beforeIdent) record('runtime_error', `call to ${ident}(…)`, `removed crashed reference to ${ident}`)
+        }
+        break
+      }
+
+      case 'blank_render': {
+        // Judgement damage — handled by the LLM repair agent in the agent loop.
+        // Rules intentionally do not touch it: blind regex surgery on crashing
+        // scripts causes more damage than it fixes.
+        record(issue.type, issue.before || '(runtime damage)', '(queued for AI repair)')
+        break
+      }
+
+      case 'failed_asset': {
+        // Strip references to assets the real browser proved are dead.
+        // Match every URL form that can appear in markup: absolute, scheme-
+        // relative, and root-relative.
+        const failures = diagnosis.renderFailures || []
+        for (const f of failures) {
+          const candidates = new Set()
+          try {
+            const u = new URL(f.url)
+            if (/^https?:$/.test(u.protocol)) {
+              candidates.add(u.href)
+              candidates.add(u.protocol === 'https:' ? `http:${u.pathname}${u.search}` : `https:${u.pathname}${u.search}`)
+              candidates.add(`${u.pathname}${u.search}`)
+              candidates.add(u.pathname)
+            }
+          } catch { continue }
+          const escapeRe = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+          const anyForm = [...candidates].map(escapeRe).join('|')
+          if (!anyForm) continue
+          const beforeFailed = html
+          html = html.replace(new RegExp(`<link\\b[^>]*(?:${anyForm})[^>]*>`, 'gi'), '')
+          html = html.replace(new RegExp(`<script\\b[^>]*(?:${anyForm})[^>]*>[\\s\\S]*?<\\/script>`, 'gi'), '')
+          html = html.replace(new RegExp(`<(?:img|source|video|audio|track|iframe)\\b[^>]*(?:${anyForm})[^>]*>`, 'gi'), '')
+          if (html !== beforeFailed) record('failed_asset', clip(f.url, 120), '(dead reference removed)')
+        }
+        break
+      }
+
       default:
         break
     }
@@ -1215,10 +1323,28 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
     },
   })
 
-  // ════════ STEP 2: DIAGNOSE ════════
+  // ════════ SITE MEMORY — Alpha remembers every site it has restored ════════
+  const memory = await getSiteMemory(hostname).catch(() => null)
+  if (memory && memory.scans > 0) {
+    chain.done('memory', `Alpha remembers ${hostname} — worked on it ${memory.scans} time(s) before`, `Best score ${memory.best_score}/100 · last visit scored ${memory.last_score}/100`)
+    sendEvent({ type: 'site_memory', data: { scans: memory.scans, best_score: memory.best_score, last_score: memory.last_score, last_run_at: memory.last_run_at } })
+  }
+
+  // ════════ STEP 2: DIAGNOSE — static sweep + REAL-BROWSER probe ════════
   chain.active('diagnose', 'Diagnosing — sweeping every line for damage…', 'microscope')
-  const diagnosis = await chain.step('diagnose-run', 'Running 25-point deep diagnosis…', 'microscope', async () => {
-    const result = await diagnose(originalHtml, { baseUrl: finalUrl, https: isHttps })
+
+  let renderProbe = null
+  await chain.step('diagnose-render', 'Opening your site in a real browser — listening for runtime damage…', 'browser', async () => {
+    if (!isRenderProbeAvailable()) return 'Browser probe disabled by environment — static analysis only'
+    renderProbe = await probeRenderedPage(finalUrl)
+    if (!renderProbe.ok) return `Live probe unavailable (${clip(renderProbe.reason || 'unknown', 60)}) — continuing with static analysis`
+    const st = renderProbe.stats
+    const failures = renderProbe.failedRequests.length + renderProbe.badResponses.length
+    return `Rendered live: ${st.elements} elements · ${st.textLength} visible chars · ${renderProbe.pageErrors.length} crash(es) · ${renderProbe.consoleErrors.length} console error(s) · ${failures} failed request(s)`
+  })
+
+  const diagnosis = await chain.step('diagnose-run', 'Running deep diagnosis — static sweep fused with browser evidence…', 'microscope', async () => {
+    const result = await diagnose(originalHtml, { baseUrl: finalUrl, https: isHttps, rendered: renderProbe })
     for (const issue of result.issues.slice(0, 10)) {
       chain.active(`diagnose-${issue.id}`, `Found [${issue.severity.toUpperCase()}] ${clip(issue.description, 90)}`, 'alert')
       chain.done(`diagnose-${issue.id}`, `Found [${issue.severity.toUpperCase()}] ${clip(issue.description, 90)}`, issue.location)
@@ -1229,70 +1355,138 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
   chain.done('diagnose', `Diagnosis complete — ${s.total} issues found`, `${s.critical} critical · ${s.high} high · ${s.medium} medium · ${s.low} low · health score ${diagnosis.score}/100`)
   sendEvent({
     type: 'issues_found',
-    data: { issues: diagnosis.issues, summary: diagnosis.summary, score: diagnosis.score },
+    data: {
+      issues: diagnosis.issues,
+      summary: diagnosis.summary,
+      score: diagnosis.score,
+      render_probe: renderProbe ? { ok: renderProbe.ok, blank_render: renderProbe.blankRender, stats: renderProbe.stats } : null,
+    },
   })
-
-  // ════════ STEP 3: GENERATE FIX PLAN ════════
-  const plan = await chain.step('plan', 'Generating the complete fix plan — one repair per issue…', 'plan', () => {
-    const p = buildFixPlan(diagnosis)
-    return p
-  })
-  chain.done('plan', `Fix plan ready — ${plan.total_fixes} repairs queued`, plan.fixes.slice(0, 3).map((f) => f.type).join(', ') + (plan.total_fixes > 3 ? `, +${plan.total_fixes - 3} more` : ''))
-  sendEvent({ type: 'fix_plan_ready', data: { fixes: plan.fixes.slice(0, 40), total_fixes: plan.total_fixes } })
 
   if (mode === 'scan-only') {
+    const runtimeNote = renderProbe && renderProbe.ok
+      ? `\n\nI also opened the site in a real browser: ${renderProbe.pageErrors.length} crash(es), ${renderProbe.consoleErrors.length} console error(s), ${renderProbe.blankRender ? 'and the page renders **blank** — that is serious' : 'no blank-render problem'}.`
+      : ''
     const msg = diagnosis.issues.length === 0
-      ? `I scanned **${hostname}** deeply — zero issues found. Health score: **${diagnosis.score}/100**. This site is already clean. 🎉`
-      : `I scanned **${hostname}** and found **${s.total} issues** (${s.critical} critical, ${s.high} high, ${s.medium} medium, ${s.low} low). Health score: **${diagnosis.score}/100**.\n\nSay **"fix my site"** and I will run the full 7-step restoration and hand you the repaired code.`
+      ? `I scanned **${hostname}** deeply — zero issues found. Health score: **${diagnosis.score}/100**. This site is already clean. 🎉${runtimeNote}`
+      : `I scanned **${hostname}** and found **${s.total} issues** (${s.critical} critical, ${s.high} high, ${s.medium} medium, ${s.low} low). Health score: **${diagnosis.score}/100**.${runtimeNote}\n\nSay **"fix my site"** and I will run the full agentic restoration — up to three repair cycles with AI-powered fixes — and hand you the repaired code.`
     sendEvent({ type: 'v3_summary', message: msg })
     sendEvent({ type: 'pipeline_done', restorationId })
     return
   }
 
-  // ════════ STEP 4: EXECUTE REPAIRS ════════
-  chain.active('repair', `Executing ${plan.total_fixes} repairs — one by one, in order…`, 'tools')
-  const repairResult = await chain.step('repair-run', 'Applying every fix to the code…', 'tools', async () => {
-    const result = executeRepairs(originalHtml, diagnosis, { finalUrl, hostname })
-    const changed = result.log.filter((l) => l.changed)
-    for (const entry of changed.slice(0, 12)) {
-      sendEvent({ type: 'diff', filename: 'index.html', old: entry.before, newContent: entry.after })
+  // ════════ AGENT LOOP: PLAN → REPAIR (rules + AI) → RECONSTRUCT → VERIFY ════════
+  // Up to 3 cycles. Alpha keeps iterating until the health score reaches the
+  // target or stops improving — exactly how a human engineer works.
+  const MAX_CYCLES = 3
+  const TARGET_SCORE = 95
+
+  let workingHtml = originalHtml
+  let cycleDiagnosis = diagnosis
+  let postDiagnosis = diagnosis
+  let plan = null
+  let appliedCount = 0
+  let aiAppliedTotal = 0
+  const cycleHistory = []
+
+  for (let cycle = 1; cycle <= MAX_CYCLES; cycle++) {
+    const suffix = cycle > 1 ? `-c${cycle}` : ''
+    const prefix = cycle > 1 ? `Cycle ${cycle}/${MAX_CYCLES} — ` : ''
+    if (cycle > 1) chain.active(`cycle-${cycle}`, `Alpha is not satisfied — digging deeper in cycle ${cycle} of ${MAX_CYCLES}…`, 'brain')
+
+    // ── STEP 3: FIX PLAN ──
+    plan = await chain.step(`plan${suffix}`, `${prefix}Generating the complete fix plan — one repair per issue…`, 'plan', () => buildFixPlan(cycleDiagnosis))
+    chain.done(`plan${suffix}`, `Fix plan ready — ${plan.total_fixes} repairs queued`, plan.fixes.slice(0, 3).map((f) => f.type).join(', ') + (plan.total_fixes > 3 ? `, +${plan.total_fixes - 3} more` : ''))
+    sendEvent({ type: 'fix_plan_ready', data: { fixes: plan.fixes.slice(0, 40), total_fixes: plan.total_fixes, cycle } })
+
+    // ── STEP 4a: RULE-BASED REPAIRS ──
+    const repairResult = await chain.step(`repair-run${suffix}`, `${prefix}Applying every rule-based fix to the code…`, 'tools', async () => {
+      const result = executeRepairs(workingHtml, cycleDiagnosis, { finalUrl, hostname })
+      for (const entry of result.log.filter((l) => l.changed).slice(0, 12)) {
+        sendEvent({ type: 'diff', filename: 'index.html', old: entry.before, newContent: entry.after, cycle })
+      }
+      return result
+    })
+    workingHtml = repairResult.html
+    appliedCount = repairResult.log.filter((l) => l.changed).length
+    sendEvent({ type: 'repairs_complete', data: { fixes_applied: appliedCount, total_fixes: plan.total_fixes, log: repairResult.log.slice(0, 40), cycle } })
+
+    // ── STEP 4b: AI REPAIRS — damage rules can't touch ──
+    const aiEligible = cycleDiagnosis.issues.filter((i) => ['runtime_error', 'blank_render', 'failed_asset'].includes(i.type))
+    if (aiEligible.length) {
+      await chain.step(`ai-repair${suffix}`, `${prefix}Repair Agent is rewriting what rules can't fix — ${aiEligible.length} runtime issue(s)…`, 'brain', async () => {
+        const ai = await llmRepairBatch({ html: workingHtml, issues: aiEligible, hostname })
+        workingHtml = ai.html
+        aiAppliedTotal += ai.applied
+        if (!ai.configured) return 'No AI provider key configured — skipping AI repairs (rules already applied)'
+        if (!ai.attempted) return 'AI repair not needed'
+        return `AI repairs applied: ${ai.applied} · skipped safely: ${ai.skipped}${ai.notes[0] ? ` · ${clip(ai.notes.find((n) => !/skipped/i.test(n)) || ai.notes[0], 90)}` : ''}`
+      })
+      sendEvent({ type: 'ai_repairs_complete', data: { issues_sent: aiEligible.length, ai_repairs_applied_total: aiAppliedTotal, cycle } })
     }
-    return result
-  })
-  const appliedCount = repairResult.log.filter((l) => l.changed).length
-  chain.done('repair', `Repairs executed — ${appliedCount}/${plan.total_fixes} fixes applied`, `${appliedCount} code changes written`)
-  sendEvent({ type: 'repairs_complete', data: { fixes_applied: appliedCount, total_fixes: plan.total_fixes, log: repairResult.log.slice(0, 40) } })
 
-  // ════════ STEP 5: RECONSTRUCT ════════
-  const reconstruction = await chain.step('rebuild', 'Reconstructing the site — validating UTF-8, English, HTML integrity…', 'shield', () => {
-    const r = reconstruct(repairResult.html)
-    if (!r.valid_html) throw new Error('Reconstruction failed: invalid HTML structure')
-    const saved = path.join(artifactsDir, 'restored.html')
-    fs.writeFileSync(saved, r.content, 'utf8')
-    fs.writeFileSync(path.join(artifactsDir, 'rollback.html'), sanitizeEncoding(originalHtml), 'utf8')
-    registryPut(restorationId, { id: restorationId, dir: artifactsDir, created, fixedHtml: r.content, originalHtml: sanitizeEncoding(originalHtml), finalUrl, hostname })
-    return {
-      reconstructed: r.reconstructed,
-      valid_html: r.valid_html,
-      valid_english: r.valid_english,
-      valid_utf8: validateUTF8(r.content),
-      file_saved: 'restored.html',
-      encoding: r.encoding,
+    // ── STEP 5: RECONSTRUCT (+ save artifacts so the live preview updates) ──
+    const reconstruction = await chain.step(`rebuild${suffix}`, `${prefix}Reconstructing the site — validating UTF-8, English, HTML integrity…`, 'shield', () => {
+      const r = reconstruct(workingHtml)
+      if (!r.valid_html) throw new Error('Reconstruction failed: invalid HTML structure')
+      workingHtml = r.content
+      fs.writeFileSync(path.join(artifactsDir, 'restored.html'), r.content, 'utf8')
+      fs.writeFileSync(path.join(artifactsDir, 'rollback.html'), sanitizeEncoding(originalHtml), 'utf8')
+      registryPut(restorationId, { id: restorationId, dir: artifactsDir, created, fixedHtml: r.content, originalHtml: sanitizeEncoding(originalHtml), finalUrl, hostname })
+      return {
+        reconstructed: r.reconstructed,
+        valid_html: r.valid_html,
+        valid_english: r.valid_english,
+        valid_utf8: validateUTF8(r.content),
+        file_saved: 'restored.html',
+        encoding: r.encoding,
+      }
+    })
+    chain.done(
+      `rebuild${suffix}`,
+      reconstruction.valid_english ? 'Reconstruction validated — clean UTF-8 English HTML saved' : 'Reconstruction saved — residual non-English characters flagged for review',
+      reconstruction.valid_english ? 'Encoding: UTF-8 ✓ HTML ✓ English ✓' : 'Encoding: UTF-8 ✓ HTML ✓ English ⚠',
+    )
+    sendEvent({ type: 'reconstruction_validated', data: reconstruction, cycle })
+
+    // ── STEP 6: VERIFY — re-scan the restored code ──
+    postDiagnosis = await chain.step(`verify-rescan${suffix}`, `${prefix}Re-running the full diagnosis on restored code…`, 'test', () =>
+      diagnose(workingHtml, { baseUrl: finalUrl, https: isHttps, skipNetworkChecks: true }),
+    )
+
+    const remainingC = postDiagnosis.issues.filter((i) => i.severity !== 'info')
+    const afterScoreC = postDiagnosis.score
+    const verificationC = {
+      before: { issues: diagnosis.summary.total, score: diagnosis.score },
+      after: { issues: remainingC.length, score: afterScoreC },
+      fixed: remainingC.length === 0,
+      improvement: `${afterScoreC - diagnosis.score >= 0 ? '+' : ''}${afterScoreC - diagnosis.score} points`,
+      durationMs: Date.now() - startedAt,
+      cycle,
     }
-  })
-  chain.done(
-    'rebuild',
-    reconstruction.valid_english ? 'Reconstruction validated — clean UTF-8 English HTML saved' : 'Reconstruction saved — residual non-English characters flagged for review',
-    reconstruction.valid_english ? 'Encoding: UTF-8 ✓ HTML ✓ English ✓' : 'Encoding: UTF-8 ✓ HTML ✓ English ⚠',
-  )
-  sendEvent({ type: 'reconstruction_validated', data: reconstruction })
+    chain.done(`verify${suffix}`, `Verification complete — score ${diagnosis.score} → ${afterScoreC}`, verificationC.fixed ? 'All issues resolved' : `${remainingC.length} issue(s) still open`)
+    sendEvent({ type: 'verification_complete', data: { verification: verificationC, remaining_issues: remainingC.slice(0, 10), cycle } })
+    cycleHistory.push({ cycle, before: diagnosis.score, after: afterScoreC, issues_remaining: remainingC.length })
 
-  // ════════ STEP 6: VERIFY ════════
-  chain.active('verify', 'Verifying — re-scanning the restored site against the original diagnosis…', 'test')
-  const postDiagnosis = await chain.step('verify-rescan', 'Re-running the full 25-point diagnosis on restored code…', 'test', async () => {
-    return diagnose(registryGetFixed(restorationId), { baseUrl: finalUrl, https: isHttps, skipNetworkChecks: true })
-  })
+    // Early-stop rules: target reached, perfect score, or no more gain.
+    if (afterScoreC >= TARGET_SCORE) {
+      chain.done(`agent-loop`, `Target score reached (${afterScoreC}/${TARGET_SCORE}) — restoration complete`, `${cycleHistory.length} cycle(s) · ${aiAppliedTotal} AI repair(s)`)
+      break
+    }
+    if (remainingC.length === 0) break
+    if (cycleHistory.length >= 2 && afterScoreC <= cycleHistory[cycleHistory.length - 2].after) {
+      chain.done('agent-loop', `Score plateaued at ${afterScoreC} — additional cycles would not help`, 'Stopping like a senior engineer would')
+      break
+    }
+    if (cycle < MAX_CYCLES) {
+      cycleDiagnosis = await chain.step(`rediagnose-${cycle}`, 'Re-diagnosing what still hurts before the next cycle…', 'microscope', () =>
+        diagnose(workingHtml, { baseUrl: finalUrl, https: isHttps, skipNetworkChecks: true }),
+      )
+      if (!cycleDiagnosis.issues.some((i) => i.severity !== 'info')) break
+    }
+  }
 
+  // ── AFTER screenshot — visual proof of the restored site ──
   let screenshotAfter = null
   await chain.step('verify-shot', 'Capturing AFTER screenshot — visual proof of restoration…', 'camera', async () => {
     const contentPath = `/api/restore/v3/content/${restorationId}/fixed.html?base=1`
@@ -1318,8 +1512,7 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
     improvement: `${improvement >= 0 ? '+' : ''}${improvement} points`,
     durationMs: Date.now() - startedAt,
   }
-  chain.done('verify', `Verification complete — score ${beforeScore} → ${afterScore}`, verification.fixed ? 'All issues resolved' : `${remaining.length} issue(s) intentionally left (design-preservation trade-offs)`)
-  sendEvent({ type: 'verification_complete', data: { verification, remaining_issues: remaining.slice(0, 10) } })
+  sendEvent({ type: 'verification_complete', data: { verification, remaining_issues: remaining.slice(0, 10), final: true } })
 
   // ════════ STEP 7: DELIVER ════════
   const deliverables = await chain.step('deliver', 'Packaging your restored site — 4 ways to receive it…', 'package', async () => {
@@ -1340,6 +1533,14 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
       issues: diagnosis.issues,
       fixes: plan.fixes,
       design_tokens: designTokens,
+      agent: {
+        version: 'V4-agentic',
+        cycles: cycleHistory.length,
+        per_cycle: cycleHistory,
+        ai_repairs_applied: aiAppliedTotal,
+        render_probe: renderProbe ? { ok: renderProbe.ok, blank_render: renderProbe.blankRender, stats: renderProbe.stats } : null,
+        memory_used: Boolean(memory && memory.scans > 0),
+      },
     }
     zip.file('restored.html', registryGetFixed(restorationId))
     zip.file('RESTORATION_REPORT.json', JSON.stringify(report, null, 2))
@@ -1400,6 +1601,12 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
       issues: diagnosis.issues.slice(0, 25),
       remaining_issues: remaining.slice(0, 10),
       verification,
+      agent: {
+        cycles: cycleHistory.length,
+        per_cycle: cycleHistory,
+        ai_repairs_applied: aiAppliedTotal,
+        memory_used: Boolean(memory && memory.scans > 0),
+      },
       tier: afterScore >= 95 ? 'gold' : afterScore >= 75 ? 'silver' : 'bronze',
       copy_content: fixedHtml.length <= copyPayloadCap ? fixedHtml : fixedHtml.slice(0, copyPayloadCap),
       copy_truncated: fixedHtml.length > copyPayloadCap,
@@ -1416,6 +1623,9 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
     '',
     `**Improvement: ${verification.improvement}**`,
     '',
+    cycleHistory.length > 1 || aiAppliedTotal > 0
+      ? `**Agent report:** ${cycleHistory.length} repair cycle(s) · ${aiAppliedTotal} AI repair(s)${memory && memory.scans > 0 ? ` · remembered this site (${memory.scans} visit${memory.scans > 1 ? 's' : ''})` : ''}`
+      : '',
     '**Receive your restored site:**',
     `1. ⬇️ [Download restored.zip](${deliverables.download.restored}) + [rollback.zip](${deliverables.download.rollback})`,
     `2. 🚀 Say **"deploy as ${deliverables.deploy.suggested_name}"** — goes live at ${deliverables.deploy.url_preview}`,
@@ -1423,6 +1633,15 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
     deliverables.github.available ? '4. 🐙 GitHub connected — say the word and I open the PR.' : '4. 🐙 Connect GitHub anytime and I will open the pull request for you.',
   ].join('\n')
   sendEvent({ type: 'v3_summary', message: msg })
+
+  // Site memory write — never blocks delivery.
+  recordRestoration({
+    url: finalUrl,
+    hostname,
+    beforeScore,
+    afterScore,
+    topIssues: [...new Set(diagnosis.issues.map((i) => i.type))].slice(0, 5),
+  }).catch(() => {})
 
   sendEvent({ type: 'pipeline_done', restorationId })
 }
