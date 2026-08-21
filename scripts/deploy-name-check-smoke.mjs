@@ -53,14 +53,24 @@ try {
   check('deploy success shape', r4.status === 200 && j4.success === true && j4.url === `${base.replace(String(port), String(port))}/app/${siteName}`.replace('127.0.0.1', '127.0.0.1') || (j4.success === true && String(j4.url).endsWith(`/app/${siteName}`)), JSON.stringify(j4))
   check('deploy message', j4.message === '✅ Site deployed successfully!', JSON.stringify(j4))
 
-  // 5. Name now taken
+  // 5. Name now taken — anonymous sees taken, owner sees update option
   const r5 = await fetch(`${base}/api/check-availability?name=${siteName}`)
   const j5 = await r5.json()
-  check('name now taken after deploy', j5.available === false && Array.isArray(j5.suggestions) && j5.suggestions.length > 0, JSON.stringify(j5))
+  check('name taken for anonymous', j5.available === false && j5.owned === false && Array.isArray(j5.suggestions) && j5.suggestions.length > 0, JSON.stringify(j5))
+  const r5b = await fetch(`${base}/api/check-availability?name=${siteName}`, { headers: { 'x-local-user-id': 'smoke-user-1', 'x-local-user-email': 'smoke@alphatekx.test' } })
+  const j5b = await r5b.json()
+  check('name owned by deploying user', j5b.available === false && j5b.owned === true && /update/i.test(j5b.message || ''), JSON.stringify(j5b))
+  const r5c = await fetch(`${base}/api/check-availability?name=${siteName}`, { headers: { 'x-local-user-id': 'smoke-user-2', 'x-local-user-email': 'other@alphatekx.test' } })
+  const j5c = await r5c.json()
+  check('name not owned by other user', j5c.available === false && j5c.owned === false, JSON.stringify(j5c))
 
-  // 6. Deploy same name again → 409
-  const r6 = await fetch(`${base}/api/deploy`, { method: 'POST', headers: localHeaders, body: JSON.stringify({ name: siteName, html }) })
-  check('duplicate deploy rejected 409', r6.status === 409, `status ${r6.status}`)
+  // 6. Owner redeploying same name UPDATES the site; other users still get 409
+  const htmlV2 = html.replace('Welcome', 'Welcome v2')
+  const r6 = await fetch(`${base}/api/deploy`, { method: 'POST', headers: localHeaders, body: JSON.stringify({ name: siteName, html: htmlV2 }) })
+  const j6 = await r6.json()
+  check('owner redeploy updates site', r6.status === 200 && j6.success === true && j6.updated === true && /updated/i.test(j6.message || ''), `status ${r6.status} ${JSON.stringify(j6)}`)
+  const r6b = await fetch(`${base}/api/deploy`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-local-user-id': 'smoke-user-2', 'x-local-user-email': 'other@alphatekx.test' }, body: JSON.stringify({ name: siteName, html }) })
+  check('other user redeploy rejected 409', r6b.status === 409, `status ${r6b.status}`)
 
   // 7. deployments.json registry written with UTF-8, no BOM
   check('deployments.json exists', fs.existsSync(registryFile))
@@ -72,10 +82,10 @@ try {
     check('registry no BOM', raw.charCodeAt(0) !== 0xFEFF)
   }
 
-  // 8. Site is actually served at /app/{name} (content embedded in iframe wrapper)
+  // 8. Site is actually served at /app/{name} with the UPDATED content
   const r8 = await fetch(`${base}/app/${siteName}`)
   const body8 = await r8.text()
-  check('site served at /app/name', r8.status === 200 && body8.includes('Welcome') && body8.includes('alpha-app'), `status ${r8.status}`)
+  check('site served at /app/name', r8.status === 200 && body8.includes('Welcome v2') && body8.includes('alpha-app'), `status ${r8.status}`)
 
   // 9. Corrupted (CJK mojibake) HTML rejected by deploy
   const bad = '\u4E2D\u6587\u30C6\u30B9\u30C8 <!DOCTYPE html>'

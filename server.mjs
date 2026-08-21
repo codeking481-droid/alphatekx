@@ -4859,7 +4859,14 @@ async function handleCheckAvailability(req, res) {
   if (!name.trim()) return json(res, 400, { error: 'Name is required.' })
   const config = supabaseConfig()
   const result = await checkGlobalProjectAvailability(name, config)
-  return json(res, 200, result)
+  let owned = false
+  if (!result.available && result.exists) {
+    try {
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      owned = deploymentOwnedBy(result.exists, user)
+    } catch { owned = false }
+  }
+  return json(res, 200, { ...result, owned })
 }
 
 // GET /api/check-availability?name={name} — simple spec-format name checker
@@ -4872,11 +4879,30 @@ async function handleQuickAvailability(req, res) {
   const name = slugifyName(rawName)
   const config = supabaseConfig()
   const result = await checkGlobalProjectAvailability(name, config)
+  let owned = false
+  if (!result.available && result.exists) {
+    try {
+      const user = await currentOrLocalUser(req, config.url, config.anon)
+      owned = deploymentOwnedBy(result.exists, user)
+    } catch { owned = false }
+  }
   if (result.available) {
-    return json(res, 200, { available: true, name, slug: result.slug, message: '✅ Available!', urlPreview: result.urlPreview })
+    return json(res, 200, { available: true, owned: false, name, slug: result.slug, message: '✅ Available!', urlPreview: result.urlPreview })
+  }
+  if (owned) {
+    return json(res, 200, {
+      available: false,
+      owned: true,
+      name,
+      slug: result.slug,
+      message: '✅ This is your site — deploying will update it',
+      reason: result.reason,
+      suggestions: [],
+    })
   }
   return json(res, 200, {
     available: false,
+    owned: false,
     name,
     slug: result.slug,
     message: result.invalid ? '❌ Invalid name' : result.reserved ? '❌ Reserved name' : '❌ Already taken',
@@ -4893,7 +4919,11 @@ async function handleDeployEndpoint(req, res) {
     const user = await currentOrLocalUser(req, config.url, config.anon)
     if (!user) return json(res, 401, { success: false, error: 'Authentication required.' })
     const body = await readBody(req)
-    const rawName = String(body.name || '').trim()
+    let rawName = String(body.name || '').trim()
+    if (!rawName && body.scanId) rawName = `restore-${String(body.scanId).replace(/[^a-z0-9]/gi, '').slice(-10).toLowerCase()}`
+    if (!rawName && body.originalUrl) {
+      try { rawName = slugifyName(new URL(String(body.originalUrl)).hostname.replace(/^www\./, '').split('.')[0]) } catch {}
+    }
     const name = slugifyName(rawName)
     if (!rawName) return json(res, 400, { success: false, name, error: 'Name is required.' })
     if (!validProjectName(name)) {
@@ -4911,18 +4941,23 @@ async function handleDeployEndpoint(req, res) {
       return json(res, 413, { success: false, name, error: 'HTML must be smaller than 900 KB.' })
     }
     const availability = await checkGlobalProjectAvailability(name, config)
+    let updating = false
     if (!availability.available) {
-      return json(res, 409, {
-        success: false,
-        available: false,
-        name,
-        message: '❌ Already taken',
-        error: availability.reason,
-        suggestions: availability.suggestions?.length ? availability.suggestions : generateNameSuggestions(name, name),
-      })
+      if (availability.exists && deploymentOwnedBy(availability.exists, user)) {
+        updating = true
+      } else {
+        return json(res, 409, {
+          success: false,
+          available: false,
+          name,
+          message: '❌ Already taken',
+          error: availability.reason,
+          suggestions: availability.suggestions?.length ? availability.suggestions : generateNameSuggestions(name, name),
+        })
+      }
     }
     const title = String(body.title || rawName).trim().slice(0, 120) || name
-    const result = await localPublishPasted({ title, slug: name, html }, baseUrl)
+    const result = await localPublishPasted({ title, slug: name, html }, baseUrl, user)
     if (result.status !== 200) {
       return json(res, result.status, { success: false, name, error: result.body?.error || 'Deploy failed.' })
     }
@@ -4931,7 +4966,8 @@ async function handleDeployEndpoint(req, res) {
       success: true,
       url,
       name,
-      message: '✅ Site deployed successfully!',
+      updated: updating || Boolean(result.body.updated),
+      message: updating || result.body.updated ? '✅ Site updated successfully!' : '✅ Site deployed successfully!',
       subdomainUrl: result.body.subdomainUrl,
     })
   } catch (error) {
@@ -5022,8 +5058,22 @@ function readLocalDeployment(slug) {
     const file = deploymentPath(slug)
     if (!fs.existsSync(file)) return null
     const data = JSON.parse(fs.readFileSync(file, 'utf8'))
-    return { id: data.id || slug, title: data.title || slug, slug: data.slug || slug, code: data.code || '' }
+    return { id: data.id || slug, title: data.title || slug, slug: data.slug || slug, code: data.code || '', ownerId: data.ownerId || '', ownerEmail: data.ownerEmail || '' }
   } catch { return null }
+}
+
+// True when the existing deployment belongs to this user. Legacy local
+// deployments recorded before owner tracking have no ownerId/ownerEmail —
+// the first authenticated user to redeploy claims them.
+function deploymentOwnedBy(existing, user) {
+  if (!existing || !user) return false
+  if (existing.user_id) return String(existing.user_id) === String(user.id)
+  const ownerId = String(existing.ownerId || '').toLowerCase()
+  const ownerEmail = String(existing.ownerEmail || '').toLowerCase()
+  if (!ownerId && !ownerEmail) return true
+  if (ownerId && String(user.id || '').toLowerCase() === ownerId) return true
+  if (ownerEmail && String(user.email || '').toLowerCase() === ownerEmail) return true
+  return false
 }
 function writeLocalDeployment(slug, data) {
   try {
@@ -7287,7 +7337,7 @@ async function localPublishCreation(body, baseUrl) {
   return { status: 200, body: { slug, path: `/app/${slug}`, url, subdomainUrl: `https://${slug}.alphatekx.name.ng` } }
 }
 
-async function localPublishPasted(body, baseUrl) {
+async function localPublishPasted(body, baseUrl, owner = null) {
   const title = String(body.title || '').trim().slice(0, 120)
   const slug = String(body.slug || '').toLowerCase().trim()
   const html = String(body.html || '').trim()
@@ -7297,11 +7347,20 @@ async function localPublishPasted(body, baseUrl) {
   if (Buffer.byteLength(html, 'utf8') > 900_000) return { status: 413, body: { error: 'HTML must be smaller than 900 KB.' } }
   const existing = readLocalDeployment(slug)
   const creationId = existing?.id || randomUUID()
-  const creation = { id: creationId, slug, title, code: html, type: 'html', files: [{ path: 'index.html', code: html }] }
+  const creation = {
+    id: creationId,
+    slug,
+    title,
+    code: html,
+    type: 'html',
+    files: [{ path: 'index.html', code: html }],
+    ownerId: owner?.id ? String(owner.id) : existing?.ownerId || '',
+    ownerEmail: owner?.email ? String(owner.email) : existing?.ownerEmail || '',
+  }
   if (!writeLocalDeployment(slug, creation)) return { status: 500, body: { error: 'Could not write deployment to disk.' } }
   const url = `${baseUrl}/app/${slug}`
   registerDeployedSite(slug, url)
-  return { status: 200, body: { creationId, slug, url, pathUrl: url, subdomainUrl: `https://${slug}.alphatekx.name.ng` } }
+  return { status: 200, body: { creationId, slug, url, pathUrl: url, subdomainUrl: `https://${slug}.alphatekx.name.ng`, updated: Boolean(existing) } }
 }
 
 async function publishCreationPath(req, res) {
@@ -7573,14 +7632,16 @@ const restorationEngineRoute = createRestorationEngine({
     const config = supabaseConfig()
     return currentOrLocalUser(req, config.url, config.anon)
   },
-  publishPasted: async ({ name, title, html }) => {
+  publishPasted: async ({ name, title, html, user }) => {
     const config = supabaseConfig()
     const baseUrl = String(process.env.PUBLIC_APP_URL || 'https://alphatekx.name.ng').replace(/\/$/, '')
     const slug = slugifyName(name)
     if (!validProjectName(slug)) return { status: 400, body: { error: 'Use 3-30 lowercase letters, numbers, or hyphens. Must start and end with a letter or number.' } }
     const availability = await checkGlobalProjectAvailability(slug, config)
-    if (!availability.available) return { status: 409, body: { error: availability.reason, suggestions: availability.suggestions } }
-    return localPublishPasted({ title: title || slug, slug, html }, baseUrl)
+    if (!availability.available && !(availability.exists && user && deploymentOwnedBy(availability.exists, user))) {
+      return { status: 409, body: { error: availability.reason, suggestions: availability.suggestions } }
+    }
+    return localPublishPasted({ title: title || slug, slug, html }, baseUrl, user)
   },
   log: (message) => console.log(message),
 })

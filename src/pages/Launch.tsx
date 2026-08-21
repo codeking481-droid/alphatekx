@@ -6,7 +6,7 @@ import { getCreations, hydrateMissionStore, subscribeStore, updateCreation } fro
 
 type DeployInfo = { publicAppUrl: string; serviceUrl: string; wildcardDomain: string; dnsRecords: Array<{ type: string; name: string; value: string }> }
 type NameCheck = {
-  state: 'idle' | 'too-short' | 'checking' | 'available' | 'taken'
+  state: 'idle' | 'too-short' | 'checking' | 'available' | 'owned' | 'taken'
   message: string
   suggestions: string[]
 }
@@ -25,7 +25,7 @@ export default function Launch() {
   const [pasteSlug, setPasteSlug] = useState('')
   const [nameCheck, setNameCheck] = useState<NameCheck>(initialCheck)
   const [deploying, setDeploying] = useState(false)
-  const [deployResult, setDeployResult] = useState<{ url: string; subdomainUrl?: string } | null>(null)
+  const [deployResult, setDeployResult] = useState<{ url: string; subdomainUrl?: string; updated?: boolean } | null>(null)
   const [copied, setCopied] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -56,6 +56,8 @@ export default function Launch() {
         const data = await checkDeployName(name)
         if (data.available) {
           setNameCheck({ state: 'available', message: `✅ "${name}" is available!`, suggestions: [] })
+        } else if (data.owned) {
+          setNameCheck({ state: 'owned', message: data.message || `✅ "${name}" is yours — deploying will update it`, suggestions: [] })
         } else {
           setNameCheck({
             state: 'taken',
@@ -70,7 +72,8 @@ export default function Launch() {
     return () => { controller.abort(); window.clearTimeout(timer) }
   }, [pasteSlug])
 
-  const nameIsAvailable = nameCheck.state === 'available'
+  const nameIsAvailable = nameCheck.state === 'available' || nameCheck.state === 'owned'
+  const isOwnedName = nameCheck.state === 'owned'
   const canDeploy = nameIsAvailable && !!pasteTitle.trim() && !!pasteHtml.trim() && !deploying
 
   const copyUrl = async (url?: string) => {
@@ -110,7 +113,7 @@ export default function Launch() {
     setDeploying(true); setDeployResult(null); setNotice('Deploying...')
     try {
       const result = await deploySite({ name: pasteSlug, title: pasteTitle, html: pasteHtml })
-      setDeployResult({ url: result.url, subdomainUrl: result.subdomainUrl }); setNotice('')
+      setDeployResult({ url: result.url, subdomainUrl: result.subdomainUrl, updated: result.updated }); setNotice('')
       await hydrateMissionStore(); setCreations(getCreations())
     } catch (e) { setNotice(e instanceof Error ? e.message : 'Deploy failed.') } finally { setDeploying(false) }
   }
@@ -126,6 +129,7 @@ export default function Launch() {
 
   const statusColor =
     nameCheck.state === 'available' ? 'text-emerald-400'
+    : nameCheck.state === 'owned' ? 'text-lime-300'
     : nameCheck.state === 'taken' ? 'text-red-400'
     : nameCheck.state === 'checking' ? 'text-white/50'
     : 'text-white/35'
@@ -158,7 +162,7 @@ export default function Launch() {
                 <span className="shrink-0 text-white/45">alphatekx.name.ng/app/</span>
                 <input value={pasteSlug} onChange={e => setPasteSlug(slugifyCreation(e.target.value))} className="min-w-0 flex-1 bg-transparent px-1 text-zinc-100 outline-none" placeholder="my-portfolio" />
                 {nameCheck.state === 'checking' && <LoaderCircle size={14} className="shrink-0 animate-spin text-white/40" />}
-                {nameCheck.state === 'available' && <Check size={14} className="shrink-0 text-emerald-400" />}
+                {(nameCheck.state === 'available' || nameCheck.state === 'owned') && <Check size={14} className="shrink-0 text-emerald-400" />}
                 {nameCheck.state === 'taken' && <X size={14} className="shrink-0 text-red-400" />}
               </div>
             </label>
@@ -196,7 +200,7 @@ export default function Launch() {
           {/* Deploy result */}
           {deployResult && (
             <div className="mt-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4">
-              <p className="flex items-center gap-2 text-sm font-medium text-emerald-300"><Check size={15} /> Your site is live!</p>
+              <p className="flex items-center gap-2 text-sm font-medium text-emerald-300"><Check size={15} /> {deployResult.updated ? 'Your site was updated!' : 'Your site is live!'}</p>
               <p className="mt-1 break-all font-mono text-xs text-emerald-300/80">{deployResult.url}</p>
               <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                 <a href={deployResult.url} target="_blank" rel="noreferrer" className="launch-action flex-1 justify-center gap-2"><Globe size={15}/>Open site</a>
@@ -209,13 +213,13 @@ export default function Launch() {
             </div>
           )}
 
-          {/* Action button — locked until the name is confirmed available */}
+          {/* Action button — locked until the name is confirmed available or owned */}
           {!deployResult && (
             <button onClick={() => void deployCode()} disabled={!canDeploy}
               title={!nameIsAvailable ? 'Pick an available name first' : undefined}
               className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl btn-alpha px-6 text-sm font-medium text-white transition-all disabled:cursor-not-allowed disabled:opacity-40">
               {deploying ? <LoaderCircle className="animate-spin" size={17}/> : <UploadCloud size={17}/>}
-              {deploying ? 'Deploying...' : nameIsAvailable ? '🚀 Deploy' : 'Deploy'}
+              {deploying ? 'Deploying...' : isOwnedName ? '🚀 Update Live Site' : nameIsAvailable ? '🚀 Deploy' : 'Deploy'}
             </button>
           )}
           {!deployResult && !nameIsAvailable && (

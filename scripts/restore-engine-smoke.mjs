@@ -157,7 +157,16 @@ try {
   const reg13 = JSON.parse(fs.readFileSync(registryFile, 'utf8'))
   check('engine deploy registered in deployments.json', reg13.sites.some(s => s.name === siteName), JSON.stringify(reg13.sites.slice(-2)))
   const r13b = await post('/api/engine/deploy', { sessionId: sid3, name: siteName }, localHeaders)
-  check('duplicate engine deploy rejected 409', r13b.status === 409, `status ${r13b.status}`)
+  const j13b = await r13b.json()
+  check('owner engine redeploy updates site', r13b.status === 200 && j13b.status === 'success' && /updated/i.test(j13b.message || ''), `status ${r13b.status}`)
+  const otherHeaders = { 'content-type': 'application/json', 'x-local-user-id': 'smoke-user-2', 'x-local-user-email': 'other@alphatekx.test' }
+  const sid3b = (await (await post('/api/engine/session', {})).json()).sessionId
+  await post('/api/engine/scan', { sessionId: sid3b, url: fixtureUrl })
+  await post('/api/engine/fix', { sessionId: sid3b })
+  await post('/api/engine/approve', { sessionId: sid3b, approved: true })
+  await post('/api/engine/delivery', { sessionId: sid3b, option: 'deploy' })
+  const r13b2 = await post('/api/engine/deploy', { sessionId: sid3b, name: siteName }, otherHeaders)
+  check('other user engine deploy rejected 409', r13b2.status === 409, `status ${r13b2.status}`)
   const r13c = await post('/api/engine/deploy', { sessionId: sid3, name: siteName }, { 'content-type': 'application/json' })
   check('unauthenticated engine deploy 401', r13c.status === 401, `status ${r13c.status}`)
   const r13d = await post('/api/engine/verify', { sessionId: sid3 })

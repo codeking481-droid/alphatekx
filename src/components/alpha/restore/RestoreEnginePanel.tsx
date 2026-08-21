@@ -13,7 +13,6 @@ import {
   FileText,
   Globe,
   Image as ImageIcon,
-  LayoutDashboard,
   Loader2,
   Lock,
   Radar,
@@ -373,9 +372,9 @@ export default function RestoreEngine() {
   )
 
   return (
-    <main className="min-h-screen w-full bg-[#0D0D0D] px-4 pb-16 pt-6 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1100px]">
-        <nav className="mb-8 flex flex-wrap items-center gap-1.5">
+    <div className="w-full rounded-2xl border border-white/[0.08] bg-[#0D0D0D] p-4 text-white sm:p-5">
+      <div className="w-full">
+        <nav className="mb-6 flex flex-wrap items-center gap-1.5">
           {STEPS.map((label, i) => {
             const num = i + 1
             const active = uiStep === num
@@ -734,12 +733,11 @@ export default function RestoreEngine() {
             <div className="mx-auto mt-8 flex max-w-md flex-col gap-3">
               {prUrl && <a href={prUrl} target="_blank" rel="noreferrer" className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-500 to-indigo-500 px-6 py-3 text-sm font-black text-white transition hover:brightness-110"><ExternalLink size={16} /> Open Pull Request</a>}
               {deployUrl && <a href={deployUrl} target="_blank" rel="noreferrer" className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-lime-400 to-emerald-500 px-6 py-3 text-sm font-black text-black transition hover:brightness-110"><ExternalLink size={16} /> Open Live Site</a>}
-              <a href="/chat" className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-6 py-3 text-sm font-black text-white transition hover:bg-white/[0.07]"><LayoutDashboard size={16} /> Back to Dashboard</a>
               <button type="button" onClick={resetAll} className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#D6FF00] px-6 py-3 text-sm font-black text-black shadow-[0_18px_38px_rgba(214,255,0,0.25)] transition hover:brightness-110"><Radar size={16} /> Restore Another Site</button>
             </div>
           </section>
         )}
       </div>
-    </main>
+    </div>
   )
 }

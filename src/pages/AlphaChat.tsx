@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Menu, Send, Square, User, Bot, Sparkles, Paperclip, X, Film, Loader2 } from 'lucide-react'
+import { Menu, Send, Square, User, Bot, Sparkles, Paperclip, X, Film, Loader2, Wrench } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import ReactMarkdown from 'react-markdown'
 import ChatAuthWrapper from '../components/auth/ChatAuthWrapper'
@@ -15,6 +15,7 @@ import GoldProofCard, { type ProofData } from '../components/alpha/restore/GoldP
 import ActionCard from '../components/alpha/restore/ActionCard'
 import GitHubApplyCard from '../components/alpha/restore/GitHubApplyCard'
 import GitHubConnectGate from '../components/alpha/restore/GitHubConnectGate'
+import RestoreEnginePanel from '../components/alpha/restore/RestoreEnginePanel'
 import FixPromptCard from '../components/alpha/restore/FixPromptCard'
 import ScreenshotComparison from '../components/alpha/restore/ScreenshotComparison'
 import SecurityFindings from '../components/alpha/restore/SecurityFindings'
@@ -82,6 +83,7 @@ type AlphaMessage = GeneralChatMessage & {
   restoreResult?: any
   videoResult?: { videoUrl: string; editId: string; plan: any; elapsed: string }
   restoreCards?: RestoreCardState
+  restoreEngine?: boolean
   alphaEvents?: AlphaEventType[]
   alphaReasoning?: { assessment: string; hypotheses: { cause: string; confidence: number }[]; evidence: string; decision: string }
   isStreaming?: boolean
@@ -202,6 +204,20 @@ function ChatContent() {
       return next
     })
   }, [])
+
+  const launchRestoreEngine = useCallback(() => {
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: uid(),
+        role: 'assistant',
+        content: '',
+        createdAt: new Date().toISOString(),
+        restoreEngine: true,
+      },
+    ])
+    scrollToBottom()
+  }, [scrollToBottom])
 
   const handleSend = useCallback(async () => {
     const text = input.trim()
@@ -1040,6 +1056,11 @@ function ChatContent() {
                   ))}
                 </div>
               )}
+              <div className="mb-2 flex flex-wrap gap-2">
+                <button onClick={launchRestoreEngine} title="Open the 10-step website Restoration Engine" className="inline-flex items-center gap-1.5 rounded-full border border-[#D6FF00]/25 bg-[#D6FF00]/[0.06] px-3 py-1.5 text-[11px] font-bold text-[#D6FF00] transition hover:bg-[#D6FF00]/15">
+                  <Wrench size={12} /> Restore Engine
+                </button>
+              </div>
               <div className="alpha-input-glow group relative flex items-end rounded-2xl border border-white/[0.08] bg-white/[0.03] transition-all duration-300">
                 <input
                   ref={fileInputRef}
@@ -1116,6 +1137,13 @@ function ChatContent() {
                         {msg.content && (
                           <div className="text-[14px] leading-relaxed">
                             <Markdown>{msg.content}</Markdown>
+                          </div>
+                        )}
+
+                        {/* Interactive Restoration Engine — full 10-step flow inline */}
+                        {msg.restoreEngine && (
+                          <div className="mt-3 max-w-3xl">
+                            <RestoreEnginePanel />
                           </div>
                         )}
 
@@ -1423,6 +1451,11 @@ function ChatContent() {
                   ))}
                 </div>
             )}
+            <div className="mb-2 flex flex-wrap gap-2">
+              <button onClick={launchRestoreEngine} title="Open the 10-step website Restoration Engine" className="inline-flex items-center gap-1.5 rounded-full border border-[#D6FF00]/25 bg-[#D6FF00]/[0.06] px-3 py-1.5 text-[11px] font-bold text-[#D6FF00] transition hover:bg-[#D6FF00]/15">
+                <Wrench size={12} /> Restore Engine
+              </button>
+            </div>
             <div className="alpha-input-glow group relative flex items-end rounded-2xl border border-white/[0.08] bg-white/[0.03] transition-all duration-300">
               <input
                 ref={fileInputRef}

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, MessageSquare, CreditCard, Trash2, Clock, Plus, Rocket, Wrench } from 'lucide-react'
+import { X, MessageSquare, CreditCard, Trash2, Clock, Plus, Rocket } from 'lucide-react'
 import { useAuth } from '../../lib/auth'
 import { getChatThreads, deleteChatThread, subscribeChatHistory, type ChatThread } from '../../lib/chatHistoryStore'
 
@@ -89,18 +89,6 @@ export default function HamburgerSidebar({
                 <span className="min-w-0 flex-1">
                   <span className="block text-[13px] font-bold text-white">Deploy</span>
                   <span className="block text-[10px] text-white/30">Put a site live on the web</span>
-                </span>
-              </button>
-              <button
-                onClick={() => goTo('/restore-engine')}
-                className="flex w-full items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5 text-left transition hover:bg-white/[0.05]"
-              >
-                <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-white/[0.05]">
-                  <Wrench size={14} className="text-white/60" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[13px] font-bold text-white">Restore Engine</span>
-                  <span className="block text-[10px] text-white/30">Scan, fix, and restore any site</span>
                 </span>
               </button>
               <button

@@ -632,7 +632,7 @@ export function createRestorationEngine(deps = {}) {
     const user = typeof deps.requireUser === 'function' ? await deps.requireUser(req) : null
     if (!user) return errorResponse(res, 401, 'Sign in to deploy.', 'sign_in')
 
-    const result = await deps.publishPasted({ name: String(body.name || ''), title: String(body.title || ''), html: session.restoredHtml })
+    const result = await deps.publishPasted({ name: String(body.name || ''), title: String(body.title || ''), html: session.restoredHtml, user })
     if (!result || result.status !== 200) {
       const message = result?.body?.error || 'Deploy failed.'
       const taken = result?.status === 409
@@ -642,7 +642,8 @@ export function createRestorationEngine(deps = {}) {
     session.deliveryResult = { deployUrl: result.body.url, name: result.body.slug || body.name }
     session.actionCompleted = true
     touch(session)
-    return json(res, 200, successResponse(session, `Site deployed at ${result.body.url}`, [
+    const updated = Boolean(result.body.updated)
+    return json(res, 200, successResponse(session, updated ? `Site updated at ${result.body.url}` : `Site deployed at ${result.body.url}`, [
       { id: 'open_site', label: 'Open Live Site', url: result.body.url },
     ]))
   }

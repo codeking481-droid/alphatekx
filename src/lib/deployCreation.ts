@@ -30,7 +30,7 @@ export async function checkNameAvailability(name: string): Promise<AvailabilityR
   return payload as AvailabilityResult
 }
 
-export type QuickAvailability = { available: boolean; name: string; message: string; reason?: string; suggestions?: string[]; urlPreview?: string }
+export type QuickAvailability = { available: boolean; owned?: boolean; name: string; message: string; reason?: string; suggestions?: string[]; urlPreview?: string }
 
 // GET /api/check-availability?name={name} — real-time name checker for the deploy tool
 export async function checkDeployName(name: string): Promise<QuickAvailability> {
@@ -40,7 +40,7 @@ export async function checkDeployName(name: string): Promise<QuickAvailability> 
   return payload as QuickAvailability
 }
 
-export type DeployResult = { success: boolean; url: string; name: string; message: string; subdomainUrl?: string }
+export type DeployResult = { success: boolean; url: string; name: string; message: string; updated?: boolean; subdomainUrl?: string }
 
 // POST /api/deploy { name, html } — saves the site and registers the name
 export async function deploySite(input: { name: string; html: string; title?: string }): Promise<DeployResult> {
