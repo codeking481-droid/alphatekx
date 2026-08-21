@@ -312,8 +312,8 @@ function ChatContent() {
           // GitHub repo → V2 pipeline (clone, scan, experiment, PR)
           streamUrl = `/api/restore/v2?url=${encodeURIComponent(detectedUrl)}&mode=${intent === 'full' ? 'full' : 'scan-only'}&message=${encodeURIComponent(sendText)}`
         } else {
-          // Live website → V1 streaming pipeline (real Playwright scan + fix)
-          streamUrl = `/api/restore/stream?url=${encodeURIComponent(detectedUrl)}&intent=${intent === 'full' ? 'fix' : 'scan'}&message=${encodeURIComponent(sendText)}`
+          // Live website → V3 FINAL PRODUCTION pipeline (7-step chain-of-thought restoration)
+          streamUrl = `/api/restore/v3?url=${encodeURIComponent(detectedUrl)}&mode=${intent === 'full' ? 'full' : 'scan-only'}&message=${encodeURIComponent(sendText)}`
         }
 
         const res = await fetch(streamUrl, { signal: abortRef.current.signal })
@@ -532,6 +532,13 @@ function ChatContent() {
 
         return { ...prev, alphaEvents: events, alphaReasoning: reasoning }
       })
+      scrollToBottom()
+      return
+    }
+
+    // ===== V3 Pipeline: final summary message (markdown) =====
+    if (event.type === 'v3_summary' && event.message) {
+      updateLastMessage((prev) => ({ ...prev, content: event.message, isStreaming: false }))
       scrollToBottom()
       return
     }

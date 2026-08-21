@@ -9,10 +9,12 @@ import { chromium } from 'playwright'
 
 import { handlePreviewRoute, handleRestoreStreamRoute, handleFixStreamRoute, handleDownloadRoute, handlePreviewFixedRoute, handleScreenshotRoute } from './server/websiteRestoreStream.mjs'
 import { createRestorationEngine } from './server/restorationEngine.mjs'
+import { createRestorationPipeline } from './server/restorationPipeline.mjs'
 import { FileHandler, sanitizeEncoding } from './server/scanEngine/fileUtils.js'
 import { handleGitHubAuth, handleGitHubCallback, handleGitHubStatus, handleGitHubRepos, handleGitHubApplyFix, handleGitHubCreatePR, handleGitHubRollback } from './server/githubDirectPush.mjs'
 import { handleDiagnoseRoute } from './server/diagnoseRoute.mjs'
 import { handleRestoreV2Route, handleRestorePushRoute } from './server/restorePipelineV2.mjs'
+import { handleRestoreV3Route, handleV3DownloadRoute, handleV3ArtifactRoute, handleV3ContentRoute } from './server/alphaRestorationPipeline.mjs'
 import { runFullRestorationScan } from './server/scanEngine/restorationScanner.mjs'
 import { marketplaceHandler, fulfillMarketplaceOrder } from './server/marketplace.mjs'
 import { getRecords, getRecord, createRecord, updateRecord, deleteRecord, appEntitiesMigrationSql } from './server/appData.mjs'
@@ -7729,6 +7731,25 @@ const restorationEngineRoute = createRestorationEngine({
   log: (message) => console.log(message),
 })
 
+const restorationPipelineRoute = createRestorationPipeline({
+  requireUser: async (req) => {
+    const config = supabaseConfig()
+    return currentOrLocalUser(req, config.url, config.anon)
+  },
+  publishPasted: async ({ name, title, html, user }) => {
+    const config = supabaseConfig()
+    const baseUrl = String(process.env.PUBLIC_APP_URL || 'https://alphatekx.name.ng').replace(/\/$/, '')
+    const slug = slugifyName(name)
+    if (!validProjectName(slug)) return { status: 400, body: { error: 'Use 3-30 lowercase letters, numbers, or hyphens. Must start and end with a letter or number.' } }
+    const availability = await checkGlobalProjectAvailability(slug, config)
+    if (!availability.available && !(availability.exists && user && deploymentOwnedBy(availability.exists, user))) {
+      return { status: 409, body: { error: availability.reason, suggestions: availability.suggestions } }
+    }
+    return localPublishPasted({ title: title || slug, slug, html }, baseUrl, user)
+  },
+  log: (message) => console.log(message),
+})
+
 const server = http.createServer(async (req, res) => {
   applyCors(req, res)
   addSecurityHeaders(res)
@@ -7737,6 +7758,10 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 204, {})
   if (String(req.url || '').startsWith('/api/engine/')) {
     const handled = await restorationEngineRoute(req, res)
+    if (handled) return
+  }
+  if (String(req.url || '').startsWith('/api/pipeline/')) {
+    const handled = await restorationPipelineRoute(req, res)
     if (handled) return
   }
   if (String(req.url || '').startsWith('/api/')) await refreshFeatureConfig(supabaseConfig()).catch(() => {})
@@ -10041,6 +10066,20 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'POST' && req.url === '/api/restore/push') {
     return handleRestorePushRoute(req, res)
+  }
+
+  // ===== RESTORE V3: FINAL PRODUCTION — 7-step chain-of-thought restoration =====
+  if (req.method === 'GET' && req.url?.startsWith('/api/restore/v3/download')) {
+    return handleV3DownloadRoute(req, res)
+  }
+  if (req.method === 'GET' && req.url?.startsWith('/api/restore/v3/artifact/')) {
+    return handleV3ArtifactRoute(req, res)
+  }
+  if (req.method === 'GET' && req.url?.startsWith('/api/restore/v3/content/')) {
+    return handleV3ContentRoute(req, res)
+  }
+  if (req.method === 'GET' && req.url?.startsWith('/api/restore/v3')) {
+    return handleRestoreV3Route(req, res)
   }
 
   // ===== RESTORE PASTED HTML: Alpha fixes pasted code =====
