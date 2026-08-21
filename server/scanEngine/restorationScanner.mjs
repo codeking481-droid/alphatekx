@@ -1,5 +1,4 @@
-import * as cheerio from 'cheerio';
-import tls from 'node:tls';
+﻿import * as cheerio from 'cheerio';
 import crypto from 'node:crypto';
 import { detectMalware } from './malwareDetector.mjs';
 
@@ -22,313 +21,6 @@ function makeFinding(category, severity, title, description, fixable = false, fi
 
 function resetCounter() {
   findingCounter = 0;
-}
-
-export async function checkSSL(hostname, port = 443) {
-  const findings = [];
-  try {
-    const cert = await new Promise((resolve, reject) => {
-      const socket = tls.connect(
-        {
-          host: hostname,
-          port,
-          servername: hostname,
-          rejectUnauthorized: false,
-          timeout: 10000,
-        },
-        () => {
-          try {
-            const peerCert = socket.getPeerCertificate(true);
-            if (!peerCert || !peerCert.subject) {
-              reject(new Error('No certificate returned'));
-              socket.destroy();
-              return;
-            }
-            resolve(peerCert);
-            socket.destroy();
-          } catch (err) {
-            reject(err);
-            socket.destroy();
-          }
-        }
-      );
-      socket.on('error', (err) => {
-        reject(err);
-      });
-      socket.on('timeout', () => {
-        socket.destroy();
-        reject(new Error('SSL connection timed out'));
-      });
-    });
-
-    // Validity / Expiry
-    const now = new Date();
-    const validFrom = new Date(cert.valid_from);
-    const validTo = new Date(cert.valid_to);
-
-    if (now < validFrom) {
-      findings.push(
-        makeFinding(
-          'ssl',
-          'critical',
-          'SSL Certificate Not Yet Valid',
-          `The certificate for ${hostname} is not valid until ${cert.valid_from}.`,
-          true
-        )
-      );
-    }
-
-    if (now > validTo) {
-      findings.push(
-        makeFinding(
-          'ssl',
-          'critical',
-          'SSL Certificate Expired',
-          `The certificate for ${hostname} expired on ${cert.valid_to}. Renew it immediately.`,
-          true
-        )
-      );
-    } else {
-      const daysRemaining = Math.floor((validTo - now) / (1000 * 60 * 60 * 24));
-      if (daysRemaining <= 30) {
-        findings.push(
-          makeFinding(
-            'ssl',
-            'high',
-            'SSL Certificate Expiring Soon',
-            `The certificate for ${hostname} expires in ${daysRemaining} days (${cert.valid_to}).`,
-            true,
-            { step: 'Renew the certificate before expiration.' }
-          )
-        );
-      } else if (daysRemaining <= 90) {
-        findings.push(
-          makeFinding(
-            'ssl',
-            'medium',
-            'SSL Certificate Expiring Within 90 Days',
-            `The certificate for ${hostname} expires in ${daysRemaining} days (${cert.valid_to}).`,
-            true,
-            { step: 'Plan certificate renewal.' }
-          )
-        );
-      }
-    }
-
-    // Hostname match
-    const certSubject = cert.subject?.CN || '';
-    const certAltNames = cert.subjectaltname
-      ? cert.subjectaltname.split(',').map((s) => s.trim().replace(/^DNS:/, ''))
-      : [];
-
-    let hostnameMatch = false;
-    if (certSubject === hostname) {
-      hostnameMatch = true;
-    }
-    for (const altName of certAltNames) {
-      if (altName.startsWith('*.')) {
-        const wildcardDomain = altName.slice(2);
-        const parts = hostname.split('.');
-        if (parts.length > 1 && parts.slice(1).join('.') === wildcardDomain) {
-          hostnameMatch = true;
-          break;
-        }
-      } else if (altName === hostname) {
-        hostnameMatch = true;
-        break;
-      }
-    }
-
-    if (!hostnameMatch) {
-      findings.push(
-        makeFinding(
-          'ssl',
-          'critical',
-          'SSL Certificate Hostname Mismatch',
-          `The certificate CN="${certSubject}" with SANs [${certAltNames.join(', ')}] does not match the requested hostname "${hostname}".`,
-          true
-        )
-      );
-    }
-
-    // Key strength
-    const keyBits = cert.bits || 0;
-    if (keyBits > 0 && keyBits < 2048) {
-      findings.push(
-        makeFinding(
-          'ssl',
-          'high',
-          'Weak SSL Key Strength',
-          `The certificate uses a ${keyBits}-bit key. A minimum of 2048 bits is recommended.`,
-          true,
-          { step: 'Generate a new key pair with at least 2048 bits (4096 recommended).' }
-        )
-      );
-    } else if (keyBits >= 4096) {
-      findings.push(
-        makeFinding(
-          'ssl',
-          'info',
-          'Strong SSL Key Strength',
-          `The certificate uses a ${keyBits}-bit key.`,
-          false
-        )
-      );
-    }
-
-    // Protocol version via reconnection with specific protocol check
-    let protocolVersion = 'unknown';
-    try {
-      const protoResult = await new Promise((resolve, reject) => {
-        const s = tls.connect(
-          {
-            host: hostname,
-            port,
-            servername: hostname,
-            rejectUnauthorized: false,
-            timeout: 10000,
-          },
-          () => {
-            resolve(s.getProtocol());
-            s.destroy();
-          }
-        );
-        s.on('error', (err) => reject(err));
-        s.on('timeout', () => {
-          s.destroy();
-          reject(new Error('timeout'));
-        });
-      });
-      protocolVersion = protoResult;
-    } catch (_) {
-      // ignore — we'll report unknown
-    }
-
-    if (protocolVersion === 'TLSv1' || protocolVersion === 'TLSv1.1') {
-      findings.push(
-        makeFinding(
-          'ssl',
-          'critical',
-          'Outdated TLS Protocol',
-          `The server is using ${protocolVersion}. TLS 1.2 or higher is required.`,
-          true,
-          { step: 'Disable TLS 1.0 and 1.1 on the server. Enable TLS 1.2 and 1.3.' }
-        )
-      );
-    } else if (protocolVersion === 'TLSv1.3') {
-      findings.push(
-        makeFinding(
-          'ssl',
-          'info',
-          'TLS 1.3 Supported',
-          'The server supports TLS 1.3, the latest protocol version.',
-          false
-        )
-      );
-    } else if (protocolVersion === 'TLSv1.2') {
-      findings.push(
-        makeFinding(
-          'ssl',
-          'info',
-          'TLS 1.2 Supported',
-          'The server supports TLS 1.2.',
-          false
-        )
-      );
-    } else if (protocolVersion === 'unknown') {
-      findings.push(
-        makeFinding(
-          'ssl',
-          'low',
-          'Could Not Determine TLS Protocol Version',
-          'Unable to determine the TLS protocol version used by the server.',
-          false
-        )
-      );
-    }
-
-    // Trusted CA (basic check: is it self-signed?)
-    if (cert.issuer && cert.subject) {
-      const issuerCN = cert.issuer.CN || '';
-      const subjectCN = cert.subject.CN || '';
-      if (
-        issuerCN === subjectCN &&
-        !cert.issuer.O &&
-        !cert.subject.O
-      ) {
-        findings.push(
-          makeFinding(
-            'ssl',
-            'high',
-            'Self-Signed SSL Certificate',
-            `The certificate is self-signed (Issuer CN="${issuerCN}" matches Subject CN="${subjectCN}" with no organization). Browsers will not trust this.`,
-            true,
-            { step: 'Obtain a certificate from a trusted Certificate Authority.' }
-          )
-        );
-      }
-    }
-
-    // Signature algorithm
-    const sigAlg = cert.sigalg || cert.SignatureAlgorithm || '';
-    if (sigAlg) {
-      const sigLower = sigAlg.toLowerCase();
-      if (
-        sigLower.includes('md5') ||
-        sigLower.includes('sha1')
-      ) {
-        findings.push(
-          makeFinding(
-            'ssl',
-            'high',
-            'Weak Signature Algorithm',
-            `The certificate uses signature algorithm "${sigAlg}". SHA-256 or stronger is recommended.`,
-            true,
-            { step: 'Reissue the certificate using SHA-256 or stronger.' }
-          )
-        );
-      } else if (
-        sigLower.includes('sha256') ||
-        sigLower.includes('sha384') ||
-        sigLower.includes('sha512') ||
-        sigLower.includes('ecdsa')
-      ) {
-        findings.push(
-          makeFinding(
-            'ssl',
-            'info',
-            'Strong Signature Algorithm',
-            `The certificate uses signature algorithm "${sigAlg}".`,
-            false
-          )
-        );
-      }
-    }
-
-    // Chain info
-    if (cert.valid_from && cert.valid_to) {
-      findings.push(
-        makeFinding(
-          'ssl',
-          'info',
-          'SSL Certificate Details',
-          `Subject: ${certSubject} | Issuer: ${cert.issuer?.CN || 'N/A'} | Valid: ${cert.valid_from} to ${cert.valid_to} | Bits: ${keyBits || 'N/A'} | Protocol: ${protocolVersion}`,
-          false
-        )
-      );
-    }
-  } catch (err) {
-    findings.push(
-      makeFinding(
-        'ssl',
-        'critical',
-        'SSL Connection Failed',
-        `Could not establish SSL/TLS connection to ${hostname}:${port}. Error: ${err.message}`,
-        false
-      )
-    );
-  }
-  return findings;
 }
 
 export function checkSecurityHeaders(headers) {
@@ -599,64 +291,6 @@ export function checkSecurityHeaders(headers) {
         'Missing X-XSS-Protection',
         'X-XSS-Protection header is not set. If CSP is in place this is acceptable.',
         false
-      )
-    );
-  }
-
-  // --- Information disclosure headers ---
-
-  // Server
-  if (h['server']) {
-    findings.push(
-      makeFinding(
-        'headers',
-        'low',
-        'Server Header Discloses Information',
-        `The Server header reveals: "${h['server']}". Remove or obfuscate this value.`,
-        true,
-        { header: 'Server', value: '' }
-      )
-    );
-  }
-
-  // X-Powered-By
-  if (h['x-powered-by']) {
-    findings.push(
-      makeFinding(
-        'headers',
-        'low',
-        'X-Powered-By Header Discloses Technology',
-        `The X-Powered-By header reveals: "${h['x-powered-by']}". Remove this header.`,
-        true,
-        { header: 'X-Powered-By', value: '' }
-      )
-    );
-  }
-
-  // X-AspNet-Version
-  if (h['x-aspnet-version']) {
-    findings.push(
-      makeFinding(
-        'headers',
-        'low',
-        'X-AspNet-Version Discloses Framework Version',
-        `The X-AspNet-Version header reveals: "${h['x-aspnet-version']}". Remove this header.`,
-        true,
-        { header: 'X-AspNet-Version', value: '' }
-      )
-    );
-  }
-
-  // X-AspNetMvc-Version
-  if (h['x-aspnetmvc-version']) {
-    findings.push(
-      makeFinding(
-        'headers',
-        'low',
-        'X-AspNetMvc-Version Discloses MVC Version',
-        `The X-AspNetMvc-Version header reveals: "${h['x-aspnetmvc-version']}". Remove this header.`,
-        true,
-        { header: 'X-AspNetMvc-Version', value: '' }
       )
     );
   }
@@ -1817,35 +1451,16 @@ export async function runFullRestorationScan(targetUrl, options = {}) {
   if (!isHttps) {
     allFindings.push(
       makeFinding(
-        'ssl',
-        'high',
-        'Site Not Using HTTPS',
-        'The target URL uses HTTP instead of HTTPS. All traffic is unencrypted.',
-        true,
-        { step: 'Configure TLS/SSL on the server and redirect all HTTP traffic to HTTPS.' }
+        'links',
+        'low',
+        'Target Uses HTTP',
+        'The target URL uses HTTP. Some browser features (service workers, geolocation) require HTTPS.',
+        false
       )
     );
   }
 
-  // 1. SSL Check (only for HTTPS, and only when not using htmlOverride)
-  if (isHttps && !htmlOverride) {
-    try {
-      const sslFindings = await checkSSL(hostname, port);
-      allFindings.push(...sslFindings);
-    } catch (err) {
-      allFindings.push(
-        makeFinding(
-          'ssl',
-          'low',
-          'SSL Check Error',
-          `An error occurred during SSL check: ${err.message}`,
-          false
-        )
-      );
-    }
-  }
-
-  // 2. Security Headers
+  // 1. Security Headers
   try {
     const headerFindings = checkSecurityHeaders(responseHeaders);
     allFindings.push(...headerFindings);
@@ -1861,7 +1476,7 @@ export async function runFullRestorationScan(targetUrl, options = {}) {
     );
   }
 
-  // 3. Mixed Content
+  // 2. Mixed Content
   try {
     const mixedContentFindings = checkMixedContent(html, isHttps);
     allFindings.push(...mixedContentFindings);

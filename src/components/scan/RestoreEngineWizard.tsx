@@ -1,6 +1,6 @@
-import { Activity, AlertTriangle, Bug, Camera, CheckCircle2, Download, FileText, Hammer, Loader2, Lock, QrCode, Radar, RefreshCw, ShieldCheck, Sparkles, Wrench } from 'lucide-react'
+import { AlertTriangle, Bug, Camera, CheckCircle2, Download, FileText, Hammer, Loader2, Lock, QrCode, Radar, RefreshCw, ShieldCheck, Sparkles, Wrench } from 'lucide-react'
 
-const STEPS = ['Scanning', 'Fear', 'Fixing', 'Proving', 'Watching']
+const STEPS = ['Scanning', 'Fear', 'Fixing', 'Proving']
 
 const SEVERITY_CHIP: Record<string, string> = {
   CRITICAL: 'bg-rose-500/15 text-rose-300',
@@ -45,15 +45,12 @@ export default function RestoreEngineWizard({
   progress,
   status,
   plan,
-  watching,
   onRunFix,
   isFixing,
   fixResult,
   onVerify,
   isVerifying,
   verifyResult,
-  watcherStatus,
-  onEnableWatcher,
 }: {
   scan: any
   scanId: string | null
@@ -61,15 +58,12 @@ export default function RestoreEngineWizard({
   progress: number
   status: string
   plan: any
-  watching: any
   onRunFix: () => void
   isFixing: boolean
   fixResult: any
   onVerify: () => void
   isVerifying: boolean
   verifyResult: any
-  watcherStatus: any
-  onEnableWatcher: () => void
 }) {
   const risk = scan?.risk
   const liveSecrets = (scan?.liveSecrets || []).filter((secret: any) => secret.isLive)
@@ -85,14 +79,13 @@ export default function RestoreEngineWizard({
   if (scan) doneSteps.add(1)
   if (fixResult || isFixing) doneSteps.add(2)
   if (verifyResult || scan?.proof) doneSteps.add(3)
-  if (watcherStatus || watching) doneSteps.add(4)
 
   return (
     <section className="mt-8 rounded-[30px] border border-violet-200/20 bg-[#0c0e15]/80 p-5 shadow-[0_20px_60px_rgba(0,0,0,0.22)]">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-violet-300">Restore Engine — 5 steps</p>
-          <h2 className="mt-2 text-2xl font-black tracking-[-0.03em] text-white">Scan → Fear → Fix → Prove → Watch</h2>
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-violet-300">Restore Engine — 4 steps</p>
+          <h2 className="mt-2 text-2xl font-black tracking-[-0.03em] text-white">Scan → Fear → Fix → Prove</h2>
         </div>
         <StepDots activeStep={activeStep} doneSteps={doneSteps} />
       </div>
@@ -317,40 +310,10 @@ export default function RestoreEngineWizard({
           </div>
         )}
 
-        {/* ---- STEP 5: WATCHING ---- */}
-        {scan && (
+        {/* ---- SCAN ID ---- */}
+        {scan && scanId && (
           <div className="xl:col-span-2 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-2 text-sm font-black text-white">
-                <Activity size={16} className="text-emerald-300" /> Watching — GUARDIAN
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                {watcherStatus ? (
-                  <span className="rounded-full bg-emerald-500/15 px-3 py-1 text-[11px] font-black text-emerald-300">
-                    {watcherStatus.ok ? `Watching · next run ${new Date(watcherStatus.nextRun).toLocaleString()}` : 'Locked'}
-                  </span>
-                ) : watching?.available ? (
-                  <span className="rounded-full bg-emerald-500/15 px-3 py-1 text-[11px] font-black text-emerald-300">Active — re-scans every 6h</span>
-                ) : (
-                  <span className="rounded-full bg-amber-500/15 px-3 py-1 text-[11px] font-black text-amber-300">Locked</span>
-                )}
-                <button
-                  type="button"
-                  onClick={onEnableWatcher}
-                  className="rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-2 text-sm font-black text-white shadow-[0_18px_38px_rgba(16,185,129,0.35)] transition hover:brightness-110"
-                >
-                  Enable Watching
-                </button>
-              </div>
-            </div>
-            <p className="mt-3 text-xs text-slate-400">
-              {watcherStatus?.paywall
-                ? watcherStatus.reason
-                : watching?.paywall
-                  ? watching.reason
-                  : 'GUARDIAN re-scans your site every 6 hours, alerts you the moment a secret leaks, and can auto-trigger the fix.'}
-            </p>
-            {scanId && <p className="mt-2 font-mono text-[11px] text-slate-500">Scan ID: {scanId}</p>}
+            <p className="font-mono text-[11px] text-slate-500">Scan ID: {scanId}</p>
           </div>
         )}
       </div>

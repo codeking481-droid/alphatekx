@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, Copy, ExternalLink, Globe, LoaderCircle, MessageSquare, UploadCloud, Upload, X } from 'lucide-react'
+import { Check, Copy, ExternalLink, Globe, LoaderCircle, MessageSquare, RefreshCw, Rocket, Trash2, UploadCloud, Upload, X } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { checkDeployName, deploySite, slugifyCreation } from '../lib/deployCreation'
+import { checkDeployName, deleteDeployedSite, deploySite, listMyDeployedSites, slugifyCreation, type MyDeployedSite } from '../lib/deployCreation'
 import { getCreations, hydrateMissionStore, subscribeStore, updateCreation } from '../lib/missionStore'
 
 type DeployInfo = { publicAppUrl: string; serviceUrl: string; wildcardDomain: string; dnsRecords: Array<{ type: string; name: string; value: string }> }
@@ -28,6 +28,26 @@ export default function Launch() {
   const [deployResult, setDeployResult] = useState<{ url: string; subdomainUrl?: string; updated?: boolean } | null>(null)
   const [copied, setCopied] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const deploySectionRef = useRef<HTMLElement | null>(null)
+
+  // ── MY SITES: every site this user deployed, saved on their side ──
+  const [mySites, setMySites] = useState<MyDeployedSite[]>([])
+  const [loadingSites, setLoadingSites] = useState(true)
+  const [sitesError, setSitesError] = useState('')
+  const [deletingSlug, setDeletingSlug] = useState('')
+
+  const refreshMySites = async () => {
+    try {
+      setSitesError('')
+      const sites = await listMyDeployedSites()
+      setMySites(sites)
+    } catch (err) {
+      setSitesError(err instanceof Error ? err.message : 'Could not load your sites.')
+    } finally {
+      setLoadingSites(false)
+    }
+  }
+  useEffect(() => { void refreshMySites() }, [])
 
   const [searchParams] = useSearchParams()
   const [deployInfo, setDeployInfo] = useState<DeployInfo | null>(null)
@@ -115,6 +135,7 @@ export default function Launch() {
       const result = await deploySite({ name: pasteSlug, title: pasteTitle, html: pasteHtml })
       setDeployResult({ url: result.url, subdomainUrl: result.subdomainUrl, updated: result.updated }); setNotice('')
       await hydrateMissionStore(); setCreations(getCreations())
+      await refreshMySites()
     } catch (e) { setNotice(e instanceof Error ? e.message : 'Deploy failed.') } finally { setDeploying(false) }
   }
 
@@ -122,6 +143,34 @@ export default function Launch() {
     setPasteHtml(''); setPasteTitle(''); setPasteSlug('')
     setDeployResult(null); setNotice(''); setNameCheck(initialCheck)
     if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  const startUpdateSite = (site: MyDeployedSite) => {
+    resetDeploy()
+    setPasteTitle(site.title || site.name)
+    setPasteSlug(site.slug)
+    setNotice(`Updating "${site.name}" — upload or paste the new HTML, then press Update Live Site.`)
+    deploySectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  const startNewSite = () => {
+    resetDeploy()
+    deploySectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  const removeSite = async (site: MyDeployedSite) => {
+    if (!window.confirm(`Delete "${site.name}" permanently? The live URL will stop working.`)) return
+    setDeletingSlug(site.slug)
+    try {
+      await deleteDeployedSite(site.slug)
+      setMySites(prev => prev.filter(s => s.slug !== site.slug))
+      setNotice(`"${site.name}" was deleted.`)
+      if (deployResult && pasteSlug === site.slug) resetDeploy()
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Delete failed.')
+    } finally {
+      setDeletingSlug('')
+    }
   }
 
   const liveUrl = creation?.deploymentUrl
@@ -150,7 +199,7 @@ export default function Launch() {
         )}
 
         {/* ── MAIN: Name check → HTML → Deploy ── */}
-        <section className="rounded-2xl border border-violet-400/20 liquid-glass p-6 shadow-sm md:p-8">
+        <section ref={deploySectionRef} className="rounded-2xl border border-violet-400/20 liquid-glass p-6 shadow-sm md:p-8">
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="text-xs font-medium text-white/70">
               App name
@@ -226,6 +275,68 @@ export default function Launch() {
           )}
           {!deployResult && !nameIsAvailable && (
             <p className="mt-2 text-center text-[11px] text-white/35">The deploy button unlocks once your site name is confirmed available.</p>
+          )}
+        </section>
+
+        {/* ── MY DEPLOYED SITES: saved on the user's side, with update/delete/new ── */}
+        <section className="mt-6 rounded-2xl border border-violet-400/20 liquid-glass p-5 shadow-sm md:p-8">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold">My deployed sites</h2>
+              <p className="mt-1 text-xs text-white/45">Saved to your account — update, delete, or deploy a new site anytime.</p>
+            </div>
+            <button onClick={startNewSite} className="flex items-center gap-2 rounded-xl btn-alpha px-4 py-2.5 text-xs font-medium text-white transition-all">
+              <Rocket size={14} /> Deploy new site
+            </button>
+          </div>
+
+          {loadingSites && (
+            <p className="mt-5 flex items-center gap-2 text-sm text-white/45"><LoaderCircle size={15} className="animate-spin" /> Loading your sites...</p>
+          )}
+          {!loadingSites && sitesError && (
+            <p className="mt-5 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">{sitesError}</p>
+          )}
+          {!loadingSites && !sitesError && mySites.length === 0 && (
+            <p className="mt-5 rounded-xl border border-violet-400/20 bg-violet-500/5 p-4 text-sm text-white/50">
+              No sites yet. Deploy your first site above and it will appear here.
+            </p>
+          )}
+          {!loadingSites && mySites.length > 0 && (
+            <ul className="mt-5 space-y-3">
+              {mySites.map(site => (
+                <li key={site.slug} className="rounded-xl border border-violet-400/20 bg-violet-500/5 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="truncate text-sm font-semibold">{site.title}</h3>
+                      <a href={site.url} target="_blank" rel="noreferrer" className="mt-0.5 block break-all font-mono text-xs text-[#D6FF00]/80 underline-offset-2 hover:underline">
+                        {site.url}
+                      </a>
+                      <p className="mt-1 text-[11px] text-white/35">
+                        {site.updatedAt ? `Updated ${new Date(site.updatedAt).toLocaleDateString()}` : 'Just deployed'}
+                        {typeof site.sizeBytes === 'number' && site.sizeBytes > 0 ? ` · ${(site.sizeBytes / 1024).toFixed(1)} KB` : ''}
+                      </p>
+                    </div>
+                    {site.subdomainUrl && (
+                      <a href={site.subdomainUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-xs text-white/45 hover:text-white">
+                        <ExternalLink size={13} /> Subdomain
+                      </a>
+                    )}
+                  </div>
+                  <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                    <a href={site.url} target="_blank" rel="noreferrer" className="launch-action flex flex-1 items-center justify-center gap-2"><Globe size={14} /> Open</a>
+                    <button onClick={() => startUpdateSite(site)} className="launch-action flex flex-1 items-center justify-center gap-2"><RefreshCw size={14} /> Update</button>
+                    <button
+                      onClick={() => void removeSite(site)}
+                      disabled={deletingSlug === site.slug}
+                      className="flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2 text-xs font-medium text-red-300 transition hover:bg-red-500/20 disabled:opacity-50"
+                    >
+                      {deletingSlug === site.slug ? <LoaderCircle size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                      {deletingSlug === site.slug ? 'Deleting...' : 'Delete'}
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
           )}
         </section>
 

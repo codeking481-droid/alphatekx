@@ -40,9 +40,9 @@ export function isRepairRequest(message) {
   if (/alphatekx\.name\.ng/i.test(message)) return false
   const repairKeywords = [
     'restore', 'fix', 'repair', 'broken', 'error', 'bug', 'crash',
-    'not working', 'down', 'deploy', 'website', 'app', 'backend',
-    'api', 'server', 'database', 'dns', 'ssl', 'certificate',
-    'performance', 'slow', 'lcp', 'uptime', 'build', 'compile',
+    'not working', 'deploy', 'website', 'app', 'backend',
+    'api', 'database',
+    'performance', 'slow', 'lcp', 'build', 'compile',
     'pipeline', 'automation', 'webhook', 'integration', 'css', 'html',
     'javascript', 'react', 'next', 'node', 'python', 'database',
   ]
@@ -254,17 +254,73 @@ export async function runRepairPipeline(message, sendEvent, llmCall) {
 
 /**
  * Run a conversational (non-repair) chat through LLM
+ * Streams visible chain-of-thought steps alongside the answer.
  */
 export async function runConversationChat(message, history, sendEvent, llmCall) {
-  // Quick Tavily search for current info
+  // STEP 1: Understand the request
+  sendEvent({
+    type: 'thought_step',
+    step: { id: 'understand', label: 'Understanding your request...', icon: 'scan', status: 'active' },
+  })
+  const wordCount = String(message || '').trim().split(/\s+/).filter(Boolean).length
+  const hasQuestion = /\?\s*$|^(who|what|when|where|why|how|can|could|should|is|are|do|does|did|will|would)\b/i.test(String(message || '').trim())
+  const wantsAction = /\b(fix|build|create|deploy|restore|repair|help me|make|write|generate|explain)\b/i.test(String(message || '').toLowerCase())
+  sendEvent({
+    type: 'thought_step',
+    step: {
+      id: 'understand',
+      label: 'Request Understood',
+      icon: 'scan',
+      status: 'done',
+      summary: `${wordCount} word ${hasQuestion ? 'question' : wantsAction ? 'action request' : 'message'} received`,
+      details: [
+        hasQuestion ? 'Detected a direct question — will answer it precisely' : wantsAction ? 'Detected an action request — will provide concrete steps' : 'Reading intent and context from the conversation',
+        history && history.length > 0 ? `Using ${history.length} previous message(s) as context` : 'Starting fresh — no prior context needed',
+      ],
+    },
+  })
+
+  // STEP 2: Check live web sources for current info
+  sendEvent({
+    type: 'thought_step',
+    step: { id: 'research', label: 'Checking live web sources...', icon: 'search', status: 'active' },
+  })
+
   let webContext = ''
+  let tavilySources = []
   try {
     const search = await searchForFixes(message)
     if (search.answer) webContext = `\n\nCurrent web context:\n${search.answer}`
     if (search.results.length) {
       webContext += '\n\nRelevant sources:\n' + search.results.slice(0, 3).map(r => `- ${r.title}: ${r.url}`).join('\n')
+      tavilySources = search.results.slice(0, 5).map(r => ({
+        title: r.title,
+        url: r.url,
+        score: r.score,
+        snippet: (r.content || '').slice(0, 200),
+      }))
     }
   } catch {}
+  sendEvent({
+    type: 'thought_step',
+    step: {
+      id: 'research',
+      label: tavilySources.length ? 'Web Research Complete' : 'Web Research Skipped',
+      icon: 'search',
+      status: 'done',
+      summary: tavilySources.length
+        ? `Found ${tavilySources.length} relevant source(s) to ground the answer`
+        : 'Answering from internal knowledge — no lookup needed',
+      details: tavilySources.length ? tavilySources.map(s => s.title) : undefined,
+      tavilySources: tavilySources.length ? tavilySources : undefined,
+    },
+  })
+
+  // STEP 3: Compose the answer
+  sendEvent({
+    type: 'thought_step',
+    step: { id: 'compose', label: 'Composing response...', icon: 'plan', status: 'active' },
+  })
 
   const systemPrompt = `You are AlphaTekX AI — an expert restoration engineer. You help users fix broken websites, apps, videos, backends, automations, and digital tools.
 
@@ -283,7 +339,8 @@ You can help with:
 - Automation workflow repair
 - Video editing and restoration (route to Video Resurrector)
 - Performance optimization (LCP, Core Web Vitals)
-- DNS, SSL, and infrastructure issues
+
+Important: AlphaTekX restores code. If a user's site URL does not load, tell them: "The site is not loading. Please check your hosting provider or domain DNS settings. Once your site is live, send me the URL and I will restore it." Never investigate DNS records, SSL certificates, server status, hosting providers, server logs, or config files.
 
 Keep responses under 300 words unless the user asks for detail. Use markdown formatting.${webContext}`
 
@@ -293,8 +350,26 @@ Keep responses under 300 words unless the user asks for detail. Use markdown for
     { role: 'user', content: message },
   ]
 
-  const result = await llmCall(messages)
-  sendEvent({ type: 'content', text: result })
+  try {
+    const result = await llmCall(messages)
+    sendEvent({
+      type: 'thought_step',
+      step: {
+        id: 'compose',
+        label: 'Response Ready',
+        icon: 'plan',
+        status: 'done',
+        summary: `Answer composed${webContext ? ' with live web context' : ''}`,
+      },
+    })
+    sendEvent({ type: 'content', text: result })
+  } catch (err) {
+    sendEvent({
+      type: 'thought_step',
+      step: { id: 'compose', label: 'Response Failed', icon: 'plan', status: 'error', summary: err?.message || 'Model unavailable' },
+    })
+    throw err
+  }
   sendEvent({ type: 'done' })
 }
 
@@ -439,7 +514,6 @@ Return JSON with:
 - metrics: object with before/after metrics:
   - lcp: { before: "X.Xs", after: "X.Xs" }
   - errors: { before: N, after: N }
-  - uptime: { before: "XX%", after: "XX%" }
 
 Return ONLY valid JSON.`
 
@@ -456,7 +530,6 @@ Return ONLY valid JSON.`
     metrics: result.metrics || {
       lcp: { before: 'measured after fix', after: 'measured after fix' },
       errors: { before: 'counted from scan', after: 'verified after fix' },
-      uptime: { before: 'check status', after: 'check status' },
     },
   }
 }
@@ -481,13 +554,6 @@ function buildRestoreResult(scan, diagnose, execute, test) {
         before: String(metrics.errors?.before ?? 12),
         after: String(metrics.errors?.after ?? 0),
         icon: 'errors',
-        improved: true,
-      },
-      {
-        label: 'Uptime',
-        before: metrics.uptime?.before || '94%',
-        after: metrics.uptime?.after || '99.9%',
-        icon: 'uptime',
         improved: true,
       },
     ],

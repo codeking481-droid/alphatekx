@@ -223,6 +223,10 @@ function ChatContent() {
     setInput('')
     setIsGenerating(true)
 
+    // Upload files if attached
+    let fileUrl: string | null = null
+    let fileType: string | null = null
+
     // Detect URL in message — any prominent URL runs the chat-based Restoration Engine
     const detectedUrl = extractUrl(sendText)
     detectedUrlRef.current = detectedUrl
@@ -232,22 +236,26 @@ function ChatContent() {
       /\b(fix|restore|repair|recover|resurrect|unbreak|heal)\b/i.test(sendText) &&
       /\b(site|website|web\s?site|page|web\s?page|url|link|blog|store|landing)\b/i.test(sendText)
 
-    // Upload files if attached
-    let fileUrl: string | null = null
-    let fileType: string | null = null
     if (attachedFiles.length > 0) {
       setUploading(true)
-      // Upload first file (primary), then queue the rest
-      fileUrl = await uploadVideo(attachedFiles[0])
-      fileType = attachedFiles[0].type
-      setUploading(false)
+      try {
+        // Upload first file (primary), then queue the rest
+        fileUrl = await uploadVideo(attachedFiles[0])
+        fileType = attachedFiles[0].type
+      } catch {
+        fileUrl = null
+      } finally {
+        setUploading(false)
+      }
       handleRemoveAllFiles()
       if (!fileUrl) {
-        updateLastMessage((prev) => ({
-          ...prev,
+        setMessages((prev) => [...prev, {
+          id: uid(),
+          role: 'assistant',
           content: 'Upload failed. Please try again.',
+          createdAt: new Date().toISOString(),
           isStreaming: false,
-        }))
+        }])
         setIsGenerating(false)
         return
       }
@@ -391,7 +399,7 @@ function ChatContent() {
         body: JSON.stringify({
           message: sendText,
           threadId: thread.id,
-          history: messages.slice(-10).map((m) => ({ role: m.role, content: m.content })),
+          history: [...messages.slice(-10), userMsg].map((m) => ({ role: m.role, content: m.content })),
           fileUrl: fileUrl || undefined,
           fileType: fileType || undefined,
         }),
@@ -476,6 +484,9 @@ function ChatContent() {
         }
       }
 
+      // Stream ended — ensure streaming state is cleared even if no `done` event arrived
+      updateLastMessage((prev) => (prev.isStreaming ? { ...prev, isStreaming: false } : prev))
+
       // Save final state
       setMessages((prev) => {
         const last = prev[prev.length - 1]
@@ -491,13 +502,14 @@ function ChatContent() {
         return prev
       })
     } catch (err: any) {
-      if (err.name !== 'AbortError') {
-        updateLastMessage((prev) => ({
+      updateLastMessage((prev) => {
+        if (!prev.isStreaming && err.name === 'AbortError') return prev
+        return {
           ...prev,
-          content: prev.content || 'Something went wrong. Please try again.',
+          content: err.name === 'AbortError' ? prev.content : (prev.content || 'Something went wrong. Please try again.'),
           isStreaming: false,
-        }))
-      }
+        }
+      })
     } finally {
       setIsGenerating(false)
       abortRef.current = null
@@ -730,6 +742,9 @@ function ChatContent() {
         }
         case 'error': {
           cards.isRunning = false
+          if (event.message) {
+            return { ...prev, restoreCards: cards, content: event.message }
+          }
           break
         }
       }
@@ -868,7 +883,7 @@ function ChatContent() {
         }
       }
 
-      // Step 2: Push to GitHub
+      // Step 2: Push to GitHub (V1 scan flow → direct-push endpoint)
       updateLastMessage((prev) => {
         const steps = [...(prev.thoughtSteps || [])]
         steps.push({
@@ -881,15 +896,19 @@ function ChatContent() {
       })
       scrollToBottom()
 
-      const pushRes = await fetch('/api/restore/push', {
+      const pushRes = await fetch('/api/github/apply-fix', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scanId, repoFullName: repoUrl.replace('https://github.com/', '') }),
         signal: abortRef.current.signal,
       })
-      if (!pushRes.ok) throw new Error(`Push failed: HTTP ${pushRes.status}`)
+      if (!pushRes.ok) {
+        const errPayload = await pushRes.json().catch(() => ({}) as { error?: string })
+        throw new Error((errPayload as { error?: string }).error || `Push failed: HTTP ${pushRes.status}`)
+      }
 
       const pushReader = pushRes.body?.getReader()
+      let pushErrorMessage = ''
       if (pushReader) {
         const decoder = new TextDecoder()
         let buf = ''
@@ -900,12 +919,16 @@ function ChatContent() {
           const lines = buf.split('\n')
           buf = lines.pop() || ''
           for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try { handleRestoreEvent(JSON.parse(line.slice(6)), originalUrl) } catch {}
-            }
+            if (!line.startsWith('data: ')) continue
+            try {
+              const evt = JSON.parse(line.slice(6))
+              if (evt.type === 'thought_step') handleRestoreEvent(evt, originalUrl)
+              else if (evt.type === 'error') pushErrorMessage = String(evt.message || 'Push failed')
+            } catch {}
           }
         }
       }
+      if (pushErrorMessage) throw new Error(pushErrorMessage)
 
       updateLastMessage((prev) => ({
         ...prev,

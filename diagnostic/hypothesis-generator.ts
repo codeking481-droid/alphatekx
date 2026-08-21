@@ -145,12 +145,12 @@ function extractHypothesesDeterministically(evidence: EvidenceBundle): Hypothesi
 
     hypotheses.push({
       id: 'H2',
-      cause: 'Network or infrastructure issue',
+      cause: 'Runtime dependency failure',
       confidence: 30,
       evidenceFor: ['Possible connectivity problems'],
       evidenceAgainst: [],
       blastRadius: [],
-      experiment: 'Check DNS, CDN, and service health endpoints',
+      experiment: 'Check dependency versions and API client error handling in the codebase',
       riskIfWrong: 'Low — diagnostic only',
     })
     totalConfidence += 30

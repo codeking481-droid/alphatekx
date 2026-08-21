@@ -14,7 +14,6 @@ import { handleGitHubAuth, handleGitHubCallback, handleGitHubStatus, handleGitHu
 import { handleDiagnoseRoute } from './server/diagnoseRoute.mjs'
 import { handleRestoreV2Route, handleRestorePushRoute } from './server/restorePipelineV2.mjs'
 import { runFullRestorationScan } from './server/scanEngine/restorationScanner.mjs'
-import { registerMonitor, unregisterMonitor, getMonitorStatus, getAllMonitors, checkHealth } from './server/scanEngine/uptimeMonitor.mjs'
 import { marketplaceHandler, fulfillMarketplaceOrder } from './server/marketplace.mjs'
 import { getRecords, getRecord, createRecord, updateRecord, deleteRecord, appEntitiesMigrationSql } from './server/appData.mjs'
 import { createAlphaBrain } from './server/alphaBrain.mjs'
@@ -4975,6 +4974,89 @@ async function handleDeployEndpoint(req, res) {
   }
 }
 
+// GET /api/deploy/sites — every site the current user has deployed
+async function handleListDeployedSites(req, res) {
+  const config = supabaseConfig()
+  try {
+    const user = await currentOrLocalUser(req, config.url, config.anon)
+    if (!user) return json(res, 401, { success: false, error: 'Authentication required.' })
+    const registry = readDeploymentRegistry()
+    const createdByName = new Map(registry.sites.map(s => [s.name, s.created]))
+    const baseUrl = String(process.env.PUBLIC_APP_URL || 'https://alphatekx.name.ng').replace(/\/$/, '')
+    const localMode = !config.url || !config.anon
+    let files = []
+    try { files = fs.readdirSync(deploymentsDir).filter(f => f.endsWith('.json') && f !== 'deployments.json') } catch {}
+    const userId = String(user.id || '').toLowerCase()
+    const userEmail = String(user.email || '').toLowerCase()
+    const sites = []
+    for (const file of files) {
+      let data = null
+      try { data = JSON.parse(fs.readFileSync(path.join(deploymentsDir, file), 'utf8')) } catch { continue }
+      if (!data?.slug) continue
+      const ownerId = String(data.ownerId || '').toLowerCase()
+      const ownerEmail = String(data.ownerEmail || '').toLowerCase()
+      // Legacy deployments recorded before owner tracking are only surfaced to
+      // their single-user (local) install — same claim rule as redeploying.
+      const owned = (ownerId && ownerId === userId)
+        || (ownerEmail && ownerEmail === userEmail)
+        || (!ownerId && !ownerEmail && (localMode || req.alphaAuthSource === 'local'))
+      if (!owned) continue
+      let sizeBytes = 0
+      try { sizeBytes = Buffer.byteLength(String(data.code || ''), 'utf8') } catch {}
+      sites.push({
+        name: data.slug,
+        slug: data.slug,
+        title: data.title || data.slug,
+        url: `${baseUrl}/app/${data.slug}`,
+        subdomainUrl: `https://${data.slug}.alphatekx.name.ng`,
+        createdAt: data.createdAt || createdByName.get(data.slug) || data.updatedAt || null,
+        updatedAt: data.updatedAt || null,
+        sizeBytes,
+      })
+    }
+    sites.sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')))
+    return json(res, 200, { success: true, sites })
+  } catch (error) {
+    return json(res, 500, { success: false, error: error instanceof Error ? error.message : 'Could not list your deployed sites.' })
+  }
+}
+
+// DELETE /api/deploy/sites/:slug — remove a site the current user owns
+async function handleDeleteDeployedSite(req, res, slug) {
+  const config = supabaseConfig()
+  try {
+    const user = await currentOrLocalUser(req, config.url, config.anon)
+    if (!user) return json(res, 401, { success: false, error: 'Authentication required.' })
+    if (!validSlug(slug)) return json(res, 400, { success: false, error: 'Invalid site name.' })
+    const existing = readLocalDeployment(slug)
+    if (!existing) return json(res, 404, { success: false, error: 'Site not found.' })
+    if (!deploymentOwnedBy(existing, user)) return json(res, 403, { success: false, error: 'This site belongs to another account.' })
+    let removedFile = true
+    try { fs.rmSync(deploymentPath(slug), { force: true }) } catch { removedFile = false }
+    // Best-effort removal from the cloud mirror so the site stops serving everywhere
+    let removedCloud = false
+    if (config.url && config.service) {
+      try {
+        const response = await fetch(`${config.url}/rest/v1/creations?slug=eq.${encodeURIComponent(slug)}&published=eq.true`, {
+          method: 'DELETE',
+          headers: deploymentWriteHeaders(req, config),
+        })
+        removedCloud = response.ok
+      } catch { removedCloud = false }
+    }
+    try {
+      const registry = readDeploymentRegistry()
+      registry.sites = registry.sites.filter(s => s.name !== slug)
+      fs.mkdirSync(deploymentsDir, { recursive: true })
+      fs.writeFileSync(deploymentRegistryFile, JSON.stringify(registry, null, 2), 'utf8')
+    } catch {}
+    if (!removedFile) return json(res, 500, { success: false, error: 'Could not delete the site from disk.' })
+    return json(res, 200, { success: true, name: slug, message: '✅ Site deleted successfully!', removedCloud })
+  } catch (error) {
+    return json(res, 500, { success: false, error: error instanceof Error ? error.message : 'Delete failed.' })
+  }
+}
+
 const scriptJson = (value) => JSON.stringify(value).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029')
 
 export function normalizePublishedCode(rawCode) {
@@ -5058,7 +5140,7 @@ function readLocalDeployment(slug) {
     const file = deploymentPath(slug)
     if (!fs.existsSync(file)) return null
     const data = JSON.parse(fs.readFileSync(file, 'utf8'))
-    return { id: data.id || slug, title: data.title || slug, slug: data.slug || slug, code: data.code || '', ownerId: data.ownerId || '', ownerEmail: data.ownerEmail || '' }
+    return { id: data.id || slug, title: data.title || slug, slug: data.slug || slug, code: data.code || '', createdAt: data.createdAt || '', ownerId: data.ownerId || '', ownerEmail: data.ownerEmail || '' }
   } catch { return null }
 }
 
@@ -7354,6 +7436,7 @@ async function localPublishPasted(body, baseUrl, owner = null) {
     code: html,
     type: 'html',
     files: [{ path: 'index.html', code: html }],
+    createdAt: existing?.createdAt || new Date().toISOString(),
     ownerId: owner?.id ? String(owner.id) : existing?.ownerId || '',
     ownerEmail: owner?.email ? String(owner.email) : existing?.ownerEmail || '',
   }
@@ -8986,6 +9069,9 @@ const server = http.createServer(async (req, res) => {
     try { return await handleQuickAvailability(req, res) } catch (error) { return json(res, 500, { available: false, error: error instanceof Error ? error.message : 'Availability check failed' }) }
   }
   if (req.method === 'POST' && req.url === '/api/deploy') return handleDeployEndpoint(req, res)
+  if (req.method === 'GET' && (req.url === '/api/deploy/sites' || req.url?.startsWith('/api/deploy/sites?'))) return handleListDeployedSites(req, res)
+  const deploySiteMatch = req.url?.match(/^\/api\/deploy\/sites\/([^/]+)\/?$/)
+  if (req.method === 'DELETE' && deploySiteMatch) return handleDeleteDeployedSite(req, res, decodeURIComponent(deploySiteMatch[1]))
   if (req.method === 'GET' && req.url?.startsWith('/api/projects/check-availability')) {
     try { return await handleCheckAvailability(req, res) } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Availability check failed' }) }
   }
@@ -9525,7 +9611,6 @@ const server = http.createServer(async (req, res) => {
       const restoreScanner = createRestoreScanner({ chromium })
       const scan = await restoreScanner(safeTarget, {
         allowPrivate: isAdmin || process.env.SCANNER_ALLOW_PRIVATE === '1',
-        allowWatching: true,
       })
       const candidates = scan[RAW_SECRETS] || []
 
@@ -9603,7 +9688,6 @@ const server = http.createServer(async (req, res) => {
       const creditsRemaining = deducted ? Math.max(0, credits - 1) : credits
 
       const plan = await billing.restorePlanForUser(billingUser, config)
-      const watching = await billing.canUseRestoreWatching(billingUser, config)
       const fixPlan = await makeFixPlan({
         user: { plan: plan.id, creditsRemaining },
         repo: { owner: gitHistory.repoOwner, name: gitHistory.repoName },
@@ -9644,8 +9728,7 @@ const server = http.createServer(async (req, res) => {
         },
         creditsRemaining,
         cost: 1,
-        plan: { id: plan.id, name: plan.name, scans: Number(plan.scans), watching: Boolean(plan.watching) },
-        watching: { available: watching.ok, paywall: watching.paywall, reason: watching.reason || null },
+        plan: { id: plan.id, name: plan.name, scans: Number(plan.scans) },
       })
     } catch (error) {
       return json(res, 500, { error: error instanceof Error ? error.message : 'Restore scan failed.' })
@@ -9848,7 +9931,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       const restoreScanner = createRestoreScanner({ chromium })
-      const rescan = await restoreScanner(meta.targetUrl, { allowPrivate: isAdmin || process.env.SCANNER_ALLOW_PRIVATE === '1', allowWatching: true })
+      const rescan = await restoreScanner(meta.targetUrl, { allowPrivate: isAdmin || process.env.SCANNER_ALLOW_PRIVATE === '1' })
       const risk = calculateRisk({
         exposedPaths: rescan.exposedPaths || [],
         secrets: rescan.secrets || [],
@@ -9898,35 +9981,6 @@ const server = http.createServer(async (req, res) => {
       })
     } catch (error) {
       return json(res, 500, { error: error instanceof Error ? error.message : 'Verification failed.' })
-    }
-  }
-
-  // ===== Watcher: GUARDIAN paywall + next-run schedule =====
-  if (req.method === 'POST' && req.url === '/api/watcher') {
-    try {
-      const body = await readBody(req)
-      let userEmail = body.email ? String(body.email).trim().toLowerCase() : null
-      if (!userEmail) {
-        const authUser = await currentOrLocalUser(req, supabaseConfig().url, supabaseConfig().anon)
-        userEmail = authUser?.email || null
-      }
-      if (!userEmail) return json(res, 401, { error: 'Email required' })
-      const user = await getOrCreateUser(userEmail, getClientIp(req), body.fingerprint ? String(body.fingerprint).slice(0, 255) : null)
-      const billingUser = { id: user?.id, email: user?.email || userEmail }
-      const config = supabaseConfig()
-      const watching = await billing.canUseRestoreWatching(billingUser, config)
-      const nextRun = new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString()
-      return json(res, 200, {
-        ok: watching.ok,
-        paywall: watching.paywall,
-        reason: watching.reason || null,
-        plan: watching.plan?.id || 'restore_starter',
-        intervalHours: 6,
-        nextRun,
-        autoFix: Boolean(watching.ok),
-      })
-    } catch (error) {
-      return json(res, 500, { error: error instanceof Error ? error.message : 'Watcher status failed.' })
     }
   }
 
@@ -10134,7 +10188,7 @@ const server = http.createServer(async (req, res) => {
       }
       // Add OG tags if missing
       if (!fixedHtml.includes('og:title')) {
-        const ogTitle = paste.title || 'Website'
+        const ogTitle = String(body.title || '').trim() || 'Website'
         fixedHtml = fixedHtml.replace(/<\/head>/i, `<meta property="og:title" content="${ogTitle.replace(/"/g, '&quot;')}">\n<meta property="og:type" content="website">\n</head>`)
         sendCard({ type: 'log', card: 'fixing', text: `> + Added Open Graph meta tags` })
       }
@@ -10253,38 +10307,6 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
-  // ===== UPTIME MONITORING =====
-  if (req.method === 'GET' && req.url === '/api/uptime/monitors') {
-    return json(res, 200, { monitors: getAllMonitors() })
-  }
-  if (req.method === 'GET' && req.url?.startsWith('/api/uptime/check/')) {
-    const checkUrl = decodeURIComponent(req.url.slice('/api/uptime/check/'.length))
-    try {
-      const result = await checkHealth(checkUrl)
-      return json(res, 200, result)
-    } catch (e) {
-      return json(res, 500, { error: e.message })
-    }
-  }
-  if (req.method === 'POST' && req.url === '/api/uptime/register') {
-    try {
-      const body = await readBody(req)
-      const monitor = registerMonitor(body.url, { intervalMs: body.intervalMs || 60000, userId: body.userId || 'anonymous' })
-      return json(res, 201, monitor)
-    } catch (e) {
-      return json(res, 400, { error: e.message })
-    }
-  }
-  if (req.method === 'POST' && req.url === '/api/uptime/unregister') {
-    try {
-      const body = await readBody(req)
-      const result = unregisterMonitor(body.monitorId)
-      return json(res, 200, result)
-    } catch (e) {
-      return json(res, 400, { error: e.message })
-    }
-  }
-
   // ===== GITHUB DIRECT PUSH: OAuth + API =====
   if (req.method === 'GET' && req.url === '/api/auth/github') {
     return handleGitHubAuth(req, res)
@@ -10362,7 +10384,6 @@ const server = http.createServer(async (req, res) => {
         const restoreScanner = createRestoreScanner({ chromium })
         scan = await restoreScanner(safeTarget, {
           allowPrivate: isAdminEmailAddress(userEmail) || process.env.SCANNER_ALLOW_PRIVATE === '1',
-          allowWatching: true,
         })
         candidates = scan[RAW_SECRETS] || []
       } catch (e) {

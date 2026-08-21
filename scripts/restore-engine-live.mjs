@@ -12,7 +12,7 @@ const started = Date.now()
 assertSafeUrl(target)
 
 const scanner = createRestoreScanner({ chromium })
-const scan = await scanner(target, { allowPrivate: true, allowWatching: true })
+const scan = await scanner(target, { allowPrivate: true })
 console.log('SCAN', JSON.stringify({
   url: scan.url,
   statusCode: scan.statusCode,

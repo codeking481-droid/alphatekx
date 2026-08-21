@@ -5,7 +5,7 @@
  * Uses Tavily web search for current solutions and status checks.
  */
 
-import { searchForFixes, searchForStatus } from './tavilySearch.mjs'
+import { searchForFixes } from './tavilySearch.mjs'
 
 export function isWebsiteRequest(message) {
   const lower = message.toLowerCase()
@@ -13,7 +13,6 @@ export function isWebsiteRequest(message) {
   const websiteKeywords = [
     'website', 'site', 'web page', 'landing page', 'homepage', 'html', 'css',
     'react', 'nextjs', 'next.js', 'wordpress', 'shopify', 'squarespace',
-    'domain', 'dns', 'ssl', 'certificate', 'deployment', 'hosting',
     'frontend', 'ui', 'ux', 'responsive', 'mobile', 'layout',
     'broken link', '404', 'page not found', 'loading', 'render',
   ]
@@ -60,10 +59,9 @@ export async function runWebsiteResurrector(url, message, sendEvent, llmCall) {
   let webSearch = { results: [], answer: '' }
   try {
     const fixSearch = await searchForFixes(scanResult.summary || message, scanResult.technology)
-    const statusSearch = url ? await searchForStatus(url) : { results: [] }
     webSearch = {
-      results: [...fixSearch.results, ...statusSearch.results].slice(0, 5),
-      answer: fixSearch.answer || statusSearch.answer || '',
+      results: (fixSearch.results || []).slice(0, 5),
+      answer: fixSearch.answer || '',
     }
     sendEvent({
       type: 'thought_step',
@@ -352,7 +350,6 @@ Return JSON with:
 - metrics: object with before/after:
   - lcp: { before, after }
   - errors: { before, after }
-  - uptime: { before, after }
 
 Return ONLY valid JSON.`
 
@@ -369,7 +366,6 @@ Return ONLY valid JSON.`
     metrics: result.metrics || {
       lcp: { before: '4.2s', after: '1.1s' },
       errors: { before: 12, after: 0 },
-      uptime: { before: '94%', after: '99.9%' },
     },
   }
 }
@@ -394,13 +390,6 @@ function buildWebsiteRestoreResult(url, scan, diagnose, execute, test) {
         before: String(metrics.errors?.before ?? 12),
         after: String(metrics.errors?.after ?? 0),
         icon: 'errors',
-        improved: true,
-      },
-      {
-        label: 'Uptime',
-        before: metrics.uptime?.before || '94%',
-        after: metrics.uptime?.after || '99.9%',
-        icon: 'uptime',
         improved: true,
       },
     ],

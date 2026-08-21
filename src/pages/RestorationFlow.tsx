@@ -32,6 +32,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { getCredits, hydrateCredits, subscribeCredits } from '../lib/creditStore'
+import { postJson } from '../lib/apiClient'
 import BeforeAfter from '../components/scan/BeforeAfter'
 import CreditsExhaustedModal from '../components/CreditsExhaustedModal'
 
@@ -461,14 +462,14 @@ export default function RestorationFlow() {
   const handleDeployLive = async () => {
     setIsDelivering(true); setError(null)
     try {
-      const res = await fetch('/api/deploy', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ html: fixedHtml, scanId, originalUrl: scannedUrl || url }),
+      const data = await postJson<{ success?: boolean; name?: string; url?: string; subdomainUrl?: string }>('/api/deploy', {
+        html: fixedHtml,
+        scanId,
+        originalUrl: scannedUrl || url,
       })
-      const data = await res.json()
-      if (!res.ok) { setError(data.error || 'Deploy failed'); setIsDelivering(false); return }
-      setDeployResult({ slug: data.slug, deployUrl: data.deployUrl })
-      setDeliveryResult({ url: data.deployUrl, message: 'Site deployed successfully' })
+      const deployUrl = data.url || data.subdomainUrl || ''
+      setDeployResult({ slug: data.name, deployUrl })
+      setDeliveryResult({ url: deployUrl, message: 'Site deployed successfully' })
       setIsDelivering(false); setStep('complete')
     } catch (e) { setError(e instanceof Error ? e.message : 'Deploy failed'); setIsDelivering(false) }
   }

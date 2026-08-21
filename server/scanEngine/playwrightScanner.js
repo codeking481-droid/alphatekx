@@ -377,7 +377,6 @@ export function createRestoreScanner({ chromium } = {}) {
           exposedPaths: publicPaths.filter(item => item.isExposed),
           secrets,
           summary: summary.summary,
-          watchingAvailable: Boolean(options.allowWatching),
           ssrf: { guard: 'active', target: parsed.origin },
           storePrefix: STORE_PREFIX,
         }

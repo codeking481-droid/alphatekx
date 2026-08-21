@@ -309,7 +309,6 @@ export default function Chat() {
       content: alphaContent || 'Alpha is here. I can search the web, show rates, and tell the time.',
       createdAt: new Date().toISOString(),
       tool,
-      videos,
       sources,
       currency,
     }

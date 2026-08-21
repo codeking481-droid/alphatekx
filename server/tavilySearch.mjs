@@ -73,11 +73,3 @@ export async function searchForFixes(problem, technology) {
   const query = `fix ${problem} ${technology || ''} solution 2026`
   return tavilySearch(query, { searchDepth: 'advanced', maxResults: 5 })
 }
-
-/**
- * Search for current status of a URL or service.
- */
-export async function searchForStatus(url) {
-  const query = `site status check ${url} is it down`
-  return tavilySearch(query, { searchDepth: 'basic', maxResults: 3 })
-}

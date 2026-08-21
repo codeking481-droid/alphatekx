@@ -25,6 +25,12 @@ import { newTraceId } from '../alpha-core/audit-trail.ts'
 
 const execFileAsync = promisify(execFile)
 
+/**
+ * Exact message shown when a target site does not load.
+ * AlphaTekX restores code — it does not diagnose hosting/DNS/SSL problems.
+ */
+const SITE_NOT_LOADING = 'The site is not loading. Please check your hosting provider or domain DNS settings. Once your site is live, send me the URL and I will restore it.'
+
 // ─── GitHub API helpers ──────────────────────────────────────────────────────
 
 async function githubApi(endpoint, token) {
@@ -123,8 +129,29 @@ async function runRestoreV2(targetUrl, mode, sendEvent, sendStep, sendCard, res,
       sendStep({ id: 'clone', label: 'Clone failed', icon: 'clock', status: 'error', summary: err.message?.slice(0, 200) })
     }
   } else {
-    // Live site URL — we can scan it with Playwright but can't clone it
-    sendStep({ id: 'clone', label: 'Live site (no repo to clone)', icon: 'clock', status: 'done', summary: 'Will scan live URL with Playwright' })
+    // Live site URL — the site must load before any restoration work
+    let siteLoaded = false
+    try {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 15000)
+      await fetch(targetUrl, {
+        signal: controller.signal,
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 AlphaTekX/1.0' },
+        redirect: 'follow',
+      })
+      clearTimeout(timer)
+      siteLoaded = true // any HTTP response means the site loads
+    } catch {
+      siteLoaded = false
+    }
+    if (!siteLoaded) {
+      sendStep({ id: 'clone', label: 'Site did not load', icon: 'clock', status: 'error', summary: 'Not reachable' })
+      sendCard({ type: 'error', message: SITE_NOT_LOADING })
+      sendEvent({ type: 'pipeline_done', restorationId })
+      if (!res.writableEnded) res.end()
+      return
+    }
+    sendStep({ id: 'clone', label: 'Live site loaded (no repo to clone)', icon: 'clock', status: 'done', summary: 'Will scan live URL with Playwright' })
   }
 
   // 1b: X-Ray scan (if we have a cloned repo)
@@ -273,7 +300,10 @@ export function handleRestorePushRoute(req, res) {
       res.writeHead(400, { 'Content-Type': 'application/json' })
       return res.end(JSON.stringify({ error: 'Invalid JSON' }))
     }
-    const { restorationId, repoFullName, token: pushToken } = parsed
+    // Accept restorationId (V2) or scanId alias from older clients
+    const restorationId = String(parsed.restorationId || parsed.scanId || '')
+    const repoFullName = parsed.repoFullName
+    const pushToken = parsed.token
     if (!restorationId || !repoFullName) {
       res.writeHead(400, { 'Content-Type': 'application/json' })
       return res.end(JSON.stringify({ error: 'restorationId and repoFullName required' }))

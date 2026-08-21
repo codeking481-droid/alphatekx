@@ -7,7 +7,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { tmpdir } from 'node:os'
-import { lookup } from 'node:dns'
 import { withContext } from './scanner/browserPool.mjs'
 import { alphaChat, alphaText } from '../alpha-core/index.ts'
 import { runFullRestorationScan } from './scanEngine/restorationScanner.mjs'
@@ -28,6 +27,12 @@ import {
   emitReasoningTrace,
   emitExperimentStarted,
 } from '../alpha-core/event-bus.ts'
+
+/**
+ * Exact message shown when a target site does not load.
+ * AlphaTekX restores code — it does not diagnose hosting/DNS/SSL problems.
+ */
+const SITE_NOT_LOADING = 'The site is not loading. Please check your hosting provider or domain DNS settings. Once your site is live, send me the URL and I will restore it.'
 
 /**
  * AI analysis helper — returns parsed JSON or { content: rawText }.
@@ -255,20 +260,33 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
   // ===== CARD 2: SCANNING LOG =====
   sendCard({ type: 'card', card: 'scanning', status: 'start', data: { scanId } })
 
-  // Connectivity check (was DNS — now focused on site reachability)
-  let dnsResult = ''
+  // ===== LOAD GATE: the site must load before any restoration work =====
+  let siteLoaded = false
   try {
-    const hostname = new URL(targetUrl).hostname
-    dnsResult = await new Promise((resolve, reject) => {
-      lookup(hostname, (err, address) => err ? reject(err) : resolve(address))
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 15000)
+    await fetch(targetUrl, {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 AlphaTekX/1.0' },
+      redirect: 'follow',
     })
-    sendCard({ type: 'log', card: 'scanning', text: `> Site reachable at ${hostname}` })
-    sendStep({ id: 'connectivity', label: `Site is reachable`, icon: 'scan', status: 'done', summary: hostname })
-  } catch (err) {
-    dnsResult = 'DNS_FAILED'
-    sendCard({ type: 'log', card: 'scanning', text: `> Site unreachable: ${err.message}` })
-    sendStep({ id: 'connectivity', label: `Site unreachable — cannot restore`, icon: 'scan', status: 'error', summary: err.message })
+    clearTimeout(timer)
+    siteLoaded = true // any HTTP response means the site loads — code can be scanned
+  } catch {
+    siteLoaded = false
   }
+
+  if (!siteLoaded) {
+    sendCard({ type: 'log', card: 'scanning', text: `> Site did not load` })
+    sendStep({ id: 'connectivity', label: 'Site did not load', icon: 'scan', status: 'error', summary: 'Not reachable' })
+    stopHeartbeat()
+    sendCard({ type: 'card', card: 'scanning', status: 'done', data: { scanId, url: targetUrl, status: 0 } })
+    sendCard({ type: 'error', message: SITE_NOT_LOADING })
+    if (!res.writableEnded) res.end()
+    return
+  }
+  sendCard({ type: 'log', card: 'scanning', text: `> Site loaded` })
+  sendStep({ id: 'connectivity', label: `Site loaded`, icon: 'scan', status: 'done' })
 
   // ===== PLAYWRIGHT BROWSER SCANNING WITH LIVE SCREENSHOTS =====
   const screenshots = []
@@ -466,6 +484,17 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
     }
   }
 
+  // ===== LOAD GATE #2: nothing loaded — no code to restore =====
+  if (!fetchStatus && !originalHtml) {
+    sendCard({ type: 'log', card: 'scanning', text: `> Site did not load` })
+    sendStep({ id: 'browser', label: 'Site did not load', icon: 'scan', status: 'error', summary: 'Not reachable' })
+    stopHeartbeat()
+    sendCard({ type: 'card', card: 'scanning', status: 'done', data: { scanId, url: targetUrl, status: 0 } })
+    sendCard({ type: 'error', message: SITE_NOT_LOADING })
+    if (!res.writableEnded) res.end()
+    return
+  }
+
   metrics.before.statusCode = fetchStatus
 
   // Tech detection
@@ -501,7 +530,6 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
     { name: '500 error', pattern: /500|internal server error/i, file: 'response' },
     { name: 'database error', pattern: /database|mysql|postgres|connection refused/i, file: 'database' },
     { name: 'PHP errors', pattern: /php.*error|fatal error|warning.*mysql/i, file: 'php-runtime' },
-    { name: 'SSL issues', pattern: /SSL|certificate|ERR_SSL/i, file: 'ssl' },
   ]
   const detectedPatterns = errorChecks.filter(ec => ec.pattern.test(originalHtml))
   for (const dp of detectedPatterns) {
@@ -518,10 +546,10 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
   const realCls = scanData.realCls || 0
   metrics.before.lcp = realLcp
 
-  // ===== DEEP RESTORATION SCAN: SSL, headers, mixed content, secrets, CVEs, SEO, a11y =====
+  // ===== DEEP RESTORATION SCAN: headers, mixed content, secrets, CVEs, SEO, a11y =====
   let deepFindings = []
   if (originalHtml && originalHtml.length > 100) {
-    sendCard({ type: 'log', card: 'scanning', text: `> Running deep restoration scan (SSL, security headers, mixed content, secrets, SEO, accessibility)...` })
+    sendCard({ type: 'log', card: 'scanning', text: `> Running deep restoration scan (security headers, mixed content, secrets, SEO, accessibility)...` })
     sendStep({ id: 'deep-scan', label: 'Running deep security & quality scan...', icon: 'scan', status: 'active' })
     try {
       const parsedUrl = new URL(targetUrl)
@@ -546,7 +574,7 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
     }
   }
 
-  scanData = { ...scanData, url: targetUrl, scanId, status: fetchStatus, technology: detectedTech, dns: dnsResult, htmlLength: originalHtml.length, lcp: realLcp, fcp: realFcp, cls: realCls, imgCount, linkCount, detectedPatterns: detectedPatterns.map(d => d.name), deepFindings: deepFindings.length, scannedAt: new Date().toISOString() }
+  scanData = { ...scanData, url: targetUrl, scanId, status: fetchStatus, technology: detectedTech, htmlLength: originalHtml.length, lcp: realLcp, fcp: realFcp, cls: realCls, imgCount, linkCount, detectedPatterns: detectedPatterns.map(d => d.name), deepFindings: deepFindings.length, scannedAt: new Date().toISOString() }
   sendCard({ type: 'log', card: 'scanning', text: `> Scan complete. ${detectedPatterns.length} patterns found, ${deepFindings.length} deep findings, status ${fetchStatus}, tech: ${detectedTech}` })
   sendCard({ type: 'card', card: 'scanning', status: 'done', data: scanData })
 

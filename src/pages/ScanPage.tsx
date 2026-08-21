@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Activity, ArrowRight, Bug, Camera, Download, FileText, Lock, Radar, ShieldCheck, Sparkles } from 'lucide-react'
+import { ArrowRight, Bug, Camera, Download, FileText, Lock, Radar, ShieldCheck, Sparkles } from 'lucide-react'
 import { getCredits, setCredits, hydrateCredits, subscribeCredits } from '../lib/creditStore'
 import { useAuth } from '../lib/auth'
 import CreditsExhaustedModal from '../components/CreditsExhaustedModal'
@@ -49,12 +49,10 @@ export default function ScanPage() {
   const [mode, setMode] = useState<'report' | 'restore'>('report')
   const [restoreScan, setRestoreScan] = useState<any | null>(null)
   const [restorePlan, setRestorePlan] = useState<any | null>(null)
-  const [restoreWatching, setRestoreWatching] = useState<any | null>(null)
   const [fixResult, setFixResult] = useState<any | null>(null)
   const [isFixing, setIsFixing] = useState(false)
   const [verifyResult, setVerifyResult] = useState<any | null>(null)
   const [isVerifying, setIsVerifying] = useState(false)
-  const [watcherStatus, setWatcherStatus] = useState<any | null>(null)
 
   const scoreTone = useMemo(() => {
     if (score === null || score === undefined) return 'text-slate-400'
@@ -416,7 +414,6 @@ export default function ScanPage() {
       setStatus('Scan complete')
       setRestoreScan(data.scan || null)
       setRestorePlan(data.plan || null)
-      setRestoreWatching(data.watching || null)
       if (data.scanId) setScanId(String(data.scanId))
       setScannedUrl(String(data.scan?.url || targetUrl))
       setScore(data.scan?.score ?? null)
@@ -449,7 +446,6 @@ export default function ScanPage() {
   const resetRestoreActions = () => {
     setFixResult(null)
     setVerifyResult(null)
-    setWatcherStatus(null)
   }
 
   const handleRunFix = async () => {
@@ -493,23 +489,6 @@ export default function ScanPage() {
       setScanError(`Error: ${error instanceof Error ? error.message : 'Verification failed'}`)
     } finally {
       setIsVerifying(false)
-    }
-  }
-
-  const handleEnableWatcher = async () => {
-    if (!user?.email) return
-    setScanError(null)
-    try {
-      const response = await fetch('/api/watcher', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: String(user.email).trim().toLowerCase() }),
-      })
-      const data = await response.json()
-      setWatcherStatus(data)
-      if (data.paywall) setScanError(data.reason || 'Watching requires the GUARDIAN plan.')
-    } catch (error) {
-      setScanError(`Error: ${error instanceof Error ? error.message : 'Watcher failed'}`)
     }
   }
 
@@ -716,18 +695,6 @@ export default function ScanPage() {
                         <span className="rounded-full bg-violet-500/15 px-2 py-0.5 text-[10px] font-black text-violet-200">{restorePlan.name}</span>
                       </div>
                       <p className="mt-2 text-xs text-slate-300">{restorePlan.scans === Infinity || restorePlan.scans >= 999999 ? 'Unlimited scans' : `${restorePlan.scans} scans`} per billing cycle.</p>
-                      {restoreWatching?.paywall && (
-                        <div className="mt-2 rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
-                          <Activity size={14} className="mr-1 inline" />
-                          Always Watching (re-scan every 6h + auto alert + auto-fix) is a <strong>$99 GUARDIAN</strong> feature. Upgrade to keep your site watched forever.
-                        </div>
-                      )}
-                      {restoreWatching?.available && (
-                        <div className="mt-2 rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-100">
-                          <Activity size={14} className="mr-1 inline" />
-                          Always Watching is active — your site will be re-scanned every 6 hours.
-                        </div>
-                      )}
                     </div>
                   )}
                 </div>
@@ -773,15 +740,12 @@ export default function ScanPage() {
             progress={progress}
             status={status}
             plan={restorePlan}
-            watching={restoreWatching}
             onRunFix={handleRunFix}
             isFixing={isFixing}
             fixResult={fixResult}
             onVerify={handleVerify}
             isVerifying={isVerifying}
             verifyResult={verifyResult}
-            watcherStatus={watcherStatus}
-            onEnableWatcher={handleEnableWatcher}
           />
         )}
 

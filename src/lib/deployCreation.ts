@@ -42,6 +42,45 @@ export async function checkDeployName(name: string): Promise<QuickAvailability> 
 
 export type DeployResult = { success: boolean; url: string; name: string; message: string; updated?: boolean; subdomainUrl?: string }
 
+// GET /api/deploy/sites — every site this user has deployed
+export type MyDeployedSite = {
+  name: string
+  slug: string
+  title: string
+  url: string
+  subdomainUrl?: string
+  createdAt?: string | null
+  updatedAt?: string | null
+  sizeBytes?: number
+}
+
+export async function listMyDeployedSites(): Promise<MyDeployedSite[]> {
+  const session = supabase ? (await supabase.auth.getSession()).data.session : null
+  const response = await fetch('/api/deploy/sites', {
+    headers: {
+      ...localUserHeaders(),
+      ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
+    },
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok || !payload.success) throw new Error(payload.error || 'Could not load your deployed sites.')
+  return Array.isArray(payload.sites) ? payload.sites as MyDeployedSite[] : []
+}
+
+// DELETE /api/deploy/sites/:slug — permanently remove one of your deployed sites
+export async function deleteDeployedSite(slug: string): Promise<void> {
+  const session = supabase ? (await supabase.auth.getSession()).data.session : null
+  const response = await fetch(`/api/deploy/sites/${encodeURIComponent(slug)}`, {
+    method: 'DELETE',
+    headers: {
+      ...localUserHeaders(),
+      ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
+    },
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok || !payload.success) throw new Error(payload.error || 'Could not delete that site.')
+}
+
 // POST /api/deploy { name, html } — saves the site and registers the name
 export async function deploySite(input: { name: string; html: string; title?: string }): Promise<DeployResult> {
   const session = supabase ? (await supabase.auth.getSession()).data.session : null

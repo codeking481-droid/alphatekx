@@ -106,7 +106,7 @@ export async function createProof({
       { left: 'Risk score', right: `${Math.round(Math.max(0, riskScore - 80))} / 100` },
     ],
     accent,
-    footer: 'Scan again any time — the watcher keeps watching.',
+    footer: 'Scan again any time to keep your code clean.',
   })
 
   const diffSvg = buildCard({

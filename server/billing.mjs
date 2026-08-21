@@ -1002,7 +1002,7 @@ registerPaymentProvider('paystack', { initialize: initializePaystack, verify: ve
 export const RESTORE_PLANS = {
   starter: { id: 'restore_starter', name: 'STARTER', priceUsd: 19, scans: 10, fixes: 3, pdf: false, watching: false },
   pro: { id: 'restore_pro', name: 'PRO', priceUsd: 49, scans: 50, fixes: 20, pdf: true, watching: false },
-  guardian: { id: 'restore_guardian', name: 'GUARDIAN (Always Watching)', priceUsd: 99, scans: Infinity, fixes: Infinity, pdf: true, watching: true },
+  guardian: { id: 'restore_guardian', name: 'GUARDIAN', priceUsd: 99, scans: Infinity, fixes: Infinity, pdf: true, watching: true },
 }
 
 export function getRestorePlan(id) {
@@ -1037,29 +1037,14 @@ export async function restoreScanCost(user, config) {
 // Engine (proof-diff re-scan) are paid-plan actions. GUARDIAN users have no
 // per-action cap; STARTER/PRO deduct from their credit balance.
 export async function restoreActionCost(user, config, action = 'fix') {
-  const costTable = { fix: 20, verify: 3, watch: 0 }
+  const costTable = { fix: 20, verify: 3 }
   const cost = costTable[action] ?? 5
   if (isAdmin(user)) return { cost: 0, plan: RESTORE_PLANS.guardian, ok: true, reason: 'admin bypass' }
   const plan = await restorePlanForUser(user, config)
-  if (plan.watching && action === 'watch') return { cost: 0, plan, ok: true, reason: 'GUARDIAN always watching' }
   if (plan.watching) return { cost: 0, plan, ok: true, reason: 'GUARDIAN unlimited fixes' }
   const credits = await getUserCredits(user, config)
   if (Number(credits) < cost) {
     return { cost, plan, ok: false, reason: `${action} costs ${cost} credits — ${Number(credits)} remaining. Add credits or upgrade.` }
   }
   return { cost, plan, ok: true, reason: `${cost} credits will be charged` }
-}
-
-// Watching (continuous monitoring every 6h) is a $99 GUARDIAN-only feature.
-// $19 STARTER and $49 PRO users see the paywall instead of the watcher.
-export async function canUseRestoreWatching(user, config) {
-  if (isAdmin(user)) return { ok: true, plan: RESTORE_PLANS.guardian, paywall: false }
-  const plan = await restorePlanForUser(user, config)
-  if (plan.watching) return { ok: true, plan, paywall: false }
-  return {
-    ok: false,
-    plan,
-    paywall: true,
-    reason: 'Always Watching (scan every 6 hours + auto alert + auto-fix) is a GUARDIAN plan feature.',
-  }
 }

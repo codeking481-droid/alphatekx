@@ -348,7 +348,6 @@ Return JSON with:
 - metrics: object with before/after:
   - responseTime: { before, after }
   - errors: { before, after }
-  - uptime: { before, after }
 
 Return ONLY valid JSON.`
 
@@ -365,7 +364,6 @@ Return ONLY valid JSON.`
     metrics: result.metrics || {
       responseTime: { before: '2.4s', after: '0.3s' },
       errors: { before: 8, after: 0 },
-      uptime: { before: '92%', after: '99.9%' },
     },
   }
 }
@@ -390,13 +388,6 @@ function buildBackendRestoreResult(scan, diagnose, execute, test) {
         before: String(metrics.errors?.before ?? 8),
         after: String(metrics.errors?.after ?? 0),
         icon: 'errors',
-        improved: true,
-      },
-      {
-        label: 'Uptime',
-        before: metrics.uptime?.before || '92%',
-        after: metrics.uptime?.after || '99.9%',
-        icon: 'uptime',
         improved: true,
       },
     ],

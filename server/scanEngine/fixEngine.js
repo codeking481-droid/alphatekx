@@ -10,7 +10,6 @@ const CREDIT_COSTS = {
   scan: 5,
   fix: 20,
   verify: 3,
-  watch: 0, // GUARDIAN watcher ships with the $99 plan
 }
 
 /**
@@ -18,7 +17,7 @@ const CREDIT_COSTS = {
  * they have? Decides whether the /api/fix and /api/verify routes proceed.
  * @param {object} user the auth'd user (from billing/auth)
  * @param {object} [opts]
- * @param {string} [opts.action] 'fix' | 'verify' | 'watch'
+ * @param {string} [opts.action] 'fix' | 'verify'
  */
 export function makeCreditsWork(user, opts = {}) {
   const action = opts.action || 'fix'

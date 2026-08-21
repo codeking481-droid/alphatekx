@@ -3,7 +3,6 @@
 //   POST /api/restore/scan   (admin email → SSRF allowPrivate)
 //   GET  /api/restore/proof/:scanId/meta.json
 //   GET  /api/restore/proof/:scanId/proof-before.png
-//   POST /api/watcher
 //   POST /api/fix
 //   POST /api/verify/:scanId
 import { spawn } from 'node:child_process'
@@ -111,16 +110,7 @@ async function main() {
     }
   }
 
-  // --- 4) Watcher paywall ---
-  try {
-    const r = await postJson(`http://127.0.0.1:${SERVER_PORT}/api/watcher`, { email: ADMIN }, 10000)
-    const body = await r.json()
-    check('watcher ok for admin', r.status === 200 && body.ok === true, `ok=${body.ok} paywall=${body.paywall}`)
-  } catch (err) {
-    check('watcher ok for admin', false, err instanceof Error ? err.message : String(err))
-  }
-
-  // --- 5) Fix (admin, no GITHUB_FIX_TOKEN → partial guidance) ---
+  // --- 4) Fix (admin, no GITHUB_FIX_TOKEN → partial guidance) ---
   if (scanId) {
     try {
       const r = await postJson(`http://127.0.0.1:${SERVER_PORT}/api/fix`, { email: ADMIN, scanId }, 30000)
@@ -131,7 +121,7 @@ async function main() {
       check('fix returns plan', false, err instanceof Error ? err.message : String(err))
     }
 
-    // --- 6) Verify ---
+    // --- 5) Verify ---
     try {
       const r = await postJson(`http://127.0.0.1:${SERVER_PORT}/api/verify/${scanId}`, { email: ADMIN }, 120000)
       const body = await r.json()
@@ -143,7 +133,7 @@ async function main() {
     }
   }
 
-  // --- 7) SSRF guard via route (localhost blocked for non-admin) ---
+  // --- 6) SSRF guard via route (localhost blocked for non-admin) ---
   try {
     const r = await postJson(`http://127.0.0.1:${SERVER_PORT}/api/restore/scan`, { email: 'anon@example.com', url: 'http://127.0.0.1:9999/' }, 15000)
     const body = await r.json()
