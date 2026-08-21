@@ -15,6 +15,7 @@ import { handleGitHubAuth, handleGitHubCallback, handleGitHubStatus, handleGitHu
 import { handleDiagnoseRoute } from './server/diagnoseRoute.mjs'
 import { handleRestoreV2Route, handleRestorePushRoute } from './server/restorePipelineV2.mjs'
 import { handleRestoreV3Route, handleV3DownloadRoute, handleV3ArtifactRoute, handleV3ContentRoute } from './server/alphaRestorationPipeline.mjs'
+import { saveDeployment, getDeployment, deploymentExists, deleteDeployment, listDeployments, isDeploymentStoreConfigured, checkDeploymentStoreHealth, schemaMissingMessage } from './server/deploymentStore.mjs'
 import { runFullRestorationScan } from './server/scanEngine/restorationScanner.mjs'
 import { marketplaceHandler, fulfillMarketplaceOrder } from './server/marketplace.mjs'
 import { getRecords, getRecord, createRecord, updateRecord, deleteRecord, appEntitiesMigrationSql } from './server/appData.mjs'
@@ -4839,9 +4840,9 @@ async function checkGlobalProjectAvailability(name, config, excludeId = '') {
       }
     } catch {}
   }
-  const local = readLocalDeployment(slug)
-  if (local && (!excludeId || local.id !== excludeId)) {
-    result.exists = local
+  const permanent = await getDeployment(slug).catch(() => null)
+  if (permanent && (!excludeId || permanent.id !== excludeId)) {
+    result.exists = permanent
     result.reason = `The address alphatekx.name.ng/app/${slug} is already taken.`
     result.suggestions = generateNameSuggestions(nameLower, slug)
     return result
@@ -4986,34 +4987,31 @@ async function handleListDeployedSites(req, res) {
     const createdByName = new Map(registry.sites.map(s => [s.name, s.created]))
     const baseUrl = String(process.env.PUBLIC_APP_URL || 'https://alphatekx.name.ng').replace(/\/$/, '')
     const localMode = !config.url || !config.anon
-    let files = []
-    try { files = fs.readdirSync(deploymentsDir).filter(f => f.endsWith('.json') && f !== 'deployments.json') } catch {}
+    // Permanent storage is the source of truth — no filesystem scan.
+    const rows = await listDeployments({ metadataOnly: true }).catch(() => [])
     const userId = String(user.id || '').toLowerCase()
     const userEmail = String(user.email || '').toLowerCase()
     const sites = []
-    for (const file of files) {
-      let data = null
-      try { data = JSON.parse(fs.readFileSync(path.join(deploymentsDir, file), 'utf8')) } catch { continue }
-      if (!data?.slug) continue
-      const ownerId = String(data.ownerId || '').toLowerCase()
-      const ownerEmail = String(data.ownerEmail || '').toLowerCase()
+    for (const row of rows) {
+      const slug = row.slug
+      if (!slug) continue
+      const ownerId = String(row.ownerId || '').toLowerCase()
+      const ownerEmail = String(row.ownerEmail || '').toLowerCase()
       // Legacy deployments recorded before owner tracking are only surfaced to
       // their single-user (local) install — same claim rule as redeploying.
       const owned = (ownerId && ownerId === userId)
         || (ownerEmail && ownerEmail === userEmail)
         || (!ownerId && !ownerEmail && (localMode || req.alphaAuthSource === 'local'))
       if (!owned) continue
-      let sizeBytes = 0
-      try { sizeBytes = Buffer.byteLength(String(data.code || ''), 'utf8') } catch {}
       sites.push({
-        name: data.slug,
-        slug: data.slug,
-        title: data.title || data.slug,
-        url: `${baseUrl}/app/${data.slug}`,
-        subdomainUrl: `https://${data.slug}.alphatekx.name.ng`,
-        createdAt: data.createdAt || createdByName.get(data.slug) || data.updatedAt || null,
-        updatedAt: data.updatedAt || null,
-        sizeBytes,
+        name: slug,
+        slug,
+        title: row.title || slug,
+        url: `${baseUrl}/app/${slug}`,
+        subdomainUrl: `https://${slug}.alphatekx.name.ng`,
+        createdAt: row.createdAt || createdByName.get(slug) || null,
+        updatedAt: row.updatedAt || null,
+        sizeBytes: 0,
       })
     }
     sites.sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')))
@@ -5030,11 +5028,20 @@ async function handleDeleteDeployedSite(req, res, slug) {
     const user = await currentOrLocalUser(req, config.url, config.anon)
     if (!user) return json(res, 401, { success: false, error: 'Authentication required.' })
     if (!validSlug(slug)) return json(res, 400, { success: false, error: 'Invalid site name.' })
-    const existing = readLocalDeployment(slug)
+    const existing = await getDeployment(slug).catch(() => null)
     if (!existing) return json(res, 404, { success: false, error: 'Site not found.' })
     if (!deploymentOwnedBy(existing, user)) return json(res, 403, { success: false, error: 'This site belongs to another account.' })
-    let removedFile = true
-    try { fs.rmSync(deploymentPath(slug), { force: true }) } catch { removedFile = false }
+    // Remove from permanent Supabase storage — deployments survive redeploys,
+    // so deletion must hit the database, not a local file.
+    let removedPermanent = true
+    try {
+      const storeResult = await deleteDeployment(slug)
+      removedPermanent = Boolean(storeResult.ok)
+      if (!storeResult.ok && storeResult.error) {
+        console.warn('[DEPLOY] Permanent delete failed:', storeResult.error)
+        if (storeResult.schemaMissing) console.warn('[DEPLOY]', schemaMissingMessage())
+      }
+    } catch { removedPermanent = false }
     // Best-effort removal from the cloud mirror so the site stops serving everywhere
     let removedCloud = false
     if (config.url && config.service) {
@@ -5052,7 +5059,7 @@ async function handleDeleteDeployedSite(req, res, slug) {
       fs.mkdirSync(deploymentsDir, { recursive: true })
       fs.writeFileSync(deploymentRegistryFile, JSON.stringify(registry, null, 2), 'utf8')
     } catch {}
-    if (!removedFile) return json(res, 500, { success: false, error: 'Could not delete the site from disk.' })
+    if (!removedPermanent) return json(res, 500, { success: false, error: 'Could not delete the site from permanent storage.' })
     return json(res, 200, { success: true, name: slug, message: '✅ Site deleted successfully!', removedCloud })
   } catch (error) {
     return json(res, 500, { success: false, error: error instanceof Error ? error.message : 'Delete failed.' })
@@ -5119,7 +5126,7 @@ async function servePublishedCreation(req, res, slug) {
   if (!validSlug(slug)) return json(res, 404, { error: 'App not found' })
   try {
     let creation = await fetchPublishedCreation(slug).catch(() => null)
-    if (!creation) creation = readLocalDeployment(slug)
+    if (!creation) creation = await getDeployment(slug).catch(() => null)
     if (!creation) return json(res, 404, { error: 'App not found' })
     const html = publishedAppDocument(creation, publicAppUrl())
     res.writeHead(200, {
@@ -5136,15 +5143,14 @@ async function servePublishedCreation(req, res, slug) {
   }
 }
 
-function deploymentPath(slug) { return path.resolve(deploymentsDir, `${slug}.json`) }
-function readLocalDeployment(slug) {
-  try {
-    const file = deploymentPath(slug)
-    if (!fs.existsSync(file)) return null
-    const data = JSON.parse(fs.readFileSync(file, 'utf8'))
-    return { id: data.id || slug, title: data.title || slug, slug: data.slug || slug, code: data.code || '', createdAt: data.createdAt || '', ownerId: data.ownerId || '', ownerEmail: data.ownerEmail || '' }
-  } catch { return null }
-}
+// Deployment storage is permanent: the Supabase `deployments` table via
+// server/deploymentStore.mjs. HTML is never written to the filesystem, so
+// Render redeploys can no longer wipe published sites.
+// Serving order in servePublishedCreation():
+//   1. Supabase `creations` table (published apps from the builder)
+//   2. Supabase `deployments` table (paste/restore deployments — permanent)
+// Legacy deployed/*.json files were migrated by
+// scripts/migrate-deployments-to-supabase.mjs and are no longer read.
 
 // True when the existing deployment belongs to this user. Legacy local
 // deployments recorded before owner tracking have no ownerId/ownerEmail —
@@ -5158,14 +5164,6 @@ function deploymentOwnedBy(existing, user) {
   if (ownerId && String(user.id || '').toLowerCase() === ownerId) return true
   if (ownerEmail && String(user.email || '').toLowerCase() === ownerEmail) return true
   return false
-}
-function writeLocalDeployment(slug, data) {
-  try {
-    fs.mkdirSync(deploymentsDir, { recursive: true })
-    const file = deploymentPath(slug)
-    fs.writeFileSync(file, JSON.stringify({ ...data, slug, updatedAt: new Date().toISOString() }), 'utf8')
-    return true
-  } catch { return false }
 }
 
 // ─── deployments.json registry — every deployed name lives here ──────────────
@@ -7411,11 +7409,16 @@ async function localPublishCreation(body, baseUrl) {
   const slug = String(body.slug || '').toLowerCase().trim()
   if (!/^[0-9a-f-]{36}$/i.test(creationId)) return { status: 400, body: { error: 'Invalid creation.' } }
   if (!validProjectName(slug)) return { status: 400, body: { error: 'Use 3-30 lowercase letters, numbers, or hyphens. Must start and end with a letter or number.' } }
-  const local = readLocalDeployment(slug)
-  if (local && local.id !== creationId) return { status: 409, body: { error: 'That app address is already in use. Choose another slug.', suggestions: generateNameSuggestions(slug, slug) } }
+  const existing = await getDeployment(slug).catch(() => null)
+  if (existing && String(existing.id) !== creationId) return { status: 409, body: { error: 'That app address is already in use. Choose another slug.', suggestions: generateNameSuggestions(slug, slug) } }
   const creation = { id: creationId, slug, title: body.title || slug, code: String(body.code || '') }
   if (!creation.code.trim()) return { status: 400, body: { error: 'This creation has no application code to publish.' } }
-  if (!writeLocalDeployment(slug, creation)) return { status: 500, body: { error: 'Could not write deployment to disk.' } }
+  // Permanent storage in Supabase — survives Render redeploys.
+  const saved = await saveDeployment(slug, creation.code, { id: creationId, title: creation.title })
+  if (!saved.ok) {
+    console.error('[DEPLOY] Permanent save failed:', saved.error)
+    return { status: saved.schemaMissing ? 503 : 500, body: { error: saved.schemaMissing ? schemaMissingMessage() : 'Could not save the deployment to permanent storage.' } }
+  }
   const url = `${baseUrl}/app/${slug}`
   registerDeployedSite(slug, url)
   return { status: 200, body: { slug, path: `/app/${slug}`, url, subdomainUrl: `https://${slug}.alphatekx.name.ng` } }
@@ -7429,23 +7432,23 @@ async function localPublishPasted(body, baseUrl, owner = null) {
   if (!validProjectName(slug)) return { status: 400, body: { error: 'Use 3-30 lowercase letters, numbers, or hyphens. Must start and end with a letter or number.' } }
   if (!/<(?:!doctype\s+html|html|body)[\s>]/i.test(html)) return { status: 400, body: { error: 'Paste a complete HTML document.' } }
   if (Buffer.byteLength(html, 'utf8') > 900_000) return { status: 413, body: { error: 'HTML must be smaller than 900 KB.' } }
-  const existing = readLocalDeployment(slug)
+  const existing = await getDeployment(slug).catch(() => null)
   const creationId = existing?.id || randomUUID()
-  const creation = {
+  // Permanent storage in Supabase — survives Render redeploys. UTF-8 always.
+  const saved = await saveDeployment(slug, html, {
     id: creationId,
-    slug,
     title,
-    code: html,
-    type: 'html',
-    files: [{ path: 'index.html', code: html }],
-    createdAt: existing?.createdAt || new Date().toISOString(),
     ownerId: owner?.id ? String(owner.id) : existing?.ownerId || '',
     ownerEmail: owner?.email ? String(owner.email) : existing?.ownerEmail || '',
+    createdAt: existing?.createdAt,
+  })
+  if (!saved.ok) {
+    console.error('[DEPLOY] Permanent save failed:', saved.error)
+    return { status: saved.schemaMissing ? 503 : 500, body: { error: saved.schemaMissing ? schemaMissingMessage() : 'Could not save the deployment to permanent storage.' } }
   }
-  if (!writeLocalDeployment(slug, creation)) return { status: 500, body: { error: 'Could not write deployment to disk.' } }
   const url = `${baseUrl}/app/${slug}`
   registerDeployedSite(slug, url)
-  return { status: 200, body: { creationId, slug, url, pathUrl: url, subdomainUrl: `https://${slug}.alphatekx.name.ng`, updated: Boolean(existing) } }
+  return { status: 200, body: { creationId: saved.id || creationId, slug, url, pathUrl: url, subdomainUrl: `https://${slug}.alphatekx.name.ng`, updated: Boolean(existing) } }
 }
 
 async function publishCreationPath(req, res) {
@@ -10656,6 +10659,13 @@ if (!process.env.VERCEL) {
   }
 
   server.listen(port, () => process.stdout.write(`[AlphaTekX] listening on ${port}\n`))
+  checkDeploymentStoreHealth()
+    .then((health) => {
+      if (!health.configured) return console.warn('[DEPLOY] Supabase deployment store not configured (SUPABASE_URL / SUPABASE_SERVICE_KEY missing).')
+      if (!health.tableReady) { console.warn('[DEPLOY] ⚠️', schemaMissingMessage()); return }
+      process.stdout.write('[DEPLOY] Permanent storage ready: Supabase deployments table ✓\n')
+    })
+    .catch(() => {})
   schedule('* * * * *', async () => {
     if (schedulerState.isRunning) return
     schedulerState.isRunning = true
