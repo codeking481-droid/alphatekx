@@ -57,12 +57,29 @@ function isSchemaMissing(error) {
 }
 
 export function schemaMissingMessage(error) {
-  return 'The Supabase "deployments" table is missing. Run supabase/deployments-table.sql in the Supabase SQL editor, then redeploy.'
+  return 'The Supabase "deployments" table is missing or unreadable. Run supabase/fix-deployments-columns.sql (or supabase/deployments-table.sql) in THIS project\'s Supabase SQL editor, then redeploy.'
 }
 
 function describeError(error) {
   if (!error) return 'Unknown deployment store error'
   return [error.message, error.details, error.hint].filter(Boolean).join(' — ')
+}
+
+/**
+ * Auth/permission failures are NOT schema problems and must never masquerade
+ * as one: a wrong or anon service key gets rejected by RLS with a generic
+ * error unless we call it out explicitly.
+ */
+function authProblemFromError(error) {
+  const code = String(error?.code || error?.error_code || '')
+  const message = String(error?.message || '')
+  if (code === '42501' || /row-level security/i.test(message)) {
+    return 'Supabase rejected the write (row-level security). SUPABASE_SERVICE_KEY / SUPABASE_SERVICE_ROLE_KEY must be the service_role secret — an anon key cannot write to the deployments table.'
+  }
+  if (/invalid api key|invalid jwt|jwt expired|JWS signature verification failed/i.test(message)) {
+    return 'Supabase rejected the service key (invalid API key). Check SUPABASE_SERVICE_KEY / SUPABASE_SERVICE_ROLE_KEY in Render → Environment.'
+  }
+  return null
 }
 
 function logStoreError(action, error) {
@@ -148,14 +165,20 @@ export async function saveDeployment(name, html, meta = {}) {
     const writeOnce = async (row, useConflict) => {
       if (useConflict) {
         const { data, error } = await db.from(TABLE).upsert(row, { onConflict: 'name' }).select('id, name, created_at')
-        if (error) return { ok: false, schemaMissing: isSchemaMissing(error), rawError: error, error: describeError(error), code: error?.code || error?.error_code || null, hint: error?.hint || null }
+        if (error) {
+        const authProblem = authProblemFromError(error)
+        return { ok: false, authError: Boolean(authProblem), schemaMissing: isSchemaMissing(error), rawError: error, error: authProblem || describeError(error), code: error?.code || error?.error_code || null, hint: error?.hint || null }
+      }
         return { ok: true, id: data?.[0]?.id || row.id || null, created_at: data?.[0]?.created_at || null }
       }
       // Degraded upsert for tables without the name UNIQUE constraint:
       // remove any existing row with this name, then insert fresh.
       await db.from(TABLE).delete().eq('name', row.name)
       const { data, error } = await db.from(TABLE).insert(row).select('id, name, created_at')
-      if (error) return { ok: false, schemaMissing: isSchemaMissing(error), rawError: error, error: describeError(error), code: error?.code || error?.error_code || null, hint: error?.hint || null }
+      if (error) {
+        const authProblem = authProblemFromError(error)
+        return { ok: false, authError: Boolean(authProblem), schemaMissing: isSchemaMissing(error), rawError: error, error: authProblem || describeError(error), code: error?.code || error?.error_code || null, hint: error?.hint || null }
+      }
       return { ok: true, id: data?.[0]?.id || row.id || null, created_at: data?.[0]?.created_at || null }
     }
 
@@ -243,7 +266,8 @@ export async function deleteDeployment(name) {
       .eq('name', String(name).toLowerCase())
       .select('id')
     if (error) {
-      return { ok: false, deleted: false, schemaMissing: isSchemaMissing(error), rawError: error, error: describeError(error) }
+      const authProblem = authProblemFromError(error)
+      return { ok: false, deleted: false, authError: Boolean(authProblem), schemaMissing: isSchemaMissing(error), rawError: error, error: authProblem || describeError(error) }
     }
     return { ok: true, deleted: Array.isArray(data) && data.length > 0 }
   }
@@ -391,10 +415,29 @@ export async function getDeploymentStoreStatus() {
   status.connected = health.connected
   status.tableReady = health.tableReady
   if (!health.connected || !health.tableReady) status.error = health.message || null
+  const missingColumns = []
   if (health.tableReady) {
     const db = getClient()
+    // Probe each optional column so the dashboard can name exactly what the
+    // live table lacks (and which SQL file fixes it) instead of failing later.
+    for (const col of ['title', 'owner_id', 'owner_email', 'pages']) {
+      const { error } = await db.from(TABLE).select(col).limit(0)
+      if (!error) continue
+      const match = /could not find the '([^']+)' column/i.exec(String(error?.message || ''))
+      if (String(error?.code || error?.error_code || '') === 'PGRST204' || match) {
+        missingColumns.push((match && match[1]) || col)
+      } else {
+        const authProblem = authProblemFromError(error)
+        if (!status.error) status.error = authProblem || describeError(error)
+        break
+      }
+    }
     const { count, error } = await db.from(TABLE).select('id', { count: 'exact', head: true })
     if (!error) status.rowCount = count
+  }
+  status.missingColumns = [...new Set(missingColumns)]
+  if (missingColumns.length) {
+    status.sqlFix = `Run supabase/fix-deployments-columns.sql in this project's Supabase SQL editor to add the missing columns (${missingColumns.join(', ')}).`
   }
   return status
 }

@@ -7435,7 +7435,7 @@ async function localPublishCreation(body, baseUrl) {
   const saved = await saveDeployment(slug, creation.code, { id: creationId, title: creation.title })
   if (!saved.ok) {
     console.error('[DEPLOY] RAW SUPABASE ERROR:', JSON.stringify({ code: saved.code || null, message: saved.error, hint: saved.hint || null }))
-    return { status: saved.schemaMissing ? 503 : 500, body: { error: saved.schemaMissing ? schemaMissingMessage() : 'Could not save the deployment to permanent storage.', detail: saved.error, code: saved.code || null, hint: saved.hint || null } }
+    return { status: saved.schemaMissing ? 503 : saved.authError ? 503 : 500, body: { error: saved.schemaMissing ? schemaMissingMessage() : `Could not save the deployment to permanent storage.${saved.error && !saved.schemaMissing ? ` Reason: ${saved.error}` : ''}`, detail: saved.error, code: saved.code || null, hint: saved.hint || null } }
   }
   const url = `${baseUrl}/app/${slug}`
   registerDeployedSite(slug, url)
@@ -7466,7 +7466,7 @@ async function localPublishPasted(body, baseUrl, owner = null) {
   })
   if (!saved.ok) {
     console.error('[DEPLOY] RAW SUPABASE ERROR:', JSON.stringify({ code: saved.code || null, message: saved.error, hint: saved.hint || null }))
-    return { status: saved.schemaMissing ? 503 : 500, body: { error: saved.schemaMissing ? schemaMissingMessage() : 'Could not save the deployment to permanent storage.', detail: saved.error, code: saved.code || null, hint: saved.hint || null } }
+    return { status: saved.schemaMissing ? 503 : saved.authError ? 503 : 500, body: { error: saved.schemaMissing ? schemaMissingMessage() : `Could not save the deployment to permanent storage.${saved.error && !saved.schemaMissing ? ` Reason: ${saved.error}` : ''}`, detail: saved.error, code: saved.code || null, hint: saved.hint || null } }
   }
   const url = `${baseUrl}/app/${slug}`
   registerDeployedSite(slug, url)
