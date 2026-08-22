@@ -68,6 +68,23 @@ async function probeWithBrowser(browser, targetUrl, { timeoutMs = DEFAULTS.timeo
     const page = await browser.newPage({ viewport, userAgent: UA })
     const deadline = Date.now() + timeoutMs
 
+    // pageerror only fires for the MAIN frame — launcher shells hide the real
+    // app inside child iframes. Bridge their uncaught errors into the console,
+    // where the listener below already collects them.
+    await page.addInitScript(() => {
+      if (window.top === window) return
+      const report = (kind, message, stack) => {
+        try { console.error(`[alpha-frame:${kind}] ${message} :: ${String(stack || '').slice(0, 200)}`) } catch {}
+      }
+      addEventListener('error', (e) => {
+        report('error', e.message || (e.error && e.error.message) || 'script error', e.error && e.error.stack)
+      }, true)
+      addEventListener('unhandledrejection', (e) => {
+        const r = e.reason
+        report('promise', String((r && r.message) || r), r && r.stack)
+      }, true)
+    }).catch(() => {})
+
     page.on('console', (msg) => {
       try {
         if (msg.type() === 'error' && result.consoleErrors.length < 15) {
