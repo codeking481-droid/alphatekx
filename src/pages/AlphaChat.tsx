@@ -15,7 +15,6 @@ import GoldProofCard, { type ProofData } from '../components/alpha/restore/GoldP
 import ActionCard from '../components/alpha/restore/ActionCard'
 import GitHubApplyCard from '../components/alpha/restore/GitHubApplyCard'
 import GitHubConnectGate from '../components/alpha/restore/GitHubConnectGate'
-import RestoreEngineChat from '../components/alpha/restore/RestoreEngineChat'
 import FixPromptCard from '../components/alpha/restore/FixPromptCard'
 import ScreenshotComparison from '../components/alpha/restore/ScreenshotComparison'
 import SecurityFindings from '../components/alpha/restore/SecurityFindings'
@@ -83,7 +82,6 @@ type AlphaMessage = GeneralChatMessage & {
   restoreResult?: any
   videoResult?: { videoUrl: string; editId: string; plan: any; elapsed: string }
   restoreCards?: RestoreCardState
-  restoreEngine?: { url: string }
   alphaEvents?: AlphaEventType[]
   alphaReasoning?: { assessment: string; hypotheses: { cause: string; confidence: number }[]; evidence: string; decision: string }
   isStreaming?: boolean
@@ -123,16 +121,6 @@ function isGitHubRepoUrl(url: string): boolean {
     const parts = parsed.pathname.replace(/^\//, '').replace(/\/$/, '').split('/')
     return parts.length >= 2 && Boolean(parts[0]) && Boolean(parts[1])
   } catch { return false }
-}
-
-// When the scanned URL is an already-deployed site (/app/{name}), suggest that
-// name at deploy time so redeploying UPDATES the user's existing live site.
-function deployedSiteName(url: string): string {
-  try {
-    const parsed = new URL(url)
-    const match = parsed.pathname.match(/^\/app\/([a-z0-9-]+)/i)
-    return match ? match[1] : ''
-  } catch { return '' }
 }
 
 function detectRestoreIntent(text: string): 'scan' | 'full' {
@@ -274,8 +262,6 @@ function ChatContent() {
       createdAt: new Date().toISOString(),
     }
 
-    const engineRestore = isWebsiteRestore && Boolean(detectedUrl)
-
     const aiMsg: AlphaMessage = {
       id: uid(),
       role: 'assistant',
@@ -286,20 +272,19 @@ function ChatContent() {
       thoughtSteps: [],
       alphaEvents: [],
       restoreCards: undefined,
-      restoreEngine: engineRestore && detectedUrl ? { url: detectedUrl } : undefined,
-      isStreaming: !engineRestore && !asksRestoreNoUrl,
+      isStreaming: !asksRestoreNoUrl,
     }
 
     setMessages((prev) => [...prev, userMsg, aiMsg])
     scrollToBottom()
 
-    // Restoration Engine runs entirely inside the chat — no separate flow needed
-    if (engineRestore || asksRestoreNoUrl) {
+    if (asksRestoreNoUrl) {
       setIsGenerating(false)
       return
     }
 
-    // If website restore detected, start SSE stream
+    // If website restore detected, start the real SSE pipeline — every live
+    // site goes through the V4 agentic restoration chain of thought.
     if (isWebsiteRestore && detectedUrl) {
       try {
         abortRef.current = new AbortController()
@@ -1173,13 +1158,6 @@ function ChatContent() {
                         {msg.content && (
                           <div className="text-[14px] leading-relaxed">
                             <Markdown>{msg.content}</Markdown>
-                          </div>
-                        )}
-
-                        {/* Chat-based Restoration Engine — scan, fix, deliver, verify inside the conversation */}
-                        {msg.restoreEngine && (
-                          <div className="mt-3">
-                            <RestoreEngineChat url={msg.restoreEngine.url} suggestedName={deployedSiteName(msg.restoreEngine.url) || undefined} />
                           </div>
                         )}
 
