@@ -1529,6 +1529,11 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
       const heavyDamage = (cycleDiagnosis?.summary?.critical || 0) > 0 || (cycleDiagnosis?.score || 100) < 85
       if (heavyDamage) {
         console.log('🔧 Starting Expert Developer Pass…')
+        // Adoption policy: critical damage ⇒ the rebuild is trusted (a clean
+        // modern page beats a polished disaster). REBUILD_FORCE=1 forces this
+        // even without critical findings. Otherwise the score gate protects
+        // mildly damaged pages from a lossy swap.
+        const forceAdopt = /1|true|yes/i.test(String(process.env.REBUILD_FORCE || '')) || (cycleDiagnosis?.summary?.critical || 0) > 0
         const rebuildSummary = await chain.step(`ai-rebuild${suffix}`, `${prefix}Expert developer pass — regenerating a clean, modern, responsive page…`, 'brain', async () => {
           const before = await diagnose(workingHtml, { baseUrl: finalUrl, https: isHttps, skipNetworkChecks: true }).catch(() => null)
           console.log(`📤 [REBUILD] Sending page to the LLM (pre-repair health: ${before?.score ?? '?'}/100)…`)
@@ -1538,17 +1543,19 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
           console.log(`📥 [REBUILD] Response received — ${(r.html.length / 1024).toFixed(1)} KB, verifying health…`)
           const after = await diagnose(r.html, { baseUrl: finalUrl, https: isHttps, skipNetworkChecks: true }).catch(() => null)
           if (!after) return 'Rebuild discarded — could not verify the regenerated page'
-          console.log(`⚖️ [REBUILD] Scores — patched original: ${before?.score ?? '?'} vs rebuild: ${after.score}`)
-          if ((after.score || 0) < (before?.score ?? -1)) {
+          console.log(`⚖️ [REBUILD] Scores — patched original: ${before?.score ?? '?'} vs rebuild: ${after.score} (forceAdopt: ${forceAdopt})`)
+          if ((after.score || 0) < (before?.score ?? -1) && !forceAdopt) {
             return `Rebuild scored lower (${after.score} vs ${before.score}) — kept the repaired original`
           }
           workingHtml = r.html
           sendEvent({
             type: 'ai_rebuild_complete',
-            data: { adopted: true, before_score: before?.score ?? null, after_score: after.score ?? null, bytes: r.html.length, cycle },
+            data: { adopted: true, forced: forceAdopt && (after.score || 0) < (before?.score ?? -1), before_score: before?.score ?? null, after_score: after.score ?? null, bytes: r.html.length, cycle },
           })
           console.log('✅ Restoration complete — clean modern rebuild adopted')
-          return `Clean modern rebuild adopted — health ${before?.score ?? '?'} → ${after.score}`
+          return forceAdopt && (after.score || 0) < (before?.score ?? -1)
+            ? `Clean modern rebuild adopted (forced over score ${before?.score ?? '?'} → ${after.score})`
+            : `Clean modern rebuild adopted — health ${before?.score ?? '?'} → ${after.score}`
         })
         void rebuildSummary
       }
