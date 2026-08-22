@@ -148,14 +148,14 @@ export async function saveDeployment(name, html, meta = {}) {
     const writeOnce = async (row, useConflict) => {
       if (useConflict) {
         const { data, error } = await db.from(TABLE).upsert(row, { onConflict: 'name' }).select('id, name, created_at')
-        if (error) return { ok: false, schemaMissing: isSchemaMissing(error), rawError: error, error: describeError(error) }
+        if (error) return { ok: false, schemaMissing: isSchemaMissing(error), rawError: error, error: describeError(error), code: error?.code || error?.error_code || null, hint: error?.hint || null }
         return { ok: true, id: data?.[0]?.id || row.id || null, created_at: data?.[0]?.created_at || null }
       }
       // Degraded upsert for tables without the name UNIQUE constraint:
       // remove any existing row with this name, then insert fresh.
       await db.from(TABLE).delete().eq('name', row.name)
       const { data, error } = await db.from(TABLE).insert(row).select('id, name, created_at')
-      if (error) return { ok: false, schemaMissing: isSchemaMissing(error), rawError: error, error: describeError(error) }
+      if (error) return { ok: false, schemaMissing: isSchemaMissing(error), rawError: error, error: describeError(error), code: error?.code || error?.error_code || null, hint: error?.hint || null }
       return { ok: true, id: data?.[0]?.id || row.id || null, created_at: data?.[0]?.created_at || null }
     }
 

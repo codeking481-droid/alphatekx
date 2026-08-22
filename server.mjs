@@ -4961,7 +4961,9 @@ async function handleDeployEndpoint(req, res) {
     const title = String(body.title || rawName).trim().slice(0, 120) || name
     const result = await localPublishPasted({ title, slug: name, html }, baseUrl, user)
     if (result.status !== 200) {
-      return json(res, result.status, { success: false, name, error: result.body?.error || 'Deploy failed.' })
+      // Forward the FULL error payload — detail/code/hint must reach the browser.
+      console.error('[DEPLOY] RAW SUPABASE ERROR:', JSON.stringify(result.body))
+      return json(res, result.status, { success: false, name, ...result.body })
     }
     const url = result.body.url || `${baseUrl}/app/${name}`
     return json(res, 200, {
@@ -7429,10 +7431,11 @@ async function localPublishCreation(body, baseUrl) {
   const creation = { id: creationId, slug, title: body.title || slug, code: String(body.code || '') }
   if (!creation.code.trim()) return { status: 400, body: { error: 'This creation has no application code to publish.' } }
   // Permanent storage in Supabase — survives Render redeploys.
+  console.log('[DEPLOY] SAVING:', { name: slug, title: creation.title, bytes: Buffer.byteLength(creation.code, 'utf8') })
   const saved = await saveDeployment(slug, creation.code, { id: creationId, title: creation.title })
   if (!saved.ok) {
-    console.error('[DEPLOY] Permanent save failed:', saved.error)
-    return { status: saved.schemaMissing ? 503 : 500, body: { error: saved.schemaMissing ? schemaMissingMessage() : 'Could not save the deployment to permanent storage.', detail: saved.error } }
+    console.error('[DEPLOY] RAW SUPABASE ERROR:', JSON.stringify({ code: saved.code || null, message: saved.error, hint: saved.hint || null }))
+    return { status: saved.schemaMissing ? 503 : 500, body: { error: saved.schemaMissing ? schemaMissingMessage() : 'Could not save the deployment to permanent storage.', detail: saved.error, code: saved.code || null, hint: saved.hint || null } }
   }
   const url = `${baseUrl}/app/${slug}`
   registerDeployedSite(slug, url)
@@ -7452,6 +7455,7 @@ async function localPublishPasted(body, baseUrl, owner = null) {
   const existing = await getDeployment(slug).catch(() => null)
   const creationId = existing?.id || randomUUID()
   // Permanent storage in Supabase — survives Render redeploys. UTF-8 always.
+  console.log('[DEPLOY] SAVING:', { name: slug, title, bytes: Buffer.byteLength(html, 'utf8') })
   const saved = await saveDeployment(slug, html, {
     id: creationId,
     title,
@@ -7461,8 +7465,8 @@ async function localPublishPasted(body, baseUrl, owner = null) {
     pages: restorationPages || undefined,
   })
   if (!saved.ok) {
-    console.error('[DEPLOY] Permanent save failed:', saved.error)
-    return { status: saved.schemaMissing ? 503 : 500, body: { error: saved.schemaMissing ? schemaMissingMessage() : 'Could not save the deployment to permanent storage.', detail: saved.error } }
+    console.error('[DEPLOY] RAW SUPABASE ERROR:', JSON.stringify({ code: saved.code || null, message: saved.error, hint: saved.hint || null }))
+    return { status: saved.schemaMissing ? 503 : 500, body: { error: saved.schemaMissing ? schemaMissingMessage() : 'Could not save the deployment to permanent storage.', detail: saved.error, code: saved.code || null, hint: saved.hint || null } }
   }
   const url = `${baseUrl}/app/${slug}`
   registerDeployedSite(slug, url)
