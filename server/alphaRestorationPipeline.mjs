@@ -1314,15 +1314,25 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
   let originalHtml = sanitizeEncoding(doc.body)
 
   // Launcher shells (iframe srcdoc / published templates) hide the real site
-  // inside a script string — unwrap so Alpha repairs what visitors actually see.
-  const embeddedDoc = extractEmbeddedDocument(originalHtml)
-  if (embeddedDoc) {
-    chain.done(
-      'recon-unwrap',
-      'Launcher shell detected — opening it up to reach the real page inside',
-      `Source: ${embeddedDoc.source} · inner document ${(embeddedDoc.html.length / 1024).toFixed(1)} KB`,
-    )
-    originalHtml = sanitizeEncoding(embeddedDoc.html)
+  // inside a script string — unwrap REPEATEDLY (deployed pages can be shells
+  // wrapped in shells) so Alpha repairs what visitors actually see.
+  {
+    let levels = 0
+    for (;;) {
+      const embeddedDoc = extractEmbeddedDocument(originalHtml)
+      if (!embeddedDoc || levels >= 5) break
+      originalHtml = sanitizeEncoding(embeddedDoc.html)
+      levels++
+    }
+    if (levels > 0) {
+      chain.done(
+        'recon-unwrap',
+        levels > 1
+          ? `${levels} launcher shells detected — opened every layer to reach the real page inside`
+          : 'Launcher shell detected — opening it up to reach the real page inside',
+        `Unwrapped ${levels} layer(s) · inner document ${(originalHtml.length / 1024).toFixed(1)} KB`,
+      )
+    }
   }
 
   // ════════ SITE-WIDE MODE — every page, one run ════════

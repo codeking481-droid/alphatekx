@@ -272,15 +272,59 @@ function declaredNames(code) {
   return names
 }
 
+function maskStringsAndComments(code) {
+  // Returns a SAME-LENGTH copy of `code` where string/template contents and
+  // comments are blanked out. Line-based analysis must run on THIS, never on
+  // raw source — otherwise a `webpackJsonp(` sitting inside a template string
+  // (launcher shells embed whole sites!) looks like live code and gets a
+  // perfectly healthy script deleted.
+  let out = ''
+  let mode = null // '"', "'" or '`'
+  let i = 0
+  while (i < code.length) {
+    const ch = code[i]
+    if (mode) {
+      if (ch === '\\') { out += '  '; i += 2; continue }
+      if (ch === '\n') { out += '\n'; if (mode !== '`') mode = null; i++; continue }
+      if (ch === mode) { out += ch; mode = null; i++; continue }
+      out += ' '
+      i++
+      continue
+    }
+    if (ch === '"' || ch === "'" || ch === '`') { mode = ch; out += ch; i++; continue }
+    if (ch === '/' && code[i + 1] === '/') {
+      const nl = code.indexOf('\n', i)
+      const end = nl === -1 ? code.length : nl
+      out += ' '.repeat(end - i)
+      i = end
+      continue
+    }
+    if (ch === '/' && code[i + 1] === '*') {
+      const end = code.indexOf('*/', i + 2)
+      const stop = end === -1 ? code.length : end + 2
+      for (let j = i; j < stop; j++) out += code[j] === '\n' ? '\n' : ' '
+      i = stop
+      continue
+    }
+    out += ch
+    i++
+  }
+  return out
+}
+
 function removeUnsafeStatements(code) {
-  // Drop ONLY statement-level lines that call/operate on names we can prove
-  // are undeclared — the exact class that crashes a page at load.
+  // Drop statement-level lines that call/operate on names we can prove are
+  // undeclared — decided on STRING-MASKED source so embedded template strings
+  // are never mistaken for live code.
   const declared = declaredNames(code)
   const known = (name) => BROWSER_GLOBALS.has(name) || declared.has(name)
+  const maskedLines = maskStringsAndComments(code).split('\n')
+  const rawLines = code.split('\n')
   const out = []
-  for (const line of code.split('\n')) {
-    const t = line.trim()
-    if (!t) { out.push(''); continue }
+  for (let idx = 0; idx < rawLines.length; idx++) {
+    const raw = rawLines[idx]
+    const t = (maskedLines[idx] || '').trim()
+    if (!t) { out.push(raw); continue }
     const call = t.match(/^([A-Za-z_$][\w$]*)\s*(?:\.\s*\w+\s*)?\(/)
     const bare = t.match(/^([A-Za-z_$][\w$]*)\s*[;}\]]\s*$/)
     const ident = call ? call[1] : (bare ? bare[1] : '')
@@ -288,7 +332,7 @@ function removeUnsafeStatements(code) {
     if (/(?:^|[\s;(])(?:undefined|null)\s*\.\s*\w+\s*\(/.test(t)) continue
     if (/\bwebpackJsonp\s*\(/.test(t)) continue
     if (/\bundefinedVariable\b/.test(t) && !/\b(?:var|let|const)\b/.test(t)) continue
-    out.push(line)
+    out.push(raw)
   }
   return out.join('\n')
 }
@@ -296,6 +340,8 @@ function removeUnsafeStatements(code) {
 function recoverScript(code) {
   // Guarantee: any returned script must PARSE. We try increasingly invasive
   // reconstructions and only accept a result that the JS engine compiles.
+  // removeUnsafeStatements decides on STRING-MASKED source, so template
+  // strings embedded in launcher shells are never mistaken for live code.
   if (!code || !code.trim()) return { code, action: 'kept', steps: [] }
 
   const cur = removeUnsafeStatements(code)
@@ -434,7 +480,11 @@ export async function repairBrokenHtml(html, opts = {}) {
   for (const u of (knownDead || [])) {
     try { dead.add(new URL(u, baseUrl || 'https://x.invalid').href) } catch { if (typeof u === 'string') dead.add(u) }
   }
-  const external = collectExternalUrls(doc)
+  const external = collectExternalUrls(
+    // Script BODIES are excluded: publisher shells embed whole sites as
+    // strings, and URLs inside those strings must never enter the dead set.
+    doc.replace(/(<script\b[^>]*>)[\s\S]*?(<\/script>)/gi, '$1$2'),
+  )
   for (const u of external) {
     let abs
     try { abs = new URL(u, baseUrl || 'https://x.invalid').href } catch { continue }
@@ -484,6 +534,9 @@ export async function repairBrokenHtml(html, opts = {}) {
     if (/\s(src)\s*=/i.test(attrs)) return m
     if (/application\/(?:ld\+json|json)/i.test(attrs)) return m
     if (!code?.trim()) return m
+    // Launcher / publisher bootstrap scripts embed whole sites as strings —
+    // they are infrastructure, never repair targets.
+    if (/template\s*=|__ALPHA_STORAGE_JSON__|alphatekx:published:|srcdoc\s*=/i.test(code)) return m
     const t = recoverScript(code)
     if (t.action === 'kept') return m
     if (t.action === 'sanitized') { tally.js_sanitized++; return `<script${attrs}>${t.code}</script>` }
@@ -510,7 +563,10 @@ export async function repairBrokenHtml(html, opts = {}) {
   if (dead.size) {
     const pats = [...dead].map(escapeRegExp).filter(Boolean)
     const any = `(?:${pats.join('|')})`
-    doc = doc.replace(new RegExp(`<script\\b[^>]*(?:${any})[^>]*>[\\s\\S]*?<\\/script>\\s*`, 'gi'), () => { tally.dead_assets_removed++; return '' })
+    // Scripts: the dead URL must sit in the OPENING TAG (a src attribute).
+    // A URL merely mentioned inside the script BODY (launcher template strings)
+    // must never trigger removal of the whole bootstrap.
+    doc = doc.replace(new RegExp(`<script\\b([^>]*)(?:${any})([^>]*)>([\\s\\S]*?)<\\/script>`, 'gi'), () => { tally.dead_assets_removed++; return '' })
     doc = doc.replace(new RegExp(`<link\\b[^>]*(?:${any})[^>]*\\s*>`, 'gi'), () => { tally.dead_assets_removed++; return '' })
     doc = doc.replace(new RegExp(`<img\\b[^>]*(?:${any})[^>]*\\s*>`, 'gi'), () => { tally.dead_assets_removed++; return `<img src="${PLACEHOLDER_IMG}" alt="Image unavailable">` })
     doc = doc.replace(new RegExp(`<(?:iframe|frame)\\b[^>]*(?:${any})[^>]*>`, 'gi'), () => { tally.dead_assets_removed++; return '' })
