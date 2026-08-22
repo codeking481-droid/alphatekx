@@ -472,11 +472,25 @@ original purpose while making it better.`
 async function chatText(system, user, { maxTokens = 8000 } = {}) {
   const attempts = buildChatAttempts()
   if (!attempts.length) return null
+  const debug = /^1|true|yes$/i.test(String(process.env.REBUILD_DEBUG || ''))
+  if (debug) {
+    console.log(`🔍 [LLM-DEBUG] ${attempts.length} attempt(s) queued:`)
+    for (const a of attempts) console.log(`   → ${a.family} | ${a.model} | ${a.url}`)
+    console.log(`🔍 [LLM-DEBUG] system prompt: ${(system.length / 1024).toFixed(1)} KB | user msg: ${(user.length / 1024).toFixed(1)} KB | maxTokens: ${maxTokens}`)
+    console.log('🔍 [LLM-DEBUG] system prompt head:', JSON.stringify(system.slice(0, 300)))
+  }
   for (const attempt of attempts) {
     for (let tryIndex = 0; tryIndex < 2; tryIndex++) {
       try {
         const content = await callChatCompletionRaw(attempt.url, attempt.key, attempt.model, system, user, maxTokens)
-        if (content && String(content).trim()) return String(content).trim()
+        if (content && String(content).trim()) {
+          if (debug) {
+            console.log(`🔍 [LLM-DEBUG] response from ${attempt.family}/${attempt.model}: ${(content.length / 1024).toFixed(1)} KB`)
+            console.log('🔍 [LLM-DEBUG] response head:', JSON.stringify(content.slice(0, 400)))
+            console.log('🔍 [LLM-DEBUG] response tail:', JSON.stringify(content.slice(-200)))
+          }
+          return String(content).trim()
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         _lastLlmError = `${attempt.family}/${attempt.model}: ${msg}`
