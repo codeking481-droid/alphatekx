@@ -145,25 +145,39 @@ export async function saveDeployment(name, html, meta = {}) {
       return row
     }
 
-    const upsertOnce = async (row) => {
-      const { data, error } = await db
-        .from(TABLE)
-        .upsert(row, { onConflict: 'name' })
-        .select('id, name, created_at')
-      if (error) {
-        return { ok: false, schemaMissing: isSchemaMissing(error), rawError: error, error: describeError(error) }
+    const writeOnce = async (row, useConflict) => {
+      if (useConflict) {
+        const { data, error } = await db.from(TABLE).upsert(row, { onConflict: 'name' }).select('id, name, created_at')
+        if (error) return { ok: false, schemaMissing: isSchemaMissing(error), rawError: error, error: describeError(error) }
+        return { ok: true, id: data?.[0]?.id || row.id || null, created_at: data?.[0]?.created_at || null }
       }
+      // Degraded upsert for tables without the name UNIQUE constraint:
+      // remove any existing row with this name, then insert fresh.
+      await db.from(TABLE).delete().eq('name', row.name)
+      const { data, error } = await db.from(TABLE).insert(row).select('id, name, created_at')
+      if (error) return { ok: false, schemaMissing: isSchemaMissing(error), rawError: error, error: describeError(error) }
       return { ok: true, id: data?.[0]?.id || row.id || null, created_at: data?.[0]?.created_at || null }
+    }
+
+    const isNoConstraintError = (error) => /no unique or exclusion constraint matching the on conflict/i.test(String(error?.message || ''))
+
+    const saveWithFallbacks = async (requiredOnly) => {
+      let result = await writeOnce(buildRow(requiredOnly), true)
+      if (!result.ok && result.rawError && missingColumnFromError(result.rawError) && !requiredOnly) {
+        console.warn('[DEPLOYMENT-STORE] Optional column missing on deployments table — saving required fields only:', describeError(result.rawError))
+        requiredOnly = true
+        result = await saveWithFallbacks(true)
+      }
+      if (!result.ok && result.rawError && isNoConstraintError(result.rawError)) {
+        console.warn('[DEPLOYMENT-STORE] deployments.name UNIQUE constraint missing — using delete+insert fallback:', describeError(result.rawError))
+        result = await writeOnce(buildRow(requiredOnly), false)
+      }
+      return result
     }
 
     // Full row first; legacy tables missing optional columns fall back to the
     // required fields (name + html) so deploys never break.
-    let result = await upsertOnce(buildRow(false))
-    if (!result.ok && result.rawError && missingColumnFromError(result.rawError)) {
-      console.warn('[DEPLOYMENT-STORE] Optional column missing on deployments table — saving required fields only:', describeError(result.rawError))
-      result = await upsertOnce(buildRow(true))
-    }
-    return result
+    return saveWithFallbacks(false)
   }
   return withSchemaRetry(attempt, 'save deployment')
 }

@@ -46,6 +46,8 @@ const table = new Map() // name → row
 let cacheStale = true
 // Simulates a hand-created table missing owner_id / owner_email / pages columns.
 let legacyColumns = false
+// Simulates a table without the UNIQUE constraint on name (upsert impossible).
+let noUniqueConstraint = false
 function startMockSupabase() {
   return new Promise(resolvePromise => {
     const server = createServer((req, res) => {
@@ -104,6 +106,9 @@ function startMockSupabase() {
             const rowsIn = Array.isArray(JSON.parse(raw)) ? JSON.parse(raw) : [JSON.parse(raw)]
             if (legacyColumns && rowsIn.some(r => 'owner_id' in r || 'owner_email' in r || 'pages' in r)) {
               return respond(404, columnError)
+            }
+            if (noUniqueConstraint && url.searchParams.get('onConflict')) {
+              return respond(400, { code: '42P10', message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification' })
             }
             const conflictCol = url.searchParams.get('onConflict') || 'name'
             const out = []
@@ -249,6 +254,21 @@ try {
   check('legacy table without owner columns still deploys', legacyRes.status === 200 && legacyRes.body?.success === true, JSON.stringify(legacyRes.body).slice(0, 300))
   const legacyServe = await fetch(`${BASE}/app/${LEGACY_SLUG}`)
   check('legacy-deployed site serves with UTF-8 intact', legacyServe.status === 200 && (await legacyServe.text()).includes(MARKER), `status=${legacyServe.status}`)
+
+  // 9. Table without UNIQUE constraint on name still deploys (delete+insert fallback)
+  noUniqueConstraint = true
+  const NC_SLUG = 'no-constraint-test'
+  const ncRes = await request('/api/deploy', {
+    method: 'POST',
+    body: JSON.stringify({ name: NC_SLUG, title: 'NC Test', html: HTML }),
+  }, OWNER_A)
+  check('table without unique constraint still deploys', ncRes.status === 200 && ncRes.body?.success === true, JSON.stringify(ncRes.body).slice(0, 300))
+  // Redeploy same name must replace, never duplicate
+  const ncRes2 = await request('/api/deploy', {
+    method: 'POST',
+    body: JSON.stringify({ name: NC_SLUG, title: 'NC Test 2', html: HTML.replace('E2E</title>', 'E2Ev2</title>') }),
+  }, OWNER_A)
+  check('redeploy without unique constraint replaces the row', ncRes2.status === 200 && [...table.values()].filter(r => r.name === NC_SLUG).length === 1, JSON.stringify(ncRes2.body).slice(0, 300))
 } finally {
   child.kill('SIGTERM')
   mock.close()
