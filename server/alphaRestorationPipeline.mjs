@@ -1323,9 +1323,16 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
     return
   }
 
+  // Single-page runs share ONE live Chromium across screenshot → design-DNA →
+  // probe → verification shot: faster steps, and recon reads the RENDERED DOM.
+  const renderSession = await createRenderSession()
+  try { // closed by the finally at the end of this function
+
   let screenshotBefore = null
   await chain.step('recon-shot', 'Capturing BEFORE screenshot as proof…', 'camera', async () => {
-    screenshotBefore = await takeScreenshot(finalUrl, artifactsDir, 'before.png')
+    screenshotBefore = renderSession
+      ? await renderSession.screenshot(finalUrl, path.join(artifactsDir, 'before.png'))
+      : await takeScreenshot(finalUrl, artifactsDir, 'before.png')
     if (screenshotBefore) {
       sendEvent({ type: 'screenshot_before', data: { screenshotPath: artifactUrl('before.png') } })
       return 'Before screenshot saved'
@@ -1334,9 +1341,14 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
   })
 
   let designTokens = null
-  await chain.step('recon-tokens', 'Extracting design DNA: colors, fonts, spacing…', 'palette', () => {
-    designTokens = extractDesignTokens(originalHtml)
-    return `${designTokens.colors.length} colors · ${designTokens.fonts.length} fonts · ${designTokens.spacing.length} spacing values preserved`
+  let liveDesign = null
+  await chain.step('recon-tokens', 'Reading the rendered site — real colors, fonts and spacing from computed styles…', 'palette', async () => {
+    if (renderSession) {
+      try { liveDesign = await renderSession.harvest(finalUrl) } catch { liveDesign = null }
+    }
+    designTokens = liveDesign || extractDesignTokens(originalHtml)
+    const source = liveDesign ? 'read from the live DOM' : 'extracted from source HTML'
+    return `${designTokens.colors.length} colors · ${designTokens.fonts.length} fonts · ${designTokens.spacing.length} spacing values — ${source}`
   })
 
   await chain.step('recon-interactions', 'Sweeping interactions: clicks, scrolls, hovers…', 'cursor', () => {
@@ -1349,6 +1361,7 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
     data: {
       url: finalUrl,
       designTokens,
+      design_live: Boolean(liveDesign),
       screenshotBefore: screenshotBefore ? artifactUrl('before.png') : null,
     },
   })
@@ -1366,7 +1379,7 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
   let renderProbe = null
   await chain.step('diagnose-render', 'Opening your site in a real browser — listening for runtime damage…', 'browser', async () => {
     if (!isRenderProbeAvailable()) return 'Browser probe disabled by environment — static analysis only'
-    renderProbe = await probeRenderedPage(finalUrl)
+    renderProbe = renderSession ? await renderSession.probe(finalUrl) : await probeRenderedPage(finalUrl)
     if (!renderProbe.ok) return `Live probe unavailable (${clip(renderProbe.reason || 'unknown', 60)}) — continuing with static analysis`
     const st = renderProbe.stats
     const failures = renderProbe.failedRequests.length + renderProbe.badResponses.length
@@ -1394,12 +1407,15 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
   })
 
   if (mode === 'scan-only') {
+    const designNote = liveDesign && liveDesign.live
+      ? `\n\nLive design DNA read from the rendered DOM: **${liveDesign.colors.length} colors**, **${liveDesign.fonts.length} fonts**, ${liveDesign.interactions.links} links · ${liveDesign.interactions.buttons} buttons · ${liveDesign.interactions.forms} forms.`
+      : ''
     const runtimeNote = renderProbe && renderProbe.ok
       ? `\n\nI also opened the site in a real browser: ${renderProbe.pageErrors.length} crash(es), ${renderProbe.consoleErrors.length} console error(s), ${renderProbe.blankRender ? 'and the page renders **blank** — that is serious' : 'no blank-render problem'}.`
       : ''
     const msg = diagnosis.issues.length === 0
-      ? `I scanned **${hostname}** deeply — zero issues found. Health score: **${diagnosis.score}/100**. This site is already clean. 🎉${runtimeNote}`
-      : `I scanned **${hostname}** and found **${s.total} issues** (${s.critical} critical, ${s.high} high, ${s.medium} medium, ${s.low} low). Health score: **${diagnosis.score}/100**.${runtimeNote}\n\nSay **"fix my site"** and I will run the full agentic restoration — up to three repair cycles with AI-powered fixes — and hand you the repaired code.`
+      ? `I scanned **${hostname}** deeply — zero issues found. Health score: **${diagnosis.score}/100**. This site is already clean. 🎉${designNote}${runtimeNote}`
+      : `I scanned **${hostname}** and found **${s.total} issues** (${s.critical} critical, ${s.high} high, ${s.medium} medium, ${s.low} low). Health score: **${diagnosis.score}/100**.${designNote}${runtimeNote}\n\nSay **"fix my site"** and I will run the full agentic restoration — up to three repair cycles with AI-powered fixes — and hand you the repaired code.`
     sendEvent({ type: 'v3_summary', message: msg })
     sendEvent({ type: 'pipeline_done', restorationId })
     return
@@ -1520,7 +1536,9 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
   let screenshotAfter = null
   await chain.step('verify-shot', 'Capturing AFTER screenshot — visual proof of restoration…', 'camera', async () => {
     const contentPath = `/api/restore/v3/content/${restorationId}/fixed.html?base=1`
-    screenshotAfter = await takeScreenshot(origin + contentPath, artifactsDir, 'after.png')
+    screenshotAfter = renderSession
+      ? await renderSession.screenshot(origin + contentPath, path.join(artifactsDir, 'after.png'))
+      : await takeScreenshot(origin + contentPath, artifactsDir, 'after.png')
     if (screenshotAfter) {
       let size = 0
       try { size = fs.statSync(screenshotAfter.filePath).size } catch {}
@@ -1674,6 +1692,11 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
   }).catch(() => {})
 
   sendEvent({ type: 'pipeline_done', restorationId })
+
+  } finally {
+    // The shared live Chromium must never outlive the run (Render memory).
+    if (renderSession) await renderSession.close().catch(() => {})
+  }
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -1945,7 +1968,9 @@ async function runSiteRestoration(ctx) {
   let screenshotAfter = null
   await chain.step('verify-shot', 'Capturing AFTER screenshot — visual proof of restoration…', 'camera', async () => {
     const contentPath = `/api/restore/v3/content/${restorationId}/fixed.html?base=1`
-    screenshotAfter = await takeScreenshot(origin + contentPath, artifactsDir, 'after.png')
+    screenshotAfter = session
+      ? await session.screenshot(origin + contentPath, path.join(artifactsDir, 'after.png'))
+      : await takeScreenshot(origin + contentPath, artifactsDir, 'after.png')
     if (screenshotAfter) {
       let size = 0
       try { size = fs.statSync(screenshotAfter.filePath).size } catch {}

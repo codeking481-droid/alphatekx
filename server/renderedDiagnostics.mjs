@@ -170,6 +170,71 @@ export async function createRenderSession() {
           await page.close().catch(() => {})
         }
       },
+      /**
+       * Harvest LIVE design DNA from the fully-rendered page: computed-style
+       * colors/fonts/spacing plus real interaction counts. Static regex over
+       * the raw HTML reads zeros for React/Vue/Svelte apps — this reads what
+       * the user actually sees. Returns null (never throws) on failure.
+       */
+      async harvest(url, opts = {}) {
+        if (closed) return null
+        const page = await browser.newPage({ viewport: opts.viewport || DEFAULTS.viewport, userAgent: UA }).catch(() => null)
+        if (!page) return null
+        try {
+          await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25000 }).catch(() => {})
+          await page.waitForTimeout(Math.max(800, opts.settleMs || 2200))
+          return await page.evaluate(() => {
+            const out = { colors: [], fonts: [], spacing: [], interactions: { links: 0, buttons: 0, forms: 0, hoverStates: 0, scrollListeners: 0 }, live: true }
+            try {
+              const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim()
+              const colorSet = new Set(); const fontSet = new Set(); const spaceSet = new Set()
+              const els = [...document.querySelectorAll('*')]
+              let sampled = 0
+              for (const el of els) {
+                if (sampled >= 4000) break
+                sampled++
+                let cs; try { cs = getComputedStyle(el) } catch { continue }
+                if (!cs) continue
+                for (const prop of ['color', 'backgroundColor', 'borderTopColor']) {
+                  const v = norm(cs[prop])
+                  if (v && !/rgba\(0, 0, 0, 0\)/.test(v)) colorSet.add(v)
+                }
+                const fam = norm(cs.fontFamily).split(',')[0].replace(/["']/g, '')
+                if (fam) fontSet.add(fam)
+                for (const prop of ['marginTop', 'paddingLeft', 'gap', 'rowGap']) {
+                  const v = norm(cs[prop])
+                  if (v && v !== '0px' && v !== 'normal') spaceSet.add(v)
+                }
+              }
+              out.colors = [...colorSet].sort().slice(0, 48)
+              out.fonts = [...fontSet].sort().slice(0, 12)
+              out.spacing = [...spaceSet].sort((a, b) => parseFloat(a) - parseFloat(b)).slice(0, 24)
+              const ix = out.interactions
+              ix.links = document.querySelectorAll('a[href]').length
+              ix.buttons = document.querySelectorAll('button, [role="button"], input[type="submit"], input[type="button"]').length
+              ix.forms = document.querySelectorAll('form').length
+              let hover = 0
+              for (const sheet of document.styleSheets) {
+                let rules; try { rules = sheet.cssRules } catch { continue }
+                if (!rules) continue
+                for (const r of rules) { if (r.selectorText && r.selectorText.includes(':hover')) hover++ }
+              }
+              ix.hoverStates = hover
+              let scrollables = 0
+              for (const el of els) {
+                let cs; try { cs = getComputedStyle(el) } catch { continue }
+                if (/(auto|scroll)/.test(cs.overflowY) && el.scrollHeight > el.clientHeight + 4) scrollables++
+              }
+              ix.scrollListeners = scrollables
+            } catch {}
+            return out
+          }).catch(() => null)
+        } catch {
+          return null
+        } finally {
+          await page.close().catch(() => {})
+        }
+      },
       async close() {
         closed = true
         await browser.close().catch(() => {})
