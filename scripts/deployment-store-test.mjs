@@ -41,6 +41,9 @@ function check(name, condition, detail = '') {
 
 // ─── Mock Supabase (PostgREST subset for the deployments table) ───────────────
 const table = new Map() // name → row
+// Simulates the real-world failure: PostgREST's schema cache is stale and
+// reports the deployments table as missing until a schema reload is requested.
+let cacheStale = true
 function startMockSupabase() {
   return new Promise(resolvePromise => {
     const server = createServer((req, res) => {
@@ -53,7 +56,16 @@ function startMockSupabase() {
       if (!url.pathname.startsWith('/rest/v1/')) return respond(404, { message: 'not found' })
       // The creations mirror does not exist in this test environment.
       if (url.pathname === '/rest/v1/creations') return respond(404, { code: '42P01', message: 'relation "public.creations" does not exist' })
+      if (url.pathname === '/rest/v1/rpc/reload_pgrst_schema') {
+        if (req.method !== 'POST') return respond(405, { message: 'method not allowed' })
+        cacheStale = false
+        res.writeHead(204)
+        return res.end()
+      }
       if (url.pathname !== '/rest/v1/deployments') return respond(404, { message: 'unknown table' })
+      if (cacheStale && req.method === 'GET') {
+        return respond(404, { code: 'PGRST205', message: "Could not find the table 'public.deployments' in the schema cache" })
+      }
 
       const filters = {}
       for (const [key, value] of url.searchParams.entries()) {
@@ -154,11 +166,14 @@ child.stderr.on('data', d => { bootLog += d })
 
 try {
   check('server booted', await waitForServer())
-  await new Promise(r => setTimeout(r, 500)) // allow boot health log to flush
+  await new Promise(r => setTimeout(r, 2500)) // allow boot health log + self-heal retry to flush
 
   // Boot health probe should report the store ready
   check('boot health probe reports Supabase connected + table found',
     /✅ Supabase connected successfully/.test(bootLog) && /✅ Table 'deployments' found/.test(bootLog), bootLog.slice(-400))
+
+  // Stale schema cache must be auto-healed at boot (self-healing retry)
+  check('stale schema cache auto-healed at boot', /schema cache reload requested/.test(bootLog), bootLog.slice(-600))
 
   // Diagnostics endpoint reveals connection + table state
   const statusRes = await request('/api/supabase-status')

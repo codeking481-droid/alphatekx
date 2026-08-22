@@ -40,4 +40,16 @@ create trigger deployments_set_updated_at
 -- No public policies — end users can never read or write other people's sites.
 alter table public.deployments enable row level security;
 
+-- Lets the server ask PostgREST to rebuild its schema cache after DDL.
+-- Used by the deployment store's self-healing retry logic.
+create or replace function public.reload_pgrst_schema()
+returns void
+language plpgsql
+security definer
+as $$
+begin
+  notify pgrst, 'reload schema';
+end;
+$$;
+
 comment on table public.deployments is 'AlphaTekX deployed sites — HTML stored permanently as UTF-8. Served at https://alphatekx.name.ng/app/{name}.';

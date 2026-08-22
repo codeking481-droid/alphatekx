@@ -7417,7 +7417,7 @@ async function localPublishCreation(body, baseUrl) {
   const saved = await saveDeployment(slug, creation.code, { id: creationId, title: creation.title })
   if (!saved.ok) {
     console.error('[DEPLOY] Permanent save failed:', saved.error)
-    return { status: saved.schemaMissing ? 503 : 500, body: { error: saved.schemaMissing ? schemaMissingMessage() : 'Could not save the deployment to permanent storage.' } }
+    return { status: saved.schemaMissing ? 503 : 500, body: { error: saved.schemaMissing ? schemaMissingMessage() : 'Could not save the deployment to permanent storage.', detail: saved.error } }
   }
   const url = `${baseUrl}/app/${slug}`
   registerDeployedSite(slug, url)
@@ -7444,7 +7444,7 @@ async function localPublishPasted(body, baseUrl, owner = null) {
   })
   if (!saved.ok) {
     console.error('[DEPLOY] Permanent save failed:', saved.error)
-    return { status: saved.schemaMissing ? 503 : 500, body: { error: saved.schemaMissing ? schemaMissingMessage() : 'Could not save the deployment to permanent storage.' } }
+    return { status: saved.schemaMissing ? 503 : 500, body: { error: saved.schemaMissing ? schemaMissingMessage() : 'Could not save the deployment to permanent storage.', detail: saved.error } }
   }
   const url = `${baseUrl}/app/${slug}`
   registerDeployedSite(slug, url)
