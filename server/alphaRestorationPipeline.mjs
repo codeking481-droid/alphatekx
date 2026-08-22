@@ -27,7 +27,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import JSZip from 'jszip'
 import { probeRenderedPage, createRenderSession, isRenderProbeAvailable } from './renderedDiagnostics.mjs'
-import { llmRepairBatch } from './llmRepairAgent.mjs'
+import { llmRepairBatch, llmRebuildPage } from './llmRepairAgent.mjs'
 import { repairBrokenHtml } from './htmlResurrector.mjs'
 import { getSiteMemory, recordRestoration } from './siteMemory.mjs'
 import { crawlSite, normalizePagePath } from './siteCrawler.mjs'
@@ -1520,6 +1520,35 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
       sendEvent({ type: 'ai_repairs_complete', data: { issues_sent: aiEligible.length, ai_repairs_applied_total: aiAppliedTotal, cycle } })
     }
 
+    // ── STEP 4c: AI PAGE REBUILD — expert-dev regeneration for damaged pages.
+    //    The model gets the Make-It-Work instruction set: remove intentional
+    //    breakage, produce ONE clean modern responsive HTML file. The result is
+    //    only adopted when it scores at least as healthy as the patched page,
+    //    so a hallucinated or lossy rebuild can never make things worse.
+    {
+      const heavyDamage = (cycleDiagnosis?.summary?.critical || 0) > 0 || (cycleDiagnosis?.score || 100) < 85
+      if (heavyDamage) {
+        const rebuildSummary = await chain.step(`ai-rebuild${suffix}`, `${prefix}Expert developer pass — regenerating a clean, modern, responsive page…`, 'brain', async () => {
+          const before = await diagnose(workingHtml, { baseUrl: finalUrl, https: isHttps, skipNetworkChecks: true }).catch(() => null)
+          const r = await llmRebuildPage({ html: workingHtml, hostname, url: finalUrl })
+          if (!r.attempted) return `Rebuild skipped — ${r.notes[0] || 'not configured'}`
+          if (!r.rebuilt) return `Rebuild unavailable — ${r.notes[0] || 'model returned nothing usable'}`
+          const after = await diagnose(r.html, { baseUrl: finalUrl, https: isHttps, skipNetworkChecks: true }).catch(() => null)
+          if (!after) return 'Rebuild discarded — could not verify the regenerated page'
+          if ((after.score || 0) < (before?.score ?? -1)) {
+            return `Rebuild scored lower (${after.score} vs ${before.score}) — kept the repaired original`
+          }
+          workingHtml = r.html
+          sendEvent({
+            type: 'ai_rebuild_complete',
+            data: { adopted: true, before_score: before?.score ?? null, after_score: after.score ?? null, bytes: r.html.length, cycle },
+          })
+          return `Clean modern rebuild adopted — health ${before?.score ?? '?'} → ${after.score}`
+        })
+        void rebuildSummary
+      }
+    }
+
     // ── STEP 5: RECONSTRUCT (+ save artifacts so the live preview updates) ──
     const reconstruction = await chain.step(`rebuild${suffix}`, `${prefix}Reconstructing the site — validating UTF-8, English, HTML integrity…`, 'shield', () => {
       const r = reconstruct(workingHtml)
@@ -1961,6 +1990,24 @@ async function runSiteRestoration(ctx) {
           const ai = await llmRepairBatch({ html: workingHtml, issues: aiEligible, hostname }).catch(() => ({ html: workingHtml, applied: 0, skipped: aiEligible.length, notes: ['AI repair crashed — rules kept the page safe'], configured: false, attempted: false }))
           if (ai?.html) workingHtml = ai.html
           aiApplied += ai.applied || 0
+        }
+
+        // ── EXPERT REBUILD (budgeted): heavily damaged pages get regenerated
+        //    as one clean modern page; adopted only when it scores no worse.
+        {
+          const heavyDamage = (cycleDiagnosis?.summary?.critical || 0) > 0 || (cycleDiagnosis?.score || 100) < 85
+          if (heavyDamage && aiCallsUsed < AI_BUDGET) {
+            aiCallsUsed++
+            const before = await diagnose(workingHtml, { baseUrl: page.finalUrl, https: new URL(page.finalUrl).protocol === 'https:', skipNetworkChecks: true }).catch(() => null)
+            const rb = await llmRebuildPage({ html: workingHtml, hostname, url: page.finalUrl }).catch(() => ({ rebuilt: false, html: workingHtml, notes: ['rebuild crashed'] }))
+            if (rb?.rebuilt) {
+              const after = await diagnose(rb.html, { baseUrl: page.finalUrl, https: new URL(page.finalUrl).protocol === 'https:', skipNetworkChecks: true }).catch(() => null)
+              if (after && (after.score || 0) >= (before?.score ?? -1)) {
+                workingHtml = rb.html
+                if (isEntry) chain.done(`p${i}-rebuild`, 'Expert rebuild — clean modern regeneration adopted', `health ${before?.score ?? '?'} → ${after.score}`)
+              }
+            }
+          }
         }
 
         const reconstruction = reconstruct(workingHtml)

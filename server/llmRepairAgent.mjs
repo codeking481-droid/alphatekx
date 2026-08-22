@@ -16,8 +16,66 @@
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions'
+const XAI_URL = 'https://api.x.ai/v1/chat/completions'
 const REQUEST_TIMEOUT_MS = 45_000
 const MAX_PATCH_CHARS = 40_000
+
+// Keys are routed by PREFIX, not by variable name — deployments regularly put
+// whatever provider key they have into GROQ_API_KEY:
+//   xai-*  → xAI (Grok)      gsk_* → Groq      sk-* → OpenAI
+function detectKeyFamily(key) {
+  const k = String(key || '')
+  if (k.startsWith('xai-')) return 'xai'
+  if (k.startsWith('gsk_')) return 'groq'
+  return 'openai'
+}
+
+function providerEndpoint(family) {
+  if (family === 'xai') return XAI_URL
+  if (family === 'groq') return GROQ_URL
+  return OPENAI_URL
+}
+
+function providerDefaultModel(family) {
+  if (family === 'xai') return process.env.XAI_MODEL || 'grok-3-mini'
+  if (family === 'groq') return process.env.GROQ_BUILDER_MODEL || 'llama-3.3-70b-versatile'
+  return 'gpt-4o-mini'
+}
+
+let _lastLlmError = ''
+export function llmLastError() { return _lastLlmError }
+
+/**
+ * Ordered chat attempts from whatever keys exist. The FIRST primary key wins;
+ * OpenAI is appended as fallback when it is not already the primary.
+ */
+function buildChatAttempts() {
+  const attempts = []
+  const primary = [
+    process.env.GROQ_API_KEY,
+    process.env.GROQ_API_KEY_1,
+    process.env.GROQ_API_KEY_2,
+    process.env.GROQ_API_KEY_3,
+    process.env.GROQ_API_KEY_4,
+  ].map(k => String(k || '').trim()).find(Boolean)
+
+  if (primary) {
+    const family = detectKeyFamily(primary)
+    attempts.push({ url: providerEndpoint(family), key: primary, model: providerDefaultModel(family), family })
+    if (!process.env.XAI_MODEL && family === 'groq') {
+      // GROQ_BUILDER_MODEL may reference a decommissioned Groq model — add the
+      // known-instant model as a same-provider retry before leaving Groq.
+      attempts.push({ url: GROQ_URL, key: primary, model: 'llama-3.1-8b-instant', family })
+    }
+  }
+
+  for (const key of [process.env.OPENAI_API_KEY].map(k => String(k || '').trim()).filter(Boolean)) {
+    if (key === primary) break
+    attempts.push({ url: OPENAI_URL, key, model: 'gpt-4o-mini', family: 'openai' })
+    break
+  }
+  return attempts
+}
 
 function groqKeys() {
   return [
@@ -34,7 +92,7 @@ function openaiKeys() {
 }
 
 export function isLlmRepairConfigured() {
-  return groqKeys().length > 0 || openaiKeys().length > 0
+  return buildChatAttempts().length > 0
 }
 
 async function callChatCompletion(url, apiKey, model, system, user, maxTokens) {
@@ -75,15 +133,7 @@ async function callChatCompletion(url, apiKey, model, system, user, maxTokens) {
  * Returns parsed JSON object or null when every provider fails.
  */
 export async function repairChat(system, user, { maxTokens = 4000 } = {}) {
-  const attempts = []
-  for (const key of groqKeys()) {
-    attempts.push({ url: GROQ_URL, key, model: process.env.GROQ_BUILDER_MODEL || 'llama-3.3-70b-versatile' })
-    break // one Groq key is enough; rotate only on failure below
-  }
-  for (const key of openaiKeys()) {
-    attempts.push({ url: OPENAI_URL, key, model: 'gpt-4o-mini' })
-    break
-  }
+  const attempts = buildChatAttempts()
   if (!attempts.length) return null
 
   for (const attempt of attempts) {
@@ -93,6 +143,7 @@ export async function repairChat(system, user, { maxTokens = 4000 } = {}) {
         const parsed = JSON.parse(content)
         if (parsed && typeof parsed === 'object') return parsed
       } catch (err) {
+        _lastLlmError = `${attempt.family}/${attempt.model}: ${err instanceof Error ? err.message : err}`
         console.warn(`[LLM-REPAIR] ${attempt.model} attempt ${tryIndex + 1} failed:`, err instanceof Error ? err.message : err)
         await new Promise(r => setTimeout(r, 800 * (tryIndex + 1)))
       }
@@ -205,4 +256,206 @@ export async function llmRepairBatch(input) {
 function clipNote(text) {
   const s = String(text || '').trim()
   return s.length > 140 ? s.slice(0, 140) + '…' : s
+}
+
+// ─── Full-page rebuild ───────────────────────────────────────────────────────
+// For deliberately / heavily broken pages: ask the model to act as an expert
+// web developer and regenerate ONE clean working HTML file from the wreckage.
+
+export const REBUILD_SYSTEM_PROMPT = `You are an expert web developer fixing a deliberately broken website.
+
+Your task:
+1. Remove all intentional breakage (broken scripts, missing variables, syntax errors)
+2. Create a clean, modern, responsive design
+3. Use proper HTML5 semantic structure
+4. Make the page functional and user-friendly
+5. Keep the original content where it makes sense, but reorganize it logically
+6. Fix all forms, buttons, and interactive elements
+7. Replace broken images with placeholder content
+8. Remove the chaos elements (marquee, blinking, absurd styling)
+
+You are also a web restoration expert. Your job is to fix broken websites by understanding their content and rebuilding them properly.
+
+Follow this process:
+
+STEP 1 - CONTENT ANALYSIS:
+- Read through the broken HTML to understand what content is actually there
+- Identify: What is this page about? What information is it trying to convey?
+- Extract meaningful text, images, and structure from the chaos
+
+STEP 2 - CLEAN THE DATA:
+- Remove all intentionally broken elements (marquee, blink, broken scripts, errors)
+- Discard junk content (gibberish, repeated nonsense, broken images)
+- Keep valuable content (headings, paragraphs, lists, forms, buttons)
+
+STEP 3 - REBUILD WITH PURPOSE:
+- Create a clean, semantic HTML5 structure
+- Design a modern, responsive layout using CSS
+- Make all interactive elements functional
+- Use the extracted content in a logical flow
+
+STEP 4 - PRESERVE INTENT:
+- If the page was about food, make it a restaurant page
+- If it had a contact form, make it work
+- If it had a list, turn it into a proper feature list
+- Keep the original colors/spirit if they made sense
+
+Important: Every website is different. Don't use the same template for everything.
+Look at what the content is trying to be and rebuild it appropriately.
+
+The goal is to create a usable website that serves the same purpose as the original,
+just without all the intentional breakage.
+
+You are Alpha, an emergency website recovery system. Your mission is to restore crashed websites to full functionality.
+
+RECOVERY PROCESS:
+
+PHASE 1: TRIAGE
+- Scan the broken HTML for surviving content
+- Identify the site's purpose (business, blog, portfolio, e-commerce, etc.)
+- Detect what's broken (scripts, forms, links, styling)
+
+PHASE 2: RESCUE
+- Extract ALL meaningful content (text, images, data)
+- Preserve important information (contact details, products, services)
+- Save functional elements (working links, forms, navigation)
+
+PHASE 3: REBUILD
+- Construct a clean HTML5 structure
+- Apply modern, responsive design
+- Restore all functionality (forms, buttons, interactivity)
+- Recreate the brand identity (colors, fonts, style)
+
+PHASE 4: DEPLOY
+- Create a complete, production-ready HTML file
+- Include all necessary CSS and JavaScript inline
+- Ensure all features work (contact forms, navigation, etc.)
+
+CRITICAL RULES:
+- Never lose data - recover everything valuable
+- Make it better than before - modern, faster, more accessible
+- Preserve the original purpose and identity
+- Keep it simple and reliable - no unnecessary complexity
+
+The goal: Save businesses from losing their online presence.
+
+Output rules:
+- Output a single, complete, working HTML file.
+- Return RAW HTML only — no markdown fences, no commentary before or after.
+- The document MUST start with <!DOCTYPE html> and contain <head> and <body>.
+- Keep every real text section from the original page; drop only the damage.
+- All CSS goes in one <style> block in <head>; all JS in one deferred <script> at the end of <body>. No external dependencies.`
+
+/**
+ * Plain-text chat used by the rebuild pass. Same provider rotation as
+ * repairChat (Groq primary → OpenAI fallback, two attempts each) but WITHOUT
+ * JSON response mode — we want raw HTML back.
+ */
+async function chatText(system, user, { maxTokens = 8000 } = {}) {
+  const attempts = buildChatAttempts()
+  if (!attempts.length) return null
+  for (const attempt of attempts) {
+    for (let tryIndex = 0; tryIndex < 2; tryIndex++) {
+      try {
+        const content = await callChatCompletionRaw(attempt.url, attempt.key, attempt.model, system, user, maxTokens)
+        if (content && String(content).trim()) return String(content).trim()
+      } catch (err) {
+        _lastLlmError = `${attempt.family}/${attempt.model}: ${err instanceof Error ? err.message : err}`
+        console.warn(`[LLM-REBUILD] ${attempt.model} attempt ${tryIndex + 1} failed:`, err instanceof Error ? err.message : err)
+        await new Promise(r => setTimeout(r, 800 * (tryIndex + 1)))
+      }
+    }
+  }
+  return null
+}
+
+/** callChatCompletion twin without response_format — returns raw text. */
+async function callChatCompletionRaw(url, apiKey, model, system, user, maxTokens) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS * 2)
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: user },
+        ],
+        temperature: 0.2,
+        max_tokens: maxTokens,
+      }),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`)
+    const data = await res.json()
+    const content = data?.choices?.[0]?.message?.content
+    if (!content) throw new Error('Empty completion')
+    return content
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/** Strip markdown fences and sanity-check that the model returned a full document. */
+function extractHtmlDocument(text) {
+  let t = String(text || '').trim()
+  t = t.replace(/^```(?:html)?\s*/i, '').replace(/```\s*$/, '').trim()
+  // Some models prepend a sentence — snap to the doctype/html open if present.
+  const docIdx = Math.min(
+    ...['<!doctype', '<html'].map((needle) => {
+      const i = t.toLowerCase().indexOf(needle)
+      return i === -1 ? Number.MAX_SAFE_INTEGER : i
+    }),
+  )
+  if (docIdx !== Number.MAX_SAFE_INTEGER && docIdx > 0 && docIdx < 400) t = t.slice(docIdx)
+  const looksLikeDoc = /<!doctype\s+html/i.test(t) || /<html[\s>]/i.test(t)
+  if (!looksLikeDoc || t.length < 500) return null
+  return t
+}
+
+/**
+ * Regenerate an entire damaged page as one clean, modern, working HTML file.
+ * NEVER throws — any failure falls back to the input HTML untouched.
+ * @param {{html:string, hostname?:string, url?:string}} input
+ * @returns {Promise<{configured:boolean, attempted:boolean, rebuilt:boolean, html:string, notes:string[]}>}
+ */
+export async function llmRebuildPage(input = {}) {
+  const { html = '', hostname = '', url = '' } = input
+  const out = { configured: isLlmRepairConfigured(), attempted: false, rebuilt: false, html, notes: [] }
+
+  if (!out.configured) {
+    out.notes.push('No AI provider key configured — rebuild skipped.')
+    return out
+  }
+  if (!String(html).trim()) {
+    out.notes.push('Empty input — rebuild skipped.')
+    return out
+  }
+
+  let source = String(html)
+  if (source.length > 60_000) source = source.slice(0, 60_000)
+  const user = `Site: ${hostname || '(unknown host)'}${url ? `\nURL: ${url}` : ''}\n\nCurrent page source:\n${source}\n\nReturn the complete fixed HTML file now.`
+
+  out.attempted = true
+  const answer = await chatText(REBUILD_SYSTEM_PROMPT, user, { maxTokens: 12000 })
+  if (!answer) {
+    out.notes.push(`AI providers unavailable (${llmLastError() || 'unknown error'}) — continuing without rebuild.`)
+    return out
+  }
+
+  const cleaned = extractHtmlDocument(answer)
+  if (!cleaned) {
+    out.notes.push('Model output was not a complete HTML document — discarded.')
+    return out
+  }
+
+  out.html = cleaned
+  out.rebuilt = true
+  out.notes.push('Clean expert rebuild generated.')
+  return out
 }
