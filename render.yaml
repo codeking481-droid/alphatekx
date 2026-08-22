@@ -5,7 +5,10 @@ services:
     plan: free
     branch: main
     autoDeploy: true
-    buildCommand: npm run build && rm -rf .next/node_modules .next/cache
+    # npm install MUST be explicit here: Render's cache can restore node_modules
+    # without running lifecycle scripts, which silently skipped the Chromium
+    # download and left the restoration agent without a browser.
+    buildCommand: npm install && npx playwright install chromium && node scripts/build.mjs
     startCommand: node --experimental-strip-types server.mjs
     envVars:
       - key: NODE_VERSION

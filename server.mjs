@@ -10676,17 +10676,39 @@ if (!process.env.VERCEL) {
   console.log('  Groq key:', hasGroqKey)
   console.log('  Pollinations key:', !!process.env.POLLINATIONS_API_KEY, '(optional)')
 
-  // Playwright chromium availability — the scanner cannot start without it.
-  try {
-    const execPath = chromium.executablePath()
-    if (execPath && fs.existsSync(execPath)) {
-      console.log('[AlphaTekX] Playwright chromium: OK (' + execPath + ')')
-    } else {
-      console.error('[AlphaTekX] Playwright chromium: NOT FOUND' + (execPath ? ' at ' + execPath : '') + ' — the scanner will fail. Run: npx playwright install chromium')
+  // Playwright chromium availability — live rendering cannot start without it.
+  // If the binary is missing (fresh Render box / lifecycle scripts skipped),
+  // install it right now so the restoration agent is NEVER crippled.
+  const ensureChromium = async () => {
+    try {
+      const execPath = chromium.executablePath()
+      if (execPath && fs.existsSync(execPath)) {
+        console.log('[AlphaTekX] Playwright chromium: OK (' + execPath + ')')
+        return
+      }
+      console.error('[AlphaTekX] Playwright chromium: NOT FOUND' + (execPath ? ' at ' + execPath : '') + ' — auto-installing now (this can take a minute)…')
+    } catch (err) {
+      console.error('[AlphaTekX] Playwright chromium check failed — auto-installing anyway:', err instanceof Error ? err.message : String(err))
     }
-  } catch (err) {
-    console.error('[AlphaTekX] Playwright chromium: unavailable — ' + (err instanceof Error ? err.message : String(err)))
+    try {
+      const { spawn } = await import('child_process')
+      const child = spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx', ['playwright', 'install', 'chromium'], { stdio: 'inherit' })
+      const code = await new Promise((resolve) => {
+        const timer = setTimeout(() => { try { child.kill('SIGKILL') } catch {} ; resolve(124) }, 4 * 60 * 1000)
+        child.on('exit', (c) => { clearTimeout(timer); resolve(c ?? 1) })
+        child.on('error', () => { clearTimeout(timer); resolve(1) })
+      })
+      let installed = false
+      if (code === 0) {
+        try { const p = chromium.executablePath(); installed = Boolean(p && fs.existsSync(p)) } catch {}
+      }
+      if (installed) console.log('[AlphaTekX] Playwright chromium: INSTALLED at boot — live rendering enabled')
+      else console.error('[AlphaTekX] Playwright chromium auto-install failed (exit ' + code + ') — add "npx playwright install chromium" to the Render build command')
+    } catch (err) {
+      console.error('[AlphaTekX] Playwright chromium auto-install crashed:', err instanceof Error ? err.message : String(err))
+    }
   }
+  ensureChromium()
 
   server.listen(port, () => process.stdout.write(`[AlphaTekX] listening on ${port}\n`))
   runSupabaseStartupCheck().catch((err) => console.error('[SUPABASE] health check crashed:', err instanceof Error ? err.message : err))
