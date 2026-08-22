@@ -28,6 +28,7 @@ import { fileURLToPath } from 'node:url'
 import JSZip from 'jszip'
 import { probeRenderedPage, createRenderSession, isRenderProbeAvailable } from './renderedDiagnostics.mjs'
 import { llmRepairBatch } from './llmRepairAgent.mjs'
+import { repairBrokenHtml } from './htmlResurrector.mjs'
 import { getSiteMemory, recordRestoration } from './siteMemory.mjs'
 import { crawlSite, normalizePagePath } from './siteCrawler.mjs'
 
@@ -1310,7 +1311,19 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
   const baseUrlObj = new URL(finalUrl)
   const hostname = baseUrlObj.hostname.replace(/^www\./, '')
   const isHttps = baseUrlObj.protocol === 'https:'
-  const originalHtml = sanitizeEncoding(doc.body)
+  let originalHtml = sanitizeEncoding(doc.body)
+
+  // Launcher shells (iframe srcdoc / published templates) hide the real site
+  // inside a script string — unwrap so Alpha repairs what visitors actually see.
+  const embeddedDoc = extractEmbeddedDocument(originalHtml)
+  if (embeddedDoc) {
+    chain.done(
+      'recon-unwrap',
+      'Launcher shell detected — opening it up to reach the real page inside',
+      `Source: ${embeddedDoc.source} · inner document ${(embeddedDoc.html.length / 1024).toFixed(1)} KB`,
+    )
+    originalHtml = sanitizeEncoding(embeddedDoc.html)
+  }
 
   // ════════ SITE-WIDE MODE — every page, one run ════════
   if (maxPages > 1) {
@@ -1433,12 +1446,38 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
   let plan = null
   let appliedCount = 0
   let aiAppliedTotal = 0
+  let structuralApplied = false
+  let structuralTally = null
   const cycleHistory = []
 
   for (let cycle = 1; cycle <= MAX_CYCLES; cycle++) {
     const suffix = cycle > 1 ? `-c${cycle}` : ''
     const prefix = cycle > 1 ? `Cycle ${cycle}/${MAX_CYCLES} — ` : ''
-    if (cycle > 1) chain.active(`cycle-${cycle}`, `Alpha is not satisfied — digging deeper in cycle ${cycle} of ${MAX_CYCLES}…`, 'brain')
+    if (cycle > 1) chain.active(`cycle-${cycle}`, `Alpha is still digging deeper in cycle ${cycle} of ${MAX_CYCLES}…`, 'brain')
+
+    // ── STEP 3.5: MAKE-IT-WORK — recover broken CSS, JS syntax, unclosed
+    //    markup and dead assets BEFORE the rule-based planner runs, so the
+    //    rest of the pipeline operates on a page that actually parses.
+    if (cycle === 1 && !structuralApplied) {
+      const probeFailed = [
+        ...(renderProbe?.failedRequests || []).map((r) => r.url || r),
+        ...(renderProbe?.badResponses || []).map((r) => r.url || r),
+      ].filter(Boolean)
+      await chain.step('make-it-work', 'Make-It-Work — rebuilding broken CSS, JS syntax, unclosed markup and dead assets…', 'repair', async () => {
+        const r = await repairBrokenHtml(workingHtml, { baseUrl: finalUrl, knownDead: probeFailed, allowNetwork: false })
+        workingHtml = r.html
+        structuralApplied = true
+        structuralTally = r.tally
+        const actions = []
+        if (r.tally.css_repaired) actions.push(`${r.tally.css_repaired} CSS block(s) rebuilt`)
+        const jsWork = r.tally.js_removed + r.tally.js_reconstructed + r.tally.js_guarded + r.tally.js_sanitized
+        if (jsWork) actions.push(`${jsWork} script(s) made safe`)
+        if (r.tally.dead_assets_removed) actions.push(`${r.tally.dead_assets_removed} dead asset(s) removed`)
+        if (r.tally.js_removed) actions.push(`${r.tally.js_removed} unrecoverable script(s) neutralized`)
+        if (r.tally.html_normalized) actions.push('structures auto-closed')
+        return actions.length ? actions.join(' · ') : 'No structural repair needed'
+      })
+    }
 
     // ── STEP 3: FIX PLAN ──
     plan = await chain.step(`plan${suffix}`, `${prefix}Generating the complete fix plan — one repair per issue…`, 'plan', () => buildFixPlan(cycleDiagnosis))
@@ -1878,6 +1917,26 @@ async function runSiteRestoration(ctx) {
       const history = []
       let aiApplied = 0
       for (let cycle = 1; cycle <= cyclesCap; cycle++) {
+        // ── MAKE-IT-WORK (cycle 1 only): recover broken CSS, JS syntax,
+        //    unclosed markup and dead assets before rule repairs run.
+        if (cycle === 1) {
+          const probeFailed = [
+            ...(rendered?.failedRequests || []).map((r) => r.url || r),
+            ...(rendered?.badResponses || []).map((r) => r.url || r),
+          ].filter(Boolean)
+          const rescued = await repairBrokenHtml(workingHtml, { baseUrl: page.finalUrl, knownDead: probeFailed, allowNetwork: false })
+          if (rescued.tally.css_repaired || rescued.tally.dead_assets_removed || rescued.tally.js_removed || rescued.tally.js_reconstructed || rescued.tally.js_guarded || rescued.tally.js_sanitized) {
+            workingHtml = rescued.html
+            if (isEntry) {
+              const actions = []
+              if (rescued.tally.css_repaired) actions.push(`${rescued.tally.css_repaired} CSS block(s) rebuilt`)
+              const jsWork = rescued.tally.js_removed + rescued.tally.js_reconstructed + rescued.tally.js_guarded + rescued.tally.js_sanitized
+              if (jsWork) actions.push(`${jsWork} script(s) made safe`)
+              if (rescued.tally.dead_assets_removed) actions.push(`${rescued.tally.dead_assets_removed} dead asset(s) removed`)
+              if (actions.length) chain.done(`p${i}-make-it-work`, 'Make-It-Work — structure healed', actions.join(' · '))
+            }
+          }
+        }
         const repairResult = executeRepairs(workingHtml, cycleDiagnosis, { finalUrl: page.finalUrl, hostname })
         workingHtml = repairResult.html
         if (isEntry) {
@@ -2107,6 +2166,55 @@ async function runSiteRestoration(ctx) {
 function pageLabelFor(finalUrl) {
   const key = pageKeyOf(finalUrl)
   return key === '/' ? 'home page' : key
+}
+
+/**
+ * Launcher shells hide the real document inside the page — an iframe srcdoc,
+ * or (our own publisher) a JS template string assigned to frame.srcdoc.
+ * Visitors SEE the inner app; static scanners only see the shell. Alpha opens
+ * the shell and restores what the visitor actually sees. Returns null when
+ * the html is a normal self-contained page.
+ */
+export function extractEmbeddedDocument(html) {
+  if (!html || typeof html !== 'string') return null
+
+  // Case 1: AlphaTekX publisher shells — alphatekx:published:<slug> + template → frame.srcdoc
+  if (/alphatekx:published:/i.test(html) && /srcdoc\s*=\s*template/i.test(html)) {
+    const m = html.match(/(?:let|const|var)\s+template\s*=\s*("(?:\\.|[^"\\])+")/)
+    if (m) {
+      let inner = null
+      try { inner = JSON.parse(m[1]) } catch {
+        // Tolerate raw line terminators inside the literal (invalid strict JSON,
+        // but producers emit them anyway).
+        try { inner = JSON.parse(m[1].replace(/(?<!\\)\r?\n/g, '\\n')) } catch {}
+      }
+      if (typeof inner === 'string' && /<[a-z!]/i.test(inner) && inner.length > 400) {
+        return { html: inner, source: 'launcher-template' }
+      }
+    }
+  }
+
+  // Case 2: plain <iframe srcdoc="..."> carrying a full document
+  const m2 = html.match(/<iframe[^>]*?\ssrcdoc\s*=\s*"([^"]+)"[^>]*>/i)
+  if (m2) {
+    let inner = m2[1]
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#0?39;/g, "'")
+      .replace(/&amp;/g, '&')
+    const outerVisibleText = html
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+    const looksLikeDoc = /<html[\s>]/i.test(inner) || /<(body|main|div|h1|h2|p)[\s>]/i.test(inner)
+    if (looksLikeDoc && inner.length > 400 && inner.length > outerVisibleText.length * 2) {
+      return { html: inner, source: 'iframe-srcdoc' }
+    }
+  }
+
+  return null
 }
 
 function registryGetFixed(id) {
