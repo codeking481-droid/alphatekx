@@ -295,7 +295,7 @@ function ChatContent() {
       setIsGenerating(false)
       abortRef.current = null
     }
-  }, [scrollToBottom, updateLastMessage, handleRestoreEvent])
+  }, [scrollToBottom, updateLastMessage])
 
   const handleSend = useCallback(async () => {
     const text = input.trim()
