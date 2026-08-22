@@ -17,6 +17,11 @@
  */
 
 import { createClient } from '@supabase/supabase-js'
+import fs from 'node:fs'
+
+// Bump when the restoration engine changes so a single GET on
+// /api/supabase-status proves WHICH build is live in production.
+export const ENGINE_BUILD = 'v4-live-2'
 
 const TABLE = 'deployments'
 
@@ -395,6 +400,26 @@ function safeUrlHost(url) {
 }
 
 /**
+ * Chromium availability probe for the status endpoint — proves in ONE request
+ * whether live rendering can work on this machine (Render or local).
+ */
+async function chromiumStatus() {
+  try {
+    if (String(process.env.ALPHATEKX_DISABLE_RENDER_PROBE || '') === '1') {
+      return { ready: false, reason: 'disabled via ALPHATEKX_DISABLE_RENDER_PROBE' }
+    }
+    const mod = await import('playwright')
+    const chromium = mod.default?.chromium || mod.chromium
+    if (!chromium) return { ready: false, reason: 'playwright module unavailable' }
+    const execPath = chromium.executablePath()
+    const ready = Boolean(execPath) && fs.existsSync(execPath)
+    return { ready, path: String(execPath || '').slice(-70), reason: ready ? null : 'chromium binary not downloaded — build must run: npx playwright install chromium' }
+  } catch (err) {
+    return { ready: false, reason: String(err?.message || err).slice(0, 140) }
+  }
+}
+
+/**
  * Full diagnostics for /api/supabase-status — shows exactly which Supabase
  * project the app is talking to and whether it can see the deployments table.
  * Never returns secrets (only the project host).
@@ -415,6 +440,8 @@ export async function getDeploymentStoreStatus() {
   status.connected = health.connected
   status.tableReady = health.tableReady
   if (!health.connected || !health.tableReady) status.error = health.message || null
+  status.engineBuild = ENGINE_BUILD
+  try { Object.assign(status, { chromium: await chromiumStatus() }) } catch { status.chromium = { ready: false, reason: 'probe crashed' } }
   const missingColumns = []
   if (health.tableReady) {
     const db = getClient()
