@@ -19,15 +19,18 @@ import {
 export type ThoughtStep = {
   id: string;
   label: string;
-  icon: "scan" | "diagnose" | "plan" | "test" | "search" | "film" | "shield" | "fix";
-  status: "pending" | "active" | "done" | "error";
+  icon: string;
+  status: string;
   summary?: string;
   details?: string[];
   logs?: string[];
   tavilySources?: { title: string; url: string; score?: number; snippet: string }[];
 };
 
-const ICON_MAP: Record<ThoughtStep["icon"], React.FC<{ size?: number; className?: string }>> = {
+// Every engine (V1/V2/V4) may emit its own icon names — an unknown one must
+// fall back gracefully instead of rendering an undefined component
+// (which crashes the entire app).
+const ICON_MAP: Record<string, React.FC<{ size?: number; className?: string }>> = {
   scan: Brain,
   diagnose: Search,
   plan: Wrench,
@@ -36,16 +39,28 @@ const ICON_MAP: Record<ThoughtStep["icon"], React.FC<{ size?: number; className?
   film: Film,
   shield: Shield,
   fix: Cpu,
+  clock: Clock,
+  crawl: Globe,
+  browser: Globe,
+  verify: CheckCircle2,
+  repair: Wrench,
+  deliver: CheckCircle2,
+  memory: Brain,
 };
+const FALLBACK_ICON = Clock;
 
-const STATUS_COLORS = {
+function StepIconFor(icon: string): React.FC<{ size?: number; className?: string }> {
+  return ICON_MAP[icon] || FALLBACK_ICON;
+}
+
+const STATUS_COLORS: Record<string, string> = {
   pending: "border-zinc-600 bg-zinc-800/40",
   active: "border-[#D6FF00]/60 bg-[#D6FF00]/5",
   done: "border-emerald-500/60 bg-emerald-500/5",
   error: "border-red-500/60 bg-red-500/5",
 };
 
-const STEP_ICON_COLORS = {
+const STEP_ICON_COLORS: Record<string, string> = {
   pending: "text-zinc-500",
   active: "text-[#D6FF00]",
   done: "text-emerald-400",
@@ -59,33 +74,35 @@ function formatDuration(seconds: number): string {
   return s > 0 ? `${m}m ${s}s` : `${m}m`;
 }
 
-function StatusDot({ status }: { status: ThoughtStep["status"] }) {
+function StatusDot({ status }: { status: string }) {
+  const dotStatus = (["pending", "active", "done", "error"].includes(status) ? status : "pending") as "pending" | "active" | "done" | "error";
   return (
     <span className="relative flex h-3 w-3 shrink-0 items-center justify-center">
-      {status === "active" && (
+      {dotStatus === "active" && (
         <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-50" />
       )}
-      {status === "active" && (
+      {dotStatus === "active" && (
         <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_2px_rgba(74,222,128,0.6)]" />
       )}
-      {status === "done" && (
+      {dotStatus === "done" && (
         <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_10px_3px_rgba(74,222,128,0.5)]" />
       )}
-      {status === "error" && (
+      {dotStatus === "error" && (
         <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500 shadow-[0_0_10px_3px_rgba(239,68,68,0.5)]" />
       )}
-      {status === "pending" && (
+      {dotStatus === "pending" && (
         <span className="relative inline-flex h-2.5 w-2.5 rounded-full border border-zinc-500 bg-transparent" />
       )}
     </span>
   );
 }
 
-function StepIcon({ icon, status }: { icon: ThoughtStep["icon"]; status: ThoughtStep["status"] }) {
-  const IconComponent = ICON_MAP[icon];
+function StepIcon({ icon, status }: { icon: string; status: string }) {
+  const IconComponent = StepIconFor(icon);
+  const safeStatus = ["pending", "active", "done", "error"].includes(status) ? status : "pending";
   return (
     <div
-      className={`flex h-8 w-8 items-center justify-center rounded-lg border ${STATUS_COLORS[status]} ${STEP_ICON_COLORS[status]}`}
+      className={`flex h-8 w-8 items-center justify-center rounded-lg border ${STATUS_COLORS[safeStatus]} ${STEP_ICON_COLORS[safeStatus]}`}
     >
       <IconComponent size={16} />
     </div>
@@ -364,7 +381,7 @@ export default function ChainOfThought({
               <div className="space-y-0">
                 {steps.map((step, index) => (
                   <ThoughtStepComponent
-                    key={step.id}
+                    key={step.id || `${index}-${step.label}`}
                     step={step}
                     index={index}
                     isLast={index === steps.length - 1}
