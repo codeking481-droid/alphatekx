@@ -1,14 +1,16 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Download, Copy, CheckCircle2, GitBranch, Loader2 } from 'lucide-react'
+import { Download, Copy, CheckCircle2, GitBranch, Loader2, ShieldCheck } from 'lucide-react'
 import GitHubApplyCard from './GitHubApplyCard'
 
 export default function RestoreDeliveryCard({
   restorationId,
   downloadRestored,
+  onVerify,
 }: {
   restorationId: string
   downloadRestored?: string
+  onVerify?: () => void
 }) {
   const [copied, setCopied] = useState<null | 'ok' | 'err'>(null)
   const [copying, setCopying] = useState(false)
@@ -119,6 +121,17 @@ export default function RestoreDeliveryCard({
           <p className="text-[11px] text-amber-300/60">
             Clipboard blocked — opened the fixed HTML in a new tab instead (Ctrl+S to save).
           </p>
+        )}
+
+        {/* Continue — close the loop: re-scan the live URL and prove the fix went live */}
+        {onVerify && (
+          <button
+            onClick={onVerify}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#D6FF00]/30 bg-[#D6FF00]/[0.06] px-4 py-3 text-[13px] font-black text-[#D6FF00] transition hover:bg-[#D6FF00]/[0.12] active:scale-[0.98]"
+          >
+            <ShieldCheck size={15} />
+            Continue — Verify the fix went live
+          </button>
         )}
 
         {showGit && <GitHubApplyCard scanId={restorationId} />}

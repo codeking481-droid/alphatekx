@@ -15,6 +15,7 @@ import GoldProofCard, { type ProofData } from '../components/alpha/restore/GoldP
 import ActionCard from '../components/alpha/restore/ActionCard'
 import GitHubApplyCard from '../components/alpha/restore/GitHubApplyCard'
 import RestoreDeliveryCard from '../components/alpha/restore/RestoreDeliveryCard'
+import ReVerifyCard from '../components/alpha/restore/ReVerifyCard'
 import GitHubConnectGate from '../components/alpha/restore/GitHubConnectGate'
 import FixPromptCard from '../components/alpha/restore/FixPromptCard'
 import ScreenshotComparison from '../components/alpha/restore/ScreenshotComparison'
@@ -70,6 +71,17 @@ type RestoreCardState = {
     restoreComplete?: boolean
     pipelineDone?: boolean
     deliverables?: any
+    baseline?: { scoreAfter: number | null; issuesRemaining: number | null }
+    reverify?: {
+      running?: boolean
+      done?: boolean
+      score?: number | null
+      issueCount?: number | null
+      criticalCount?: number | null
+      screenshotUrl?: string | null
+      baselineScore?: number | null
+      baselineIssues?: number | null
+    }
   }
 }
 
@@ -174,6 +186,8 @@ function ChatContent() {
   const lastSiteUrlRef = useRef<string | null>(null)
   const lastIntentRef = useRef<'scan' | 'full'>('scan')
   const autoFixTriggeredRef = useRef(false)
+  const reverifyActiveRef = useRef(false)
+  const lastFixBaselineRef = useRef<{ url: string; scoreAfter: number | null; issuesRemaining: number | null } | null>(null)
 
   useEffect(() => {
     void hydrateChatHistory()
@@ -203,6 +217,85 @@ function ChatContent() {
       return next
     })
   }, [])
+
+  const runRestoreStream = useCallback(async (opts: {
+    sendText: string
+    url: string
+    mode: 'full' | 'scan-only'
+    wholeSite?: boolean
+    thread: ChatThread | null
+    userMsg: AlphaMessage
+  }) => {
+    const { sendText, url, mode, wholeSite = false, thread, userMsg } = opts
+    detectedUrlRef.current = url
+    lastSiteUrlRef.current = url
+    setIsGenerating(true)
+    try {
+      abortRef.current = new AbortController()
+      lastIntentRef.current = mode === 'full' ? 'full' : 'scan'
+      autoFixTriggeredRef.current = false
+
+      const streamUrl = isGitHubRepoUrl(url)
+        ? `/api/restore/v2?url=${encodeURIComponent(url)}&mode=${mode}&message=${encodeURIComponent(sendText)}`
+        : `/api/restore/v3?url=${encodeURIComponent(url)}&mode=${mode}${wholeSite ? '&pages=15' : ''}&message=${encodeURIComponent(sendText)}`
+
+      const res = await fetch(streamUrl, { signal: abortRef.current.signal })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+
+      const reader = res.body?.getReader()
+      if (!reader) throw new Error('No response body')
+
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              handleRestoreEvent(JSON.parse(line.slice(6)), url)
+            } catch {}
+          }
+        }
+      }
+
+      updateLastMessage((prev) => ({
+        ...prev,
+        isStreaming: false,
+        restoreCards: { ...prev.restoreCards, isRunning: false },
+      }))
+
+      setMessages((prev) => {
+        const last = prev[prev.length - 1]
+        if (last && thread) {
+          const updatedThread: ChatThread = {
+            ...thread,
+            messages: [...thread.messages, userMsg, { ...last, isStreaming: undefined, restoreCards: undefined }],
+            updatedAt: new Date().toISOString(),
+          }
+          saveChatThread(updatedThread)
+          setActiveThread(updatedThread)
+        }
+        return prev
+      })
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        updateLastMessage((prev) => ({
+          ...prev,
+          content: prev.content || `Error: ${err.message}`,
+          isStreaming: false,
+          restoreCards: { ...prev.restoreCards, isRunning: false },
+        }))
+      }
+    } finally {
+      setIsGenerating(false)
+      abortRef.current = null
+    }
+  }, [scrollToBottom, updateLastMessage, handleRestoreEvent])
 
   const handleSend = useCallback(async () => {
     const text = input.trim()
@@ -293,85 +386,14 @@ function ChatContent() {
     // If website restore detected, start the real SSE pipeline — every live
     // site goes through the V4 agentic restoration chain of thought.
     if (isWebsiteRestore && detectedUrl) {
-      try {
-        abortRef.current = new AbortController()
-        const intent = detectRestoreIntent(sendText)
-        lastIntentRef.current = intent
-        autoFixTriggeredRef.current = false
-        let streamUrl: string
-
-        if (isGitHubRepoUrl(detectedUrl)) {
-          // GitHub repo → V2 pipeline (clone, scan, experiment, PR)
-          streamUrl = `/api/restore/v2?url=${encodeURIComponent(detectedUrl)}&mode=${intent === 'full' ? 'full' : 'scan-only'}&message=${encodeURIComponent(sendText)}`
-        } else {
-          // Live website → V4 agentic pipeline (7-step chain-of-thought restoration).
-          // Whole-site phrasing restores EVERY page Alpha can reach.
-          const pagesParam = wholeSite ? '&pages=15' : ''
-          streamUrl = `/api/restore/v3?url=${encodeURIComponent(detectedUrl)}&mode=${intent === 'full' ? 'full' : 'scan-only'}${pagesParam}&message=${encodeURIComponent(sendText)}`
-        }
-
-        const res = await fetch(streamUrl, { signal: abortRef.current.signal })
-
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-
-        const reader = res.body?.getReader()
-        if (!reader) throw new Error('No response body')
-
-        const decoder = new TextDecoder()
-        let buffer = ''
-
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-
-          buffer += decoder.decode(value, { stream: true })
-          const lines = buffer.split('\n')
-          buffer = lines.pop() || ''
-
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const event = JSON.parse(line.slice(6))
-                handleRestoreEvent(event, detectedUrl)
-              } catch {}
-            }
-          }
-        }
-
-        // Mark done
-        updateLastMessage((prev) => ({
-          ...prev,
-          isStreaming: false,
-          restoreCards: { ...prev.restoreCards, isRunning: false },
-        }))
-
-        // Save final state
-        setMessages((prev) => {
-          const last = prev[prev.length - 1]
-          if (last && thread) {
-            const updatedThread: ChatThread = {
-              ...thread,
-              messages: [...thread.messages, userMsg, { ...last, isStreaming: undefined, restoreCards: undefined }],
-              updatedAt: new Date().toISOString(),
-            }
-            saveChatThread(updatedThread)
-            setActiveThread(updatedThread)
-          }
-          return prev
-        })
-      } catch (err: any) {
-        if (err.name !== 'AbortError') {
-          updateLastMessage((prev) => ({
-            ...prev,
-            content: prev.content || `Error: ${err.message}`,
-            isStreaming: false,
-            restoreCards: { ...prev.restoreCards, isRunning: false },
-          }))
-        }
-      } finally {
-        setIsGenerating(false)
-        abortRef.current = null
-      }
+      await runRestoreStream({
+        sendText,
+        url: detectedUrl,
+        mode: detectRestoreIntent(sendText) === 'full' ? 'full' : 'scan-only',
+        wholeSite,
+        thread,
+        userMsg,
+      })
       return
     }
 
@@ -508,7 +530,7 @@ function ChatContent() {
       setIsGenerating(false)
       abortRef.current = null
     }
-  }, [input, isGenerating, activeThread, messages, scrollToBottom, updateLastMessage, attachedFiles])
+  }, [input, isGenerating, activeThread, messages, scrollToBottom, updateLastMessage, attachedFiles, runRestoreStream])
 
   const handleRestoreEvent = useCallback((event: any, url: string) => {
     // Handle alpha events from event-bus
@@ -541,7 +563,8 @@ function ChatContent() {
     if (event.type === 'pipeline_start' || event.type === 'scan_complete' || event.type === 'screenshot_before'
       || event.type === 'experiment_complete' || event.type === 'github_gate_required' || event.type === 'screenshot_after'
       || event.type === 'restore_complete' || event.type === 'pipeline_done' || event.type === 'pipeline_paused'
-      || event.type === 'branch_created' || event.type === 'fix_pushed' || event.type === 'pr_created') {
+      || event.type === 'branch_created' || event.type === 'fix_pushed' || event.type === 'pr_created'
+      || event.type === 'issues_found') {
       updateLastMessage((prev) => {
         const cards = { ...(prev.restoreCards || {}) }
         if (!cards.v2) cards.v2 = {}
@@ -557,6 +580,20 @@ function ChatContent() {
             break
           case 'screenshot_before':
             v2.screenshotBefore = event.data?.screenshotPath || v2.screenshotBefore
+            if (reverifyActiveRef.current) {
+              v2.reverify = { ...(v2.reverify || {}), running: true, screenshotUrl: event.data?.screenshotPath || null }
+            }
+            break
+          case 'issues_found':
+            if (reverifyActiveRef.current) {
+              v2.reverify = {
+                ...(v2.reverify || {}),
+                running: true,
+                score: typeof event.data?.score === 'number' ? event.data.score : null,
+                issueCount: event.data?.summary?.total ?? null,
+                criticalCount: event.data?.summary?.critical ?? null,
+              }
+            }
             break
           case 'experiment_complete':
             v2.experimentPassed = event.data?.passed
@@ -610,11 +647,36 @@ function ChatContent() {
             v2.restoreComplete = true
             v2.deliverables = event.data?.deliverables || v2.deliverables || null
             if (!v2.restorationId && event.restorationId) v2.restorationId = event.restorationId
+            {
+              const verification = event.data?.verification || null
+              const baseline = {
+                scoreAfter: typeof verification?.after?.score === 'number' ? verification.after.score : null,
+                issuesRemaining:
+                  typeof verification?.after?.issues === 'number'
+                    ? verification.after.issues
+                    : Array.isArray(event.data?.remaining_issues)
+                      ? event.data.remaining_issues.length
+                      : null,
+              }
+              v2.baseline = baseline
+              lastFixBaselineRef.current = { url: lastSiteUrlRef.current || url, ...baseline }
+            }
             cards.isRunning = false
             break
           case 'pipeline_done':
             v2.pipelineDone = true
             cards.isRunning = false
+            if (reverifyActiveRef.current) {
+              reverifyActiveRef.current = false
+              const base = lastFixBaselineRef.current
+              v2.reverify = {
+                ...(v2.reverify || {}),
+                running: false,
+                done: true,
+                baselineScore: base?.scoreAfter ?? null,
+                baselineIssues: base?.issuesRemaining ?? null,
+              }
+            }
             break
         }
 
@@ -756,6 +818,79 @@ function ChatContent() {
     })
     scrollToBottom()
   }, [updateLastMessage, scrollToBottom])
+
+  const triggerReVerify = useCallback(() => {
+    const url = lastSiteUrlRef.current || detectedUrlRef.current
+    if (!url || isGenerating) return
+    reverifyActiveRef.current = true
+    let thread = activeThread
+    if (!thread) {
+      thread = createChatThread(`Verify fix went live — ${url}`)
+      setActiveThread(thread)
+    }
+    const userMsg: AlphaMessage = {
+      id: uid(),
+      role: 'user',
+      content: `Continue — verify the fix went live on ${url}`,
+      createdAt: new Date().toISOString(),
+    }
+    const aiMsg: AlphaMessage = {
+      id: uid(),
+      role: 'assistant',
+      content: '',
+      createdAt: new Date().toISOString(),
+      thoughtSteps: [],
+      alphaEvents: [],
+      restoreCards: undefined,
+      isStreaming: true,
+    }
+    setMessages((prev) => [...prev, userMsg, aiMsg])
+    scrollToBottom()
+    runRestoreStream({
+      sendText: 'Re-verify my site and confirm every fix is live.',
+      url,
+      mode: 'scan-only',
+      wholeSite: false,
+      thread,
+      userMsg,
+    })
+  }, [isGenerating, activeThread, runRestoreStream, scrollToBottom])
+
+  const triggerFixAgain = useCallback(() => {
+    const url = lastSiteUrlRef.current || detectedUrlRef.current
+    if (!url || isGenerating) return
+    let thread = activeThread
+    if (!thread) {
+      thread = createChatThread(`Fix remaining issues — ${url}`)
+      setActiveThread(thread)
+    }
+    const userMsg: AlphaMessage = {
+      id: uid(),
+      role: 'user',
+      content: `Fix the remaining issues on ${url}`,
+      createdAt: new Date().toISOString(),
+    }
+    const aiMsg: AlphaMessage = {
+      id: uid(),
+      role: 'assistant',
+      content: '',
+      createdAt: new Date().toISOString(),
+      thoughtSteps: [],
+      alphaEvents: [],
+      restoreCards: undefined,
+      isStreaming: true,
+    }
+    setMessages((prev) => [...prev, userMsg, aiMsg])
+    scrollToBottom()
+    runRestoreStream({
+      sendText: 'fix my site',
+      url,
+      mode: 'full',
+      wholeSite: false,
+      thread,
+      userMsg,
+    })
+  }, [isGenerating, activeThread, runRestoreStream, scrollToBottom])
 
   const handleFixNow = useCallback(async (scanId: string, url: string) => {
     setIsGenerating(true)
@@ -1354,6 +1489,15 @@ function ChatContent() {
                               <RestoreDeliveryCard
                                 restorationId={msg.restoreCards.v2.restorationId}
                                 downloadRestored={msg.restoreCards.v2.deliverables?.download?.restored || undefined}
+                                onVerify={triggerReVerify}
+                              />
+                            )}
+
+                            {/* Re-verification verdict: did the fix actually go live? */}
+                            {msg.restoreCards.v2?.reverify && (
+                              <ReVerifyCard
+                                state={msg.restoreCards.v2.reverify}
+                                onFixAgain={triggerFixAgain}
                               />
                             )}
                           </div>
