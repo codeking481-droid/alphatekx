@@ -14,7 +14,7 @@ import { FileHandler, sanitizeEncoding } from './server/scanEngine/fileUtils.js'
 import { handleGitHubAuth, handleGitHubCallback, handleGitHubStatus, handleGitHubRepos, handleGitHubApplyFix, handleGitHubCreatePR, handleGitHubRollback } from './server/githubDirectPush.mjs'
 import { handleDiagnoseRoute } from './server/diagnoseRoute.mjs'
 import { handleRestoreV2Route, handleRestorePushRoute } from './server/restorePipelineV2.mjs'
-import { handleRestoreV3Route, handleV3DownloadRoute, handleV3ArtifactRoute, handleV3ContentRoute } from './server/alphaRestorationPipeline.mjs'
+import { handleRestoreV3Route, handleV3DownloadRoute, handleV3ArtifactRoute, handleV3ContentRoute, getRestorationPages } from './server/alphaRestorationPipeline.mjs'
 import { saveDeployment, getDeployment, deploymentExists, deleteDeployment, listDeployments, isDeploymentStoreConfigured, checkDeploymentStoreHealth, runSupabaseStartupCheck, getDeploymentStoreStatus, schemaMissingMessage } from './server/deploymentStore.mjs'
 import { runFullRestorationScan } from './server/scanEngine/restorationScanner.mjs'
 import { marketplaceHandler, fulfillMarketplaceOrder } from './server/marketplace.mjs'
@@ -5122,17 +5122,32 @@ async function fetchPublishedCreation(slug) {
   return payload?.[0] || null
 }
 
-async function servePublishedCreation(req, res, slug) {
+async function servePublishedCreation(req, res, slug, subPath = '/') {
   if (!validSlug(slug)) return json(res, 404, { error: 'App not found' })
   try {
     let creation = await fetchPublishedCreation(slug).catch(() => null)
     if (!creation) creation = await getDeployment(slug).catch(() => null)
     if (!creation) return json(res, 404, { error: 'App not found' })
-    const html = publishedAppDocument(creation, publicAppUrl())
+    // Whole-site deployments host every restored page under one name:
+    // /app/{name}/about serves the pages["/about"] document.
+    let pageHtml = null
+    const sitePages = creation.pages && typeof creation.pages === 'object' ? creation.pages : null
+    if (sitePages && Object.keys(sitePages).length) {
+      let key = String(subPath || '/').split('?')[0]
+      if (key.length > 1) key = key.replace(/\/+$/, '') || '/'
+      if (Object.prototype.hasOwnProperty.call(sitePages, key)) {
+        pageHtml = sitePages[key]
+      } else if (key !== '/') {
+        return json(res, 404, { error: 'Page not found in this deployment' })
+      }
+    }
+    const html = pageHtml != null
+      ? String(pageHtml)
+      : publishedAppDocument(creation, publicAppUrl())
     res.writeHead(200, {
       'Content-Type': 'text/html; charset=utf-8',
       'Cache-Control': 'public, max-age=60, stale-while-revalidate=300',
-      'Content-Security-Policy': "default-src 'self'; frame-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://unpkg.com; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; font-src 'self' data: https:; connect-src https:; object-src 'none'; base-uri 'none'; frame-ancestors 'self'",
+      'Content-Security-Policy': "default-src 'self'; frame-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://unpkg.com; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; font-src 'self' data: blob: https:; connect-src https:; object-src 'none'; base-uri 'none'; frame-ancestors 'self'",
       'X-Content-Type-Options': 'nosniff',
       'X-Frame-Options': 'SAMEORIGIN',
       'Referrer-Policy': 'strict-origin-when-cross-origin',
@@ -7432,6 +7447,8 @@ async function localPublishPasted(body, baseUrl, owner = null) {
   if (!validProjectName(slug)) return { status: 400, body: { error: 'Use 3-30 lowercase letters, numbers, or hyphens. Must start and end with a letter or number.' } }
   if (!/<(?:!doctype\s+html|html|body)[\s>]/i.test(html)) return { status: 400, body: { error: 'Paste a complete HTML document.' } }
   if (Buffer.byteLength(html, 'utf8') > 900_000) return { status: 413, body: { error: 'HTML must be smaller than 900 KB.' } }
+  // Whole-site restoration: every restored page rides along under one name.
+  const restorationPages = body.restorationId ? getRestorationPages(body.restorationId) : null
   const existing = await getDeployment(slug).catch(() => null)
   const creationId = existing?.id || randomUUID()
   // Permanent storage in Supabase — survives Render redeploys. UTF-8 always.
@@ -7441,6 +7458,7 @@ async function localPublishPasted(body, baseUrl, owner = null) {
     ownerId: owner?.id ? String(owner.id) : existing?.ownerId || '',
     ownerEmail: owner?.email ? String(owner.email) : existing?.ownerEmail || '',
     createdAt: existing?.createdAt,
+    pages: restorationPages || undefined,
   })
   if (!saved.ok) {
     console.error('[DEPLOY] Permanent save failed:', saved.error)
@@ -7448,7 +7466,7 @@ async function localPublishPasted(body, baseUrl, owner = null) {
   }
   const url = `${baseUrl}/app/${slug}`
   registerDeployedSite(slug, url)
-  return { status: 200, body: { creationId: saved.id || creationId, slug, url, pathUrl: url, subdomainUrl: `https://${slug}.alphatekx.name.ng`, updated: Boolean(existing) } }
+  return { status: 200, body: { creationId: saved.id || creationId, slug, url, pathUrl: url, subdomainUrl: `https://${slug}.alphatekx.name.ng`, updated: Boolean(existing), pages: restorationPages ? Object.keys(restorationPages).length : 0 } }
 }
 
 async function publishCreationPath(req, res) {
@@ -10635,8 +10653,8 @@ const server = http.createServer(async (req, res) => {
   if (subdomain && ['GET', 'HEAD'].includes(req.method || '')) return servePublishedCreation(req, res, subdomain)
   if (subdomain) return json(res, 404, { error: 'App route not found' })
   if (!['GET', 'HEAD'].includes(req.method || '')) return json(res, 404, { error: 'Not found' })
-  const appMatch = new URL(req.url || '/', 'http://localhost').pathname.match(/^\/app\/([^/]+)\/?$/)
-  if (appMatch) return servePublishedCreation(req, res, decodeURIComponent(appMatch[1]))
+  const appMatch = new URL(req.url || '/', 'http://localhost').pathname.match(/^\/app\/([^/]+)(\/.*)?$/)
+  if (appMatch) return servePublishedCreation(req, res, decodeURIComponent(appMatch[1]), appMatch[2] ? decodeURIComponent(appMatch[2]) : '/')
   const previewMatch = new URL(req.url || '/', 'http://localhost').pathname.match(/^\/preview\/([^/]+)(?:\/|$)/)
   if (previewMatch) {
     const missionId = decodeURIComponent(previewMatch[1])

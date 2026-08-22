@@ -100,20 +100,6 @@ function extractUrl(text: string): string | null {
   return null
 }
 
-function isWebsiteRestoreIntent(text: string, url: string | null): boolean {
-  if (!url) return false
-  const lower = text.toLowerCase()
-  const urlLower = url.toLowerCase()
-  const urlIdx = lower.indexOf(urlLower)
-
-  // URL must be prominent (near the start, or message is short)
-  const isUrlProminent = urlIdx !== -1 && (urlIdx < lower.length * 0.5 || lower.length < 80)
-  if (!isUrlProminent) return false
-
-  // Any detected URL triggers the real pipeline — no intent keywords required
-  return true
-}
-
 function isGitHubRepoUrl(url: string): boolean {
   try {
     const parsed = new URL(url)
@@ -121,6 +107,18 @@ function isGitHubRepoUrl(url: string): boolean {
     const parts = parsed.pathname.replace(/^\//, '').replace(/\/$/, '').split('/')
     return parts.length >= 2 && Boolean(parts[0]) && Boolean(parts[1])
   } catch { return false }
+}
+
+// "fix my whole site", "restore every page", "the entire website"…
+function detectWholeSite(text: string): boolean {
+  return /\b(?:whole|entire|complete|full)\s+(?:site|website|web\s?site)\b|\bevery\s+page\b|\ball\s+(?:the\s+)?pages\b/i.test(text)
+}
+
+// Pronoun follow-ups after a scan: "fix it", "repair that", "scan the site".
+const FOLLOWUP_RE = /^\s*(?:please\s+)?(?:alpha[,\s]+)?(?:fix|restore|repair|scan|check|heal|rebuild|unbreak)\s+(?:it|that|this|dem|am|the\s+(?:site|website|page|link)|my\s+(?:site|website|page))\b[\s!?.]*$/i
+
+function isFollowupRestore(text: string): boolean {
+  return FOLLOWUP_RE.test(text)
 }
 
 function detectRestoreIntent(text: string): 'scan' | 'full' {
@@ -171,6 +169,7 @@ function ChatContent() {
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const detectedUrlRef = useRef<string | null>(null)
+  const lastSiteUrlRef = useRef<string | null>(null)
   const lastIntentRef = useRef<'scan' | 'full'>('scan')
   const autoFixTriggeredRef = useRef(false)
 
@@ -215,10 +214,16 @@ function ChatContent() {
     let fileUrl: string | null = null
     let fileType: string | null = null
 
-    // Detect URL in message — any prominent URL runs the chat-based Restoration Engine
-    const detectedUrl = extractUrl(sendText)
+    // Detect URL in message — any prominent URL runs the real restoration pipeline
+    let detectedUrl = extractUrl(sendText)
+    // Smart follow-ups: "fix it" / "scan that" after a URL was mentioned earlier
+    if (!detectedUrl && isFollowupRestore(sendText) && lastSiteUrlRef.current) {
+      detectedUrl = lastSiteUrlRef.current
+    }
+    if (detectedUrl) lastSiteUrlRef.current = detectedUrl
     detectedUrlRef.current = detectedUrl
-    const isWebsiteRestore = isWebsiteRestoreIntent(sendText, detectedUrl)
+    const isWebsiteRestore = Boolean(detectedUrl)
+    const wholeSite = detectWholeSite(sendText)
     // Restore intent without a URL → Alpha asks for the URL (conversational step 1)
     const asksRestoreNoUrl = !detectedUrl && !fileUrl && attachedFiles.length === 0 &&
       /\b(fix|restore|repair|recover|resurrect|unbreak|heal)\b/i.test(sendText) &&
@@ -297,8 +302,10 @@ function ChatContent() {
           // GitHub repo → V2 pipeline (clone, scan, experiment, PR)
           streamUrl = `/api/restore/v2?url=${encodeURIComponent(detectedUrl)}&mode=${intent === 'full' ? 'full' : 'scan-only'}&message=${encodeURIComponent(sendText)}`
         } else {
-          // Live website → V3 FINAL PRODUCTION pipeline (7-step chain-of-thought restoration)
-          streamUrl = `/api/restore/v3?url=${encodeURIComponent(detectedUrl)}&mode=${intent === 'full' ? 'full' : 'scan-only'}&message=${encodeURIComponent(sendText)}`
+          // Live website → V4 agentic pipeline (7-step chain-of-thought restoration).
+          // Whole-site phrasing restores EVERY page Alpha can reach.
+          const pagesParam = wholeSite ? '&pages=15' : ''
+          streamUrl = `/api/restore/v3?url=${encodeURIComponent(detectedUrl)}&mode=${intent === 'full' ? 'full' : 'scan-only'}${pagesParam}&message=${encodeURIComponent(sendText)}`
         }
 
         const res = await fetch(streamUrl, { signal: abortRef.current.signal })

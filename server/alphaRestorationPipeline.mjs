@@ -26,9 +26,10 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import JSZip from 'jszip'
-import { probeRenderedPage, isRenderProbeAvailable } from './renderedDiagnostics.mjs'
+import { probeRenderedPage, createRenderSession, isRenderProbeAvailable } from './renderedDiagnostics.mjs'
 import { llmRepairBatch } from './llmRepairAgent.mjs'
 import { getSiteMemory, recordRestoration } from './siteMemory.mjs'
+import { crawlSite, normalizePagePath } from './siteCrawler.mjs'
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url))
 const ARTIFACTS_ROOT = path.resolve(MODULE_DIR, '..', 'data', 'restorations')
@@ -1220,6 +1221,8 @@ export function handleRestoreV3Route(req, res) {
   const rawUrl = (parsed.searchParams.get('url') || '').trim()
   const targetUrl = rawUrl && !/^https?:\/\//i.test(rawUrl) ? 'https://' + rawUrl.replace(/^\/+/, '') : rawUrl
   const mode = parsed.searchParams.get('mode') === 'scan-only' ? 'scan-only' : 'full'
+  const pagesParam = parseInt(parsed.searchParams.get('pages') || '1', 10)
+  const maxPages = Number.isFinite(pagesParam) && pagesParam >= 1 ? Math.min(50, Math.max(1, pagesParam)) : 1
   if (!targetUrl) {
     res.writeHead(400, { 'Content-Type': 'application/json' })
     return res.end(JSON.stringify({ error: 'Missing url parameter' }))
@@ -1250,7 +1253,7 @@ export function handleRestoreV3Route(req, res) {
     if (!res.writableEnded) res.write(': ping\n\n')
   }, 15000)
 
-  runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, sendEvent, sendStep })
+  runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, sendEvent, sendStep, maxPages })
     .catch((err) => {
       console.error('[ALPHA-V3] Pipeline crashed:', err)
       sendEvent({ type: 'error', message: err instanceof Error ? err.message : 'Pipeline failed' })
@@ -1261,7 +1264,7 @@ export function handleRestoreV3Route(req, res) {
     })
 }
 
-async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, sendEvent, sendStep }) {
+async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, sendEvent, sendStep, maxPages = 1 }) {
   const chain = createChain(sendStep)
   const restorationId = `atk_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
   const artifactsDir = path.join(ARTIFACTS_ROOT, restorationId)
@@ -1270,7 +1273,7 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
   registryPut(restorationId, { id: restorationId, dir: artifactsDir, created })
 
   const startedAt = Date.now()
-  sendEvent({ type: 'pipeline_start', restorationId, targetUrl, mode, timestamp: new Date().toISOString() })
+  sendEvent({ type: 'pipeline_start', restorationId, targetUrl, mode, max_pages: maxPages, timestamp: new Date().toISOString() })
   chain.active('reasoning', 'Alpha is reasoning about your site…', 'brain')
 
   const artifactUrl = (filename) => `/api/restore/v3/artifact/${restorationId}/${filename}`
@@ -1292,6 +1295,17 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
   const hostname = baseUrlObj.hostname.replace(/^www\./, '')
   const isHttps = baseUrlObj.protocol === 'https:'
   const originalHtml = sanitizeEncoding(doc.body)
+
+  // ════════ SITE-WIDE MODE — every page, one run ════════
+  if (maxPages > 1) {
+    try {
+      await runSiteRestoration({ mode, origin, cookieHeader, sendEvent, sendStep, maxPages, restorationId, artifactsDir, created, startedAt, chain, finalUrl, hostname, isHttps, originalHtml })
+    } catch (err) {
+      console.error('[ALPHA-V3] Site-wide pipeline crashed:', err)
+      sendEvent({ type: 'error', message: err instanceof Error ? err.message : 'Site-wide restoration failed' })
+    }
+    return
+  }
 
   let screenshotBefore = null
   await chain.step('recon-shot', 'Capturing BEFORE screenshot as proof…', 'camera', async () => {
@@ -1646,6 +1660,414 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
   sendEvent({ type: 'pipeline_done', restorationId })
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// SITE-WIDE RESTORATION — the agent restores EVERY page of a website.
+// One crawl → per-page agentic loop over a shared Chromium session →
+// cross-page report → structured multi-page delivery (zip + pages.json).
+// ═════════════════════════════════════════════════════════════════════════════
+
+/** Storage/zip/serving key for a page: pathname only, trailing slash trimmed except root. */
+function pageKeyOf(rawUrl) {
+  try {
+    const u = new URL(rawUrl)
+    let p = u.pathname || '/'
+    if (p.length > 1) p = p.replace(/\/+$/, '') || '/'
+    return p
+  } catch {
+    return '/'
+  }
+}
+
+/** Zip path mirrors the site structure: '/'→index.html, '/about'→about/index.html */
+function zipPathForKey(key) {
+  const clean = String(key || '/').replace(/^\/+/, '')
+  return clean ? `${clean}/index.html` : 'index.html'
+}
+
+/** Relative href from one stored page directory to another ('/'↔'/about'). */
+function relativeLinkBetween(fromKey, toKey) {
+  const fromSegs = fromKey.split('/').filter(Boolean)
+  const toSegs = toKey.split('/').filter(Boolean)
+  let common = 0
+  while (common < fromSegs.length && common < toSegs.length && fromSegs[common] === toSegs[common]) common++
+  const ups = fromSegs.length - common
+  const rel = [...Array.from({ length: ups }, () => '..'), ...toSegs.slice(common)].join('/')
+  return rel ? `${rel}/` : './'
+}
+
+/**
+ * Rewrite same-site PAGE links to relative paths so the delivered/deployed
+ * copy navigates internally instead of bouncing back to the original host.
+ * External links, assets and unknown targets are left untouched.
+ */
+function rewriteInternalPageLinks(html, knownKeys, currentKey, currentAbsUrl) {
+  let currentHost = ''
+  try { currentHost = new URL(currentAbsUrl).hostname } catch {}
+  return String(html).replace(/(\shref\s*=\s*)(["'])([^"']+)\2/gi, (m, pre, q, href) => {
+    if (!href || /^(#|javascript:|mailto:|tel:|data:|blob:)/i.test(href)) return m
+    let abs
+    try { abs = new URL(href, currentAbsUrl) } catch { return m }
+    if (!/^https?:$/i.test(abs.protocol)) return m
+    if ((abs.hostname.replace(/^www\./, '')) !== String(currentHost).replace(/^www\./, '')) return m
+    const key = pageKeyOf(abs.href)
+    if (!knownKeys.has(key)) return m
+    return `${pre}${q}${relativeLinkBetween(currentKey, key)}${q}`
+  })
+}
+
+async function runSiteRestoration(ctx) {
+  const { mode, origin, cookieHeader, sendEvent, sendStep, restorationId, artifactsDir, created, startedAt, chain, finalUrl, hostname, isHttps, originalHtml, maxPages } = ctx
+  const artifactUrl = (filename) => `/api/restore/v3/artifact/${restorationId}/${filename}`
+  const MAX_CYCLES_ENTRY = 3
+  const MAX_CYCLES_PAGE = 2
+  const TARGET_SCORE = 95
+
+  // ── Reconnaissance (entry page): BEFORE screenshot + design DNA ──
+  let screenshotBefore = null
+  await chain.step('recon-shot', 'Capturing BEFORE screenshot as proof…', 'camera', async () => {
+    screenshotBefore = await takeScreenshot(finalUrl, artifactsDir, 'before.png')
+    if (screenshotBefore) sendEvent({ type: 'screenshot_before', data: { screenshotPath: artifactUrl('before.png') } })
+    return screenshotBefore ? 'Before screenshot saved' : 'Browser unavailable — continuing without visual proof'
+  })
+
+  const designTokens = extractDesignTokens(originalHtml)
+  chain.done('recon-tokens', `Design DNA extracted — ${designTokens.colors.length} colors · ${designTokens.fonts.length} fonts preserved`, 'Applied consistently across every page')
+
+  // ── Site memory ──
+  const memory = await getSiteMemory(hostname).catch(() => null)
+  if (memory && memory.scans > 0) {
+    chain.done('memory', `Alpha remembers ${hostname} — worked on it ${memory.scans} time(s) before`, `Best score ${memory.best_score}/100 · last visit scored ${memory.last_score}/100`)
+    sendEvent({ type: 'site_memory', data: { scans: memory.scans, best_score: memory.best_score, last_score: memory.last_score, last_run_at: memory.last_run_at } })
+  }
+
+  // ── CRAWL: map every reachable page (links + sitemap) ──
+  let sitePages = null
+  await chain.step('crawl', `Mapping every page of your site (up to ${maxPages}) — links + sitemap…`, 'search', async () => {
+    const crawl = await crawlSite(finalUrl, originalHtml, { maxPages })
+    if (!crawl.pages.length) throw new Error('Crawl produced no pages')
+    sitePages = crawl.pages
+    sendEvent({
+      type: 'crawl_complete',
+      data: { count: sitePages.length, discovered: crawl.discovered, failed: crawl.failed.slice(0, 10), urls: sitePages.map((p) => p.finalUrl) },
+    })
+    return `${sitePages.length} page(s) mapped${crawl.failed.length ? ` · ${crawl.failed.length} unreachable skipped` : ''}`
+  })
+
+  const entryProbeFirst = await chain.step('diagnose-render-entry', 'Opening the entry page in a real browser — listening for runtime damage…', 'browser', async () => {
+    if (!isRenderProbeAvailable()) return null
+    return probeRenderedPage(finalUrl)
+  })
+
+  const diagnosePage = async (page, rendered, labelPrefix) =>
+    chain.step(`${labelPrefix}diagnose`, `${clip(pageLabelFor(page.finalUrl), 40)} — deep static sweep fused with browser evidence…`, 'microscope', () =>
+      diagnose(page.html, { baseUrl: page.finalUrl, https: new URL(page.finalUrl).protocol === 'https:', rendered }),
+    )
+
+  // ═══ SCAN-ONLY: report every page, fix nothing ═══
+  if (mode === 'scan-only') {
+    const results = []
+    let entryDiagnosis = null
+    for (let i = 0; i < sitePages.length; i++) {
+      const page = sitePages[i]
+      const rendered = i === 0 ? entryProbeFirst : null
+      const d = await diagnosePage(page, rendered, `p${i}-`)
+      if (i === 0) {
+        entryDiagnosis = d
+        sendEvent({
+          type: 'issues_found',
+          data: { issues: d.issues.slice(0, 25), summary: d.summary, score: d.score, url: page.finalUrl },
+        })
+      }
+      const label = pageKeyOf(page.finalUrl)
+      chain.done(`scan-p${i}`, `${label}: ${d.summary.total} issue(s) · score ${d.score}/100`, d.summary.critical ? `${d.summary.critical} critical` : 'no critical damage')
+      sendEvent({ type: 'page_result', data: { url: page.finalUrl, label, index: i + 1, total: sitePages.length, before_score: d.score, after_score: null, issues: d.summary.total, critical: d.summary.critical } })
+      results.push(d)
+    }
+    const scores = results.map((r) => r.score)
+    const avg = Math.round(scores.reduce((a, b) => a + b, 0) / Math.max(1, scores.length))
+    const worstIdx = scores.indexOf(Math.min(...scores))
+    const rows = results.map((r, i) => `| ${pageKeyOf(sitePages[i].finalUrl)} | ${r.summary.total} | ${r.score}/100 |`).join('\n')
+    const msg = [
+      `I scanned **${sitePages.length} pages** of **${hostname}**. Site-wide health: **${avg}/100** average.`,
+      '',
+      '| Page | Issues | Score |',
+      '|---|---|---|',
+      rows,
+      '',
+      `Weakest page: \`${pageKeyOf(sitePages[worstIdx].finalUrl)}\` (${results[worstIdx].score}/100, ${results[worstIdx].summary.critical} critical).`,
+      '',
+      'Say **"fix my whole site"** and I will restore every page — up to three repair cycles each, delivered as one working multi-page site.',
+    ].join('\n')
+    sendEvent({ type: 'v3_summary', message: msg })
+    void entryDiagnosis
+    sendEvent({ type: 'pipeline_done', restorationId })
+    return
+  }
+
+  // ═══ FULL RESTORATION — every page through the agentic loop ═══
+  chain.active('agent-loop', `Alpha is restoring all ${sitePages.length} pages — one engineering pass per page…`, 'brain')
+  const session = await createRenderSession()
+  /** @type {{key:string,url:string,label:string,before:number,after:number,issuesBefore:number,issuesAfter:number,cycles:number,ai:number,html:string,initialTypes:string[]}[]} */
+  const restored = []
+  const AI_BUDGET = 8
+  let aiCallsUsed = 0
+  try {
+    for (let i = 0; i < sitePages.length; i++) {
+      const page = sitePages[i]
+      const key = pageKeyOf(page.finalUrl)
+      const isEntry = i === 0
+      const cyclesCap = isEntry ? MAX_CYCLES_ENTRY : MAX_CYCLES_PAGE
+      chain.active(`p${i}`, `Page ${i + 1}/${sitePages.length} — ${key}: diagnosing…`, 'microscope')
+
+      const rendered = isEntry ? entryProbeFirst : (session ? await session.probe(page.finalUrl, { timeoutMs: 20000, settleMs: 900 }) : null)
+      const firstDiagnosis = await diagnosePage(page, rendered, `p${i}-`)
+      const initialTypes = [...new Set(firstDiagnosis.issues.map((x) => x.type))]
+      if (isEntry) {
+        sendEvent({
+          type: 'issues_found',
+          data: { issues: firstDiagnosis.issues, summary: firstDiagnosis.summary, score: firstDiagnosis.score },
+        })
+        if (rendered?.ok) {
+          sendEvent({ type: 'render_probe', data: { ok: true, blank_render: rendered.blankRender, stats: rendered.stats } })
+        }
+      }
+      chain.done(`p${i}`, `Page ${i + 1}/${sitePages.length} — ${key}: ${firstDiagnosis.summary.total} issue(s), health ${firstDiagnosis.score}/100`, firstDiagnosis.summary.critical ? `${firstDiagnosis.summary.critical} critical — Alpha digs in` : 'repair pass begins')
+
+      let workingHtml = page.html
+      let cycleDiagnosis = firstDiagnosis
+      let postDiagnosis = firstDiagnosis
+      const history = []
+      let aiApplied = 0
+      for (let cycle = 1; cycle <= cyclesCap; cycle++) {
+        const repairResult = executeRepairs(workingHtml, cycleDiagnosis, { finalUrl: page.finalUrl, hostname })
+        workingHtml = repairResult.html
+        if (isEntry) {
+          for (const entry of repairResult.log.filter((l) => l.changed).slice(0, 12)) {
+            sendEvent({ type: 'diff', filename: zipPathForKey(key), old: entry.before, newContent: entry.after, cycle })
+          }
+        }
+
+        const aiEligible = cycleDiagnosis.issues.filter((x) => ['runtime_error', 'blank_render', 'failed_asset'].includes(x.type))
+        if (aiEligible.length && aiCallsUsed < AI_BUDGET) {
+          aiCallsUsed++
+          const ai = await llmRepairBatch({ html: workingHtml, issues: aiEligible, hostname }).catch(() => ({ html: workingHtml, applied: 0, skipped: aiEligible.length, notes: ['AI repair crashed — rules kept the page safe'], configured: false, attempted: false }))
+          if (ai?.html) workingHtml = ai.html
+          aiApplied += ai.applied || 0
+        }
+
+        const reconstruction = reconstruct(workingHtml)
+        if (!reconstruction.valid_html) throw new Error(`Reconstruction failed on ${key}: invalid HTML structure`)
+        workingHtml = reconstruction.content
+
+        postDiagnosis = await diagnose(workingHtml, { baseUrl: page.finalUrl, https: new URL(page.finalUrl).protocol === 'https:', skipNetworkChecks: true })
+        const remainingN = postDiagnosis.issues.filter((x) => x.severity !== 'info').length
+        history.push({ cycle, before: cycleDiagnosis.score, after: postDiagnosis.score, issues_remaining: remainingN })
+
+        if (postDiagnosis.score >= TARGET_SCORE || remainingN === 0) break
+        if (history.length >= 2 && postDiagnosis.score <= history[history.length - 2].after) break
+        cycleDiagnosis = postDiagnosis
+      }
+
+      const issuesBefore = firstDiagnosis.summary.total
+      const issuesAfter = postDiagnosis.issues.filter((x) => x.severity !== 'info').length
+      restored.push({
+        key,
+        url: page.finalUrl,
+        label: key,
+        before: firstDiagnosis.score,
+        after: postDiagnosis.score,
+        issuesBefore,
+        issuesAfter,
+        cycles: history.length,
+        ai: aiApplied,
+        html: workingHtml,
+        initialTypes,
+      })
+      sendEvent({
+        type: 'page_result',
+        data: { url: page.finalUrl, label: key, index: i + 1, total: sitePages.length, before_score: firstDiagnosis.score, after_score: postDiagnosis.score, issues_before: issuesBefore, issues_after: issuesAfter, cycles: history.length },
+      })
+    }
+  } finally {
+    await session?.close().catch(() => {})
+  }
+
+  // ── Aggregate verification ──
+  const avgBefore = Math.round(restored.reduce((a, r) => a + r.before, 0) / restored.length)
+  const avgAfter = Math.round(restored.reduce((a, r) => a + r.after, 0) / restored.length)
+  const totalIssuesBefore = restored.reduce((a, r) => a + r.issuesBefore, 0)
+  const totalIssuesAfter = restored.reduce((a, r) => a + r.issuesAfter, 0)
+  const sharedTypes = Object.entries(
+    restored.flatMap((r) => r.initialTypes).reduce((acc, t) => { acc[t] = (acc[t] || 0) + 1; return acc }, {}),
+  ).filter(([, n]) => n > 1).sort((a, b) => b[1] - a[1]).slice(0, 4)
+
+  const verification = {
+    site: true,
+    page_count: restored.length,
+    before: { issues: totalIssuesBefore, score: avgBefore },
+    after: { issues: totalIssuesAfter, score: avgAfter },
+    improvement: `${avgAfter - avgBefore >= 0 ? '+' : ''}${avgAfter - avgBefore} points`,
+    durationMs: Date.now() - startedAt,
+  }
+  chain.done('agent-loop', `All ${restored.length} pages restored — site health ${avgBefore} → ${avgAfter}`, `${totalIssuesBefore} issues found · ${totalIssuesAfter} remaining`)
+  sendEvent({
+    type: 'verification_complete',
+    data: {
+      verification,
+      site_pages: restored.map((r) => ({ label: r.label, before: r.before, after: r.after, issues_before: r.issuesBefore, issues_after: r.issuesAfter })),
+      remaining_issues: [],
+      final: true,
+    },
+  })
+
+  // ── AFTER screenshot — visual proof (entry page) ──
+  const entryFixed = restored[0].html
+  fs.writeFileSync(path.join(artifactsDir, 'restored.html'), entryFixed, 'utf8')
+  fs.writeFileSync(path.join(artifactsDir, 'rollback.html'), sanitizeEncoding(originalHtml), 'utf8')
+  registryPut(restorationId, { id: restorationId, dir: artifactsDir, created, fixedHtml: entryFixed, originalHtml: sanitizeEncoding(originalHtml), finalUrl, hostname })
+
+  let screenshotAfter = null
+  await chain.step('verify-shot', 'Capturing AFTER screenshot — visual proof of restoration…', 'camera', async () => {
+    const contentPath = `/api/restore/v3/content/${restorationId}/fixed.html?base=1`
+    screenshotAfter = await takeScreenshot(origin + contentPath, artifactsDir, 'after.png')
+    if (screenshotAfter) {
+      let size = 0
+      try { size = fs.statSync(screenshotAfter.filePath).size } catch {}
+      const verified = size > 5000
+      sendEvent({ type: 'screenshot_after', data: { screenshotPath: artifactUrl('after.png'), verified } })
+      return verified ? 'After screenshot captured and verified' : 'After screenshot captured (may be sparse)'
+    }
+    return 'Browser unavailable — continuing without visual proof'
+  })
+
+  // ── DELIVERY: structured multi-page zip + pages.json for whole-site deploy ──
+  const knownKeys = new Set(restored.map((r) => r.key))
+  const pagesMap = {}
+  const deliverables = await chain.step('deliver', `Packaging your restored ${restored.length}-page site…`, 'package', async () => {
+    for (const r of restored) {
+      pagesMap[r.key] = rewriteInternalPageLinks(r.html, knownKeys, r.key, r.url)
+    }
+    fs.writeFileSync(path.join(artifactsDir, 'pages.json'), JSON.stringify(pagesMap), 'utf8')
+
+    const zip = new JSZip()
+    for (const [key, html] of Object.entries(pagesMap)) zip.file(zipPathForKey(key), html)
+    const report = {
+      restored_by: 'AlphaTekX Restoration Engine V4 — Site Edition',
+      url: finalUrl,
+      timestamp: new Date().toISOString(),
+      summary: {
+        pages_restored: restored.length,
+        issues_found: totalIssuesBefore,
+        issues_fixed: totalIssuesBefore - totalIssuesAfter,
+        avg_before_score: avgBefore,
+        avg_after_score: avgAfter,
+        improvement: verification.improvement,
+      },
+      pages: restored.map((r) => ({ path: r.key, before_score: r.before, after_score: r.after, issues_before: r.issuesBefore, issues_after: r.issuesAfter, cycles: r.cycles })),
+      shared_damage: sharedTypes.map(([type, count]) => ({ type, pages_affected: count })),
+      design_tokens: designTokens,
+    }
+    zip.file('RESTORATION_REPORT.json', JSON.stringify(report, null, 2))
+    const restoredZip = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
+    fs.writeFileSync(path.join(artifactsDir, 'restored.zip'), restoredZip)
+
+    const rollbackZip = new JSZip()
+    rollbackZip.file('original.html', sanitizeEncoding(originalHtml))
+    rollbackZip.file('ROLLBACK_README.txt', `Rollback package\nOriginal entry page snapshot: ${finalUrl}\nCaptured: ${new Date().toISOString()}`)
+    const rollbackBuf = await rollbackZip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
+    fs.writeFileSync(path.join(artifactsDir, 'rollback.zip'), rollbackBuf)
+
+    const ghToken = readCookieToken(cookieHeader)
+    const suggestedName = slugifyHostname(hostname)
+    return {
+      github: {
+        available: Boolean(ghToken),
+        branch_plan: `alphatekx-fix-${Math.floor(Date.now() / 1000)}`,
+        note: ghToken ? 'GitHub connected — connect a repo URL to open the PR.' : 'Connect GitHub to receive the fix as a pull request.',
+      },
+      download: {
+        available: true,
+        restored: `/api/restore/v3/download?id=${restorationId}&which=restored`,
+        rollback: `/api/restore/v3/download?id=${restorationId}&which=rollback`,
+      },
+      copy: { available: true, content_length: entryFixed.length },
+      deploy: {
+        available: true,
+        suggested_name: suggestedName,
+        endpoint: '/api/deploy',
+        url_preview: `https://alphatekx.name.ng/app/${suggestedName}`,
+        site: true,
+        page_count: restored.length,
+        restoration_id: restorationId,
+      },
+    }
+  })
+  chain.done('deliver', 'Delivery ready — Download · Copy · Deploy (all pages hosted)', `${Object.keys(pagesMap).length} pages packaged · internal links rewritten relative`)
+
+  const rows = restored.map((r) => `| \`${r.label}\` | ${r.before} → **${r.after}** | ${r.issuesBefore} → ${r.issuesAfter} |`).join('\n')
+  const msg = [
+    `🌐 **${hostname} restored across ${restored.length} pages!**`,
+    '',
+    `| Page | Score | Issues |`,
+    `|---|---|---|`,
+    rows,
+    '',
+    `**Site health: ${avgBefore}/100 → ${avgAfter}/100** (${totalIssuesBefore} issues found, ${totalIssuesAfter} remaining)`,
+    sharedTypes.length ? `\nShared damage repaired everywhere: ${sharedTypes.map(([t, n]) => `${t} ×${n} pages`).join(' · ')}` : '',
+    '',
+    '**Receive your restored site:**',
+    `1. ⬇️ [Download site.zip](${deliverables.download.restored}) — full folder structure, links work offline`,
+    `2. 🚀 Say **"deploy as ${deliverables.deploy.suggested_name}"** — every page goes live under ${deliverables.deploy.url_preview}`,
+    `3. 📋 Entry page HTML attached below (one-click copy)`,
+  ].join('\n')
+  sendEvent({
+    type: 'restore_complete',
+    restorationId,
+    data: {
+      summary: {
+        pages_restored: restored.length,
+        issues_found: totalIssuesBefore,
+        issues_fixed: totalIssuesBefore - totalIssuesAfter,
+        before_score: avgBefore,
+        after_score: avgAfter,
+        improvement: verification.improvement,
+      },
+      deliverables,
+      screenshots: {
+        before: screenshotBefore ? artifactUrl('before.png') : null,
+        after: screenshotAfter ? artifactUrl('after.png') : null,
+      },
+      design_tokens: designTokens,
+      verification,
+      site: {
+        page_count: restored.length,
+        avg_before: avgBefore,
+        avg_after: avgAfter,
+        pages: restored.map((r) => ({ label: r.label, before: r.before, after: r.after, issues_before: r.issuesBefore, issues_after: r.issuesAfter })),
+      },
+      tier: avgAfter >= 95 ? 'gold' : avgAfter >= 75 ? 'silver' : 'bronze',
+      copy_content: entryFixed.length <= 280000 ? entryFixed : entryFixed.slice(0, 280000),
+      copy_truncated: entryFixed.length > 280000,
+    },
+  })
+  sendEvent({ type: 'v3_summary', message: msg })
+
+  recordRestoration({
+    url: finalUrl,
+    hostname,
+    beforeScore: avgBefore,
+    afterScore: avgAfter,
+    topIssues: sharedTypes.map(([t]) => t).slice(0, 5),
+  }).catch(() => {})
+
+  sendEvent({ type: 'pipeline_done', restorationId })
+}
+
+function pageLabelFor(finalUrl) {
+  const key = pageKeyOf(finalUrl)
+  return key === '/' ? 'home page' : key
+}
+
 function registryGetFixed(id) {
   const state = registry.get(id)
   if (state?.fixedHtml) return state.fixedHtml
@@ -1653,6 +2075,22 @@ function registryGetFixed(id) {
     return fs.readFileSync(path.join(ARTIFACTS_ROOT, id, 'restored.html'), 'utf8')
   } catch {
     return ''
+  }
+}
+
+/**
+ * Whole-site pages map written by site-mode delivery ({"/": html, ...}).
+ * The deploy endpoint loads this so one name hosts every restored page.
+ */
+export function getRestorationPages(id) {
+  if (!/^atk_[a-z0-9]+$/.test(String(id || ''))) return null
+  try {
+    const raw = fs.readFileSync(path.join(ARTIFACTS_ROOT, String(id), 'pages.json'), 'utf8')
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+    return Object.keys(parsed).length ? parsed : null
+  } catch {
+    return null
   }
 }
 

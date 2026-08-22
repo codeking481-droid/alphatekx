@@ -34,7 +34,23 @@ export function isRenderProbeAvailable() {
  */
 export async function probeRenderedPage(targetUrl, opts = {}) {
   const { timeoutMs, settleMs, viewport } = { ...DEFAULTS, ...opts }
-  const result = {
+  try {
+    const mod = await import('playwright')
+    const chromium = mod.default?.chromium || mod.chromium
+    if (!chromium) return { ...emptyResult(), reason: 'Playwright chromium unavailable' }
+    const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] })
+    try {
+      return await probeWithBrowser(browser, targetUrl, { timeoutMs, settleMs, viewport })
+    } finally {
+      await browser.close().catch(() => {})
+    }
+  } catch (err) {
+    return { ...emptyResult(), reason: String(err?.message || err).slice(0, 200) }
+  }
+}
+
+function emptyResult() {
+  return {
     ok: false,
     consoleErrors: [],
     consoleWarnings: [],
@@ -44,14 +60,11 @@ export async function probeRenderedPage(targetUrl, opts = {}) {
     stats: { title: '', elements: 0, textLength: 0, imgTotal: 0, imgBroken: 0 },
     blankRender: false,
   }
+}
 
-  let browser
+async function probeWithBrowser(browser, targetUrl, { timeoutMs = DEFAULTS.timeoutMs, settleMs = DEFAULTS.settleMs, viewport = DEFAULTS.viewport } = {}) {
+  const result = emptyResult()
   try {
-    const mod = await import('playwright')
-    const chromium = mod.default?.chromium || mod.chromium
-    if (!chromium) return { ...result, reason: 'Playwright chromium unavailable' }
-    browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] })
-
     const page = await browser.newPage({ viewport, userAgent: UA })
     const deadline = Date.now() + timeoutMs
 
@@ -114,8 +127,55 @@ export async function probeRenderedPage(targetUrl, opts = {}) {
     await page.close().catch(() => {})
   } catch (err) {
     result.reason = String(err?.message || err).slice(0, 200)
-  } finally {
-    if (browser) await browser.close().catch(() => {})
   }
   return result
+}
+
+// ─── Multi-page render sessions ──────────────────────────────────────────────
+
+/**
+ * A reusable browser session for whole-site runs. One Chromium instance
+ * serves every page probe and screenshot in the restoration — launching a
+ * fresh browser per page would multiply runtime and memory on Render.
+ * Returns null (never throws) when Playwright is unavailable or disabled;
+ * callers fall back to static analysis.
+ */
+export async function createRenderSession() {
+  if (!isRenderProbeAvailable()) return null
+  try {
+    const mod = await import('playwright')
+    const chromium = mod.default?.chromium || mod.chromium
+    if (!chromium) return null
+    const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] })
+    let closed = false
+    return {
+      /** Probe a URL with the shared browser. Same shape as probeRenderedPage. */
+      async probe(url, opts = {}) {
+        if (closed) return { ...emptyResult(), reason: 'Session closed' }
+        return probeWithBrowser(browser, url, opts)
+      },
+      /** Screenshot a URL into filePath using the shared browser. */
+      async screenshot(url, filePath, opts = {}) {
+        if (closed) return null
+        const page = await browser.newPage({ viewport: opts.viewport || DEFAULTS.viewport, userAgent: UA }).catch(() => null)
+        if (!page) return null
+        try {
+          await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25000 }).catch(() => {})
+          await page.waitForTimeout(1200)
+          await page.screenshot({ path: filePath, fullPage: false })
+          return { filePath, filename: filePath.split(/[\\/]/).pop() }
+        } catch {
+          return null
+        } finally {
+          await page.close().catch(() => {})
+        }
+      },
+      async close() {
+        closed = true
+        await browser.close().catch(() => {})
+      },
+    }
+  } catch {
+    return null
+  }
 }

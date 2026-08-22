@@ -44,6 +44,8 @@ const table = new Map() // name → row
 // Simulates the real-world failure: PostgREST's schema cache is stale and
 // reports the deployments table as missing until a schema reload is requested.
 let cacheStale = true
+// Simulates a hand-created table missing owner_id / owner_email / pages columns.
+let legacyColumns = false
 function startMockSupabase() {
   return new Promise(resolvePromise => {
     const server = createServer((req, res) => {
@@ -63,8 +65,13 @@ function startMockSupabase() {
         return res.end()
       }
       if (url.pathname !== '/rest/v1/deployments') return respond(404, { message: 'unknown table' })
+      const columnError = { code: 'PGRST204', message: "Could not find the 'owner_email' column of 'deployments' in the schema cache" }
       if (cacheStale && req.method === 'GET') {
         return respond(404, { code: 'PGRST205', message: "Could not find the table 'public.deployments' in the schema cache" })
+      }
+      if (legacyColumns && req.method === 'GET') {
+        const sel = url.searchParams.get('select') || ''
+        if (/owner_|title|pages/.test(sel)) return respond(404, columnError)
       }
 
       const filters = {}
@@ -95,6 +102,9 @@ function startMockSupabase() {
         req.on('end', () => {
           try {
             const rowsIn = Array.isArray(JSON.parse(raw)) ? JSON.parse(raw) : [JSON.parse(raw)]
+            if (legacyColumns && rowsIn.some(r => 'owner_id' in r || 'owner_email' in r || 'pages' in r)) {
+              return respond(404, columnError)
+            }
             const conflictCol = url.searchParams.get('onConflict') || 'name'
             const out = []
             for (const row of rowsIn) {
@@ -228,6 +238,17 @@ try {
     deployedDirAfter === deployedDirBefore,
     deployedDirAfter === null && deployedDirBefore === null ? 'both null' : `before=${deployedDirBefore} after=${deployedDirAfter}`,
   )
+
+  // 8. Legacy table (missing owner/title/pages columns) still deploys
+  legacyColumns = true
+  const LEGACY_SLUG = 'legacy-table-test'
+  const legacyRes = await request('/api/deploy', {
+    method: 'POST',
+    body: JSON.stringify({ name: LEGACY_SLUG, title: 'Legacy Test', html: HTML }),
+  }, OWNER_A)
+  check('legacy table without owner columns still deploys', legacyRes.status === 200 && legacyRes.body?.success === true, JSON.stringify(legacyRes.body).slice(0, 300))
+  const legacyServe = await fetch(`${BASE}/app/${LEGACY_SLUG}`)
+  check('legacy-deployed site serves with UTF-8 intact', legacyServe.status === 200 && (await legacyServe.text()).includes(MARKER), `status=${legacyServe.status}`)
 } finally {
   child.kill('SIGTERM')
   mock.close()

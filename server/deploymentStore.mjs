@@ -38,11 +38,22 @@ export function isDeploymentStoreConfigured() {
   return Boolean(getClient())
 }
 
+// Column-level schema errors (PGRST204) mean the table exists but a column
+// referenced by the query is not in the table/cache — e.g. legacy tables that
+// predate owner_id / owner_email. These degrade gracefully instead of failing.
+function missingColumnFromError(error) {
+  const message = String(error?.message || '')
+  return error && (String(error.code || error.error_code || '') === 'PGRST204' || /could not find the '[^']+' column/i.test(message))
+}
+
+const OPTIONAL_COLUMNS = new Set(['title', 'owner_id', 'owner_email'])
+
 function isSchemaMissing(error) {
   if (!error) return false
+  if (missingColumnFromError(error)) return false
   const code = String(error.code || error.error_code || '')
   const message = String(error.message || '')
-  return code === 'PGRST205' || code === '42P01' || /could not find the table|relation .* does not exist|schema cache/i.test(message)
+  return code === 'PGRST205' || code === '42P01' || /could not find the table|relation .* does not exist/i.test(message)
 }
 
 export function schemaMissingMessage(error) {
@@ -110,41 +121,76 @@ export async function saveDeployment(name, html, meta = {}) {
   const attempt = async () => {
     const db = getClient()
     if (!db) return { ok: false, error: 'Deployment store is not configured (SUPABASE_URL / SUPABASE_SERVICE_KEY).' }
-    const row = {
-      name: String(name).toLowerCase(),
-      html: String(html ?? ''),
-      title: meta.title != null ? String(meta.title).slice(0, 120) : null,
-      owner_id: meta.ownerId != null ? String(meta.ownerId) : null,
-      owner_email: meta.ownerEmail != null ? String(meta.ownerEmail) : null,
-    }
-    if (meta.id && /^[0-9a-f-]{36}$/i.test(String(meta.id))) row.id = String(meta.id)
-    if (meta.createdAt) row.created_at = new Date(meta.createdAt).toISOString()
 
-    const { data, error } = await db
-      .from(TABLE)
-      .upsert(row, { onConflict: 'name' })
-      .select('id, name, created_at')
-    if (error) {
-      return { ok: false, schemaMissing: isSchemaMissing(error), rawError: error, error: describeError(error) }
+    const buildRow = (requiredOnly) => {
+      const row = {
+        name: String(name).toLowerCase(),
+        html: String(html ?? ''),
+      }
+      if (!requiredOnly) {
+        row.title = meta.title != null ? String(meta.title).slice(0, 120) : null
+        row.owner_id = meta.ownerId != null ? String(meta.ownerId) : null
+        row.owner_email = meta.ownerEmail != null ? String(meta.ownerEmail) : null
+        // Whole-site deployments: { "/": html, "/about": html, ... }
+        if (meta.pages && typeof meta.pages === 'object' && !Array.isArray(meta.pages)) {
+          const entries = Object.entries(meta.pages)
+            .filter(([k, v]) => typeof k === 'string' && k.startsWith('/') && typeof v === 'string')
+            .map(([k, v]) => [k, String(v)])
+          const total = entries.reduce((a, [, v]) => a + v.length, 0) + String(html ?? '').length
+          if (total <= 8_000_000 && entries.length <= 60) row.pages = Object.fromEntries(entries)
+        }
+      }
+      if (meta.id && /^[0-9a-f-]{36}$/i.test(String(meta.id))) row.id = String(meta.id)
+      if (meta.createdAt) row.created_at = new Date(meta.createdAt).toISOString()
+      return row
     }
-    return { ok: true, id: data?.[0]?.id || row.id || null, created_at: data?.[0]?.created_at || null }
+
+    const upsertOnce = async (row) => {
+      const { data, error } = await db
+        .from(TABLE)
+        .upsert(row, { onConflict: 'name' })
+        .select('id, name, created_at')
+      if (error) {
+        return { ok: false, schemaMissing: isSchemaMissing(error), rawError: error, error: describeError(error) }
+      }
+      return { ok: true, id: data?.[0]?.id || row.id || null, created_at: data?.[0]?.created_at || null }
+    }
+
+    // Full row first; legacy tables missing optional columns fall back to the
+    // required fields (name + html) so deploys never break.
+    let result = await upsertOnce(buildRow(false))
+    if (!result.ok && result.rawError && missingColumnFromError(result.rawError)) {
+      console.warn('[DEPLOYMENT-STORE] Optional column missing on deployments table — saving required fields only:', describeError(result.rawError))
+      result = await upsertOnce(buildRow(true))
+    }
+    return result
   }
   return withSchemaRetry(attempt, 'save deployment')
 }
 
 /** Fetch one deployment (full row including HTML), or null. */
 export async function getDeployment(name) {
+  const FULL_SELECT = 'id, name, title, html, pages, owner_id, owner_email, created_at, updated_at'
+  const CORE_SELECT = 'id, name, html, created_at, updated_at'
   const attempt = async () => {
     const db = getClient()
     if (!db) return { notConfigured: true }
-    const { data, error } = await db
-      .from(TABLE)
-      .select('id, name, title, html, owner_id, owner_email, created_at, updated_at')
-      .eq('name', String(name).toLowerCase())
-      .limit(1)
-    if (error) return { schemaMissing: isSchemaMissing(error), rawError: error, error: describeError(error) }
-    const row = data?.[0]
-    return { row: row ? normalizeRow(row) : null }
+    const query = async (select) => {
+      const { data, error } = await db
+        .from(TABLE)
+        .select(select)
+        .eq('name', String(name).toLowerCase())
+        .limit(1)
+      if (error) return { schemaMissing: isSchemaMissing(error), rawError: error, error: describeError(error) }
+      const row = data?.[0]
+      return { row: row ? normalizeRow(row) : null }
+    }
+    let result = await query(FULL_SELECT)
+    if (result.rawError && missingColumnFromError(result.rawError)) {
+      console.warn('[DEPLOYMENT-STORE] Optional column missing on deployments table — reading core fields only:', describeError(result.rawError))
+      result = await query(CORE_SELECT)
+    }
+    return result
   }
   const result = await withSchemaRetry(attempt, 'read deployment')
   if (result.notConfigured) return null
@@ -192,15 +238,26 @@ export async function deleteDeployment(name) {
 
 /** List deployments. metadataOnly strips the heavy html column. */
 export async function listDeployments({ limit = 500, metadataOnly = false } = {}) {
-  const select = metadataOnly
+  const fullSelect = metadataOnly
     ? 'id, name, title, owner_id, owner_email, created_at, updated_at'
     : 'id, name, title, html, owner_id, owner_email, created_at, updated_at'
+  const coreSelect = metadataOnly
+    ? 'id, name, created_at, updated_at'
+    : 'id, name, html, created_at, updated_at'
   const attempt = async () => {
     const db = getClient()
     if (!db) return { notConfigured: true }
-    const { data, error } = await db.from(TABLE).select(select).order('updated_at', { ascending: false }).limit(limit)
-    if (error) return { schemaMissing: isSchemaMissing(error), rawError: error, error: describeError(error) }
-    return { rows: (data || []).map(normalizeRow) }
+    const query = async (select) => {
+      const { data, error } = await db.from(TABLE).select(select).order('updated_at', { ascending: false }).limit(limit)
+      if (error) return { schemaMissing: isSchemaMissing(error), rawError: error, error: describeError(error) }
+      return { rows: (data || []).map(normalizeRow) }
+    }
+    let result = await query(fullSelect)
+    if (result.rawError && missingColumnFromError(result.rawError)) {
+      console.warn('[DEPLOYMENT-STORE] Optional column missing on deployments table — listing core fields only:', describeError(result.rawError))
+      result = await query(coreSelect)
+    }
+    return result
   }
   const result = await withSchemaRetry(attempt, 'list deployments')
   if (result.notConfigured) return []
@@ -223,6 +280,7 @@ function normalizeRow(row) {
     title: row.title || row.name,
     html: row.html || '',
     code: row.html || '',
+    pages: row.pages && typeof row.pages === 'object' ? row.pages : null,
     ownerId: row.owner_id || '',
     ownerEmail: row.owner_email || '',
     createdAt: row.created_at || '',

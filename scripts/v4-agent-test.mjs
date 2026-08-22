@@ -39,6 +39,7 @@ const BROKEN_HTML = `<!doctype html>
 </head>
 <body>
 <header><h1>Shop</h1></header>
+<nav><a href="/about">About</a> · <a href="/pricing">Pricing</a></nav>
 <main id="app"></main>
 <img src="/missing-hero.png" alt="hero">
 <script>
@@ -56,6 +57,24 @@ const HEALTHY_HTML = `<!doctype html>
 <a href="/about">About us</a>
 </body></html>`
 
+function innerPage(title) {
+  return `<!doctype html>
+<html><head>
+<title>${title}</title>
+<link rel="stylesheet" href="/missing-styles.css">
+<script src="/missing-analytics.js"></script>
+</head>
+<body>
+<header><h1>${title}</h1></header>
+<p>Readable content for ${title} so blank-render detection stays honest.</p>
+<nav><a href="/broken">Home</a></nav>
+<main id="app"></main>
+<script>
+  initCarouselThatDoesNotExist({ page: '${title}' });
+</script>
+</body></html>`
+}
+
 const fixture = createServer((req, res) => {
   const path = new URL(req.url || '/', 'http://x').pathname
   const send = (status, body, type = 'text/html; charset=utf-8') => {
@@ -64,13 +83,24 @@ const fixture = createServer((req, res) => {
   }
   if (path === '/broken') return send(200, BROKEN_HTML)
   if (path === '/healthy') return send(200, HEALTHY_HTML)
+  if (path === '/about') return send(200, innerPage('About Us'))
+  if (path === '/pricing') return send(200, innerPage('Pricing'))
+  if (path === '/sitemap.xml') {
+    return send(200, `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<url><loc>http://127.0.0.1:${FIXTURE_PORT}/broken</loc></url>
+<url><loc>http://127.0.0.1:${FIXTURE_PORT}/about</loc></url>
+<url><loc>http://127.0.0.1:${FIXTURE_PORT}/pricing</loc></url>
+</urlset>`, 'application/xml')
+  }
   return send(404, 'not found', 'text/plain')
 })
 
 // ─── SSE pipeline driver ──────────────────────────────────────────────────────
-async function runPipeline(targetUrl, mode = 'full') {
+async function runPipeline(targetUrl, mode = 'full', pages = 0) {
   const events = []
-  const response = await fetch(`http://127.0.0.1:${PORT}/api/restore/v3?url=${encodeURIComponent(targetUrl)}&mode=${mode}`)
+  const pagesParam = pages > 0 ? `&pages=${pages}` : ''
+  const response = await fetch(`http://127.0.0.1:${PORT}/api/restore/v3?url=${encodeURIComponent(targetUrl)}&mode=${mode}${pagesParam}`)
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
@@ -100,6 +130,9 @@ const child = spawn(process.execPath, ['server.mjs'], {
     ALPHATEKX_DISABLE_RENDER_PROBE: process.env.ALPHATEKX_DISABLE_RENDER_PROBE || '',
     GROQ_API_KEY: '',
     GROQ_API_KEY_1: '',
+    GROQ_API_KEY_2: '',
+    GROQ_API_KEY_3: '',
+    GROQ_API_KEY_4: '',
     OPENAI_API_KEY: '',
     SUPABASE_URL: '',
     VITE_SUPABASE_URL: '',
@@ -171,6 +204,29 @@ try {
   const healthyIssues = healthyEvents.find(e => e.type === 'issues_found')?.data?.issues || []
   check('healthy site scans clean of runtime damage', !healthyIssues.some(i => ['runtime_error', 'blank_render'].includes(i.type)), JSON.stringify(healthyIssues.map(i => i.type)))
   check('healthy scan-only summary delivered', (healthyEvents.find(e => e.type === 'v3_summary')?.message || '').length > 10)
+
+  // ── WHOLE-SITE mode: crawl + restore every page ──
+  const siteEvents = await runPipeline(brokenUrl, 'full', 5)
+  const siteEventTypes = siteEvents.map(e => e.type)
+  check('whole-site run completes without crash', siteEventTypes.includes('pipeline_done'), `last=${JSON.stringify(siteEvents.at(-1)).slice(0, 200)}\nboot tail: ${bootLog.slice(-700)}`)
+  const crawlData = siteEvents.find(e => e.type === 'crawl_complete')?.data
+  check('crawler mapped all 3 fixture pages (links + sitemap)', crawlData?.count === 3, JSON.stringify(crawlData))
+  const pageResults = siteEvents.filter(e => e.type === 'page_result')
+  check('page_result emitted for every page', pageResults.length === 3, `got ${pageResults.length}`)
+  check('every page improved or held its score', pageResults.every(p => Number(p.data.after_score ?? -1) >= Number(p.data.before_score)), JSON.stringify(pageResults.map(p => p.data)))
+  const siteComplete = siteEvents.find(e => e.type === 'restore_complete')
+  check('restore_complete carries site block', siteComplete?.data?.site?.page_count === 3, JSON.stringify(siteComplete?.data?.site))
+  const siteId = siteComplete?.restorationId
+  if (siteId) {
+    const pagesRes = await fetch(`http://127.0.0.1:${PORT}/api/restore/v3/artifact/${siteId}/pages.json`)
+    const pagesMap = await pagesRes.json().catch(() => null)
+    const keys = pagesMap && typeof pagesMap === 'object' ? Object.keys(pagesMap) : []
+    check('pages.json artifact lists every page', keys.length === 3 && keys.includes('/broken') && keys.includes('/about') && keys.includes('/pricing'), JSON.stringify(keys))
+    const aboutHtml = String(pagesMap?.['/about'] || '')
+    check('internal links rewritten to relative paths', aboutHtml.includes('../broken/') && !aboutHtml.includes(`http://127.0.0.1:${FIXTURE_PORT}/broken"`), aboutHtml.slice(0, 200))
+    check('crash neutralized on non-entry pages too', !/\binitCarouselThatDoesNotExist\s*\(/.test(String(pagesMap?.['/pricing'] || '')) && !/\binitCarouselThatDoesNotExist\s*\(/.test(aboutHtml))
+    check('dead stylesheet stripped on every page', !aboutHtml.includes('/missing-styles.css'))
+  }
 
   void doneSummaryScan
 } finally {
