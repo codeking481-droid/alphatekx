@@ -53,6 +53,20 @@ function StepIconFor(icon: string): React.FC<{ size?: number; className?: string
   return ICON_MAP[icon] || FALLBACK_ICON;
 }
 
+// Engines may attach rich objects (diagnosis results, etc.) to summary/details.
+// React crashes with error #31 if an object is rendered as a child — coerce
+// everything to plain text before it touches the DOM.
+function toText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value == null) return "";
+  if (typeof value === "object") {
+    const s = (value as { summary?: unknown }).summary;
+    if (typeof s === "string" && s.trim()) return s;
+    try { return JSON.stringify(value); } catch { return ""; }
+  }
+  return String(value);
+}
+
 const STATUS_COLORS: Record<string, string> = {
   pending: "border-zinc-600 bg-zinc-800/40",
   active: "border-[#D6FF00]/60 bg-[#D6FF00]/5",
@@ -167,7 +181,7 @@ function ThoughtStepComponent({
         </div>
 
         {step.summary && (
-          <p className="mt-1 pl-10 text-xs text-zinc-400 italic leading-relaxed">{step.summary}</p>
+          <p className="mt-1 pl-10 text-xs text-zinc-400 italic leading-relaxed">{toText(step.summary)}</p>
         )}
 
         {hasExpandable && (
@@ -195,7 +209,7 @@ function ThoughtStepComponent({
                 {step.details && (
                   <div className="space-y-1">
                     {(Array.isArray(step.details) ? step.details : [step.details]).map((d, i) => (
-                      <p key={i} className="text-xs text-zinc-300 leading-relaxed">{d}</p>
+                      <p key={i} className="text-xs text-zinc-300 leading-relaxed">{toText(d)}</p>
                     ))}
                   </div>
                 )}
@@ -208,7 +222,7 @@ function ThoughtStepComponent({
                     {step.logs.map((log, i) => (
                       <p key={i} className="font-mono text-[11px] text-zinc-400 leading-relaxed">
                         <span className="text-zinc-600">{">"} </span>
-                        {log}
+                        {toText(log)}
                       </p>
                     ))}
                   </div>

@@ -127,13 +127,29 @@ function slugifyHostname(hostname) {
 
 // ─── Chain of thought ────────────────────────────────────────────────────────
 
+// Step functions often return rich objects (diagnosis results, deliverables).
+// The SSE stream must carry a short HUMAN string only — never a raw object,
+// which would crash the UI renderer (React child error).
+function stepSummaryText(result) {
+  if (result == null) return ''
+  if (typeof result === 'string') return clip(result, 180)
+  if (typeof result === 'number' || typeof result === 'boolean') return String(result)
+  if (typeof result === 'object') {
+    if (typeof result.summary === 'string' && result.summary.trim()) return clip(result.summary, 180)
+    if (Array.isArray(result.issues)) return `${result.issues.length} issue${result.issues.length === 1 ? '' : 's'} found`
+    if (Array.isArray(result.files)) return `${result.files.length} file${result.files.length === 1 ? '' : 's'} ready`
+    try { return clip(JSON.stringify(result), 140) } catch { return '' }
+  }
+  return ''
+}
+
 function createChain(sendStep) {
   return {
     async step(id, label, icon, fn) {
       sendStep({ id, label, icon: icon || 'clock', status: 'active' })
       try {
         const summary = await fn()
-        sendStep({ id, label, icon: icon || 'clock', status: 'done', summary })
+        sendStep({ id, label, icon: icon || 'clock', status: 'done', summary: stepSummaryText(summary) })
         return summary
       } catch (err) {
         sendStep({ id, label, icon: icon || 'clock', status: 'error', summary: clip(err instanceof Error ? err.message : String(err), 180) })
@@ -141,8 +157,8 @@ function createChain(sendStep) {
       }
     },
     active(id, label, icon = 'clock') { sendStep({ id, label, icon, status: 'active' }) },
-    done(id, label, summary) { sendStep({ id, label, icon: 'clock', status: 'done', summary }) },
-    fail(id, label, summary) { sendStep({ id, label, icon: 'clock', status: 'error', summary: clip(summary, 180) }) },
+    done(id, label, summary) { sendStep({ id, label, icon: 'clock', status: 'done', summary: stepSummaryText(summary) }) },
+    fail(id, label, summary) { sendStep({ id, label, icon: 'clock', status: 'error', summary: stepSummaryText(summary) || 'failed' }) },
   }
 }
 
