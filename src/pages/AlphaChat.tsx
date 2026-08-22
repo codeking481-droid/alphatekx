@@ -14,6 +14,7 @@ import FixingCard, { type DiffEntry } from '../components/alpha/restore/FixingCa
 import GoldProofCard, { type ProofData } from '../components/alpha/restore/GoldProofCard'
 import ActionCard from '../components/alpha/restore/ActionCard'
 import GitHubApplyCard from '../components/alpha/restore/GitHubApplyCard'
+import RestoreDeliveryCard from '../components/alpha/restore/RestoreDeliveryCard'
 import GitHubConnectGate from '../components/alpha/restore/GitHubConnectGate'
 import FixPromptCard from '../components/alpha/restore/FixPromptCard'
 import ScreenshotComparison from '../components/alpha/restore/ScreenshotComparison'
@@ -68,6 +69,7 @@ type RestoreCardState = {
     tier?: 'free' | 'silver' | 'gold'
     restoreComplete?: boolean
     pipelineDone?: boolean
+    deliverables?: any
   }
 }
 
@@ -606,6 +608,8 @@ function ChatContent() {
             v2.plainEnglish = event.data?.plainEnglish || v2.plainEnglish
             v2.tier = event.data?.tier || v2.tier || 'gold'
             v2.restoreComplete = true
+            v2.deliverables = event.data?.deliverables || v2.deliverables || null
+            if (!v2.restorationId && event.restorationId) v2.restorationId = event.restorationId
             cards.isRunning = false
             break
           case 'pipeline_done':
@@ -1342,6 +1346,14 @@ function ChatContent() {
                                 findings={msg.restoreCards.v2.securityFindings || []}
                                 summary={msg.restoreCards.v2.securitySummary}
                                 plainEnglish={msg.restoreCards.v2.plainEnglish}
+                              />
+                            )}
+
+                            {/* Delivery: Download ZIP / Copy Code / Connect to Git */}
+                            {msg.restoreCards.v2?.restoreComplete && msg.restoreCards.v2.restorationId && (
+                              <RestoreDeliveryCard
+                                restorationId={msg.restoreCards.v2.restorationId}
+                                downloadRestored={msg.restoreCards.v2.deliverables?.download?.restored || undefined}
                               />
                             )}
                           </div>

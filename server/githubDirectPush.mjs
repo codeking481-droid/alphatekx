@@ -15,6 +15,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { tmpdir } from 'node:os'
+import { fileURLToPath } from 'node:url'
 import { randomBytes } from 'node:crypto'
 import simpleGit from 'simple-git'
 
@@ -243,9 +244,22 @@ export async function handleGitHubApplyFix(req, res) {
     return jsonResponse(res, 400, { error: 'repoFullName and scanId are required' })
   }
 
-  const restoredDir = path.resolve(tmpdir(), `restore-${scanId}`, 'restored')
+  let restoredDir = path.resolve(tmpdir(), `restore-${scanId}`, 'restored')
   if (!fs.existsSync(restoredDir)) {
-    return jsonResponse(res, 404, { error: `No restored files found for scan ${scanId}. Run the scan first.` })
+    // V4 bridge: materialize fixed files from the restoration artifact store
+    const artifactsDir = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      '..',
+      'data',
+      'restorations',
+      String(scanId),
+    )
+    const fixedHtmlPath = path.join(artifactsDir, 'restored.html')
+    if (!fs.existsSync(fixedHtmlPath)) {
+      return jsonResponse(res, 404, { error: `No restored files found for scan ${scanId}. Run the scan first.` })
+    }
+    fs.mkdirSync(restoredDir, { recursive: true })
+    fs.copyFileSync(fixedHtmlPath, path.join(restoredDir, 'index.html'))
   }
 
   // SSE stream for progress
