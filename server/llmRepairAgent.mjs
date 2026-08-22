@@ -38,7 +38,7 @@ function providerEndpoint(family) {
 
 function providerDefaultModel(family) {
   if (family === 'xai') return process.env.XAI_MODEL || 'grok-3-mini'
-  if (family === 'groq') return process.env.GROQ_BUILDER_MODEL || 'llama-3.3-70b-versatile'
+  if (family === 'groq') return process.env.GROQ_BUILDER_MODEL || 'openai/gpt-oss-120b'
   return 'gpt-4o-mini'
 }
 
@@ -61,11 +61,20 @@ function buildChatAttempts() {
 
   if (primary) {
     const family = detectKeyFamily(primary)
-    attempts.push({ url: providerEndpoint(family), key: primary, model: providerDefaultModel(family), family })
-    if (!process.env.XAI_MODEL && family === 'groq') {
-      // GROQ_BUILDER_MODEL may reference a decommissioned Groq model — add the
-      // known-instant model as a same-provider retry before leaving Groq.
-      attempts.push({ url: GROQ_URL, key: primary, model: 'llama-3.1-8b-instant', family })
+    if (family === 'groq') {
+      // Production Groq keys run openai/gpt-oss-120b (same model family as
+      // alpha-core). Try it first, then safe fallbacks, so a decommissioned
+      // or rate-limited model can never take AI repairs down.
+      const candidates = [
+        process.env.GROQ_BUILDER_MODEL || '',
+        'openai/gpt-oss-120b',
+        'llama-3.1-8b-instant',
+      ].filter(Boolean)
+      for (const model of [...new Set(candidates)]) {
+        attempts.push({ url: GROQ_URL, key: primary, model, family })
+      }
+    } else {
+      attempts.push({ url: providerEndpoint(family), key: primary, model: providerDefaultModel(family), family })
     }
   }
 
@@ -143,8 +152,11 @@ export async function repairChat(system, user, { maxTokens = 4000 } = {}) {
         const parsed = JSON.parse(content)
         if (parsed && typeof parsed === 'object') return parsed
       } catch (err) {
-        _lastLlmError = `${attempt.family}/${attempt.model}: ${err instanceof Error ? err.message : err}`
-        console.warn(`[LLM-REPAIR] ${attempt.model} attempt ${tryIndex + 1} failed:`, err instanceof Error ? err.message : err)
+        const msg = err instanceof Error ? err.message : String(err)
+        _lastLlmError = `${attempt.family}/${attempt.model}: ${msg}`
+        console.warn(`[LLM-REPAIR] ${attempt.model} attempt ${tryIndex + 1} failed:`, msg)
+        // A rejected KEY can never succeed — abandon this provider entirely.
+        if (/\bHTTP 40[13]\b|invalid_api_key|permission[- ]denied/i.test(msg)) { attempts.length = 0; break }
         await new Promise(r => setTimeout(r, 800 * (tryIndex + 1)))
       }
     }
@@ -360,8 +372,11 @@ async function chatText(system, user, { maxTokens = 8000 } = {}) {
         const content = await callChatCompletionRaw(attempt.url, attempt.key, attempt.model, system, user, maxTokens)
         if (content && String(content).trim()) return String(content).trim()
       } catch (err) {
-        _lastLlmError = `${attempt.family}/${attempt.model}: ${err instanceof Error ? err.message : err}`
-        console.warn(`[LLM-REBUILD] ${attempt.model} attempt ${tryIndex + 1} failed:`, err instanceof Error ? err.message : err)
+        const msg = err instanceof Error ? err.message : String(err)
+        _lastLlmError = `${attempt.family}/${attempt.model}: ${msg}`
+        console.warn(`[LLM-REBUILD] ${attempt.model} attempt ${tryIndex + 1} failed:`, msg)
+        // A rejected KEY can never succeed — abandon this provider entirely.
+        if (/\bHTTP 40[13]\b|invalid_api_key|permission[- ]denied/i.test(msg)) { attempts.length = 0; break }
         await new Promise(r => setTimeout(r, 800 * (tryIndex + 1)))
       }
     }
