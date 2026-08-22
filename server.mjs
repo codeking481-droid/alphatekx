@@ -15,7 +15,7 @@ import { handleGitHubAuth, handleGitHubCallback, handleGitHubStatus, handleGitHu
 import { handleDiagnoseRoute } from './server/diagnoseRoute.mjs'
 import { handleRestoreV2Route, handleRestorePushRoute } from './server/restorePipelineV2.mjs'
 import { handleRestoreV3Route, handleV3DownloadRoute, handleV3ArtifactRoute, handleV3ContentRoute } from './server/alphaRestorationPipeline.mjs'
-import { saveDeployment, getDeployment, deploymentExists, deleteDeployment, listDeployments, isDeploymentStoreConfigured, checkDeploymentStoreHealth, runSupabaseStartupCheck, schemaMissingMessage } from './server/deploymentStore.mjs'
+import { saveDeployment, getDeployment, deploymentExists, deleteDeployment, listDeployments, isDeploymentStoreConfigured, checkDeploymentStoreHealth, runSupabaseStartupCheck, getDeploymentStoreStatus, schemaMissingMessage } from './server/deploymentStore.mjs'
 import { runFullRestorationScan } from './server/scanEngine/restorationScanner.mjs'
 import { marketplaceHandler, fulfillMarketplaceOrder } from './server/marketplace.mjs'
 import { getRecords, getRecord, createRecord, updateRecord, deleteRecord, appEntitiesMigrationSql } from './server/appData.mjs'
@@ -8806,6 +8806,14 @@ const server = http.createServer(async (req, res) => {
       const logs = await listAgentLogs({ agentId, limit })
       return json(res, 200, { logs })
     } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Could not load logs' }) }
+  }
+  if (req.method === 'GET' && req.url === '/api/supabase-status') {
+    try {
+      const status = await getDeploymentStoreStatus()
+      return json(res, status.configured && status.tableReady ? 200 : 503, status)
+    } catch (err) {
+      return json(res, 500, { error: err instanceof Error ? err.message : String(err) })
+    }
   }
   if (req.method === 'GET' && req.url?.startsWith('/api/health')) {
     const requestUrl = new URL(req.url, 'http://localhost')

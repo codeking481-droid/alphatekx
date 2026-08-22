@@ -160,6 +160,12 @@ try {
   check('boot health probe reports Supabase connected + table found',
     /✅ Supabase connected successfully/.test(bootLog) && /✅ Table 'deployments' found/.test(bootLog), bootLog.slice(-400))
 
+  // Diagnostics endpoint reveals connection + table state
+  const statusRes = await request('/api/supabase-status')
+  check('supabase-status reports configured + connected', statusRes.body.configured === true && statusRes.body.connected === true, JSON.stringify(statusRes.body))
+  check('supabase-status shows deployments table ready', statusRes.body.tableReady === true, JSON.stringify(statusRes.body))
+  check('supabase-status never leaks secrets', !JSON.stringify(statusRes.body).toLowerCase().includes('key='), JSON.stringify(statusRes.body))
+
   // 1. Deploy → permanent storage
   const deployRes = await request('/api/deploy', {
     method: 'POST',

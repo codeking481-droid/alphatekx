@@ -227,3 +227,32 @@ export async function runSupabaseStartupCheck() {
 function safeUrlHost(url) {
   try { return new URL(url).host } catch { return 'invalid-url' }
 }
+
+/**
+ * Full diagnostics for /api/supabase-status — shows exactly which Supabase
+ * project the app is talking to and whether it can see the deployments table.
+ * Never returns secrets (only the project host).
+ */
+export async function getDeploymentStoreStatus() {
+  const { url, keyName } = deploymentStoreEnv()
+  const status = {
+    configured: Boolean(url && keyName),
+    supabaseHost: url ? safeUrlHost(url) : null,
+    serviceKeyVar: keyName,
+    connected: false,
+    tableReady: false,
+    rowCount: null,
+    error: null,
+    checkedAt: new Date().toISOString(),
+  }
+  const health = await checkDeploymentStoreHealth()
+  status.connected = health.connected
+  status.tableReady = health.tableReady
+  if (!health.connected || !health.tableReady) status.error = health.message || null
+  if (health.tableReady) {
+    const db = getClient()
+    const { count, error } = await db.from(TABLE).select('id', { count: 'exact', head: true })
+    if (!error) status.rowCount = count
+  }
+  return status
+}
