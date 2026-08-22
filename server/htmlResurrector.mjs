@@ -439,6 +439,10 @@ function CSS_Escape(id) {
 
 // ─── Main repair entrypoint ──────────────────────────────────────────────────
 
+// Relative junk filenames (this-image-does-not-exist.gif, broken-video.mp4…)
+// are just as dead as fake domains — catch them without needing network.
+const RE_JUNK_FILENAME = /(?:^|\/)(?:[^\/]*?(?:does-not-exist|not-exist|nonexistent|is-broken|broken-[a-z]+)[^\/]*\.(?:gif|jpe?g|png|svg|webp|mp4|webm|ogv|mp3|ogg|wav|vtt)|broken\.(?:gif|jpe?g|png|mp4|mp3))$/i
+
 export async function repairBrokenHtml(html, opts = {}) {
   const {
     baseUrl = '',
@@ -496,6 +500,14 @@ export async function repairBrokenHtml(html, opts = {}) {
       if (abs.endsWith('/')) dead.add(abs.slice(0, -1))
       tally.dead_assets_static++
     }
+  }
+  // Relative junk filenames ("this-image-does-not-exist.gif",
+  // "broken-video.mp4", "broken-subs.vtt"…) never hit an absolute-URL scan,
+  // but they are just as dead. Catch them straight from the attributes.
+  for (const m of doc.matchAll(/(?:src|href|poster|data)\s*=\s*["']([^"':]+)["']/gi)) {
+    const v = m[1]
+    if (/^(?:data|blob|javascript|#|mailto:)/i.test(v) || /^https?:\/\//i.test(v)) continue
+    if (RE_JUNK_FILENAME.test(v)) { dead.add(v); tally.dead_assets_static++ }
   }
   const toProbe = []
   for (const u of external) {

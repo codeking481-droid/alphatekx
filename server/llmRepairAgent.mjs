@@ -239,6 +239,12 @@ export async function llmRepairBatch(input) {
   }
 
   const repairs = Array.isArray(answer.repairs) ? answer.repairs.slice(0, 8) : []
+  // A patch that changes <script>/<style> open/close pairing leaves raw JS/CSS
+  // bleeding into the document — reject those instead of shipping the damage.
+  const structuralFingerprint = (s) =>
+    `${(s.match(/<script\b/gi) || []).length}:${(s.match(/<\/script>/gi) || []).length}:` +
+    `${(s.match(/<style\b/gi) || []).length}:${(s.match(/<\/style>/gi) || []).length}`
+
   for (const r of repairs) {
     const find = typeof r?.find === 'string' ? r.find : ''
     const replace = typeof r?.replace === 'string' ? r.replace : ''
@@ -258,7 +264,13 @@ export async function llmRepairBatch(input) {
       out.notes.push(`Patch anchor not unique for ${r?.issue_id || '?'} — skipped safely`)
       continue
     }
-    out.html = out.html.slice(0, first) + replace + out.html.slice(first + find.length)
+    const candidate = out.html.slice(0, first) + replace + out.html.slice(first + find.length)
+    if (structuralFingerprint(candidate) !== structuralFingerprint(out.html)) {
+      out.skipped++
+      out.notes.push(`Patch rejected for ${r?.issue_id || '?'} — it would break <script>/<style> pairing`)
+      continue
+    }
+    out.html = candidate
     out.applied++
     out.notes.push(`${r?.action || 'patch'} applied: ${clipNote(r?.explanation || '')}`)
   }
@@ -356,7 +368,101 @@ Output rules:
 - Return RAW HTML only — no markdown fences, no commentary before or after.
 - The document MUST start with <!DOCTYPE html> and contain <head> and <body>.
 - Keep every real text section from the original page; drop only the damage.
-- All CSS goes in one <style> block in <head>; all JS in one deferred <script> at the end of <body>. No external dependencies.`
+- All CSS goes in one <style> block in <head>; all JS in one deferred <script> at the end of <body>. No external dependencies.
+
+# ALPHA RESTORATION SYSTEM PROMPT
+
+You are Alpha, a professional website restoration service. Your mission is to take broken, chaotic HTML and restore it to a fully functional, modern, professional website.
+
+## RESTORATION PHILOSOPHY
+
+"Restoration" means:
+1. **PRESERVE** - Keep all meaningful content (text, products, services, contact info)
+2. **REBUILD** - Create a clean, semantic HTML5 structure from scratch
+3. **DESIGN** - Apply modern, professional styling that fits the content
+4. **FUNCTION** - Make everything work (forms, buttons, navigation)
+5. **IMPROVE** - Make it better than the original (faster, more accessible, responsive)
+
+## RESTORATION PROCESS
+
+### STEP 1: ANALYZE THE BROKEN SITE
+Read the entire HTML and identify:
+- What is the site's PURPOSE? (Restaurant? Store? Blog? Portfolio? Business?)
+- What CONTENT can be saved? (Text, images, products, services)
+- What's the BRAND IDENTITY? (Colors, name, style)
+- What FUNCTIONALITY should work? (Forms, buttons, links)
+
+### STEP 2: EXTRACT ALL MEANINGFUL CONTENT
+Extract and organize:
+- Site name and tagline
+- All headings and paragraphs
+- Product/service lists with prices if available
+- Contact information (email, phone, address)
+- Menu items, descriptions, prices
+- Any images (use placeholders if missing)
+- Form fields and their purposes
+
+### STEP 3: DETERMINE THE SITE TYPE
+Based on content, identify:
+- Is this a RESTAURANT? → Restaurant template
+- Is this a STORE? → E-commerce template
+- Is this a PORTFOLIO? → Portfolio template
+- Is this a BUSINESS? → Corporate template
+- Is this a BLOG? → Blog template
+- Is this a SERVICE? → Service page template
+
+### STEP 4: BUILD THE RESTORED SITE
+Create a complete HTML file with:
+
+#### STRUCTURE
+- Proper doctype declaration
+- Clean HTML5 semantic elements (header, main, section, footer)
+- Logical content flow
+- Accessibility attributes (aria labels)
+
+#### DESIGN
+- Modern, professional styling
+- Responsive (works on all devices)
+- Color scheme that matches the content (warm colors for restaurants, professional for business)
+- Good typography (clean fonts, proper hierarchy)
+- Spacing and layout that's pleasing
+
+#### FUNCTIONALITY
+- Working forms with proper validation
+- Interactive buttons that do something useful
+- Navigation that works
+- Clean JavaScript (no errors)
+
+### STEP 5: PRESERVE BRAND IDENTITY
+- Keep the original business name
+- Use colors that match the brand (or choose appropriate ones)
+- Maintain the original tone and voice
+- Keep all important content
+
+## QUALITY STANDARDS
+
+Your restored site MUST:
+1. **Work perfectly** - No broken features, no JavaScript errors
+2. **Look professional** - Clean design, good colors, proper spacing
+3. **Be responsive** - Works on mobile, tablet, desktop
+4. **Preserve content** - All meaningful text is kept
+5. **Be accessible** - Proper HTML semantics, aria labels
+6. **Load fast** - Clean code, no unnecessary cruft
+
+## CRITICAL RULES
+
+1. **NEVER lose important content** - Always preserve meaningful text
+2. **NEVER keep broken code** - Remove all intentional errors
+3. **ALWAYS make forms work** - Forms should actually submit/validate
+4. **ALWAYS be professional** - No chaos, no gimmicks
+5. **ALWAYS improve** - Make it better than the original
+
+## REMEMBER
+
+You are not just "fixing" code — you are RESTORING a website to full functionality.
+Think like a master craftsman who takes a broken piece and makes it beautiful and
+functional again. Every site is unique, and every restoration should respect the
+original purpose while making it better.`
 
 /**
  * Plain-text chat used by the rebuild pass. Same provider rotation as
@@ -454,14 +560,34 @@ export async function llmRebuildPage(input = {}) {
 
   let source = String(html)
   if (source.length > 60_000) source = source.slice(0, 60_000)
-  const user = `Site: ${hostname || '(unknown host)'}${url ? `\nURL: ${url}` : ''}\n\nCurrent page source:\n${source}\n\nReturn the complete fixed HTML file now.`
 
   out.attempted = true
-  const answer = await chatText(REBUILD_SYSTEM_PROMPT, user, { maxTokens: 12000 })
+  console.log(`🔧 [REBUILD] Expert developer pass starting — input ${(source.length / 1024).toFixed(1)} KB`)
+  // Groq free tiers enforce small per-minute token budgets. Budget the
+  // completion allowance so prompt + max_tokens stays inside ~7.3K tokens,
+  // then SHRINK the page payload and retry if the provider still says 413.
+  const estTokens = (s) => Math.ceil(String(s).length / 4)
+  let answer = null
+  let lastFail = ''
+  for (const fraction of [1, 0.5, 0.25]) {
+    const sliced = fraction === 1 ? source : source.slice(0, Math.max(2_000, Math.floor(source.length * fraction)))
+    const truncNote = fraction === 1 ? '' : '\n\n(Page truncated — restore what is provided.)'
+    const user = `Site: ${hostname || '(unknown host)'}${url ? `\nURL: ${url}` : ''}\n\nCurrent page source:\n${sliced}${truncNote}\n\nReturn the complete fixed HTML file now.`
+    const maxTokens = Math.max(800, Math.min(12_000, 7_300 - estTokens(REBUILD_SYSTEM_PROMPT) - estTokens(user)))
+    console.log(`📤 [REBUILD] Sending to LLM — ${(sliced.length / 1024).toFixed(1)} KB page, ${maxTokens} max tokens…`)
+    answer = await chatText(REBUILD_SYSTEM_PROMPT, user, { maxTokens })
+    if (answer) break
+    lastFail = llmLastError()
+    // Only a size/rate problem benefits from shrinking — anything else stops.
+    if (!/HTTP 41[33]|tokens per minute|too large|rate limit/i.test(lastFail)) break
+    console.log(`⚠️ [REBUILD] Payload rejected (${lastFail.slice(0, 140)}) — shrinking and retrying…`)
+  }
   if (!answer) {
-    out.notes.push(`AI providers unavailable (${llmLastError() || 'unknown error'}) — continuing without rebuild.`)
+    out.notes.push(`AI providers unavailable (${lastFail || llmLastError() || 'unknown error'}) — continuing without rebuild.`)
+    console.log(`❌ [REBUILD] No usable response — ${lastFail || llmLastError() || 'unknown error'}`)
     return out
   }
+  console.log(`📥 [REBUILD] Response received — ${(answer.length / 1024).toFixed(1)} KB`)
 
   const cleaned = extractHtmlDocument(answer)
   if (!cleaned) {
