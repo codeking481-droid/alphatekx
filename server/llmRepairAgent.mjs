@@ -14,20 +14,48 @@
  *     the HTML.
  */
 
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url))
+
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions'
 const XAI_URL = 'https://api.x.ai/v1/chat/completions'
 const REQUEST_TIMEOUT_MS = 45_000
 const MAX_PATCH_CHARS = 40_000
 
+/**
+ * Every slot that may hold a provider key. Groq slots come first because the
+ * product is designed around free-tier Groq rotation: when one key's rate
+ * budget is exhausted the next takes over seamlessly, and dedicated
+ * xAI/OpenAI slots act as the final safety net.
+ */
+const KEY_SLOT_NAMES = [
+  'GROQ_API_KEY',
+  'GROQ_API_KEY_1',
+  'GROQ_API_KEY_2',
+  'GROQ_API_KEY_3',
+  'GROQ_API_KEY_4',
+  'XAI_API_KEY',
+  'XAI_API_KEY_1',
+  'OPENAI_API_KEY',
+  'OPENAI_API_KEY_1',
+]
+
 // Keys are routed by PREFIX, not by variable name — deployments regularly put
 // whatever provider key they have into GROQ_API_KEY:
 //   xai-*  → xAI (Grok)      gsk_* → Groq      sk-* → OpenAI
 function detectKeyFamily(key) {
-  const k = String(key || '')
+  const k = String(key || '').trim()
   if (k.startsWith('xai-')) return 'xai'
   if (k.startsWith('gsk_')) return 'groq'
-  return 'openai'
+  if (k.startsWith('sk-')) return 'openai'
+  // Unknown prefix: assume Groq — that is what deployments overwhelmingly
+  // store here, and a wrong guess degrades to a logged HTTP rejection while
+  // the next candidate takes over.
+  return 'groq'
 }
 
 function providerEndpoint(family) {
@@ -45,59 +73,86 @@ function providerDefaultModel(family) {
 let _lastLlmError = ''
 export function llmLastError() { return _lastLlmError }
 
+/** A key that can never succeed — drop it and keep rotating through the rest. */
+function isKeyRejected(msg) {
+  return /\bHTTP 40[13]\b|invalid_api_key|permission[- ]denied/i.test(String(msg || ''))
+}
+
+/** This key's budget is gone for now — hand off to the next slot instantly. */
+function isRateLimited(msg) {
+  return /\bHTTP 429\b|\bHTTP 413\b|tokens per minute|tokens per day|rate limit|too large|quota/i.test(String(msg || ''))
+}
+
+/** A decommissioned/unavailable model — retrying it can only waste time. */
+function isModelMissing(msg) {
+  return /model_not_found|does not exist|\bHTTP 404\b/i.test(String(msg || ''))
+}
+
 /**
- * Ordered chat attempts from whatever keys exist. The FIRST primary key wins;
- * OpenAI is appended as fallback when it is not already the primary.
+ * Ordered chat attempts across EVERY configured key. All Groq-family keys
+ * rotate first (each with the full model fallback chain), then xAI, then
+ * OpenAI — so a rate-limited or dead key never takes AI repairs down.
  */
 function buildChatAttempts() {
   const attempts = []
-  const primary = [
-    process.env.GROQ_API_KEY,
-    process.env.GROQ_API_KEY_1,
-    process.env.GROQ_API_KEY_2,
-    process.env.GROQ_API_KEY_3,
-    process.env.GROQ_API_KEY_4,
-  ].map(k => String(k || '').trim()).find(Boolean)
-
-  if (primary) {
-    const family = detectKeyFamily(primary)
+  for (const { key, family } of collectProviderKeys()) {
     if (family === 'groq') {
-      // Production Groq keys run openai/gpt-oss-120b (same model family as
-      // alpha-core). Try it first, then safe fallbacks, so a decommissioned
-      // or rate-limited model can never take AI repairs down.
+      // openai/gpt-oss-120b is the workhorse; gpt-oss-20b and compound-mini
+      // are live fallbacks (llama-3.1-8b-instant was decommissioned by Groq).
       const candidates = [
         process.env.GROQ_BUILDER_MODEL || '',
-        'openai/gpt-oss-120b',
-        'llama-3.1-8b-instant',
+        providerDefaultModel('groq'),
+        'openai/gpt-oss-20b',
+        'groq/compound-mini',
       ].filter(Boolean)
       for (const model of [...new Set(candidates)]) {
-        attempts.push({ url: GROQ_URL, key: primary, model, family })
+        attempts.push({ url: GROQ_URL, key, model, family })
+      }
+    } else if (family === 'xai') {
+      for (const model of [process.env.XAI_MODEL || 'grok-3-mini', 'grok-3-fast-mini']) {
+        attempts.push({ url: XAI_URL, key, model, family })
       }
     } else {
-      attempts.push({ url: providerEndpoint(family), key: primary, model: providerDefaultModel(family), family })
+      attempts.push({ url: OPENAI_URL, key, model: providerDefaultModel('openai'), family })
     }
-  }
-
-  for (const key of [process.env.OPENAI_API_KEY].map(k => String(k || '').trim()).filter(Boolean)) {
-    if (key === primary) break
-    attempts.push({ url: OPENAI_URL, key, model: 'gpt-4o-mini', family: 'openai' })
-    break
   }
   return attempts
 }
 
-function groqKeys() {
-  return [
-    process.env.GROQ_API_KEY,
-    process.env.GROQ_API_KEY_1,
-    process.env.GROQ_API_KEY_2,
-    process.env.GROQ_API_KEY_3,
-    process.env.GROQ_API_KEY_4,
-  ].map(k => String(k || '').trim()).filter(Boolean)
+/**
+ * Every usable key, in priority order: all Groq slots first, then dedicated
+ * xAI/OpenAI slots. Keys defined only inside .env/.env.local are rescued too
+ * — a machine-level environment variable would otherwise shadow them forever.
+ */
+function collectProviderKeys() {
+  const FAMILY_PRIORITY = { groq: 0, xai: 1, openai: 2 }
+  const raw = KEY_SLOT_NAMES.map((n) => String(process.env[n] || '').trim()).filter(Boolean)
+  raw.push(...extraFileKeys())
+  const seen = new Set()
+  return raw
+    .filter((key) => (seen.has(key) ? false : (seen.add(key), true)))
+    .map((key) => ({ key, family: detectKeyFamily(key) }))
+    .sort((a, b) => FAMILY_PRIORITY[a.family] - FAMILY_PRIORITY[b.family])
 }
 
-function openaiKeys() {
-  return [process.env.OPENAI_API_KEY].map(k => String(k || '').trim()).filter(Boolean)
+let _extraFileKeysCache = null
+function extraFileKeys() {
+  if (_extraFileKeysCache) return _extraFileKeysCache
+  const known = new Set(KEY_SLOT_NAMES.map((n) => String(process.env[n] || '').trim()).filter(Boolean))
+  const out = []
+  try {
+    for (const name of ['.env.local', '.env']) {
+      const p = path.resolve(MODULE_DIR, '..', name)
+      if (!fs.existsSync(p)) continue
+      for (const line of fs.readFileSync(p, 'utf8').split(/\r?\n/)) {
+        const m = /^\s*(?:GROQ|XAI|OPENAI)[A-Z0-9_]*KEY[A-Z0-9_]*\s*=\s*(.+?)\s*$/.exec(line)
+        const v = m?.[1]?.replace(/^["']|["']$/g, '').trim()
+        if (v && !known.has(v)) out.push(v)
+      }
+    }
+  } catch {}
+  _extraFileKeysCache = out
+  return out
 }
 
 export function isLlmRepairConfigured() {
@@ -138,7 +193,7 @@ async function callChatCompletion(url, apiKey, model, system, user, maxTokens) {
 
 /**
  * Ask the repair model a question expecting a JSON-object answer.
- * Provider order: Groq (fast, primary) → OpenAI (fallback). Two attempts each.
+ * Rotates across every configured Groq key, then xAI/OpenAI fallbacks.
  * Returns parsed JSON object or null when every provider fails.
  */
 export async function repairChat(system, user, { maxTokens = 4000 } = {}) {
@@ -149,19 +204,29 @@ export async function repairChat(system, user, { maxTokens = 4000 } = {}) {
     for (let tryIndex = 0; tryIndex < 2; tryIndex++) {
       try {
         const content = await callChatCompletion(attempt.url, attempt.key, attempt.model, system, user, maxTokens)
-        const parsed = JSON.parse(content)
+        const parsed = parseJsonLoose(content)
         if (parsed && typeof parsed === 'object') return parsed
+        throw new Error('Response was not a valid JSON object')
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         _lastLlmError = `${attempt.family}/${attempt.model}: ${msg}`
-        console.warn(`[LLM-REPAIR] ${attempt.model} attempt ${tryIndex + 1} failed:`, msg)
-        // A rejected KEY can never succeed — abandon this provider entirely.
-        if (/\bHTTP 40[13]\b|invalid_api_key|permission[- ]denied/i.test(msg)) { attempts.length = 0; break }
+        console.warn(`[LLM-REPAIR] ${attempt.family}/${attempt.model} attempt ${tryIndex + 1} failed:`, msg)
+        // Dead keys, exhausted budgets and missing models can't be fixed by
+        // retrying THIS candidate — move straight to the next key/model.
+        if (isKeyRejected(msg) || isRateLimited(msg) || isModelMissing(msg)) break
         await new Promise(r => setTimeout(r, 800 * (tryIndex + 1)))
       }
     }
   }
   return null
+}
+
+/** JSON.parse first; fall back to scraping the first balanced {...} block. */
+function parseJsonLoose(text) {
+  try {
+    return JSON.parse(String(text || ''))
+  } catch {}
+  return extractJsonObject(text)
 }
 
 // ─── Context extraction ──────────────────────────────────────────────────────
@@ -187,18 +252,47 @@ function extractRelevantBlocks(html, issueTexts) {
 
 // ─── Batch repair ────────────────────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `You are the AlphaTekX Repair Agent, an elite web-restoration engineer.
-You receive an HTML document excerpt plus a list of diagnosed runtime issues (JavaScript console errors, uncaught exceptions, failed subresources, blank renders).
+const SYSTEM_PROMPT = `You are Alpha — an elite Website Restoration Agent. You are not a website generator. You are not a redesign tool. You are a precision repair specialist.
+
+Your only mission is to find real problems on websites and fix them with the smallest, safest, most accurate changes possible.
+
+### Absolute Rules (Never Break These)
+
+1. You NEVER rewrite or regenerate an entire page, component, or site.
+2. You ONLY make the minimal change required to fix the specific issue.
+3. Every fix must be expressed as a precise edit: an exact old -> new search-replace.
+4. If you cannot make a safe minimal fix for a given issue, omit that issue entirely.
+5. You treat exposed secrets (API keys, tokens, passwords) as critical emergencies.
+6. You always verify your own work before answering.
+
+### How You Operate
+
+Phase 1 - Understand: locate each diagnosed problem inside the provided document excerpt. Never imagine code outside the excerpt.
+Phase 2 - Diagnose Precisely: confirm the root cause; choose the smallest possible change that solves it; assess risk and confidence.
+Phase 3 - Propose the Fix in STRICT JSON (schema below).
+Phase 4 - Verify: re-check that every "old" string is copied exactly from the excerpt and appears at most once, and that "new" removes the original error without introducing new damage.
+
+### Output Format
+
 Return STRICT JSON only, shaped exactly:
-{"repairs":[{"issue_id":"...","action":"rewrite_block|remove_block|patch_html","find":"<exact substring from the document>","replace":"<corrected replacement>","explanation":"one sentence"}]}
+{"fixes":[{"fix_id":"F-001","finding_id":"<issue id from the input>","severity":"critical|high|medium|low","title":"Short clear title","explanation":"Why this is broken and why this fix works","confidence":0.9,"risk":"low","changes":[{"file":"live-html","type":"search_replace|remove_secret","old":"EXACT substring copied character-for-character from the excerpt","new":"minimal corrected replacement","reason":"why this specific change"}],"verification_plan":"How we will confirm this is fixed","rollback_plan":"How to undo this change","notes":""}]}
+
 Rules:
-- "find" MUST be copied character-for-character from the provided document excerpt and MUST be unique in it. Keep "find" as short as possible while staying unique.
-- "rewrite_block": replace a whole <script> or <style> block's contents with working code. Include the full block tags in find and replace.
-- "remove_block": delete a hopelessly broken external script/style reference or dead code block. replace must be "".
-- "patch_html": small surgical HTML fix.
-- Never invent URLs, never add analytics or trackers, never change the site's design or copy.
-- If an issue cannot be safely fixed, omit it from repairs.
-- Maximum 8 repairs. If nothing is safe, return {"repairs":[]}.`
+- "old" MUST be copied character-for-character from the provided excerpt and MUST be unique within it. Keep "old" as short as possible while staying unique.
+- "new" must change ONLY what the repair requires. No reformatting, no redesign, no cosmetic "improvements".
+- One finding_id may have several changes only if each change is independently minimal.
+- Never invent URLs, never add analytics or trackers, never change the site's design or copy beyond the repair.
+- Exposed secrets: severity = critical. Replace the secret value with a safe placeholder and warn in notes to rotate the key. NEVER leave the secret in "new".
+- Maximum 8 fixes. If nothing can be fixed safely, return {"fixes":[]}.
+- Output ONLY the JSON object.
+
+### Personality & Communication
+
+Be direct, technical, and calm. Never be vague. Never claim a fix works unless verified against the excerpt. Always show the exact change. If something is too risky or unclear, omit it.
+
+### Final Directive
+
+You are not here to make the site "look better" or recreate it. You are here to repair what is broken with surgical precision — exactly like an elite staff engineer would. When in doubt, do less. When confident, fix precisely. Always verify.`
 
 /**
  * Attempt AI repairs for issues rules could not fix.
@@ -238,41 +332,71 @@ export async function llmRepairBatch(input) {
     return out
   }
 
-  const repairs = Array.isArray(answer.repairs) ? answer.repairs.slice(0, 8) : []
+  // New doctrine format (fixes[] with structured changes) with graceful
+  // support for the legacy repairs[] envelope.
+  const rawFixes = Array.isArray(answer.fixes) ? answer.fixes : []
+  const legacyRepairs = Array.isArray(answer.repairs) ? answer.repairs : []
+  const ops = []
+  for (const f of rawFixes.slice(0, 8)) {
+    const label = [f?.title, f?.explanation].filter(Boolean).join(' — ')
+    const changes = Array.isArray(f?.changes) ? f.changes.slice(0, 4) : []
+    if (!changes.length && typeof f?.old === 'string') {
+      ops.push({ issue_id: f?.finding_id || '?', action: 'search_replace', find: f.old, replace: typeof f?.new === 'string' ? f.new : '', explanation: label, critical: /secret|key|token|password/i.test(`${f?.title || ''} ${f?.explanation || ''}`) })
+      continue
+    }
+    for (const c of changes) {
+      const file = String(c?.file || 'live-html')
+      if (!/live[-_]?html|^html$|^config$/i.test(file)) {
+        out.skipped++
+        out.notes.push(`Skipped non-HTML change (${file}) for ${f?.finding_id || '?'} — no source access in live mode`)
+        continue
+      }
+      ops.push({ issue_id: f?.finding_id || '?', action: String(c?.type || 'search_replace'), find: String(c?.old ?? ''), replace: String(c?.new ?? ''), explanation: `${label}${c?.reason ? ` — ${c.reason}` : ''}`, critical: /secret|key|token|password/i.test(`${f?.title || ''} ${c?.reason || ''}`) })
+    }
+  }
+  for (const r of legacyRepairs.slice(0, 8)) {
+    ops.push({ issue_id: r?.issue_id || '?', action: r?.action || 'patch_html', find: String(r?.find ?? ''), replace: String(r?.replace ?? ''), explanation: String(r?.explanation || ''), critical: false })
+  }
+
   // A patch that changes <script>/<style> open/close pairing leaves raw JS/CSS
   // bleeding into the document — reject those instead of shipping the damage.
   const structuralFingerprint = (s) =>
     `${(s.match(/<script\b/gi) || []).length}:${(s.match(/<\/script>/gi) || []).length}:` +
     `${(s.match(/<style\b/gi) || []).length}:${(s.match(/<\/style>/gi) || []).length}`
 
-  for (const r of repairs) {
-    const find = typeof r?.find === 'string' ? r.find : ''
-    const replace = typeof r?.replace === 'string' ? r.replace : ''
+  let secretFlagged = false
+  for (const op of ops.slice(0, 12)) {
+    const find = op.find
+    const replace = op.replace
     if (!find || find.length > MAX_PATCH_CHARS || replace.length > MAX_PATCH_CHARS) {
       out.skipped++
-      out.notes.push(`Skipped oversized patch for ${r?.issue_id || '?'}`)
+      out.notes.push(`Skipped oversized patch for ${op.issue_id}`)
       continue
     }
     const first = out.html.indexOf(find)
     if (first === -1) {
       out.skipped++
-      out.notes.push(`Patch anchor not found for ${r?.issue_id || '?'} — skipped safely`)
+      out.notes.push(`Patch anchor not found for ${op.issue_id} — skipped safely`)
       continue
     }
     if (out.html.indexOf(find, first + 1) !== -1) {
       out.skipped++
-      out.notes.push(`Patch anchor not unique for ${r?.issue_id || '?'} — skipped safely`)
+      out.notes.push(`Patch anchor not unique for ${op.issue_id} — skipped safely`)
       continue
     }
     const candidate = out.html.slice(0, first) + replace + out.html.slice(first + find.length)
     if (structuralFingerprint(candidate) !== structuralFingerprint(out.html)) {
       out.skipped++
-      out.notes.push(`Patch rejected for ${r?.issue_id || '?'} — it would break <script>/<style> pairing`)
+      out.notes.push(`Patch rejected for ${op.issue_id} — it would break <script>/<style> pairing`)
       continue
     }
     out.html = candidate
     out.applied++
-    out.notes.push(`${r?.action || 'patch'} applied: ${clipNote(r?.explanation || '')}`)
+    out.notes.push(`${op.action} applied: ${clipNote(op.explanation || '')}`)
+    if (op.critical) secretFlagged = true
+  }
+  if (secretFlagged) {
+    out.notes.unshift('⚠️ EXPOSED SECRET — this key is exposed. Remove it from client-side code and rotate it immediately.')
   }
   return out
 }
@@ -494,12 +618,32 @@ async function chatText(system, user, { maxTokens = 8000 } = {}) {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         _lastLlmError = `${attempt.family}/${attempt.model}: ${msg}`
-        console.warn(`[LLM-REBUILD] ${attempt.model} attempt ${tryIndex + 1} failed:`, msg)
-        // A rejected KEY can never succeed — abandon this provider entirely.
-        if (/\bHTTP 40[13]\b|invalid_api_key|permission[- ]denied/i.test(msg)) { attempts.length = 0; break }
+        console.warn(`[LLM-REBUILD] ${attempt.family}/${attempt.model} attempt ${tryIndex + 1} failed:`, msg)
+        // Dead keys, exhausted budgets and missing models can't be fixed by
+        // retrying THIS candidate — move straight to the next key/model.
+        if (isKeyRejected(msg) || isRateLimited(msg) || isModelMissing(msg)) break
         await new Promise(r => setTimeout(r, 800 * (tryIndex + 1)))
       }
     }
+  }
+  return null
+}
+
+/**
+ * chatText plus one patient retry: free-tier per-minute token budgets reset
+ * quickly, so when EVERY key/model is rate-limited it pays to wait out the
+ * window and make one final pass before giving up.
+ */
+async function chatTextWithRetry(system, user, opts = {}) {
+  let answer = await chatText(system, user, opts)
+  if (answer) return answer
+  const fail = llmLastError()
+  if (/tokens per minute|rate limit/i.test(fail)) {
+    const waitMatch = /try again in ([\d.]+)s/i.exec(fail)
+    const waitMs = Math.min(60_000, Math.max(15_000, Math.ceil(Number(waitMatch?.[1] || 20) * 1000)))
+    console.log(`⏳ [LLM] Rate-limited across all keys — waiting ${(waitMs / 1000).toFixed(0)}s for budget reset, then one more pass…`)
+    await new Promise(r => setTimeout(r, waitMs))
+    return chatText(system, user, opts)
   }
   return null
 }
@@ -553,6 +697,146 @@ function extractHtmlDocument(text) {
   return t
 }
 
+// ─── Chunked expert rebuild ──────────────────────────────────────────────────
+// Groq free tiers enforce tiny per-minute token budgets, so one giant
+// "rebuild this page" prompt gets rejected (HTTP 413/429). Instead the work is
+// split into three small calls: inventory the content, build the structure,
+// then optionally polish — each sized to fit the budget.
+
+const MC_ANALYZE_PROMPT = `You are a website restoration analyst. You receive the source of a broken web page.
+Inventory EVERY piece of salvageable content. Reply with STRICT JSON only, shaped exactly:
+{"site_type":"restaurant|store|portfolio|business|blog|service|other","brand_name":"...","tagline":"...","purpose":"one sentence","palette":["#hex"],"blocks":[{"kind":"heading|paragraph|list|feature|testimonial|pricing|faq|gallery|nav|hero|about|contact|footer|other","text":"VERBATIM text from the page","items":["list items only"]}],"forms":[{"purpose":"contact|newsletter|signup|other","fields":["field names"]}],"links":[{"label":"...","href":"..."}]}
+Rules:
+- Copy text VERBATIM from the source; never invent content. Drop obvious junk (gibberish, repeated nonsense).
+- Include navigation labels, headings, and footer/contact details.
+- Use "" or [] when a field has no data.
+- Output ONLY the JSON object.`
+
+const MC_STRUCTURE_PROMPT = `You are an expert web developer performing a full website restoration.
+You receive a content inventory (JSON) extracted from a broken page. Build ONE complete, modern, working HTML5 document that presents ALL inventoried content.
+Output rules:
+- RAW HTML only. No markdown fences, no commentary.
+- The document MUST start with <!DOCTYPE html> and include <head> and <body>.
+- All CSS in one <style> block inside <head>; all JS in one deferred <script> before </body>. No external dependencies.
+- Modern responsive design (flexbox/grid), professional colors drawn from "palette" when present.
+- Working navigation (smooth anchor scrolling), working forms (client-side validation plus a success message), buttons that respond.
+- Semantic tags, aria attributes, alt text on images (inline SVG placeholders allowed).
+- Preserve brand name, tagline and every content block. Do not invent businesses or products beyond the inventory.
+- Clean, readable code.`
+
+const MC_POLISH_PROMPT = `You are a meticulous senior front-end engineer reviewing a restored web page.
+Fix anything broken or rough: JS errors, dead handlers, layout glitches, accessibility gaps, missing meta viewport/title.
+Keep ALL existing content and the overall design. Do not remove sections.
+Output rules: RAW HTML only, no fences, no commentary. Must remain a complete <!DOCTYPE html> document.`
+
+/** Pull the first balanced {...} object out of a model reply (fences/proof tolerated). */
+function extractJsonObject(text) {
+  const s = String(text || '')
+  const start = s.indexOf('{')
+  if (start === -1) return null
+  let depth = 0
+  let inStr = false
+  let esc = false
+  for (let i = start; i < s.length; i++) {
+    const ch = s[i]
+    if (inStr) {
+      if (esc) esc = false
+      else if (ch === '\\') esc = true
+      else if (ch === '"') inStr = false
+      continue
+    }
+    if (ch === '"') inStr = true
+    else if (ch === '{') depth++
+    else if (ch === '}') {
+      depth--
+      if (!depth) {
+        try {
+          return JSON.parse(s.slice(start, i + 1))
+        } catch {
+          return null
+        }
+      }
+    }
+  }
+  return null
+}
+
+/**
+ * Rebuild a damaged page via multiple SMALL calls so tight provider token
+ * budgets can't kill the restoration. Never throws.
+ * @param {{html?:string, hostname?:string, url?:string}} input
+ * @returns {Promise<{configured:boolean, attempted:boolean, rebuilt:boolean, html:string, notes:string[]}>}
+ */
+export async function llmMultiCallRebuild(input = {}) {
+  const { html = '', hostname = '', url = '' } = input
+  const out = { configured: isLlmRepairConfigured(), attempted: false, rebuilt: false, html, notes: [] }
+
+  if (!out.configured) {
+    out.notes.push('No AI provider key configured — multi-call rebuild skipped.')
+    return out
+  }
+  const source = String(html || '').trim()
+  if (!source) {
+    out.notes.push('Empty input — multi-call rebuild skipped.')
+    return out
+  }
+
+  out.attempted = true
+  console.log(`🧩 [MULTI-CALL] Chunked expert rebuild starting — input ${(source.length / 1024).toFixed(1)} KB`)
+  const estTokens = (s) => Math.ceil(String(s).length / 4)
+  const budgetTokens = (system, user) => Math.max(800, Math.min(11_000, 7_300 - estTokens(system) - estTokens(user)))
+
+  // PHASE 1 — inventory the surviving content (small structured answer).
+  const analyzeSlice = source.slice(0, 30_000)
+  const analyzeUser = `Site: ${hostname || '(unknown host)'}${url ? `\nURL: ${url}` : ''}\n\nBroken page source:\n${analyzeSlice}\n\nInventory this page's salvageable content as specified.`
+  let inventory = null
+  for (let round = 0; round < 2 && !inventory; round++) {
+    const ask = round === 0 ? analyzeUser : `${analyzeUser}\n\nIMPORTANT: reply with ONLY the JSON object — no prose, no code fences.`
+    const raw = await chatText(MC_ANALYZE_PROMPT, ask, { maxTokens: budgetTokens(MC_ANALYZE_PROMPT, ask) })
+    if (raw) inventory = extractJsonObject(raw)
+  }
+  if (!inventory || typeof inventory !== 'object' || !Array.isArray(inventory.blocks)) {
+    out.notes.push(`Multi-call Phase 1 (analysis) did not return valid JSON (${llmLastError() || 'unknown error'}).`)
+    console.log('❌ [MULTI-CALL] Phase 1 failed —', llmLastError())
+    return out
+  }
+  console.log(`🧩 [MULTI-CALL] Phase 1 OK — ${inventory.blocks.length} content blocks inventoried (${inventory.site_type || 'unknown type'})`)
+
+  // PHASE 2 — build the clean document from the compacted inventory.
+  let inventoryText = JSON.stringify(inventory)
+  if (inventoryText.length > 24_000) inventoryText = inventoryText.slice(0, 24_000)
+  const structureUser = `Site: ${hostname || '(unknown host)'}${url ? `\nURL: ${url}` : ''}\n\nContent inventory:\n${inventoryText}\n\nBuild the complete restored HTML file from this inventory now.`
+  const structureRaw = await chatTextWithRetry(MC_STRUCTURE_PROMPT, structureUser, { maxTokens: budgetTokens(MC_STRUCTURE_PROMPT, structureUser) })
+  const structured = structureRaw ? extractHtmlDocument(structureRaw) : null
+  if (!structured) {
+    out.notes.push(`Multi-call Phase 2 (structure) did not return a full HTML document (${llmLastError() || 'unknown error'}).`)
+    console.log('❌ [MULTI-CALL] Phase 2 failed —', llmLastError())
+    return out
+  }
+  console.log(`🧩 [MULTI-CALL] Phase 2 OK — ${(structured.length / 1024).toFixed(1)} KB document built`)
+
+  // PHASE 3 — polish pass, but only when the doc is small enough to resend.
+  let finalHtml = structured
+  if (finalHtml.length <= 14_000) {
+    const polishUser = `Site: ${hostname || '(unknown host)'}\n\nCurrent restored page:\n${finalHtml}\n\nReview and polish it as specified. Return the complete improved HTML file.`
+    const polishedRaw = await chatTextWithRetry(MC_POLISH_PROMPT, polishUser, { maxTokens: budgetTokens(MC_POLISH_PROMPT, polishUser) }).catch(() => null)
+    const polished = polishedRaw ? extractHtmlDocument(polishedRaw) : null
+    if (polished) {
+      finalHtml = polished
+      console.log(`🧩 [MULTI-CALL] Phase 3 OK — polished to ${(finalHtml.length / 1024).toFixed(1)} KB`)
+    } else {
+      out.notes.push('Polish pass skipped (provider unavailable) — keeping Phase 2 result.')
+    }
+  } else {
+    out.notes.push('Polish pass skipped — document too large to resend within token budget.')
+  }
+
+  out.html = finalHtml
+  out.rebuilt = true
+  out.notes.push('Chunked expert rebuild completed.')
+  return out
+}
+
 /**
  * Regenerate an entire damaged page as one clean, modern, working HTML file.
  * NEVER throws — any failure falls back to the input HTML untouched.
@@ -589,7 +873,7 @@ export async function llmRebuildPage(input = {}) {
     const user = `Site: ${hostname || '(unknown host)'}${url ? `\nURL: ${url}` : ''}\n\nCurrent page source:\n${sliced}${truncNote}\n\nReturn the complete fixed HTML file now.`
     const maxTokens = Math.max(800, Math.min(12_000, 7_300 - estTokens(REBUILD_SYSTEM_PROMPT) - estTokens(user)))
     console.log(`📤 [REBUILD] Sending to LLM — ${(sliced.length / 1024).toFixed(1)} KB page, ${maxTokens} max tokens…`)
-    answer = await chatText(REBUILD_SYSTEM_PROMPT, user, { maxTokens })
+    answer = await chatTextWithRetry(REBUILD_SYSTEM_PROMPT, user, { maxTokens })
     if (answer) break
     lastFail = llmLastError()
     // Only a size/rate problem benefits from shrinking — anything else stops.

@@ -27,7 +27,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import JSZip from 'jszip'
 import { probeRenderedPage, createRenderSession, isRenderProbeAvailable } from './renderedDiagnostics.mjs'
-import { llmRepairBatch, llmRebuildPage } from './llmRepairAgent.mjs'
+import { llmRepairBatch, llmRebuildPage, llmMultiCallRebuild, isLlmRepairConfigured } from './llmRepairAgent.mjs'
 import { repairBrokenHtml } from './htmlResurrector.mjs'
 import { getSiteMemory, recordRestoration } from './siteMemory.mjs'
 import { crawlSite, normalizePagePath } from './siteCrawler.mjs'
@@ -768,6 +768,42 @@ function buildFixPlan(diagnosis) {
   return { fixes, total_fixes: fixes.length }
 }
 
+// ─── Expert rebuild dispatcher ────────────────────────────────────────────────
+
+const SINGLE_CALL_MAX_CHARS = 20_000
+
+async function runExpertRebuild({ html, hostname, url }) {
+  const notes = []
+  const attemptSingle = async () => {
+    try {
+      const r = await llmRebuildPage({ html, hostname, url })
+      if (Array.isArray(r?.notes)) notes.push(...r.notes)
+      return r?.rebuilt ? r : null
+    } catch (err) {
+      notes.push(`single-call crashed: ${err instanceof Error ? err.message : String(err)}`)
+      return null
+    }
+  }
+  const attemptMulti = async () => {
+    try {
+      const r = await llmMultiCallRebuild({ html, hostname, url })
+      if (Array.isArray(r?.notes)) notes.push(...r.notes)
+      return r?.rebuilt ? r : null
+    } catch (err) {
+      notes.push(`multi-call crashed: ${err instanceof Error ? err.message : String(err)}`)
+      return null
+    }
+  }
+  const order = html.length > SINGLE_CALL_MAX_CHARS
+    ? [attemptMulti, attemptSingle]
+    : [attemptSingle, attemptMulti]
+  for (const run of order) {
+    const win = await run()
+    if (win?.html) return { rebuilt: true, html: win.html }
+  }
+  return { rebuilt: false, notes }
+}
+
 // ─── STEP 4: Repair execution ────────────────────────────────────────────────
 
 const PLACEHOLDER_SRC = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' width='400' height='300'><rect width='100%' height='100%' fill='#e8eaed'/><path d='M170 130a18 18 0 1 1 36 0 18 18 0 0 1-36 0zm-45 105l55-70 35 42 25-27 45 55H125z' fill='#aab2bd'/><text x='200' y='265' font-family='sans-serif' font-size='13' fill='#757d89' text-anchor='middle'>Image unavailable</text></svg>`)}`
@@ -1458,6 +1494,8 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
   let aiAppliedTotal = 0
   let structuralApplied = false
   let structuralTally = null
+  let aiRebuildBlocked = ''
+  let rebuildAdopted = false
   const cycleHistory = []
 
   for (let cycle = 1; cycle <= MAX_CYCLES; cycle++) {
@@ -1520,42 +1558,41 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
       sendEvent({ type: 'ai_repairs_complete', data: { issues_sent: aiEligible.length, ai_repairs_applied_total: aiAppliedTotal, cycle } })
     }
 
-    // ── STEP 4c: AI PAGE REBUILD — expert-dev regeneration for damaged pages.
-    //    The model gets the Make-It-Work instruction set: remove intentional
-    //    breakage, produce ONE clean modern responsive HTML file. The result is
-    //    only adopted when it scores at least as healthy as the patched page,
-    //    so a hallucinated or lossy rebuild can never make things worse.
+    // ── STEP 4c: FULL-PAGE REBUILD — OPT-IN ONLY.
+    //    Alpha's doctrine is surgical repair (minimal precise edits). Whole-page
+    //    regeneration violates that doctrine, so it never runs by default.
+    //    Set REBUILD_FORCE=1 to explicitly allow regeneration for heavily
+    //    damaged pages; when enabled, a structurally valid rebuild is adopted
+    //    unconditionally — that is exactly what opting in means.
     {
       const heavyDamage = (cycleDiagnosis?.summary?.critical || 0) > 0 || (cycleDiagnosis?.score || 100) < 85
-      if (heavyDamage) {
+      const rebuildOptIn = /^(1|true|yes)$/i.test(String(process.env.REBUILD_FORCE ?? '').trim())
+      if (heavyDamage && rebuildOptIn) {
         console.log('🔧 Starting Expert Developer Pass…')
-        // Adoption policy (DEFAULT: ADOPT). The expert rebuild is the product —
-        // a structurally valid clean page is always preferred over polished
-        // chaos. Set REBUILD_FORCE=0/false to re-enable the old score gate.
-        const adoptUnconditionally = !/^(0|false|no)$/i.test(String(process.env.REBUILD_FORCE ?? '1').trim())
-        const rebuildSummary = await chain.step(`ai-rebuild${suffix}`, `${prefix}Expert developer pass — regenerating a clean, modern, responsive page…`, 'brain', async () => {
+        await chain.step(`ai-rebuild${suffix}`, `${prefix}Expert developer pass — regenerating a clean, modern, responsive page…`, 'brain', async () => {
           const before = await diagnose(workingHtml, { baseUrl: finalUrl, https: isHttps, skipNetworkChecks: true }).catch(() => null)
-          console.log(`📤 [REBUILD] Sending page to the LLM (pre-repair health: ${before?.score ?? '?'}/100, adoptUnconditionally: ${adoptUnconditionally})…`)
-          const r = await llmRebuildPage({ html: workingHtml, hostname, url: finalUrl })
-          if (!r.attempted) return `Rebuild skipped — ${r.notes[0] || 'not configured'}`
-          if (!r.rebuilt) return `Rebuild unavailable — ${r.notes[0] || 'model returned nothing usable'}`
-          console.log(`📥 [REBUILD] Response received — ${(r.html.length / 1024).toFixed(1)} KB, verifying health…`)
-          const after = await diagnose(r.html, { baseUrl: finalUrl, https: isHttps, skipNetworkChecks: true }).catch(() => null)
-          if (!after) return 'Rebuild discarded — could not verify the regenerated page'
-          const rejected = (after.score || 0) < (before?.score ?? -1) && !adoptUnconditionally
-          console.log(`⚖️ [REBUILD] Scores — patched original: ${before?.score ?? '?'} vs rebuild: ${after.score} → ${rejected ? 'REJECTED by score gate' : 'ADOPTED'}`)
-          if (rejected) {
-            return `Rebuild scored lower (${after.score} vs ${before.score}) — kept the repaired original`
+          console.log(`📤 [REBUILD] Sending page to the LLM (pre-repair health: ${before?.score ?? '?'}/100, opted-in via REBUILD_FORCE)…`)
+          const r = await runExpertRebuild({ html: workingHtml, hostname, url: finalUrl })
+          if (!r.rebuilt) {
+            aiRebuildBlocked = r.notes.join(' | ') || (isLlmRepairConfigured() ? 'model returned nothing usable' : 'no AI provider key configured')
+            console.log(`❌ [REBUILD] Unavailable — ${aiRebuildBlocked}`)
+            return `Rebuild unavailable — ${clip(aiRebuildBlocked, 140)}`
           }
           workingHtml = r.html
-          sendEvent({
+          console.log(`📥 [REBUILD] Response received — ${(workingHtml.length / 1024).toFixed(1)} KB, verifying health…`)
+          const after = await diagnose(workingHtml, { baseUrl: finalUrl, https: isHttps, skipNetworkChecks: true }).catch(() => null)
+          if (!after) return 'Rebuild discarded — could not verify the regenerated page'
+          console.log(`⚖️ [REBUILD] Scores — patched original: ${before?.score ?? '?'} vs rebuild: ${after.score} → ADOPTED (opt-in policy)`)
+          rebuildAdopted = true
+                    sendEvent({
             type: 'ai_rebuild_complete',
-            data: { adopted: true, before_score: before?.score ?? null, after_score: after.score ?? null, bytes: r.html.length, cycle },
+            data: { adopted: true, before_score: before?.score ?? null, after_score: after.score ?? null, bytes: workingHtml.length, cycle },
           })
           console.log('✅ Restoration complete — clean modern rebuild adopted')
           return `Clean modern rebuild adopted — health ${before?.score ?? '?'} → ${after.score}`
         })
-        void rebuildSummary
+      } else if (heavyDamage) {
+        console.log('🚫 [REBUILD] Skipped by surgical-mode policy (set REBUILD_FORCE=1 to allow full-page regeneration)')
       }
     }
 
@@ -1715,6 +1752,7 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
 
   const fixedHtml = registryGetFixed(restorationId)
   const copyPayloadCap = 280000
+  const genuinelyRestored = remaining.length === 0 || afterScore >= TARGET_SCORE || improvement >= 10
   const summaryBlock = {
     issues_found: diagnosis.summary.total,
     issues_fixed: diagnosis.summary.total - remaining.length,
@@ -1722,6 +1760,7 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
     before_score: beforeScore,
     after_score: afterScore,
     improvement: verification.improvement,
+    status: genuinelyRestored ? 'restored' : 'incomplete',
   }
   sendEvent({
     type: 'restore_complete',
@@ -1741,15 +1780,18 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
         cycles: cycleHistory.length,
         per_cycle: cycleHistory,
         ai_repairs_applied: aiAppliedTotal,
+        rebuild_adopted: rebuildAdopted,
+        ai_rebuild_blocked: aiRebuildBlocked || null,
         memory_used: Boolean(memory && memory.scans > 0),
       },
+      status: genuinelyRestored ? 'restored' : 'incomplete',
       tier: afterScore >= 95 ? 'gold' : afterScore >= 75 ? 'silver' : 'bronze',
       copy_content: fixedHtml.length <= copyPayloadCap ? fixedHtml : fixedHtml.slice(0, copyPayloadCap),
       copy_truncated: fixedHtml.length > copyPayloadCap,
     },
   })
 
-  const msg = [
+  const msg = genuinelyRestored ? [
     `🎉 **${hostname} is fully restored!**`,
     '',
     `| | Before | After |`,
@@ -1767,7 +1809,23 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
     `2. 🚀 Say **"deploy as ${deliverables.deploy.suggested_name}"** — goes live at ${deliverables.deploy.url_preview}`,
     `3. 📋 Full restored HTML attached below (one-click copy)`,
     deliverables.github.available ? '4. 🐙 GitHub connected — say the word and I open the PR.' : '4. 🐙 Connect GitHub anytime and I will open the pull request for you.',
-  ].join('\n')
+  ].join('\n') : [
+    `⚠️ **${hostname} is only partially repaired.**`,
+    '',
+    `| | Before | After |`,
+    `|---|---|---|`,
+    `| Issues | ${diagnosis.summary.total} | ${remaining.length} |`,
+    `| Score | ${beforeScore}/100 | **${afterScore}/100** |`,
+    '',
+    aiRebuildBlocked
+      ? `I could not finish the deep repair just now — the AI engine was unavailable (${clip(aiRebuildBlocked, 160)}).`
+      : `The damage needs another pass — score improved by only ${improvement} point(s).`,
+    remaining.length ? `Still open: ${[...new Set(remaining.map((i) => i.type))].slice(0, 5).join(', ')}.` : '',
+    '',
+    '**Your partial fixes are packaged below** — and press **Continue** to re-check the live site. Then say **"fix my site"** again and I will run a fresh repair pass.',
+    `1. ⬇️ [Download partial-fix zip](${deliverables.download.restored}) + [rollback.zip](${deliverables.download.rollback})`,
+    `2. 📋 Partial fixed HTML attached below (one-click copy)`,
+  ].filter(Boolean).join('\n')
   sendEvent({ type: 'v3_summary', message: msg })
 
   // Site memory write — never blocks delivery.
@@ -1936,7 +1994,7 @@ async function runSiteRestoration(ctx) {
   const session = await createRenderSession()
   /** @type {{key:string,url:string,label:string,before:number,after:number,issuesBefore:number,issuesAfter:number,cycles:number,ai:number,html:string,initialTypes:string[]}[]} */
   const restored = []
-  const AI_BUDGET = 8
+  const AI_BUDGET = Math.max(8, Math.min(48, maxPages * 4))
   let aiCallsUsed = 0
   try {
     for (let i = 0; i < sitePages.length; i++) {
@@ -2002,17 +2060,21 @@ async function runSiteRestoration(ctx) {
           aiApplied += ai.applied || 0
         }
 
-        // ── EXPERT REBUILD (budgeted): heavily damaged pages get regenerated
-        //    as one clean modern page; adopted only when it scores no worse.
+        // ── EXPERT REBUILD (opt-in only): surgical mode forbids whole-page
+        //    regeneration unless REBUILD_FORCE=1 is set explicitly.
         {
           const heavyDamage = (cycleDiagnosis?.summary?.critical || 0) > 0 || (cycleDiagnosis?.score || 100) < 85
-          if (heavyDamage && aiCallsUsed < AI_BUDGET) {
-            aiCallsUsed++
+          const rebuildOptIn = /^(1|true|yes)$/i.test(String(process.env.REBUILD_FORCE ?? '').trim())
+          if (heavyDamage && rebuildOptIn && aiCallsUsed < AI_BUDGET) {
+                        aiCallsUsed++
             const before = await diagnose(workingHtml, { baseUrl: page.finalUrl, https: new URL(page.finalUrl).protocol === 'https:', skipNetworkChecks: true }).catch(() => null)
-            const rb = await llmRebuildPage({ html: workingHtml, hostname, url: page.finalUrl }).catch(() => ({ rebuilt: false, html: workingHtml, notes: ['rebuild crashed'] }))
-            if (rb?.rebuilt) {
+            const rb = await runExpertRebuild({ html: workingHtml, hostname, url: page.finalUrl })
+            if (!rb.rebuilt && isEntry) {
+              console.log(`❌ [REBUILD-WHOLE] Unavailable on ${key} — ${rb.notes.join(' | ') || 'unknown reason'}`)
+            }
+            if (rb.rebuilt) {
               const after = await diagnose(rb.html, { baseUrl: page.finalUrl, https: new URL(page.finalUrl).protocol === 'https:', skipNetworkChecks: true }).catch(() => null)
-              if (after && (after.score || 0) >= (before?.score ?? -1)) {
+              if (after) {
                 workingHtml = rb.html
                 if (isEntry) chain.done(`p${i}-rebuild`, 'Expert rebuild — clean modern regeneration adopted', `health ${before?.score ?? '?'} → ${after.score}`)
               }
@@ -2172,7 +2234,8 @@ async function runSiteRestoration(ctx) {
   chain.done('deliver', 'Delivery ready — Download · Copy · Deploy (all pages hosted)', `${Object.keys(pagesMap).length} pages packaged · internal links rewritten relative`)
 
   const rows = restored.map((r) => `| \`${r.label}\` | ${r.before} → **${r.after}** | ${r.issuesBefore} → ${r.issuesAfter} |`).join('\n')
-  const msg = [
+  const siteGenuinelyRestored = totalIssuesAfter === 0 || avgAfter >= TARGET_SCORE || avgAfter - avgBefore >= 10
+  const msg = siteGenuinelyRestored ? [
     `🌐 **${hostname} restored across ${restored.length} pages!**`,
     '',
     `| Page | Score | Issues |`,
@@ -2186,6 +2249,21 @@ async function runSiteRestoration(ctx) {
     `1. ⬇️ [Download site.zip](${deliverables.download.restored}) — full folder structure, links work offline`,
     `2. 🚀 Say **"deploy as ${deliverables.deploy.suggested_name}"** — every page goes live under ${deliverables.deploy.url_preview}`,
     `3. 📋 Entry page HTML attached below (one-click copy)`,
+  ].join('\n') : [
+    `⚠️ **${hostname} is partially repaired across ${restored.length} pages.**`,
+    '',
+    `| Page | Score | Issues |`,
+    `|---|---|---|`,
+    rows,
+    '',
+    `**Site health: ${avgBefore}/100 → ${avgAfter}/100** (${totalIssuesBefore} issues found, ${totalIssuesAfter} still open)`,
+    isLlmRepairConfigured()
+      ? 'The deep repair engine could not finish every page this run — press Continue, then say **"fix my whole site"** again and I will finish the remaining pages.'
+      : 'No AI provider key is configured, so only rule-based fixes were applied. Add your API keys and say **"fix my whole site"** for the full restoration.',
+    '',
+    '**Your partial fixes are packaged below:**',
+    `1. ⬇️ [Download site.zip](${deliverables.download.restored}) — partial fixes included`,
+    `2. 📋 Entry page HTML attached below (one-click copy)`,
   ].join('\n')
   sendEvent({
     type: 'restore_complete',
@@ -2198,6 +2276,7 @@ async function runSiteRestoration(ctx) {
         before_score: avgBefore,
         after_score: avgAfter,
         improvement: verification.improvement,
+        status: siteGenuinelyRestored ? 'restored' : 'incomplete',
       },
       deliverables,
       screenshots: {
@@ -2206,6 +2285,7 @@ async function runSiteRestoration(ctx) {
       },
       design_tokens: designTokens,
       verification,
+      status: siteGenuinelyRestored ? 'restored' : 'incomplete',
       site: {
         page_count: restored.length,
         avg_before: avgBefore,
