@@ -107,6 +107,20 @@ export async function runBehaviorTests(input = {}) {
       record('images_render', domStats.imagesBroken === 0, domStats.imagesBroken ? `${domStats.imagesBroken} broken image(s)` : 'all rendered images decode')
     }
 
+    // 2b. Dynamic content honesty: a page that SHIPS a "Loading…" placeholder
+    // must actually populate it once JS runs — otherwise behavior was amputated.
+    const hadPlaceholders = />(?:[^<]*\b(?:loading|please wait)[^<]*)<\s*\/(?:div|span|p)>/i.test(html)
+    if (hadPlaceholders) {
+      const stuck = await page.evaluate(() =>
+        [...document.querySelectorAll('div, span, p')]
+          .filter((el) => el.offsetParent !== null && /^(?:\W*(?:loading|please wait)\W*)[^|<]{0,12}$/i.test((el.textContent || '').trim().slice(0, 40)))
+          .length,
+      ).catch(() => -1)
+      if (stuck >= 0) {
+        record('dynamic_content_loads', stuck === 0, stuck ? `${stuck} "Loading…" placeholder(s) never populated — page is an inert shell` : 'dynamic containers populated by the behavior layer')
+      }
+    }
+
     // 3. Forms accept input and submit without crashing.
     const forms = await page.$$('form').catch(() => [])
     let formFailures = 0

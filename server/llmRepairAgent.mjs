@@ -85,7 +85,7 @@ function isRateLimited(msg) {
 
 /** A decommissioned/unavailable model — retrying it can only waste time. */
 function isModelMissing(msg) {
-  return /model_not_found|does not exist|\bHTTP 404\b/i.test(String(msg || ''))
+  return /model_not_found|model not found|does not exist|\bHTTP 404\b/i.test(String(msg || ''))
 }
 
 /**
@@ -104,12 +104,15 @@ function buildChatAttempts() {
         providerDefaultModel('groq'),
         'openai/gpt-oss-20b',
         'groq/compound-mini',
+        'qwen/qwen3.6-27b',
       ].filter(Boolean)
       for (const model of [...new Set(candidates)]) {
         attempts.push({ url: GROQ_URL, key, model, family })
       }
     } else if (family === 'xai') {
-      for (const model of [process.env.XAI_MODEL || 'grok-3-mini', 'grok-3-fast-mini']) {
+      // grok-3-fast-mini was decommissioned; grok-3-mini + grok-3-fast are the
+      // live candidates. A creditless team key fails fast via permission-denied.
+      for (const model of [process.env.XAI_MODEL || 'grok-3-mini', 'grok-3-fast']) {
         attempts.push({ url: XAI_URL, key, model, family })
       }
     } else {
@@ -802,6 +805,28 @@ Fix anything broken or rough: JS errors, dead handlers, layout glitches, accessi
 Keep ALL existing content and the overall design. Do not remove sections.
 Output rules: RAW HTML only, no fences, no commentary. Must remain a complete <!DOCTYPE html> document.`
 
+const RECON_ANALYZE_PROMPT = `You are a front-end forensic analyst. A web page lost its JavaScript: the HTML shell survives (buttons, forms, containers) but the behavior layer is gone or was unrecoverable garbage.
+From the ORIGINAL source you receive, inventory what the page was supposed to DO. Reply with STRICT JSON only, shaped exactly:
+{"site_type":"store|app|dashboard|landing|other","data_assets":[{"name":"products|items|posts|...","json":[],"note":"verbatim data recovered from the source"}],"handlers_referenced":["function names referenced by onclick/onsubmit/addEventListener in the markup"],"containers":[{"selector":"#id or .class","intent":"what should render inside"}],"behaviors":["one line per intended behavior, e.g. 'add product to cart and update badge'"],"external_calls_to_avoid":["fake/broken API endpoints present in the original code"]}
+Rules:
+- Recover embedded data (arrays/objects) VERBATIM from the original scripts — prices, names, stock. This is gold; never drop it.
+- List every handler name the surviving markup references.
+- Behaviors must be concrete and implementable client-side with no network.
+- Output ONLY the JSON object.`
+
+const RECON_BUILD_PROMPT = `You are an expert front-end engineer writing a BEHAVIOR RESTORATION LAYER for a page that lost its JavaScript.
+You receive: the analysis JSON of intended behaviors + the surviving HTML body structure. Produce ONE self-contained vanilla-JavaScript IIFE that restores the page's functionality.
+Hard rules:
+- RAW JavaScript only. No markdown fences, no commentary before or after the code.
+- Vanilla ES2017, zero dependencies, zero network calls (never fetch any external API — if checkout/payment/auth was backed by a fake API, implement an honest local demo: validate, then show a clear message).
+- Define EVERY handler listed as a global function on window (e.g. window.addToCart = ... AND function addToCart(...) hoisted) so existing onclick="..." attributes work again.
+- Populate every container from the recovered data_assets (render product cards with name, price, stock, working Add-to-Cart buttons styled via the page's EXISTING css classes like 'product-card', 'price', 'btn').
+- Remove/hide stuck "Loading..." placeholders once real content renders.
+- Wire forms: prevent default, basic validation, honest success/error feedback inline (no alert spam — at most one alert where the original used one).
+- Guard every getElementById/querySelector result against null.
+- End the script with: window.__alphaBehaviors = [/* names of behaviors implemented */];
+- Keep it compact but complete. Never use eval, new Function, document.write, or innerHTML with unsanitized external input (template literals over the recovered local data are fine).`
+
 /** Pull the first balanced {...} object out of a model reply (fences/proof tolerated). */
 function extractJsonObject(text) {
   const s = String(text || '')
@@ -908,6 +933,128 @@ export async function llmMultiCallRebuild(input = {}) {
   out.rebuilt = true
   out.notes.push('Chunked expert rebuild completed.')
   return out
+}
+
+/**
+ * Reconstruct a page's lost JavaScript behavior layer via multiple small calls
+ * (ANALYZE → BUILD → optional CONTINUE). This is NOT a full-page rebuild: the
+ * HTML shell, content and design stay untouched — only a <script> layer that
+ * restores interactivity is produced. Never throws.
+ * @param {{originalHtml?:string, workingHtml?:string, hostname?:string, url?:string}} input
+ * @returns {Promise<{configured:boolean, attempted:boolean, reconstructed:boolean, code:string, functions:string[], notes:string[]}>}
+ */
+export async function llmReconstructInteractivity(input = {}) {
+  const { originalHtml = '', workingHtml = '', hostname = '', url = '', errors = [], previousCode = '' } = input
+  const out = { configured: isLlmRepairConfigured(), attempted: false, reconstructed: false, code: '', functions: [], notes: [] }
+  if (!out.configured) {
+    out.notes.push('No AI provider key configured — behavior reconstruction skipped.')
+    return out
+  }
+  const orig = String(originalHtml || '')
+  if (!orig.trim() || !String(workingHtml).trim()) {
+    out.notes.push('Empty input — behavior reconstruction skipped.')
+    return out
+  }
+
+  // Feed only the salvageable parts of the ORIGINAL: its scripts + interactive markup.
+  const scripts = [...orig.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map((m) => m[1]).filter((s) => s.replace(/\s+/g, '').length > 20)
+  const interactiveMarkup = (() => {
+    const body = /<body\b[^>]*>([\s\S]*?)<\/body>/i.exec(orig)?.[1] || orig
+    return body.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '').slice(0, 18_000)
+  })()
+  const scriptDump = scripts.join('\n;\n').slice(0, 26_000)
+  if (!scriptDump && !/onclick|onsubmit|onchange/i.test(interactiveMarkup)) {
+    out.notes.push('No original scripts or inline handlers to reconstruct from.')
+    return out
+  }
+
+  out.attempted = true
+  console.log(`🧠 [RECON] Behavior reconstruction starting — ${scripts.length} dead script block(s), ${(scriptDump.length / 1024).toFixed(1)} KB of source`)
+
+  // PHASE 1 — forensic analysis (small structured answer).
+  const estTokens = (s) => Math.ceil(String(s).length / 4)
+  const analyzeUser = `Site: ${hostname || '(unknown host)'}${url ? `\nURL: ${url}` : ''}\n\nOriginal scripts (broken/unparseable):\n${scriptDump || '(none survived)'}\n\nSurviving body markup:\n${interactiveMarkup}\n\nInventory what this page was supposed to do.`
+  let analysis = null
+  for (let round = 0; round < 2 && !analysis; round++) {
+    const ask = round === 0 ? analyzeUser : `${analyzeUser}\n\nIMPORTANT: reply with ONLY the JSON object — no prose, no fences.`
+    const raw = await chatText(RECON_ANALYZE_PROMPT, ask, { maxTokens: Math.max(800, Math.min(9_000, 7_300 - estTokens(RECON_ANALYZE_PROMPT) - estTokens(ask))) })
+    if (raw) analysis = extractJsonObject(raw)
+  }
+  if (!analysis || typeof analysis !== 'object') {
+    out.notes.push(`Reconstruction Phase 1 (analysis) failed (${llmLastError() || 'no valid JSON'}).`)
+    console.log('❌ [RECON] Phase 1 failed —', llmLastError())
+    return out
+  }
+  const dataCount = Array.isArray(analysis.data_assets) ? analysis.data_assets.length : 0
+  console.log(`🧠 [RECON] Phase 1 OK — type=${analysis.site_type || '?'} · ${dataCount} data asset(s) · ${(analysis.handlers_referenced || []).length} handler(s)`)
+
+  // PHASE 2 — build the behavior layer (with continuation rounds for size).
+  const bodyStructure = (String(workingHtml).match(/<body\b[\s\S]*<\/body>/i) || [String(workingHtml)])[0].slice(0, 14_000)
+  let analysisText = JSON.stringify(analysis)
+  if (analysisText.length > 20_000) analysisText = analysisText.slice(0, 20_000)
+  const healNote = errors.length
+    ? `\n\nCRITICAL — your PREVIOUS script for this page crashed at runtime:\n${errors.slice(0, 4).map((e) => `- ${String(e).slice(0, 200)}`).join('\n')}\nPrevious attempt (excerpt):\n${String(previousCode).slice(0, 3_000)}\nFix EVERY listed error. Guard every DOM lookup, wrap risky boot logic in try/catch, and return the FULL corrected script.`
+    : ''
+  const buildUser = `Site: ${hostname || '(unknown host)'}\n\nBehavior analysis:\n${analysisText}\n\nSurviving body structure:\n${bodyStructure}${healNote}\n\nWrite the complete behavior restoration script now.`
+  let code = ''
+  for (let round = 0; round < 3; round++) {
+    const ask = round === 0 ? buildUser : `Continue EXACTLY where the script stopped — no repetition, no commentary. Remaining part of the same IIFE:\n\n${code.slice(-1_200)}`
+    const maxTokens = Math.max(900, Math.min(10_000, 7_300 - estTokens(RECON_BUILD_PROMPT) - estTokens(ask)))
+    const chunk = await chatTextWithRetry(RECON_BUILD_PROMPT, ask, { maxTokens })
+    if (!chunk) break
+    code += (code ? '\n' : '') + chunk.trim()
+    const compiled = tryCompile(cleanCodeFences(code))
+    if (compiled.ok) break
+    if (round === 2) { code = ''; break }
+    console.log(`🧠 [RECON] Phase 2 round ${round + 1} incomplete (${compiled.error.slice(0, 80)}) — requesting continuation…`)
+  }
+  code = cleanCodeFences(code)
+  const compiled = tryCompile(code)
+  if (!code || !compiled.ok) {
+    out.notes.push(`Reconstruction Phase 2 failed to produce compilable JS (${compiled.error || llmLastError() || 'empty response'}).`)
+    console.log('❌ [RECON] Phase 2 failed —', compiled.error || llmLastError())
+    return out
+  }
+
+  // Safety gate: no external network calls in restored behavior.
+  const externalCalls = [...code.matchAll(/fetch\s*\(\s*['"`]([^'"`]+)/gi)]
+    .map((m) => m[1])
+    .filter((u) => /^https?:\/\//i.test(u))
+  if (externalCalls.length) {
+    out.notes.push(`Rejected generated code calling external APIs: ${externalCalls[0]}`)
+    console.log('❌ [RECON] Safety gate — external fetch found:', externalCalls[0])
+    return out
+  }
+
+  const fns = [...code.matchAll(/(?:function\s+([A-Za-z_$][\w$]*)\s*\()|(?:window\.([A-Za-z_$][\w$]*)\s*=)/g)]
+    .map((m) => m[1] || m[2])
+    .filter((n) => n && !['window', 'document'].includes(n))
+  out.code = code
+  out.functions = [...new Set(fns)]
+  out.reconstructed = true
+  out.notes.push(`Behavior layer rebuilt: ${out.functions.length} function(s), ${(code.length / 1024).toFixed(1)} KB`)
+  console.log(`✅ [RECON] Behavior layer ready — ${out.functions.length} function(s): ${out.functions.slice(0, 8).join(', ')}${out.functions.length > 8 ? '…' : ''}`)
+  return out
+}
+
+/** Strip markdown fences / stray prose around a raw-JS reply. */
+function cleanCodeFences(text) {
+  let s = String(text || '').trim()
+  s = s.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<think>[\s\S]*$/gi, '')
+  s = s.replace(/^```(?:javascript|js)?\s*/i, '').replace(/```\s*$/i, '')
+  const firstBrace = s.search(/(?:^\s*\(function|\bfunction\s|\bconst\s|\blet\s|\bvar\s|\bwindow\.)/)
+  if (firstBrace > 0 && firstBrace < 400) s = s.slice(firstBrace)
+  return s.trim()
+}
+
+/** Compile-check JS without executing it. */
+function tryCompile(code) {
+  try {
+    new Function(code)
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
 }
 
 /**

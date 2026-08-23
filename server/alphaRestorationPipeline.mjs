@@ -27,7 +27,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import JSZip from 'jszip'
 import { probeRenderedPage, createRenderSession, isRenderProbeAvailable } from './renderedDiagnostics.mjs'
-import { llmRepairBatch, llmRebuildPage, llmMultiCallRebuild, isLlmRepairConfigured, llmPlanRestoration } from './llmRepairAgent.mjs'
+import { llmRepairBatch, llmRebuildPage, llmMultiCallRebuild, llmReconstructInteractivity, isLlmRepairConfigured, llmPlanRestoration } from './llmRepairAgent.mjs'
 import { repairBrokenHtml } from './htmlResurrector.mjs'
 import { getSiteMemory, recordRestoration } from './siteMemory.mjs'
 import { runBehaviorTests } from './behaviorTest.mjs'
@@ -806,6 +806,65 @@ async function runExpertRebuild({ html, hostname, url }) {
   return { rebuilt: false, notes }
 }
 
+// ─── Interactivity reconstruction (multi-call behavior layer) ────────────────
+// Detects the "amputated page" failure mode: repairs removed broken scripts and
+// left a pretty shell with zero functionality (stuck "Loading…", dead buttons).
+const multiCallEnabled = () => !/^(0|false|no)$/i.test(String(process.env.ALPHA_MULTI_CALL ?? '1').trim())
+
+function inlineScriptChars(html) {
+  let total = 0
+  for (const m of String(html).matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)) {
+    const body = m[1].replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|\n)\s*\/\/[^\n]*/g, '$1')
+    total += body.replace(/\s+/g, '').length
+  }
+  return total
+}
+
+function detectAmputatedBehavior(originalHtml, workingHtml) {
+  const origCode = inlineScriptChars(originalHtml)
+  const curCode = inlineScriptChars(workingHtml)
+  const stuckLoading = />(?:[^<]*\b(?:loading|please wait)[^<]*)<\s*\/(?:div|span|p)>/i.test(String(workingHtml))
+  const handlersReferenced = [...String(originalHtml).matchAll(/on(?:click|submit|change|input)=/gi)].length
+                     + [...String(originalHtml).matchAll(/addEventListener\s*\(/g)].length
+  const amputated = origCode > 400 && curCode < Math.max(80, origCode * 0.15)
+  const inertShell = curCode < 80 && (stuckLoading || handlersReferenced >= 2)
+  if (inertShell) return { trigger: true, reason: `page lost its entire behavior layer (${origCode} → ${curCode} chars of script; ${handlersReferenced} handler reference(s)${stuckLoading ? '; stuck loading placeholder' : ''})` }
+  if (amputated) return { trigger: true, reason: `${origCode} → ${curCode} chars of script survived — most of the original behavior was removed during repair` }
+  return { trigger: false, reason: '' }
+}
+
+async function runBehaviorReconstruction({ originalHtml, html, hostname, url, errors = [], previousCode = '' }) {
+  const notes = []
+  try {
+    const r = await llmReconstructInteractivity({ originalHtml, workingHtml: html, hostname, url, errors, previousCode })
+    if (Array.isArray(r?.notes)) notes.push(...r.notes)
+    if (!r?.reconstructed || !r.code) return { adopted: false, html, notes }
+    // Inject as the LAST script before </body> so it can wire everything above it.
+    const tag = `\n<script data-alpha-behavior-layer>\n${r.code}\n</script>\n`
+    let out
+    if (/<\/body>/i.test(html)) out = html.replace(/<\/body>/i, `${tag}</body>`)
+    else out = html + tag
+    notes.push(`Injected behavior layer: ${(r.functions || []).slice(0, 6).join(', ')}`)
+    return { adopted: true, functions: r.functions || [], code: r.code, html: out, notes }
+  } catch (err) {
+    notes.push(`behavior reconstruction crashed: ${err instanceof Error ? err.message : String(err)}`)
+    return { adopted: false, html, notes }
+  }
+}
+
+/** Boot a candidate page in a real browser — does the behavior layer actually work? */
+async function validateBehaviorLayer(candidateHtml) {
+  try {
+    const bt = await runBehaviorTests({ html: candidateHtml })
+    const fatal = bt.failed.filter((f) => ['boots_without_crashes', 'dynamic_content_loads', 'dom_renders'].includes(f.name))
+    if (!bt.available) return { ok: true, fails: [], reason: 'browser unavailable — accepted without runtime proof' }
+    return { ok: fatal.length === 0 && bt.js_errors === 0, fails: fatal, js_errors: bt.js_errors, reason: fatal.length ? fatal.map((f) => f.name).join(', ') : '' }
+  } catch {
+    return { ok: true, fails: [], reason: 'validation crashed — accepted optimistically' }
+  }
+}
+const countBehaviorFails = (v) => (Array.isArray(v?.fails) ? v.fails.length : v?.ok ? 0 : 1)
+
 // ─── STEP 4: Repair execution ────────────────────────────────────────────────
 
 const PLACEHOLDER_SRC = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' width='400' height='300'><rect width='100%' height='100%' fill='#e8eaed'/><path d='M170 130a18 18 0 1 1 36 0 18 18 0 0 1-36 0zm-45 105l55-70 35 42 25-27 45 55H125z' fill='#aab2bd'/><text x='200' y='265' font-family='sans-serif' font-size='13' fill='#757d89' text-anchor='middle'>Image unavailable</text></svg>`)}`
@@ -1503,6 +1562,8 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
   let structuralTally = null
   let aiRebuildBlocked = ''
   let rebuildAdopted = false
+  let behaviorRebuilt = null
+  let reconAttempts = 0
   const cycleHistory = []
 
   // ════════ STRATEGY PLAN — Alpha decomposes the damage into an ordered ════
@@ -1585,6 +1646,44 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
         return `AI repairs applied: ${ai.applied} · skipped safely: ${ai.skipped}${ai.notes[0] ? ` · ${clip(ai.notes.find((n) => !/skipped/i.test(n)) || ai.notes[0], 90)}` : ''}`
       })
       sendEvent({ type: 'ai_repairs_complete', data: { issues_sent: aiEligible.length, ai_repairs_applied_total: aiAppliedTotal, cycle } })
+    }
+
+    // ── STEP 4b-2: INTERACTIVITY RECONSTRUCTION — multi-call behavior layer.
+    //    When repairs had to strip broken scripts, the page can survive as an
+    //    inert shell (stuck "Loading…", dead buttons). Alpha rebuilds ONLY the
+    //    behavior layer from the original source's surviving data — never the
+    //    page itself. Every candidate layer is validated in a real browser and,
+    //    if it crashes, the error is fed back for one corrected rewrite.
+    //    On by default; ALPHA_MULTI_CALL=0 disables.
+    {
+      const amp = detectAmputatedBehavior(originalHtml, workingHtml)
+      if (amp.trigger && multiCallEnabled() && isLlmRepairConfigured() && reconAttempts < 2) {
+        await chain.step(`behavior-rebuild${suffix}`, `${prefix}Rebuilding the lost JavaScript behavior layer — multi-call reconstruction…`, 'brain', async () => {
+          reconAttempts++
+          let r = await runBehaviorReconstruction({ originalHtml, html: workingHtml, hostname, url: finalUrl })
+          // VALIDATE in a real browser — a compiled script can still crash at boot.
+          let verdict = r.adopted ? await validateBehaviorLayer(r.html) : { ok: true }
+          if (r.adopted && !verdict.ok) {
+            console.log(`⚠️ [RECON] Candidate failed validation (${verdict.reason}) — healing round with the runtime errors…`)
+            const healed = await runBehaviorReconstruction({ originalHtml, html: workingHtml, hostname, url: finalUrl, errors: verdict.errors || [], previousCode: r.code })
+            if (healed.adopted) {
+              const v2 = await validateBehaviorLayer(healed.html)
+              if (v2.ok || countBehaviorFails(v2) < countBehaviorFails(verdict)) {
+                r = healed
+                verdict = v2.ok ? v2 : verdict
+              }
+            }
+          }
+          if (!r.adopted) return `Behavior reconstruction unavailable — ${clip(r.notes.join(' | ') || 'no usable output', 140)}`
+          workingHtml = r.html
+          behaviorRebuilt = { functions: r.functions || [], validated: verdict.ok }
+          snapshotMilestone(`cycle ${cycle}: behavior layer reconstructed (${(r.functions || []).length} functions)`)
+          sendEvent({ type: 'behavior_rebuild', data: { adopted: true, functions: r.functions || [], validated: verdict.ok, cycle } })
+          return `Behavior layer restored — ${(r.functions || []).length} function(s): ${(r.functions || []).slice(0, 5).join(', ')}${verdict.ok ? ' · verified in live browser' : ` · ${clip(verdict.reason || 'validation inconclusive', 80)}`}`
+        })
+      } else if (amp.trigger) {
+        console.log(`🚫 [RECON] Behavior loss detected but reconstruction skipped (${!multiCallEnabled() ? 'ALPHA_MULTI_CALL=0' : !isLlmRepairConfigured() ? 'no AI key' : 'attempt budget spent'})`)
+      }
     }
 
     // ── STEP 4c: FULL-PAGE REBUILD — OPT-IN ONLY.
@@ -1832,7 +1931,8 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
 
   const fixedHtml = registryGetFixed(restorationId)
   const copyPayloadCap = 280000
-  const genuinelyRestored = remaining.length === 0 || afterScore >= TARGET_SCORE || improvement >= 10
+  const behaviorShellFail = Array.isArray(behaviorResult?.failed) && behaviorResult.failed.some((f) => ['dynamic_content_loads', 'boots_without_crashes'].includes(f.name))
+  const genuinelyRestored = (remaining.length === 0 || afterScore >= TARGET_SCORE || improvement >= 10) && !behaviorShellFail
   const summaryBlock = {
     issues_found: diagnosis.summary.total,
     issues_fixed: diagnosis.summary.total - remaining.length,
@@ -1862,6 +1962,7 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
         ai_repairs_applied: aiAppliedTotal,
         rebuild_adopted: rebuildAdopted,
         ai_rebuild_blocked: aiRebuildBlocked || null,
+        interactivity_reconstructed: behaviorRebuilt ? { functions: behaviorRebuilt.functions } : null,
         memory_used: Boolean(memory && memory.scans > 0),
         memory_recurring_issues: memory?.recurring_issues || [],
         strategy_plan: strategyPlan ? { source: strategyPlan.source, tasks: strategyPlan.tasks.length, strategy: strategyPlan.strategy, task_list: strategyPlan.tasks } : null,
@@ -1909,7 +2010,9 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
     '',
     aiRebuildBlocked
       ? `I could not finish the deep repair just now — the AI engine was unavailable (${clip(aiRebuildBlocked, 160)}).`
-      : `The damage needs another pass — score improved by only ${improvement} point(s).`,
+      : behaviorShellFail
+        ? `The page's JavaScript could not be rebuilt this run (the AI engine hit its rate limit), so the site still LOOKS fixed but its interactivity is missing. I refuse to call that restored. Say **"fix my site"** again in a minute and I will rebuild the behavior layer first.`
+        : `The damage needs another pass — score improved by only ${improvement} point(s).`,
     remaining.length ? `Still open: ${[...new Set(remaining.map((i) => i.type))].slice(0, 5).join(', ')}.` : '',
     '',
     '**Your partial fixes are packaged below** — and press **Continue** to re-check the live site. Then say **"fix my site"** again and I will run a fresh repair pass.',
@@ -2104,6 +2207,8 @@ async function runSiteRestoration(ctx) {
       if (html) siteMilestones.push({ label: String(label).slice(0, 120), html: String(html) })
     } catch {}
   }
+  let siteBehaviorRebuilt = null
+  let reconAttemptsSite = 0
 
   const session = await createRenderSession()
   /** @type {{key:string,url:string,label:string,before:number,after:number,issuesBefore:number,issuesAfter:number,cycles:number,ai:number,html:string,initialTypes:string[]}[]} */
@@ -2175,6 +2280,29 @@ async function runSiteRestoration(ctx) {
           if (ai?.html) workingHtml = ai.html
           aiApplied += ai.applied || 0
           if (isEntry && (ai.applied || 0) > 0) snapshotSiteMilestone(`entry cycle ${cycle}: ${ai.applied} AI surgical patch(es)`, workingHtml)
+        }
+
+        // ── INTERACTIVITY RECONSTRUCTION — entry page only (bounds cost).
+        if (isEntry) {
+          const amp = detectAmputatedBehavior(originalHtml, workingHtml)
+          if (amp.trigger && multiCallEnabled() && isLlmRepairConfigured() && aiCallsUsed < AI_BUDGET && reconAttemptsSite < 2) {
+            aiCallsUsed++
+            reconAttemptsSite++
+            try {
+              let r = await runBehaviorReconstruction({ originalHtml, html: workingHtml, hostname, url: page.finalUrl })
+              if (r.adopted) {
+                const verdict = await validateBehaviorLayer(r.html)
+                if (!verdict.ok) {
+                  const healed = await runBehaviorReconstruction({ originalHtml, html: workingHtml, hostname, url: page.finalUrl, errors: verdict.fails?.map((f) => f.detail) || [], previousCode: r.code })
+                  if (healed.adopted && countBehaviorFails(await validateBehaviorLayer(healed.html)) <= countBehaviorFails(verdict)) r = healed
+                }
+                workingHtml = r.html
+                siteBehaviorRebuilt = { functions: r.functions || [] }
+                snapshotSiteMilestone(`entry cycle ${cycle}: behavior layer reconstructed (${(r.functions || []).length} functions)`, workingHtml)
+                sendEvent({ type: 'behavior_rebuild', data: { adopted: true, functions: r.functions || [], cycle, site_wide: true } })
+              }
+            } catch {}
+          }
         }
 
         // ── EXPERT REBUILD (opt-in only): surgical mode forbids whole-page
@@ -2451,6 +2579,7 @@ async function runSiteRestoration(ctx) {
         behavior_tests: siteBehavior ? { total: siteBehavior.total, passed: siteBehavior.passed, failed: siteBehavior.failed, js_errors: siteBehavior.js_errors } : null,
         git_history: deliverables?.git || null,
         ai_repairs_applied: restored.reduce((a, r) => a + r.ai, 0),
+        interactivity_reconstructed: siteBehaviorRebuilt ? { functions: siteBehaviorRebuilt.functions } : null,
       },
       status: siteGenuinelyRestored ? 'restored' : 'incomplete',
       site: {

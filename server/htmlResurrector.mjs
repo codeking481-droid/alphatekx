@@ -90,11 +90,20 @@ function stripUnclosedCssComments(css) {
   // A CSS `/*` that is never closed swallows the REST of the stylesheet in every
   // browser. Recovery: treat the author's intent as closing at end-of-line and
   // KEEP the rules that follow them so the site is not stripped of styling.
+  // Orphaned `*/` closers (comment opener already stripped) are dropped too —
+  // they are junk tokens left behind by partial edits.
   let out = ''
   let i = 0
   let hadUnclosed = false
   while (i < css.length) {
     const open = css.indexOf('/*', i)
+    const closeIdx = css.indexOf('*/', i)
+    if (closeIdx !== -1 && (open === -1 || closeIdx < open)) {
+      // `*/` with no live comment open before it — junk. Drop it.
+      out += css.slice(i, closeIdx)
+      i = closeIdx + 2
+      continue
+    }
     if (open === -1) { out += css.slice(i); break }
     out += css.slice(i, open)
     const close = css.indexOf('*/', open + 2)
