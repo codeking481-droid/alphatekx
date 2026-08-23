@@ -30,6 +30,7 @@ const Billing = lazy(() => import('./pages/Billing'))
 const Launch = lazy(() => import('./pages/Launch'))
 const RestorationFlow = lazy(() => import('./pages/RestorationFlow'))
 const GitHubIntegration = lazy(() => import('./pages/GitHubIntegration'))
+const Rescue = lazy(() => import('./pages/Rescue'))
 
 const loader = <div className="workspace-living-bg grid min-h-screen place-items-center text-sm font-bold text-slate-300"><span className="skeleton rounded-xl px-6 py-3">Loading AlphaTekx…</span></div>
 const suspended = (page: ReactNode) => <Suspense fallback={loader}>{page}</Suspense>
@@ -52,6 +53,7 @@ export default function App() {
       <div className="aurora-blob aurora-blob-three" aria-hidden="true"/>
       <Routes>
       <Route path="/" element={<LandingRoute />} />
+      <Route path="/rescue" element={suspended(<Rescue />)} />
       <Route path="/about" element={<About />} />
       <Route path="/auth" element={<Navigate to="/" replace />} />
       <Route path="/login" element={<Navigate to="/" replace />} />

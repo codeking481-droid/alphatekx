@@ -713,6 +713,17 @@ export async function diagnose(html, opts = {}) {
     push('info_probe_skipped', 'low', `Live-browser probe unavailable (${clip(rendered.reason, 80)}) — static analysis only`, NaN, '(probe skipped)', 'No action required')
   }
 
+  // WORDPRESS DOCTOR — CMS detection + WP-specific deterministic findings
+  let wpProfile = null
+  try {
+    const wp = await import('./wordpressDoctor.mjs')
+    const audit = wp.wordpressAudit(html)
+    wpProfile = audit.profile
+    for (const issue of audit.issues) {
+      push(issue.type, issue.severity, issue.description, NaN, clip(issue.fixHint || '', 120), issue.fixHint || 'Repair WordPress-specific breakage surgically')
+    }
+  } catch {}
+
   const summary = {
     total: issues.length,
     critical: issues.filter((i) => i.severity === 'critical').length,
@@ -720,7 +731,7 @@ export async function diagnose(html, opts = {}) {
     medium: issues.filter((i) => i.severity === 'medium').length,
     low: issues.filter((i) => i.severity === 'low').length,
   }
-  return { issues, summary, score: calculateScore(issues), renderFailures, renderStats: rendered?.ok ? rendered.stats : null, blankRender: Boolean(rendered?.blankRender) }
+  return { issues, summary, score: calculateScore(issues), renderFailures, renderStats: rendered?.ok ? rendered.stats : null, blankRender: Boolean(rendered?.blankRender), cms: wpProfile?.isWp ? 'wordpress' : null, wpSignals: wpProfile?.signals || [] }
 }
 
 // ─── STEP 3: Fix plan ────────────────────────────────────────────────────────
@@ -754,6 +765,8 @@ const FIX_DESCRIPTIONS = {
   runtime_error: 'AI-repair the crashing script or neutralize the failing code path',
   blank_render: 'AI-diagnose why the page renders nothing and rebuild the render path',
   failed_asset: 'Remove or repair references to assets that fail in a real browser',
+  wordpress_malware_loader: 'Remove the injected obfuscated loader script entirely — it is never legitimate theme code',
+  wordpress_mixed_content: 'Rewrite insecure http:// wp-content/wp-includes URLs to https:// so browsers stop blocking theme assets',
 }
 
 function buildFixPlan(diagnosis) {
@@ -1350,6 +1363,7 @@ export function handleRestoreV3Route(req, res) {
   const host = req.headers.host || 'localhost:3001'
   const origin = `${proto}://${host}`
   const cookieHeader = req.headers.cookie || ''
+  const githubRepo = (parsed.searchParams.get('githubRepo') || '').trim()
 
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
@@ -1367,7 +1381,7 @@ export function handleRestoreV3Route(req, res) {
     if (!res.writableEnded) res.write(': ping\n\n')
   }, 15000)
 
-  runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, sendEvent, sendStep, maxPages })
+  runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, sendEvent, sendStep, maxPages, githubRepo })
     .catch((err) => {
       console.error('[ALPHA-V3] Pipeline crashed:', err)
       sendEvent({ type: 'error', message: err instanceof Error ? err.message : 'Pipeline failed' })
@@ -1378,7 +1392,17 @@ export function handleRestoreV3Route(req, res) {
     })
 }
 
-async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, sendEvent, sendStep, maxPages = 1 }) {
+async function wpNoteFor(diagnosis) {
+  try {
+    if (diagnosis?.cms !== 'wordpress') return ''
+    const wd = await import('./wordpressDoctor.mjs')
+    return wd.wordpressGuidance({ isWp: true, signals: diagnosis.wpSignals })
+  } catch {
+    return ''
+  }
+}
+
+export async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, sendEvent, sendStep, maxPages = 1, githubRepo = '' }) {
   const chain = createChain(sendStep)
   const restorationId = `atk_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
   const artifactsDir = path.join(ARTIFACTS_ROOT, restorationId)
@@ -1570,7 +1594,7 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
   // battle plan before touching code, then executes it across repair cycles.
   let strategyPlan = null
   await chain.step('strategy', 'Planning the restoration strategy — ordering every fix by impact…', 'brain', async () => {
-    strategyPlan = await llmPlanRestoration({ issues: diagnosis.issues, score: diagnosis.score, hostname, memoryContext })
+    strategyPlan = await llmPlanRestoration({ issues: diagnosis.issues, score: diagnosis.score, hostname, memoryContext, cmsNote: await wpNoteFor(diagnosis) })
     sendEvent({ type: 'strategy_plan', data: { strategy: strategyPlan.strategy, tasks: strategyPlan.tasks, source: strategyPlan.source } })
     const head = strategyPlan.tasks.slice(0, 3).map((t) => t.title).join(' · ')
     return `${strategyPlan.tasks.length}-task plan (${strategyPlan.source === 'ai' ? 'AI-optimized' : 'severity-ordered'}): ${clip(head, 120)}`
@@ -1637,7 +1661,7 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
     const aiEligible = cycleDiagnosis.issues.filter((i) => ['runtime_error', 'blank_render', 'failed_asset'].includes(i.type))
     if (aiEligible.length) {
       await chain.step(`ai-repair${suffix}`, `${prefix}Repair Agent is rewriting what rules can't fix — ${aiEligible.length} runtime issue(s)…`, 'brain', async () => {
-        const ai = await llmRepairBatch({ html: workingHtml, issues: aiEligible, hostname, memoryContext })
+        const ai = await llmRepairBatch({ html: workingHtml, issues: aiEligible, hostname, memoryContext, cmsNote: await wpNoteFor(diagnosis) })
         workingHtml = ai.html
         aiAppliedTotal += ai.applied
         if (ai.applied > 0) snapshotMilestone(`cycle ${cycle}: ${ai.applied} AI surgical patch(es) applied`)
@@ -1884,6 +1908,7 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
         cycles: cycleHistory.length,
         per_cycle: cycleHistory,
         ai_repairs_applied: aiAppliedTotal,
+        cms: diagnosis.cms || null,
         render_probe: renderProbe ? { ok: renderProbe.ok, blank_render: renderProbe.blankRender, stats: renderProbe.stats } : null,
         memory_used: Boolean(memory && memory.scans > 0),
         strategy_plan: strategyPlan ? { source: strategyPlan.source, tasks: strategyPlan.tasks.length, strategy: strategyPlan.strategy } : null,
@@ -1904,6 +1929,36 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
 
     const ghToken = readCookieToken(cookieHeader)
     const suggestedName = slugifyHostname(hostname)
+
+    // Auto-PR: when GitHub is connected AND a target repo was supplied, push
+    // the fully restored file(s) to a fresh branch and open a pull request.
+    let autoPr = null
+    if (ghToken && githubRepo) {
+      try {
+        const gh = await import('./githubDirectPush.mjs')
+        autoPr = await gh.publishRestorationBranch({
+          token: ghToken,
+          repoFullName: githubRepo,
+          files: [{ path: 'index.html', content: registryGetFixed(restorationId) }],
+          title: `AlphaTekX restoration — ${hostname}`,
+          body: [
+            'Automated surgical restoration by AlphaTekX.',
+            '',
+            `- Health score: ${beforeScore} → ${afterScore}`,
+            `- Issues found: ${diagnosis.summary.total} · fixed: ${diagnosis.summary.total - remaining.length}`,
+            '- Read-only diagnosis before any edit; exposed secrets redacted',
+            '- Behavior verified in a live browser before delivery',
+            '',
+            'Review the diff and merge when satisfied.',
+          ].join('\n'),
+        })
+        sendEvent({ type: 'github_pr', data: { pr_url: autoPr.prUrl, branch: autoPr.branchName, repo: autoPr.repo } })
+      } catch (err) {
+        autoPr = { error: err instanceof Error ? err.message : 'GitHub publish failed' }
+        sendEvent({ type: 'github_pr', data: { error: autoPr.error } })
+      }
+    }
+
     return {
       git: gitHistory.available
         ? { available: true, commits: gitHistory.commits, tags: gitHistory.tags, rollback: 'git checkout damaged-original -- index.html', dir: artifactsDir }
@@ -1912,6 +1967,11 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
         available: Boolean(ghToken),
         branch_plan: `alphatekx-fix-${Math.floor(Date.now() / 1000)}`,
         note: ghToken ? 'GitHub connected — connect a repo URL to open the PR.' : 'Connect GitHub to receive the fix as a pull request.',
+        ...(autoPr
+          ? autoPr.error
+            ? { pr_error: autoPr.error }
+            : { pr_url: autoPr.prUrl, pr_branch: autoPr.branchName, pr_repo: autoPr.repo }
+          : {}),
       },
       download: {
         available: true,
@@ -2192,9 +2252,11 @@ async function runSiteRestoration(ctx) {
   // Strategy plan for the whole site: severity-ordered battle plan from the
   // entry page's damage profile (shared damage repeats across pages).
   let strategyPlan = null
+  let siteCms = null
   await chain.step('strategy', 'Planning the site-wide restoration strategy…', 'brain', async () => {
     const entryDiag = await diagnose(sitePages[0]?.html || originalHtml, { baseUrl: finalUrl, https: isHttps, skipNetworkChecks: true }).catch(() => null)
-    strategyPlan = await llmPlanRestoration({ issues: entryDiag?.issues || [], score: entryDiag?.score || 0, hostname, memoryContext })
+    siteCms = entryDiag?.cms || null
+    strategyPlan = await llmPlanRestoration({ issues: entryDiag?.issues || [], score: entryDiag?.score || 0, hostname, memoryContext, cmsNote: await wpNoteFor(entryDiag) })
     sendEvent({ type: 'strategy_plan', data: { strategy: strategyPlan.strategy, tasks: strategyPlan.tasks, source: strategyPlan.source, site_wide: true } })
     const head = strategyPlan.tasks.slice(0, 3).map((t) => t.title).join(' · ')
     return `${strategyPlan.tasks.length}-task plan (${strategyPlan.source === 'ai' ? 'AI-optimized' : 'severity-ordered'}): ${clip(head, 120)}`
@@ -2276,7 +2338,7 @@ async function runSiteRestoration(ctx) {
         const aiEligible = cycleDiagnosis.issues.filter((x) => ['runtime_error', 'blank_render', 'failed_asset'].includes(x.type))
         if (aiEligible.length && aiCallsUsed < AI_BUDGET) {
           aiCallsUsed++
-          const ai = await llmRepairBatch({ html: workingHtml, issues: aiEligible, hostname, memoryContext }).catch(() => ({ html: workingHtml, applied: 0, skipped: aiEligible.length, notes: ['AI repair crashed — rules kept the page safe'], configured: false, attempted: false }))
+          const ai = await llmRepairBatch({ html: workingHtml, issues: aiEligible, hostname, memoryContext, cmsNote: await wpNoteFor(cycleDiagnosis) }).catch(() => ({ html: workingHtml, applied: 0, skipped: aiEligible.length, notes: ['AI repair crashed — rules kept the page safe'], configured: false, attempted: false }))
           if (ai?.html) workingHtml = ai.html
           aiApplied += ai.applied || 0
           if (isEntry && (ai.applied || 0) > 0) snapshotSiteMilestone(`entry cycle ${cycle}: ${ai.applied} AI surgical patch(es)`, workingHtml)
@@ -2469,6 +2531,7 @@ async function runSiteRestoration(ctx) {
       agent: {
         version: 'V4-agentic-site',
         memory_used: Boolean(memory && memory.scans > 0),
+        cms: siteCms,
         strategy_plan: strategyPlan ? { source: strategyPlan.source, tasks: strategyPlan.tasks.length, strategy: strategyPlan.strategy } : null,
         behavior_tests: siteBehavior ? { total: siteBehavior.total, passed: siteBehavior.passed, failed: siteBehavior.failed } : null,
         git_history: gitHistory.available ? { commits: gitHistory.commits, tags: gitHistory.tags } : { available: false, reason: gitHistory.reason || null },

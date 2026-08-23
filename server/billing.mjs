@@ -69,15 +69,44 @@ export const PLANS = {
     monthlyVideos: Infinity,
     videoMaxDurationSec: 12 * 60,
     vault: true,
-    features: ['1,200 credits', 'Unlimited videos, max 12 mins', 'Vault saving', 'Unlimited automations', 'API access'],
+    priority: true,
+    features: ['1,200 credits', '25 sites, unlimited fixes', 'Priority healing queue', 'Vault saving', 'Unlimited automations'],
+  },
+  lite_9: {
+    id: 'lite_9',
+    name: '$9',
+    priceKobo: 900,
+    currency: 'USD',
+    monthlyCredits: 150,
+    maxActiveAutomations: 3,
+    monthlyVideos: 5,
+    videoMaxDurationSec: 5 * 60,
+    features: ['150 credits', '1 site, 5 fixes / month', 'Scan + report + full heal'],
+  },
+  enterprise_199: {
+    id: 'enterprise_199',
+    name: '$199',
+    priceKobo: 19900,
+    currency: 'USD',
+    monthlyCredits: 5000,
+    maxActiveAutomations: 1000000,
+    monthlyVideos: Infinity,
+    videoMaxDurationSec: 12 * 60,
+    vault: true,
+    apiAccess: true,
+    whiteLabel: true,
+    priority: true,
+    features: ['5,000 credits', 'Unlimited sites and fixes', 'Everything unlocked', 'Priority healing queue', 'API access + white-label reports'],
   },
 }
 
 export const CREDIT_PACKS = [
   // Subscription plans (primary revenue)
-  { id: 'video_19', credits: 400, amountKobo: 1900, currency: 'USD', label: '$19 Healer Starter', description: '10 scans, 3 video restorations, 400 credits/month', type: 'subscription', planId: 'video_19' },
-  { id: 'video_49', credits: 800, amountKobo: 4900, currency: 'USD', label: '$49 Healer Pro', description: '50 full restorations, 25 videos, 800 credits/month', type: 'subscription', planId: 'video_49' },
-  { id: 'video_99', credits: 1200, amountKobo: 9900, currency: 'USD', label: '$99 Healer Empire', description: 'Unlimited restorations, all styles, 1,200 credits/month', type: 'subscription', planId: 'video_99' },
+  { id: 'lite_9', credits: 150, amountKobo: 900, currency: 'USD', label: '$9 Healer Lite', description: '1 site, 5 fixes/month, scans + reports + full heals', type: 'subscription', planId: 'lite_9' },
+  { id: 'video_19', credits: 400, amountKobo: 1900, currency: 'USD', label: '$19 Healer Starter', description: '3 sites, 15 fixes/month, scans + reports + video restorations', type: 'subscription', planId: 'video_19' },
+  { id: 'video_49', credits: 800, amountKobo: 4900, currency: 'USD', label: '$49 Healer Pro', description: '10 sites, unlimited fixes, full restorations + all styles', type: 'subscription', planId: 'video_49' },
+  { id: 'video_99', credits: 1200, amountKobo: 9900, currency: 'USD', label: '$99 Healer Business', description: '25 sites, priority healing queue, unlimited restorations', type: 'subscription', planId: 'video_99' },
+  { id: 'enterprise_199', credits: 5000, amountKobo: 19900, currency: 'USD', label: '$199 Healer Enterprise', description: 'Unlimited sites and fixes, everything unlocked, priority queue', type: 'subscription', planId: 'enterprise_199' },
   // Test pack (development only)
   { id: 'test_100', credits: 100, amountKobo: 10000, currency: 'NGN', label: 'Test purchase', description: 'Test payment for ₦100' },
 ]
@@ -1019,7 +1048,7 @@ export async function restorePlanForUser(user, config) {
   if (isAdmin(user)) return { ...RESTORE_PLANS.guardian, admin: true }
   const profile = await readProfile(user, config)
   const planId = String(profile?.plan || 'free').toLowerCase()
-  if (['guardian', 'restore_guardian', 'video_99'].includes(planId)) return RESTORE_PLANS.guardian
+  if (['guardian', 'restore_guardian', 'video_99', 'enterprise_199'].includes(planId)) return RESTORE_PLANS.guardian
   if (['pro', 'restore_pro', 'video_49', 'builder_monthly'].includes(planId)) return RESTORE_PLANS.pro
   return RESTORE_PLANS.starter
 }

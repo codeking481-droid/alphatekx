@@ -11,7 +11,9 @@ import { handlePreviewRoute, handleRestoreStreamRoute, handleFixStreamRoute, han
 import { createRestorationEngine } from './server/restorationEngine.mjs'
 import { createRestorationPipeline } from './server/restorationPipeline.mjs'
 import { FileHandler, sanitizeEncoding } from './server/scanEngine/fileUtils.js'
-import { handleGitHubAuth, handleGitHubCallback, handleGitHubStatus, handleGitHubRepos, handleGitHubApplyFix, handleGitHubCreatePR, handleGitHubRollback } from './server/githubDirectPush.mjs'
+import { handleGitHubAuth, handleGitHubCallback, handleGitHubStatus, handleGitHubRepos, handleGitHubApplyFix, handleGitHubCreatePR, handleGitHubRollback, handleGitHubPublishRestoration } from './server/githubDirectPush.mjs'
+import { handleWatchRoute } from './server/watchMode.mjs'
+import { handleMcpRoute } from './server/mcpServer.mjs'
 import { handleDiagnoseRoute } from './server/diagnoseRoute.mjs'
 import { handleRestoreV2Route, handleRestorePushRoute } from './server/restorePipelineV2.mjs'
 import { handleRestoreV3Route, handleV3DownloadRoute, handleV3ArtifactRoute, handleV3ContentRoute, getRestorationPages } from './server/alphaRestorationPipeline.mjs'
@@ -10397,6 +10399,29 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'POST' && req.url === '/api/github/create-pr') {
     return handleGitHubCreatePR(req, res)
+  }
+  if (req.method === 'POST' && req.url === '/api/github/publish-restoration') {
+    return handleGitHubPublishRestoration(req, res)
+  }
+
+  // ===== WATCH MODE: scheduled rescans + auto-repair =====
+  if (req.url?.startsWith('/api/watch/')) {
+    return handleWatchRoute(req, res)
+  }
+
+  // ===== MCP: Model Context Protocol endpoint for agent IDEs =====
+  if (req.method === 'POST' && req.url === '/mcp') {
+    return handleMcpRoute(req, res)
+  }
+  if (req.method === 'GET' && req.url === '/mcp') {
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    return res.end(JSON.stringify({
+      name: 'alphatekx-alpha',
+      protocol: 'mcp',
+      transport: 'streamable-http',
+      endpoint: '/mcp',
+      tools: ['alpha_check_site', 'alpha_restore_site', 'alpha_list_restorations'],
+    }))
   }
   if (req.method === 'POST' && req.url === '/api/diagnose') {
     return handleDiagnoseRoute(req, res)

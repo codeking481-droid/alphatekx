@@ -252,7 +252,7 @@ Rules:
  * deterministic severity-ordered plan when no AI provider is available or the
  * model returns junk — planning must NEVER be the reason a run fails.
  */
-export async function llmPlanRestoration({ issues = [], score = 0, hostname = '', memoryContext = '' } = {}) {
+export async function llmPlanRestoration({ issues = [], score = 0, hostname = '', memoryContext = '', cmsNote = '' } = {}) {
   const out = { configured: isLlmRepairConfigured(), planned: false, strategy: '', tasks: [], source: 'rules' }
 
   // Deterministic baseline: unique issue types ordered by worst severity seen.
@@ -283,7 +283,7 @@ export async function llmPlanRestoration({ issues = [], score = 0, hostname = ''
 
   try {
     const list = issues.slice(0, 20).map((i) => `- [${i.id}] (${i.severity}) ${i.type}: ${String(i.description || '').slice(0, 140)}`).join('\n')
-    const user = `Site: ${hostname || '(unknown host)'}\nCurrent health score: ${score}/100\n\n${memoryContext ? `${memoryContext}\n\n` : ''}Diagnosed issues:\n${list}\n\nProduce the restoration plan now.`
+    const user = `Site: ${hostname || '(unknown host)'}\nCurrent health score: ${score}/100\n\n${memoryContext ? `${memoryContext}\n\n` : ''}${cmsNote ? `${cmsNote}\n\n` : ''}Diagnosed issues:\n${list}\n\nProduce the restoration plan now.`
     const answer = await repairChat(PLANNER_SYSTEM_PROMPT, user, { maxTokens: 2000 })
     if (!answer || !Array.isArray(answer.tasks) || !answer.tasks.length) return out
     const tasks = answer.tasks.slice(0, 6).map((t, idx) => ({
@@ -376,7 +376,7 @@ You are not here to make the site "look better" or recreate it. You are here to 
  * @returns {Promise<{configured:boolean, attempted:boolean, applied:number, skipped:number, notes:string[], html:string}>}
  */
 export async function llmRepairBatch(input) {
-  const { html, issues, hostname = '', memoryContext = '' } = input
+  const { html, issues, hostname = '', memoryContext = '', cmsNote = '' } = input
   const out = { configured: isLlmRepairConfigured(), attempted: false, applied: 0, skipped: 0, notes: [], html }
 
   if (!out.configured) {
@@ -399,7 +399,7 @@ export async function llmRepairBatch(input) {
   let docExcerpt = docExcerptParts.join('\n<!-- ---- -->\n')
   if (docExcerpt.length > 60_000) docExcerpt = docExcerpt.slice(0, 60_000)
 
-  const user = `Site: ${hostname || '(unknown host)'}\n\n${memoryContext ? `${memoryContext}\n\n` : ''}Diagnosed issues:\n${evidence}\n\nDocument excerpt:\n\`\`\`\n${docExcerpt}\n\`\`\`\n\nReturn the JSON repairs now.`
+  const user = `Site: ${hostname || '(unknown host)'}\n\n${memoryContext ? `${memoryContext}\n\n` : ''}${cmsNote ? `${cmsNote}\n\n` : ''}Diagnosed issues:\n${evidence}\n\nDocument excerpt:\n\`\`\`\n${docExcerpt}\n\`\`\`\n\nReturn the JSON repairs now.`
 
   out.attempted = true
   const answer = await repairChat(SYSTEM_PROMPT, user, { maxTokens: 6000 })

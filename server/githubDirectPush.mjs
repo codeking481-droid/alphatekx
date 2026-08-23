@@ -697,3 +697,145 @@ function cleanupDir(dir) {
     if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true })
   } catch {}
 }
+
+// ─── Restoration branch publishing (full-file PR via Git trees API) ──────────
+// Pushes complete restored files to a fresh branch and opens a PR — no clone
+// needed, safe to call from the pipeline or watch-mode scheduler.
+
+export function parseRepoFullName(input) {
+  const raw = String(input || '').trim()
+  if (!raw) return ''
+  const m = raw.match(/github\.com[/:]([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/i)
+  if (m) return `${m[1]}/${m[2]}`
+  if (/^[\w.-]+\/[\w.-]+$/.test(raw)) return raw
+  return ''
+}
+
+export async function publishRestorationBranch({ token, repoFullName, files, title, body }) {
+  if (!token) throw new Error('GitHub token missing — connect GitHub first')
+  const repo = parseRepoFullName(repoFullName)
+  if (!repo) throw new Error('Invalid repository — use owner/name or a GitHub URL')
+  const cleanFiles = (Array.isArray(files) ? files : [])
+    .filter((f) => f && f.path && typeof f.content === 'string' && f.content.trim())
+    .map((f) => ({ path: String(f.path).replace(/^[/\\]+/, ''), content: f.content }))
+  if (!cleanFiles.length) throw new Error('No restored files to publish')
+
+  const repoInfo = await githubApi(`/repos/${repo}`, token)
+  const baseBranch = repoInfo.default_branch || 'main'
+  const baseRef = await githubApi(`/repos/${repo}/git/ref/heads/${encodeURIComponent(baseBranch)}`, token)
+  const baseSha = baseRef?.object?.sha
+  if (!baseSha) throw new Error(`Could not read base branch ${baseBranch}`)
+  const baseCommit = await githubApi(`/repos/${repo}/git/commits/${baseSha}`, token)
+
+  const treeItems = []
+  for (const file of cleanFiles) {
+    const blob = await githubApi(`/repos/${repo}/git/blobs`, token, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: Buffer.from(file.content, 'utf8').toString('base64'), encoding: 'base64' }),
+    })
+    treeItems.push({ path: file.path, mode: '100644', type: 'blob', sha: blob.sha })
+  }
+
+  const tree = await githubApi(`/repos/${repo}/git/trees`, token, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ base_tree: baseCommit.tree_sha, tree: treeItems }),
+  })
+
+  const commitMessage = (title || `AlphaTekX restoration — ${cleanFiles.length} file(s) healed`).slice(0, 200)
+  const commit = await githubApi(`/repos/${repo}/git/commits`, token, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: commitMessage, tree: tree.sha, parents: [baseSha] }),
+  })
+
+  const stamp = new Date().toISOString().replace(/[^0-9a-z]/gi, '').slice(0, 14)
+  const branchName = `alphatekx-restore-${stamp}`
+  await githubApi(`/repos/${repo}/git/refs`, token, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha: commit.sha }),
+  })
+
+  const pr = await githubApi(`/repos/${repo}/pulls`, token, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      title: (title || 'AlphaTekX restoration').slice(0, 120),
+      head: branchName,
+      base: baseBranch,
+      body: (body || '').slice(0, 60000),
+    }),
+  })
+
+  return {
+    repo,
+    baseBranch,
+    branchName,
+    commitSha: commit.sha,
+    prUrl: pr?.html_url || null,
+    prNumber: pr?.number || null,
+    files: cleanFiles.map((f) => f.path),
+  }
+}
+
+export async function handleGitHubPublishRestoration(req, res) {
+  const token = getTokenFromRequest(req)
+  if (!token) return jsonResponse(res, 401, { error: 'Not connected to GitHub' })
+
+  let body = ''
+  for await (const chunk of req) body += chunk
+
+  let restorationId = ''
+  let repoFullName = ''
+  try {
+    const parsed = JSON.parse(body)
+    restorationId = String(parsed.restorationId || '')
+    repoFullName = parsed.repoFullName
+  } catch {
+    return jsonResponse(res, 400, { error: 'Invalid JSON body' })
+  }
+  if (!/^[\w-]+$/.test(restorationId)) return jsonResponse(res, 400, { error: 'restorationId required' })
+  const repo = parseRepoFullName(repoFullName)
+  if (!repo) return jsonResponse(res, 400, { error: 'repoFullName required (owner/name)' })
+
+  const dir = path.resolve(process.cwd(), 'data', 'restorations', restorationId)
+  if (!fs.existsSync(dir)) return jsonResponse(res, 404, { error: 'Restoration not found' })
+
+  const files = []
+  const walk = (current, rel = '') => {
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      if (entry.name.startsWith('.') || entry.name.endsWith('.zip') || entry.name === 'node_modules') continue
+      const abs = path.join(current, entry.name)
+      const relPath = rel ? `${rel}/${entry.name}` : entry.name
+      if (entry.isDirectory()) walk(abs, relPath)
+      else if (/\.(html?|css|js|mjs|json|txt|svg)$/i.test(entry.name)) {
+        try { files.push({ path: relPath, content: fs.readFileSync(abs, 'utf8') }) } catch {}
+      }
+    }
+  }
+  walk(dir)
+  if (!files.length) return jsonResponse(res, 404, { error: 'No publishable files in this restoration' })
+
+  try {
+    const result = await publishRestorationBranch({
+      token,
+      repoFullName: repo,
+      files,
+      title: `AlphaTekX restoration — ${restorationId}`,
+      body: [
+        'Automated surgical restoration by AlphaTekX.',
+        '',
+        '- Read-only diagnosis before any edit',
+        '- Exposed secrets redacted',
+        '- Behavior verified in a live browser',
+        '',
+        'Review the diff and merge when satisfied.',
+      ].join('\n'),
+    })
+    return jsonResponse(res, 200, { success: true, ...result })
+  } catch (err) {
+    return jsonResponse(res, 502, { error: err instanceof Error ? err.message : 'GitHub publish failed' })
+  }
+}

@@ -7,9 +7,11 @@ import { supabase } from '../lib/supabase'
 type Plan = { id: string; packId: string; name: string; price: number; credits: number; features: string[]; recommended?: boolean }
 
 const PLANS: Plan[] = [
-  { id: 'video_19', packId: 'video_19', name: 'Healer Starter', price: 19, credits: 400, features: ['400 credits/month', '10 App Scans + Reports', '3 Video Restorations', 'Up to 10 automations'] },
-  { id: 'video_49', packId: 'video_49', name: 'Healer Pro', price: 49, credits: 800, features: ['800 credits/month', '50 Full App Restorations', '25 Video Restorations', '7-day scheduler', 'Up to 30 automations'], recommended: true },
-  { id: 'video_99', packId: 'video_99', name: 'Healer Empire', price: 99, credits: 1200, features: ['1,200 credits/month', 'Unlimited Restorations', 'All video styles', 'Unlimited automations', 'API access + White-label'], recommended: false },
+  { id: 'lite_9', packId: 'lite_9', name: 'Lite', price: 9, credits: 150, features: ['150 credits/month', '1 site', '5 fixes / month', 'Scan + report + full heal'] },
+  { id: 'video_19', packId: 'video_19', name: 'Starter', price: 19, credits: 400, features: ['400 credits/month', '3 sites', '15 fixes / month', '10 App Scans + Reports', '3 Video Restorations'] },
+  { id: 'video_49', packId: 'video_49', name: 'Pro', price: 49, credits: 800, features: ['800 credits/month', '10 sites', 'Unlimited fixes', '50 Full App Restorations', '25 Video Restorations'], recommended: true },
+  { id: 'video_99', packId: 'video_99', name: 'Business', price: 99, credits: 1200, features: ['1,200 credits/month', '25 sites', 'Priority healing queue', 'Unlimited Restorations', 'All video styles'] },
+  { id: 'enterprise_199', packId: 'enterprise_199', name: 'Enterprise', price: 199, credits: 5000, features: ['5,000 credits/month', 'Unlimited sites & fixes', 'Everything unlocked', 'Priority queue + API access', 'White-label reports'] },
 ]
 
 export default function Billing() {
@@ -79,7 +81,7 @@ export default function Billing() {
   }
 
   return (
-    <main className="mx-auto min-h-[calc(100dvh-4rem)] w-full max-w-4xl px-4 py-10 sm:px-6">
+    <main className="mx-auto min-h-[calc(100dvh-4rem)] w-full max-w-6xl px-4 py-10 sm:px-6">
       <Link to="/chat" className="mb-6 inline-flex items-center gap-2 text-sm text-white/40 transition hover:text-white/70">
         <ArrowLeft size={14} />
         Back to chat
@@ -93,7 +95,7 @@ export default function Billing() {
         </p>
       </header>
 
-      <div className="grid gap-6 sm:grid-cols-3">
+      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {PLANS.map((plan) => {
           const isActive = currentPlan === plan.id
           const isLoading = loadingPlan === plan.id
@@ -115,7 +117,7 @@ export default function Billing() {
               )}
 
               <div className="mb-4 flex items-center gap-2">
-                {plan.id === 'video_99' ? (
+                {plan.id === 'enterprise_199' ? (
                   <Crown size={18} className="text-[#FFD700]" />
                 ) : plan.id === 'video_49' ? (
                   <Zap size={18} className="text-[#D6FF00]" />

@@ -16,20 +16,14 @@ import {
   Check,
   ChevronRight,
   CircleCheckBig,
-  FileText,
   Gauge,
-  Github,
   History,
-  Linkedin,
   LockKeyhole,
-  Mail,
   Menu,
-  MessageSquare,
   Play,
   Rocket,
   ShieldCheck,
   Sparkles,
-  Table2,
   WandSparkles,
   X,
   Zap,
@@ -72,6 +66,7 @@ function Header() {
     ['Product', '#product'],
     ['How it works', '#how-it-works'],
     ['Use cases', '#use-cases'],
+    ['Rescue', '/rescue'],
     ['Pricing', '#pricing'],
     ['FAQ', '#faq'],
   ]
@@ -229,9 +224,9 @@ function DashboardMockup() {
           <main className="space-y-3">
             <div className="grid grid-cols-3 gap-2">
               {[
-                ['84', 'Reach'],
-                ['4', 'Posts'],
-                ['4', 'Platforms'],
+                ['27', 'Issues fixed'],
+                ['100', 'Health score'],
+                ['8', 'Pages healed'],
               ].map(([value, label], index) => (
                 <div
                   key={label}
@@ -248,8 +243,8 @@ function DashboardMockup() {
             <div className="rounded-2xl border border-white/10 bg-white/[.035] p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-black text-white">Growth engine</p>
-                  <p className="text-[9px] text-white/35">Last 30 days</p>
+                  <p className="text-xs font-black text-white">Restoration engine</p>
+                  <p className="text-[9px] text-white/35">Live session</p>
                 </div>
                 <span className="rounded-full bg-emerald-400/10 px-2 py-1 text-[9px] font-bold text-emerald-300">
                   LIVE
@@ -273,8 +268,8 @@ function DashboardMockup() {
                 <Check size={17} />
               </span>
               <div>
-                <p className="text-xs font-black text-white">LinkedIn posted at 9:00 AM</p>
-                <p className="text-[9px] text-white/35">Confirmed · 1 credit across all platforms</p>
+                <p className="text-xs font-black text-white">Site restored at 9:00 AM</p>
+                <p className="text-[9px] text-white/35">Verified · behavior tests passed</p>
               </div>
             </div>
           </main>
@@ -288,7 +283,7 @@ function DashboardMockup() {
       >
         <p className="text-[10px] font-bold text-white/40">TODAY</p>
         <p className="mt-1 text-xs font-black text-white">
-          4 posts confirmed <span className="text-[#FFD700]">✓</span>
+          Restoration complete <span className="text-[#FFD700]">✓</span>
         </p>
       </motion.div>
     </div>
@@ -507,34 +502,34 @@ function HowItWorks() {
 function DemoDashboard({ progress }: { progress: MotionValue<number> }) {
   const [filled, setFilled] = useState(0)
   const cells = [
-    'Founder story',
-    'Algorithm pulse',
-    'Hook test',
-    'Post prep',
-    'Review cycle',
-    'LinkedIn live',
-    'Caption swap',
-    'Distribution',
-    'Engagement day',
-    'Story hook',
-    'Trend check',
-    'Founder story',
-    'Network push',
-    'Headline refresh',
-    'Content edit',
-    'Platform sync',
-    'A/B caption',
-    'CTA refresh',
-    'Boost prompt',
-    'Hashtag lab',
-    'DM flow',
-    'Analytics check',
-    'Weekend burst',
-    'Niche angle',
-    'Follow-up post',
-    'Repurpose clip',
-    'Momentum reset',
-    'Live test',
+    'Read-only scan',
+    'Issue map',
+    'Secrets redacted',
+    'Broken links',
+    'Dead scripts',
+    'CSS repair',
+    'Memory recall',
+    'Strategy plan',
+    'Surgical fix 1',
+    'Surgical fix 2',
+    'Surgical fix 3',
+    'Behavior test',
+    'Git snapshot',
+    'Re-verify',
+    'Mobile check',
+    'A11y pass',
+    'SEO tags',
+    'Console clean',
+    'Zero errors',
+    'Score 96',
+    'Report ready',
+    'Rollback point',
+    'Watch mode on',
+    'Final audit',
+    'Handoff',
+    'Site live',
+    'Monitoring',
+    'Restored ✓',
   ]
 
   useEffect(() => {
@@ -547,32 +542,32 @@ function DemoDashboard({ progress }: { progress: MotionValue<number> }) {
   }, [cells.length, progress])
 
   const progressPct = `${Math.round((filled / cells.length) * 100)}%`
-  const displayLabel = filled > 0 ? `Day ${filled}: ${cells[filled - 1]}` : 'Day 1: Founder story'
+  const displayLabel = filled > 0 ? `Step ${filled}: ${cells[filled - 1]}` : 'Step 1: Read-only scan'
 
   return (
     <div className="relative overflow-hidden rounded-[30px] border border-white/10 bg-[#09090C] p-4 shadow-[0_40px_120px_rgba(107,33,168,.2)] sm:p-6">
       <div className="flex items-center justify-between border-b border-white/10 pb-4">
         <div>
           <p className="text-xs font-black text-white">ALPHA OVERVIEW</p>
-          <p className="text-[10px] text-white/40">84 impressions on launch day</p>
+          <p className="text-[10px] text-white/40">0 → 100 health score today</p>
         </div>
         <span className="flex items-center gap-2 text-[10px] font-bold text-emerald-300">
           <i className="size-2 rounded-full bg-emerald-400" />
-          EXECUTING
+          RESTORING
         </span>
       </div>
 
       <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
         <div className="rounded-2xl border border-white/10 bg-white/[.035] p-4">
           <motion.p className="text-2xl font-black text-white">
-            <AnimatedCounter value={84} />
+            <AnimatedCounter value={96} />
           </motion.p>
-          <p className="mt-1 text-[9px] font-bold uppercase tracking-wider text-white/30">Impressions</p>
+          <p className="mt-1 text-[9px] font-bold uppercase tracking-wider text-white/30">Health score</p>
         </div>
 
         {[
-          ['Posts', '4 tested'],
-          ['Platforms', '4'],
+          ['Repairs', '12 applied'],
+          ['Pages', '4 healed'],
         ].map(([label, value]) => (
           <div key={label} className="rounded-2xl border border-white/10 bg-white/[.035] p-4">
             <p className="text-2xl font-black text-white">{value}</p>
@@ -584,8 +579,8 @@ function DemoDashboard({ progress }: { progress: MotionValue<number> }) {
       <div className="mt-4 rounded-2xl border border-white/10 bg-white/[.025] p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-[10px] font-bold text-white/40">30-day content engine</p>
-            <p className="text-[10px] text-white/30">Live grid fills with every execution day</p>
+            <p className="text-[10px] font-bold text-white/40">Restoration timeline</p>
+            <p className="text-[10px] text-white/30">Every step lands as Alpha heals your site</p>
           </div>
           <span className="rounded-full bg-white/5 px-3 py-1 text-[10px] font-semibold text-white/60">
             {displayLabel}
@@ -628,7 +623,7 @@ function DemoDashboard({ progress }: { progress: MotionValue<number> }) {
       </div>
 
       <div className="mt-4 grid grid-cols-4 gap-2">
-        {['in', 'f', '𝕏', '◎'].map((icon, index) => (
+        {['SCAN', 'FIX', 'TEST', 'LIVE'].map((icon, index) => (
           <PlatformTile key={icon} icon={icon} index={index} progress={progress} />
         ))}
       </div>
@@ -653,11 +648,11 @@ function ScrollDemo() {
   const ref = useRef<HTMLElement>(null)
   const { scrollYProgress } = useScroll({ target: ref, offset: ['start start', 'end end'] })
   const stages = [
-    ['Your dashboard begins with an outcome.', 'Tell Alpha what growth looks like.'],
-    ['1 Credit = Post to ALL platforms.', 'One unit of work. No per-channel punishment.'],
-    ['Thirty days, created in moments.', 'Every post stays reviewable before execution.'],
-    ['Approved work goes live.', 'Connected platforms light up only after confirmation.'],
-    ['Work compounds while you live.', 'Reach, followers, and engagement keep moving.'],
+    ['Your dashboard begins with a broken link.', 'Paste it. Alpha takes it from there.'],
+    ['One scan. Every issue surfaced.', 'Exposed keys, dead scripts, broken layouts — mapped before a single edit.'],
+    ['Repairs happen while you watch.', 'Every change stays surgical, reviewable, and reversible.'],
+    ['Verified in a live browser.', 'Behavior tests must pass before anything ships.'],
+    ['Memory compounds across visits.', 'Alpha remembers your site and watches for future breakage.'],
   ]
   const [stage, setStage] = useState(0)
 
@@ -724,30 +719,21 @@ function ScrollDemo() {
   )
 }
 
-const connectedTools = [
-  { name: 'LinkedIn', detail: 'Native publishing', icon: Linkedin },
-  { name: 'Gmail', detail: 'Inbox workflows', icon: Mail },
-  { name: 'GitHub', detail: 'Repository workflows', icon: Github },
-  { name: 'Google Docs', detail: 'Documents and briefs', icon: FileText },
-  { name: 'Google Sheets', detail: 'Structured operations', icon: Table2 },
-  { name: 'Discord', detail: 'Team communication', icon: MessageSquare },
-]
-
 const outcomeExamples = [
   {
-    label: 'Launch a campaign',
-    prompt: 'Create a one-week LinkedIn launch campaign and prepare the supporting brief in Google Docs.',
-    result: '7 tailored posts · launch brief · review required',
+    label: 'Rescue my store',
+    prompt: 'My e-commerce site is down and checkout is broken. Scan it and bring it back to life.',
+    result: '27 issues found · exposed keys redacted · cart verified working',
   },
   {
-    label: 'Run my inbox',
-    prompt: 'Every morning, summarize urgent customer emails and prepare replies for my approval.',
-    result: 'Daily inbox brief · priority routing · replies in draft',
+    label: 'Heal my portfolio',
+    prompt: 'Half my styles stopped loading and images are missing. Restore it to world-class.',
+    result: 'CSS repaired · assets re-linked · health score 0 → 96',
   },
   {
-    label: 'Organize operations',
-    prompt: 'Record new orders in Google Sheets and send my team a clear daily update.',
-    result: 'Order capture · sheet update · team notification',
+    label: 'Watch my SaaS',
+    prompt: 'Keep watch on my app every night and repair anything that breaks before users wake up.',
+    result: 'Nightly scans · auto-repair · full rollback history kept',
   },
 ]
 
@@ -826,38 +812,52 @@ function InteractiveOutcomeDemo() {
   )
 }
 
-function IntegrationsStrip() {
+function RoiAngle() {
+  const lines = [
+    ['Lost sales while down', '$500/hour', 'Every minute offline, customers buy from someone else.'],
+    ['Developer fix', '$150/hour', 'If you can even find one at 2 AM.'],
+    ['Alpha', '$19/month', 'Paste the link. Fixed in minutes, verified in a live browser.'],
+  ]
+
   return (
-    <section className="border-y border-white/10 bg-[#070709] px-4 py-20 sm:px-6">
+    <section className="border-y border-white/10 bg-[#050505] px-4 py-24 sm:px-6 lg:py-32">
       <div className="mx-auto max-w-7xl">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-xs font-black uppercase tracking-[.22em] text-[#FFD700]">One restoration studio</p>
-            <h2 className="mt-4 max-w-3xl text-4xl font-black tracking-[-.045em] text-white sm:text-6xl">
-              Broken links and weak videos get restored with precision.
-            </h2>
-          </div>
-          <p className="max-w-md text-base leading-7 text-white/50">
-            We scan read-only, learn the style, and heal your broken asset into a polished, market-ready version without starting from zero.
-          </p>
+        <div className="text-center">
+          <p className="text-xs font-black uppercase tracking-[.22em] text-[#FFD700]">The math is brutal</p>
+          <h2 className="mx-auto mt-5 max-w-4xl text-4xl font-black tracking-[-.045em] text-white sm:text-6xl">
+            Fix Your Site for Less Than <span className="text-[#FFD700]">One Developer Hour.</span>
+          </h2>
         </div>
 
-        <div className="mt-12 grid grid-cols-2 gap-3 md:grid-cols-4">
-          {connectedTools.map(({ name, detail, icon: Icon }, index) => (
-            <motion.article
-              key={name}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: index * 0.05 }}
-              className="group min-h-36 rounded-2xl border border-white/10 bg-white/[.025] p-5 transition hover:-translate-y-1 hover:border-[#FFD700]/35 hover:bg-white/[.045]"
-            >
-              <Icon className="text-[#FFD700]" size={23} strokeWidth={1.7} />
-              <h3 className="mt-6 text-base font-black text-white sm:text-lg">{name}</h3>
-              <p className="mt-1 text-xs leading-5 text-white/40">{detail}</p>
-            </motion.article>
-          ))}
-        </div>
+        <motion.div
+          initial={{ opacity: 0, y: 28 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.7, ease }}
+          className="mx-auto mt-12 max-w-3xl rounded-[30px] border border-[#FFD700]/25 bg-white/[.03] p-7 sm:p-9"
+        >
+          <p className="text-xs font-black uppercase tracking-[.18em] text-white/40">Scenario: Your e-commerce site is down</p>
+          <div className="mt-7 space-y-4">
+            {lines.map(([label, price, copy], index) => (
+              <div
+                key={label}
+                className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-5 ${
+                  index === 2 ? 'border-[#FFD700]/40 bg-[#FFD700]/[.06]' : 'border-white/10 bg-black/40'
+                }`}
+              >
+                <div>
+                  <p className={`text-sm font-black ${index === 2 ? 'text-[#FFD700]' : 'text-white'}`}>{label}</p>
+                  <p className="mt-1 text-xs leading-5 text-white/40">{copy}</p>
+                </div>
+                <span className={`text-xl font-black sm:text-2xl ${index === 2 ? 'text-[#FFD700]' : 'text-white/70'}`}>{price}</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-8 rounded-2xl bg-black/60 p-5 text-center text-sm font-bold leading-7 text-white/75 sm:text-base">
+            Your site is down <span className="text-[#FFD700]">→</span> You call Alpha <span className="text-[#FFD700]">→</span> Fixed in 5 minutes{' '}
+            <span className="text-[#FFD700]">→</span> <span className="text-emerald-300">$0 lost sales</span>
+          </div>
+        </motion.div>
       </div>
     </section>
   )
@@ -990,15 +990,15 @@ function ExecutionProof() {
 
           <div className="rounded-[30px] border border-white/10 bg-[#09090C] p-4 shadow-[0_35px_100px_rgba(255,215,0,.07)] sm:p-6">
             <div className="flex items-center justify-between border-b border-white/10 pb-4">
-              <div><p className="text-sm font-black text-white">Campaign execution</p><p className="text-xs text-white/35">AlphaTekx launch · today</p></div>
+              <div><p className="text-sm font-black text-white">Restoration execution</p><p className="text-xs text-white/35">AlphaTekx rescue · today</p></div>
               <span className="flex items-center gap-2 rounded-full bg-emerald-400/10 px-3 py-1.5 text-[10px] font-black text-emerald-300"><i className="size-2 animate-pulse rounded-full bg-emerald-400" /> LIVE</span>
             </div>
             <div className="mt-5 space-y-3">
               {[
-                ['Content prepared', 'Reviewed', '09:02'],
-                ['Approval received', 'Confirmed', '09:06'],
-                ['LinkedIn publication', 'Post ID saved', '09:07'],
-                ['Execution history', 'Written', '09:07'],
+                ['Read-only scan', '27 issues mapped', '09:02'],
+                ['Exposed keys redacted', 'Secrets safe', '09:04'],
+                ['Surgical repairs applied', '12 diffs · zero rebuilds', '09:06'],
+                ['Behavior tests passed', '9 of 9 verified live', '09:08'],
               ].map(([title, status, time], index) => (
                 <div key={title} className="grid grid-cols-[36px_1fr_auto] items-center gap-3 rounded-2xl bg-white/[.03] p-4">
                   <span className="grid size-9 place-items-center rounded-full bg-emerald-400/10 text-emerald-300"><Check size={16} /></span>
@@ -1007,7 +1007,7 @@ function ExecutionProof() {
                 </div>
               ))}
             </div>
-            <div className="mt-4 rounded-2xl border border-[#FFD700]/20 bg-[#FFD700]/[.05] p-4 text-sm font-bold text-white/70">1 confirmed result · 1 credit charged · 0 duplicates</div>
+            <div className="mt-4 rounded-2xl border border-[#FFD700]/20 bg-[#FFD700]/[.05] p-4 text-sm font-bold text-white/70">1 confirmed result · 0 destructive edits · rollback saved</div>
           </div>
         </div>
       </div>
@@ -1085,9 +1085,11 @@ function Pricing() {
   const { user } = useAuth()
   const [yearly, setYearly] = useState(false)
   const plans = [
-    { id: 'healer_starter', name: 'HEALER STARTER', price: 19, annualPrice: 190, details: '10 App Scans (report only, no touch) + 3 Video Restorations (MrBeast style) + PDF Audit Report', featured: false },
-    { id: 'healer_pro', name: 'HEALER PRO', price: 49, annualPrice: 490, details: '50 Full App Restorations (we heal, not just report) + 25 Video Restorations (MrBeast, IShowSpeed, Malva styles) + List 5 Restored Items For Sale (10% fee)', featured: true },
-    { id: 'healer_empire', name: 'HEALER EMPIRE', price: 99, annualPrice: 990, details: 'UNLIMITED Restorations + All Styles + Unlimited Market Listings + API Access + Priority Healing + White-label Reports', featured: false },
+    { id: 'healer_lite', name: 'HEALER LITE', price: 9, annualPrice: 90, details: '1 site · 5 fixes/month · Read-only scans, full heals + PDF audit report', featured: false },
+    { id: 'healer_starter', name: 'HEALER STARTER', price: 19, annualPrice: 190, details: '3 sites · 15 fixes/month · App scans + reports + video restorations (MrBeast style)', featured: false },
+    { id: 'healer_pro', name: 'HEALER PRO', price: 49, annualPrice: 490, details: '10 sites · Unlimited fixes · Full app restorations + all styles + sell restored items (10% fee)', featured: true },
+    { id: 'healer_business', name: 'HEALER BUSINESS', price: 99, annualPrice: 990, details: '25 sites · Priority healing queue · Everything in Pro, faster + white-label reports', featured: false },
+    { id: 'healer_enterprise', name: 'HEALER ENTERPRISE', price: 199, annualPrice: 1990, details: 'Unlimited sites & fixes · Everything unlocked · API access + dedicated support', featured: false },
   ]
 
   return (
@@ -1119,7 +1121,7 @@ function Pricing() {
           <p className="mt-4 text-sm text-white/45">Annual billing saves 2 months.</p>
         </div>
 
-        <div className="mt-14 grid gap-5 md:grid-cols-3">
+        <div className="mt-14 grid gap-5 sm:grid-cols-2 lg:grid-cols-5">
           {plans.map((plan) => (
             <motion.article
               whileHover={{ y: -6 }}
@@ -1257,9 +1259,9 @@ export default function Landing() {
       <Header />
       <main className="overflow-x-clip overflow-y-visible">
         <Hero />
-        <IntegrationsStrip />
         <InteractiveOutcomeDemo />
         <Problem />
+        <RoiAngle />
         <UseCases />
         <HowItWorks />
         <ScrollDemo />
