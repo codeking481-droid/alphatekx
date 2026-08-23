@@ -58,31 +58,40 @@ if (boot[0]) {
   console.log('recoverScript action:', rec.action, rec.steps, '| out len:', (rec.code || '').length)
 }
 
-// FULL FLOW: repeated unwrap (like the pipeline now does) + repair
+// Damage report for a given URL
+const targetUrl = process.argv[2] || 'https://alphatekx.name.ng/app/aii'
 {
-  let html = body
-  let levels = 0
+  let h = body
+  let lv = 0
   for (;;) {
-    const e = extractEmbeddedDocument(html)
-    if (!e || levels >= 5) break
-    html = e.html
-    levels++
+    const e = extractEmbeddedDocument(h)
+    if (!e || lv >= 5) break
+    h = e.html
+    lv++
   }
-  console.log('\n=== FULL FLOW ===')
-  console.log('unwrap levels:', levels, '| innermost bytes:', html.length)
-  console.log('innermost is broken site:', html.includes('undefinedFunction'), '| still a shell:', html.includes('__alphaState'))
-  const r2 = await repairBrokenHtml(html, { baseUrl: url, allowNetwork: false })
-  console.log('final bytes:', r2.html.length, '| tally:', JSON.stringify(r2.tally))
-  console.log('final checks:', {
-    brokenGone: !/undefinedFunction\s*\(/.test(r2.html) && !/webpackJsonp\s*\(/.test(r2.html) && !/undefined\.apply\s*\(/.test(r2.html),
-    deadGone: !r2.html.includes('this-stylesheet-does-not-exist'),
-    noShell: !r2.html.includes('__alphaState') && !r2.html.includes('alpha-app'),
-    scriptsParse: [...r2.html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)]
-      .filter((m) => !/\bsrc\s*=/.test(m[1]) && !/ld\+json/.test(m[1]))
-      .every((m) => { try { new Function(m[2]); return true } catch { return false } }),
-  })
-  await import('node:fs').then((fs) => fs.writeFileSync(new URL('../data/debug-live-final.html', import.meta.url), r2.html))
-  await import('node:fs').then((fs) => fs.writeFileSync(new URL('../data/debug-innermost.html', import.meta.url), html))
-  console.log('innermost head:', JSON.stringify(html.slice(0, 400)))
-  console.log('innermost tail:', JSON.stringify(html.slice(-300)))
+  const fs3 = await import('node:fs')
+  fs3.writeFileSync(new URL('../data/report-inner.html', import.meta.url), h)
+
+  console.log('\n=== DAMAGE REPORT ===')
+  const checks = {
+    'unclosed CSS comment': /\/\*(?:(?!\/\*)[\s\S]*?)$(?![\s\S]*\*\/)/m.test(h) && (h.match(/\/\*/g) || []).length > (h.match(/\*\//g) || []).length,
+    'CSS brace imbalance': (h.match(/\{/g) || []).length !== (h.match(/\}/g) || []).length,
+    'broken <img> (no alt)': /<img(?![^>]*alt=)[^>]*>/i.test(h),
+    'dead/fake URLs': (h.match(/https?:\/\/[^"'\s>]+/g) || []).filter((u) => /(does-not-exist|fake|nonexistent|not-exist|example-broken|invalid)/i.test(u)),
+    'inline onclick handlers': (h.match(/\son[a-z]+\s*=/gi) || []).length,
+    'duplicate ids': (() => { const ids = [...h.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]); return ids.filter((v, i, a) => a.indexOf(v) !== i) })(),
+    'stray text after </html>': (() => { const m = h.match(/<\/html>\s*([\s\S]+)$/i); return m ? JSON.stringify(m[1].slice(0, 60)) : false })(),
+    'meta refresh redirect': /http-equiv=["']?refresh/i.test(h),
+    'mixed content (http://)': (h.match(/(?:src|href)=["']http:\/\/[^"']+["']/gi) || []).length,
+    'self-closing <script/>': /<script[^>]*\/\s*>/i.test(h),
+    'empty href': /href=["']\s*["']/i.test(h),
+    'broken table structure': /<table[\s\S]*?<\/table>/i.test(h) && (() => { const t = h.match(/<table[\s\S]*?<\/table>/i)[0]; return (t.match(/<tr\b/gi) || []).length !== (t.match(/<\/tr>/gi) || []).length })(),
+    'unclosed <div>': (() => { const o = (h.match(/<div\b/gi) || []).length; const c = (h.match(/<\/div>/gi) || []).length; return o !== c ? `${o} open vs ${c} close` : false })(),
+    'undefined fn calls': (h.match(/\b(?:undefinedFunction|brokenFunction\w*|webpackJsonp)\s*\(/g) || []),
+    'unterminated JS strings': (() => { let n = 0; for (const m of h.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)) { const code = m[1]; for (const line of code.split('\n')) { const q = line.match(/["']/g) || []; if (q.length % 2 === 1) n++ } } return n || false })(),
+  }
+  for (const [k, v] of Object.entries(checks)) {
+    const hit = v === false || v == null ? 'clean' : (Array.isArray(v) ? (v.length ? `HIT ×${v.length}: ${v.slice(0, 3).join(' | ').slice(0, 100)}` : 'clean') : `HIT: ${v}`)
+    console.log(`  ${hit === 'clean' ? '·' : '✖'} ${k}: ${hit}`)
+  }
 }

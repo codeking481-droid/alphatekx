@@ -3,6 +3,7 @@ import { ArrowLeft, Check, CreditCard, Crown, Zap, Loader2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { supabase } from '../lib/supabase'
+import PlanBadge, { PLAN_LABELS } from '../components/PlanBadge'
 
 type Plan = { id: string; packId: string; name: string; price: number; credits: number; features: string[]; recommended?: boolean }
 
@@ -15,10 +16,12 @@ const PLANS: Plan[] = [
 ]
 
 export default function Billing() {
-  const { user, profile } = useAuth()
+  const { user, profile, refreshProfile } = useAuth()
   const [currentPlan, setCurrentPlan] = useState<string>(profile?.plan || 'free')
   const [credits, setCredits] = useState<number>(profile?.credits ?? 10)
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null)
+  const [paidConfirmation, setPaidConfirmation] = useState<{ plan: string; amountUsd: number; reference: string } | null>(null)
+  const [confirmingPayment, setConfirmingPayment] = useState(false)
 
   useEffect(() => {
     if (profile) {
@@ -26,6 +29,49 @@ export default function Billing() {
       setCredits(profile.credits ?? 10)
     }
   }, [profile])
+
+  // Payment just returned from Paystack — confirm it and SHOW what was paid for.
+  useEffect(() => {
+    let cancelled = false
+    let raw: string | null = null
+    try { raw = localStorage.getItem('alphatekx:pending-payment') } catch {}
+    if (!raw) return
+    let pending: { reference?: string; planId?: string; amountKobo?: number }
+    try { pending = JSON.parse(raw) } catch { return }
+    if (!pending?.reference) return
+
+    setConfirmingPayment(true)
+    ;(async () => {
+      try {
+        const { data: { session } } = await supabase?.auth.getSession() ?? { data: { session: null } }
+        const res = await fetch('/api/paystack/verify', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+          },
+          body: JSON.stringify({ reference: pending.reference, plan: pending.planId, amount: pending.amountKobo }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!cancelled && res.ok && (data?.success ?? true)) {
+          setPaidConfirmation({
+            plan: String(pending.planId || ''),
+            amountUsd: Number(pending.amountKobo || 0) / 100,
+            reference: String(pending.reference),
+          })
+          try { localStorage.setItem('alphatekx_plan', String(pending.planId || 'free')) } catch {}
+        }
+      } catch {} finally {
+        try { localStorage.removeItem('alphatekx:pending-payment') } catch {}
+        if (!cancelled) {
+          setConfirmingPayment(false)
+          refreshProfile?.()
+        }
+      }
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleUpgrade = async (plan: Plan) => {
     if (!user) return
@@ -94,6 +140,33 @@ export default function Billing() {
           You&apos;re on the <span className="font-semibold text-white/70 capitalize">{currentPlan}</span> plan
         </p>
       </header>
+
+      {confirmingPayment && (
+        <div className="mb-6 flex items-center gap-2 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4 text-sm text-white/60">
+          <Loader2 size={15} className="animate-spin text-[#D6FF00]" />
+          Confirming your payment…
+        </div>
+      )}
+
+      {paidConfirmation && (
+        <div className="mb-8 overflow-hidden rounded-2xl border border-[#FFD700]/40 bg-gradient-to-br from-[#FFD700]/[0.12] via-[#FFD700]/[0.04] to-transparent p-5">
+          <div className="flex flex-wrap items-center gap-4">
+            <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-gradient-to-r from-[#FFD700] to-[#D4A017] text-black shadow-[0_0_24px_rgba(255,215,0,.45)]">
+              <Crown size={22} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="flex items-center gap-2 font-black text-white">
+                Payment confirmed — welcome to {PLAN_LABELS[paidConfirmation.plan] || paidConfirmation.plan}
+                <PlanBadge plan={paidConfirmation.plan} />
+              </p>
+              <p className="mt-1 break-all text-sm text-white/60">
+                You paid ${paidConfirmation.amountUsd} (ref {paidConfirmation.reference.slice(0, 22)}…) — your golden badge is now live next to your name.
+              </p>
+            </div>
+            <Check size={20} className="shrink-0 text-emerald-300" />
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {PLANS.map((plan) => {

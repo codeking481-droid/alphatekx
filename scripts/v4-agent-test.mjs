@@ -15,6 +15,7 @@
 
 import { spawn } from 'node:child_process'
 import { createServer } from 'node:http'
+import { rmSync } from 'node:fs'
 import { resolve, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -98,6 +99,9 @@ const fixture = createServer((req, res) => {
 
 // ─── SSE pipeline driver ──────────────────────────────────────────────────────
 async function runPipeline(targetUrl, mode = 'full', pages = 0) {
+  // This suite tests the restoration engine, not billing quotas — reset the
+  // free-trial counters before each run so full/whole-site runs aren't 402'd.
+  try { rmSync(join(root, 'data', 'user-restore-quotas.json'), { force: true }) } catch {}
   const events = []
   const pagesParam = pages > 0 ? `&pages=${pages}` : ''
   const response = await fetch(`http://127.0.0.1:${PORT}/api/restore/v3?url=${encodeURIComponent(targetUrl)}&mode=${mode}${pagesParam}`)

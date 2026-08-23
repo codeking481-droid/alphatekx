@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, MessageSquare, CreditCard, Trash2, Clock, Plus, Rocket } from 'lucide-react'
+import { X, MessageSquare, CreditCard, Trash2, Clock, Plus, Rocket, LogOut } from 'lucide-react'
 import { useAuth } from '../../lib/auth'
 import { getChatThreads, deleteChatThread, subscribeChatHistory, type ChatThread } from '../../lib/chatHistoryStore'
+import PlanBadge, { PLAN_LABELS } from '../PlanBadge'
 
 export default function HamburgerSidebar({
   open,
@@ -19,9 +20,9 @@ export default function HamburgerSidebar({
   activeThreadId?: string
 }) {
   const [threads, setThreads] = useState<ChatThread[]>([])
-  const { profile } = useAuth()
-  const credits = profile?.credits ?? 0
+  const { profile, user, signOut } = useAuth()
   const currentPlan = profile?.plan || 'free'
+  const planLabel = PLAN_LABELS[String(currentPlan).toLowerCase()] || 'FREE'
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -66,8 +67,11 @@ export default function HamburgerSidebar({
             className="fixed inset-y-0 left-0 z-50 flex w-[300px] max-w-[85vw] flex-col border-r border-white/[0.06] bg-[#0D0D0D]"
           >
             <div className="flex h-14 items-center justify-between border-b border-white/[0.06] px-4">
-              <span className="font-syne text-sm font-bold tracking-wide text-white">
-                ALPHATEKX
+              <span className="flex items-center gap-2">
+                <span className="font-syne text-sm font-bold tracking-wide text-white">
+                  ALPHATEKX
+                </span>
+                <PlanBadge plan={currentPlan} />
               </span>
               <button
                 onClick={onClose}
@@ -100,7 +104,7 @@ export default function HamburgerSidebar({
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-[13px] font-bold text-white">Billing</span>
-                  <span className="block text-[10px] text-white/30">{currentPlan === 'free' ? 'Free plan' : `${currentPlan} plan`} · {credits} credits</span>
+                  <span className="block text-[10px] text-white/30">{planLabel} plan · manage sites & fixes</span>
                 </span>
               </button>
             </div>
@@ -165,6 +169,32 @@ export default function HamburgerSidebar({
                     ))}
                   </div>
                 )}
+              </div>
+            </div>
+
+            {/* Profile footer — plan badge + sign out */}
+            <div className="border-t border-white/[0.06] p-3">
+              <div className="flex items-center gap-3 rounded-xl bg-white/[0.02] px-3 py-2.5">
+                <span className="grid size-9 shrink-0 place-items-center rounded-full bg-gradient-to-br from-[#FFD700] to-[#6B21A8] text-[12px] font-black text-black">
+                  {(user?.email || 'A').slice(0, 1).toUpperCase()}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-1.5">
+                    <span className="truncate text-[12px] font-bold text-white">{user?.email || 'Guest'}</span>
+                  </span>
+                  <span className="mt-0.5 flex items-center gap-1.5">
+                    <PlanBadge plan={currentPlan} />
+                    <span className="text-[10px] text-white/25">{planLabel} member</span>
+                  </span>
+                </span>
+                <button
+                  onClick={() => { onClose(); void signOut() }}
+                  className="grid size-8 shrink-0 place-items-center rounded-lg text-white/30 transition hover:bg-red-500/10 hover:text-red-300"
+                  title="Log out"
+                  aria-label="Log out"
+                >
+                  <LogOut size={15} />
+                </button>
               </div>
             </div>
           </motion.aside>

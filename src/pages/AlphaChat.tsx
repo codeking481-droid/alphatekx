@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Menu, Send, Square, User, Bot, Sparkles, Paperclip, X, Film, Loader2 } from 'lucide-react'
+import { Menu, Send, Square, User, Bot, Sparkles, Paperclip, X, Film, Loader2, Mic, LogOut } from 'lucide-react'
+import PlanBadge from '../components/PlanBadge'
 import { motion, AnimatePresence } from 'framer-motion'
 import ReactMarkdown from 'react-markdown'
 import ChatAuthWrapper from '../components/auth/ChatAuthWrapper'
@@ -168,7 +169,7 @@ function Markdown({ children }: { children: string }) {
 }
 
 function ChatContent() {
-  const { user, profile } = useAuth()
+  const { user, profile, session, signOut } = useAuth()
   const [threads, setThreads] = useState<ChatThread[]>([])
   const [activeThread, setActiveThread] = useState<ChatThread | null>(null)
   const [messages, setMessages] = useState<AlphaMessage[]>([])
@@ -235,12 +236,20 @@ function ChatContent() {
       lastIntentRef.current = mode === 'full' ? 'full' : 'scan'
       autoFixTriggeredRef.current = false
 
+      const authSuffix = session?.access_token ? `&token=${encodeURIComponent(session.access_token)}` : ''
       const streamUrl = isGitHubRepoUrl(url)
-        ? `/api/restore/v2?url=${encodeURIComponent(url)}&mode=${mode}&message=${encodeURIComponent(sendText)}`
-        : `/api/restore/v3?url=${encodeURIComponent(url)}&mode=${mode}${wholeSite ? '&pages=15' : ''}&message=${encodeURIComponent(sendText)}`
+        ? `/api/restore/v2?url=${encodeURIComponent(url)}&mode=${mode}&message=${encodeURIComponent(sendText)}${authSuffix}`
+        : `/api/restore/v3?url=${encodeURIComponent(url)}&mode=${mode}${wholeSite ? '&pages=15' : ''}&message=${encodeURIComponent(sendText)}${authSuffix}`
 
       const res = await fetch(streamUrl, { signal: abortRef.current.signal })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`
+        try {
+          const j = await res.json()
+          if (j?.error) msg = String(j.error)
+        } catch {}
+        throw new Error(msg)
+      }
 
       const reader = res.body?.getReader()
       if (!reader) throw new Error('No response body')
@@ -1182,8 +1191,20 @@ function ChatContent() {
           <span className="font-syne text-sm font-extrabold tracking-[0.14em] text-white">
             ALPHATEKX
           </span>
+          <PlanBadge plan={profile?.plan} />
         </div>
-        <div className="size-9" />
+        {user ? (
+          <button
+            onClick={() => void signOut()}
+            title="Log out"
+            aria-label="Log out"
+            className="grid size-9 place-items-center rounded-xl border border-white/[0.06] text-white/40 transition hover:border-red-400/30 hover:text-red-300"
+          >
+            <LogOut size={16} />
+          </button>
+        ) : (
+          <div className="size-9" />
+        )}
       </header>
 
       {/* Hamburger Sidebar */}
@@ -1194,6 +1215,13 @@ function ChatContent() {
         onNewChat={handleNewChat}
         activeThreadId={activeThread?.id}
       />
+
+      {/* One-time hint — tells the user exactly what to do */}
+      <div className="pointer-events-none fixed inset-x-0 top-14 z-20 px-4">
+        <div className="pointer-events-auto">
+          <HintBar />
+        </div>
+      </div>
 
       {/* Chat Area */}
       <div
@@ -1261,6 +1289,7 @@ function ChatContent() {
                   }}
                 />
                 {!input && attachedFiles.length === 0 && <AnimatedPlaceholder />}
+                <MicButton onText={(t) => setInput((v) => (v ? `${v} ${t}` : t))} disabled={isGenerating || uploading} />
                 <button
                   onClick={() => void handleSend()}
                   disabled={(!input.trim() && attachedFiles.length === 0) || isGenerating || uploading}
@@ -1661,6 +1690,7 @@ function ChatContent() {
                 }}
               />
               {!input && attachedFiles.length === 0 && <AnimatedPlaceholder />}
+              <MicButton onText={(t) => setInput((v) => (v ? `${v} ${t}` : t))} disabled={isGenerating || uploading} />
               <button
                 onClick={() => void handleSend()}
                 disabled={(!input.trim() && attachedFiles.length === 0) || isGenerating || uploading}
@@ -1672,6 +1702,84 @@ function ChatContent() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function MicButton({ onText, disabled }: { onText: (t: string) => void; disabled?: boolean }) {
+  const [listening, setListening] = useState(false)
+  const recRef = useRef<{ stop: () => void } | null>(null)
+  const w = typeof window !== 'undefined' ? (window as unknown as { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown }) : ({} as Record<string, never>)
+  if (!w.SpeechRecognition && !w.webkitSpeechRecognition) return null
+
+  const toggle = () => {
+    if (listening) {
+      try { recRef.current?.stop() } catch {}
+      setListening(false)
+      return
+    }
+    const Ctor = (w.SpeechRecognition || w.webkitSpeechRecognition) as new () => {
+      lang: string; interimResults: boolean; maxAlternatives: number
+      onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null
+      onend: (() => void) | null
+      onerror: (() => void) | null
+      start: () => void; stop: () => void
+    }
+    const rec = new Ctor()
+    rec.lang = navigator.language || 'en-US'
+    rec.interimResults = false
+    rec.maxAlternatives = 1
+    rec.onresult = (e) => {
+      const said = e.results?.[0]?.[0]?.transcript?.trim()
+      if (said) onText(said)
+    }
+    rec.onend = () => setListening(false)
+    rec.onerror = () => setListening(false)
+    recRef.current = rec
+    try {
+      rec.start()
+      setListening(true)
+    } catch {
+      setListening(false)
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      disabled={disabled}
+      title={listening ? 'Listening — click to stop' : 'Speak instead of typing'}
+      aria-label="Voice input"
+      className={`mb-2 grid size-8 shrink-0 place-items-center rounded-xl border transition ${
+        listening
+          ? 'animate-pulse border-red-400/60 bg-red-500/20 text-red-300'
+          : 'border-white/[0.08] text-white/30 hover:border-[#D6FF00]/30 hover:text-[#D6FF00]'
+      } ${disabled ? 'cursor-not-allowed opacity-20' : ''}`}
+    >
+      <Mic size={14} />
+    </button>
+  )
+}
+
+function HintBar() {
+  const [show, setShow] = useState(() => {
+    try { return localStorage.getItem('alphatekx:hint-dismissed') !== '1' } catch { return true }
+  })
+  if (!show) return null
+  return (
+    <div className="mx-auto mb-2 flex max-w-[680px] items-center gap-2 rounded-xl border border-[#D6FF00]/20 bg-[#D6FF00]/[0.05] px-3 py-2 text-[12px] leading-5 text-white/70">
+      <Sparkles size={13} className="shrink-0 text-[#D6FF00]" />
+      <span className="flex-1">
+        <b className="text-white">Tip:</b> paste your broken site link and say <i>“fix my site”</i> — Alpha scans, repairs and verifies it live. Or tap the mic and just ask.
+      </span>
+      <button
+        onClick={() => { try { localStorage.setItem('alphatekx:hint-dismissed', '1') } catch {} setShow(false) }}
+        className="shrink-0 rounded p-1 text-white/30 transition hover:text-white"
+        aria-label="Dismiss hint"
+      >
+        <X size={13} />
+      </button>
     </div>
   )
 }
