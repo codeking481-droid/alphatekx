@@ -833,16 +833,40 @@ function inlineScriptChars(html) {
   return total
 }
 
+// Active (non-commented) script source — comment-stripped so "neutralized"
+// blocks don't masquerade as living code.
+function activeScriptText(html) {
+  let out = ''
+  for (const m of String(html).matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)) {
+    out += m[1].replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|\n)\s*\/\/[^\n]*/g, '$1') + '\n'
+  }
+  return out
+}
+
+function countFunctionDefs(code) {
+  let n = 0
+  n += [...code.matchAll(/\bfunction\s+[A-Za-z_$][\w$]*\s*\(/g)].length
+  n += [...code.matchAll(/\b(?:const|let|var)\s+[A-Za-z_$][\w$]*\s*=\s*(?:async\s*)?(?:function\b|\([^)]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)/g)].length
+  return n
+}
+
 function detectAmputatedBehavior(originalHtml, workingHtml) {
   const origCode = inlineScriptChars(originalHtml)
   const curCode = inlineScriptChars(workingHtml)
   const stuckLoading = />(?:[^<]*\b(?:loading|please wait)[^<]*)<\s*\/(?:div|span|p)>/i.test(String(workingHtml))
   const handlersReferenced = [...String(originalHtml).matchAll(/on(?:click|submit|change|input)=/gi)].length
                      + [...String(originalHtml).matchAll(/addEventListener\s*\(/g)].length
-  const amputated = origCode > 400 && curCode < Math.max(80, origCode * 0.15)
+  // Function-level loss: the strongest amputation signal. If the original
+  // defined real behavior and the repaired page lost most of those
+  // definitions (dropped blocks, stripped handlers), the shell is inert no
+  // matter how many characters of unrelated script survive.
+  const origFns = countFunctionDefs(activeScriptText(originalHtml))
+  const curFns = countFunctionDefs(activeScriptText(workingHtml))
+  const fnLoss = origFns >= 3 && origFns - curFns >= 2 && curFns <= Math.floor(origFns * 0.5)
+  const amputated = (origCode > 400 && curCode < Math.max(80, origCode * 0.15)) || fnLoss
   const inertShell = curCode < 80 && (stuckLoading || handlersReferenced >= 2)
   if (inertShell) return { trigger: true, reason: `page lost its entire behavior layer (${origCode} → ${curCode} chars of script; ${handlersReferenced} handler reference(s)${stuckLoading ? '; stuck loading placeholder' : ''})` }
-  if (amputated) return { trigger: true, reason: `${origCode} → ${curCode} chars of script survived — most of the original behavior was removed during repair` }
+  if (amputated) return { trigger: true, reason: `${origFns} → ${curFns} function definition(s) and ${origCode} → ${curCode} chars of script survived — most of the original behavior was removed during repair` }
   return { trigger: false, reason: '' }
 }
 
@@ -1864,6 +1888,121 @@ export async function runRestorationPipeline({ targetUrl, mode, origin, cookieHe
     return `${behaviorResult.passed}/${behaviorResult.total} behavioral test(s) passed — failing: ${clip(behaviorResult.failed.map((f) => f.name).join(', '), 100)}`
   })
 
+  // ════════ ZERO-ERROR SWEEP — real-browser errors fed back until silent ════════
+  // Behavior tests boot the page in a real browser. If any uncaught JS error
+  // survives every other stage, its EXACT console text becomes a surgical
+  // repair task. Up to two rounds; a round is kept only if live errors drop.
+  let zeroErrorSweeps = 0
+  while (
+    behaviorResult?.available &&
+    behaviorResult.js_errors > 0 &&
+    Array.isArray(behaviorResult.errors) &&
+    behaviorResult.errors.length > 0 &&
+    zeroErrorSweeps < 2 &&
+    multiCallEnabled() &&
+    isLlmRepairConfigured()
+  ) {
+    zeroErrorSweeps += 1
+    let sweepImproved = false
+    const errList = behaviorResult.errors.slice()
+    await chain.step(`zero-error-sweep-${zeroErrorSweeps}`, `Zero-Error Sweep ${zeroErrorSweeps} — ${errList.length} live JS error(s) survived; feeding exact browser output back to the Repair Agent…`, 'brain', async () => {
+      const sweepIssues = errList.map((t, i) => ({
+        id: `SWEEP-${i + 1}`,
+        type: 'runtime_error',
+        severity: 'high',
+        description: `Live browser still reports: ${t}`,
+        before: clip(String(t), 200),
+        fix: 'Rewrite the crashing code path so it cannot throw; preserve intended behavior',
+      }))
+      let swept = await llmRepairBatch({ html: workingHtml, issues: sweepIssues, hostname, memoryContext, cmsNote: await wpNoteFor(diagnosis) }).catch(() => null)
+      if (!swept?.html || !(swept.applied > 0)) {
+        // Provider window likely drained mid-run — one bounded retry after a
+        // short cooldown beats leaving live errors behind.
+        await new Promise((resolve) => setTimeout(resolve, 25_000))
+        swept = await llmRepairBatch({ html: workingHtml, issues: sweepIssues, hostname, memoryContext, cmsNote: await wpNoteFor(diagnosis) }).catch(() => null)
+      }
+      if (!swept?.html || !(swept.applied > 0)) return 'Repair Agent produced no usable patch this round — keeping the safer current version'
+      const recheck = await runBehaviorTests({ html: swept.html }).catch(() => null)
+      if (!recheck || !recheck.available || !(recheck.js_errors < behaviorResult.js_errors)) {
+        return `Patch did not reduce live errors (${recheck ? recheck.js_errors : 'unverifiable'} left) — discarded to protect the working build`
+      }
+      workingHtml = swept.html
+      fs.writeFileSync(path.join(artifactsDir, 'restored.html'), workingHtml, 'utf8')
+      registryPut(restorationId, { id: restorationId, dir: artifactsDir, created, fixedHtml: workingHtml, originalHtml: sanitizeEncoding(originalHtml), finalUrl, hostname })
+      snapshotMilestone(`zero-error sweep ${zeroErrorSweeps}: ${swept.applied} patch(es) · live JS errors ${behaviorResult.js_errors} → ${recheck.js_errors}`)
+      behaviorResult = recheck
+      sweepImproved = true
+      return `${swept.applied} surgical patch(es) adopted — ${recheck.js_errors} live JS error(s) remaining`
+    })
+    if (!sweepImproved) break
+  }
+  if (zeroErrorSweeps > 0) {
+    sendEvent({
+      type: 'behavior_test',
+      data: {
+        total: behaviorResult.total,
+        passed: behaviorResult.passed,
+        failed: behaviorResult.failed,
+        js_errors: behaviorResult.js_errors,
+        notes: behaviorResult.notes,
+        zero_error_sweeps: zeroErrorSweeps,
+      },
+    })
+  }
+
+  // ════════ SECOND CHANCE — rate limits must not leave a shell behind ════════
+  // If the behavior layer is STILL missing at delivery time (typically a
+  // free-tier 429 swallowed the reconstruction mid-run), wait out one fresh
+  // token window and try exactly once more. If it still cannot be rebuilt,
+  // the honesty gate reports the truth instead of pretending.
+  {
+    const ampLate = detectAmputatedBehavior(originalHtml, workingHtml)
+    if (
+      behaviorResult?.available &&
+      ampLate.trigger &&
+      multiCallEnabled() &&
+      isLlmRepairConfigured() &&
+      reconAttempts < 2
+    ) {
+      await chain.step('behavior-rebuild-retry', 'Interactivity is still missing — waiting ~45s for a fresh AI budget window, then retrying the behavior rebuild…', 'brain', async () => {
+        reconAttempts += 1
+        await new Promise((resolve) => setTimeout(resolve, 45_000))
+        let r2 = await runBehaviorReconstruction({ originalHtml, html: workingHtml, hostname, url: finalUrl })
+        let verdict2 = r2.adopted ? await validateBehaviorLayer(r2.html) : { ok: true }
+        if (r2.adopted && !verdict2.ok) {
+          console.log(`⚠️ [RECON-RETRY] Candidate failed validation (${verdict2.reason}) — healing round…`)
+          const healed = await runBehaviorReconstruction({ originalHtml, html: workingHtml, hostname, url: finalUrl, errors: verdict2.errors || [], previousCode: r2.code })
+          if (healed.adopted) {
+            const v3 = await validateBehaviorLayer(healed.html)
+            if (v3.ok || countBehaviorFails(v3) < countBehaviorFails(verdict2)) {
+              r2 = healed
+              verdict2 = v3.ok ? v3 : verdict2
+            }
+          }
+        }
+        if (!r2.adopted) return 'Retry could not rebuild the behavior layer — the report will say so honestly'
+        workingHtml = r2.html
+        fs.writeFileSync(path.join(artifactsDir, 'restored.html'), workingHtml, 'utf8')
+        registryPut(restorationId, { id: restorationId, dir: artifactsDir, created, fixedHtml: workingHtml, originalHtml: sanitizeEncoding(originalHtml), finalUrl, hostname })
+        snapshotMilestone('second chance: behavior layer rebuilt and validated')
+        const recheck = await runBehaviorTests({ html: workingHtml }).catch(() => null)
+        if (recheck?.available && recheck.js_errors <= (behaviorResult?.js_errors ?? 0)) behaviorResult = recheck
+        sendEvent({
+          type: 'behavior_test',
+          data: {
+            total: behaviorResult.total,
+            passed: behaviorResult.passed,
+            failed: behaviorResult.failed,
+            js_errors: behaviorResult.js_errors,
+            notes: behaviorResult.notes,
+            second_chance_reconstruction: true,
+          },
+        })
+        return `Behavior layer rebuilt on the retry — ${behaviorResult.passed}/${behaviorResult.total} behavioral test(s), ${behaviorResult.js_errors} live error(s)`
+      })
+    }
+  }
+
   // ════════ STEP 7: DELIVER ════════
   const deliverables = await chain.step('deliver', 'Packaging your restored site — 4 ways to receive it…', 'package', async () => {
     // Real git history: original → every repair milestone → final, each with
@@ -1909,6 +2048,7 @@ export async function runRestorationPipeline({ targetUrl, mode, origin, cookieHe
         per_cycle: cycleHistory,
         ai_repairs_applied: aiAppliedTotal,
         cms: diagnosis.cms || null,
+        zero_error_sweeps: zeroErrorSweeps,
         render_probe: renderProbe ? { ok: renderProbe.ok, blank_render: renderProbe.blankRender, stats: renderProbe.stats } : null,
         memory_used: Boolean(memory && memory.scans > 0),
         strategy_plan: strategyPlan ? { source: strategyPlan.source, tasks: strategyPlan.tasks.length, strategy: strategyPlan.strategy } : null,

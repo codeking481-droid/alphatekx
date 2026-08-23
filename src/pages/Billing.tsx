@@ -7,11 +7,11 @@ import { supabase } from '../lib/supabase'
 type Plan = { id: string; packId: string; name: string; price: number; credits: number; features: string[]; recommended?: boolean }
 
 const PLANS: Plan[] = [
-  { id: 'lite_9', packId: 'lite_9', name: 'Lite', price: 9, credits: 150, features: ['150 credits/month', '1 site', '5 fixes / month', 'Scan + report + full heal'] },
-  { id: 'video_19', packId: 'video_19', name: 'Starter', price: 19, credits: 400, features: ['400 credits/month', '3 sites', '15 fixes / month', '10 App Scans + Reports', '3 Video Restorations'] },
-  { id: 'video_49', packId: 'video_49', name: 'Pro', price: 49, credits: 800, features: ['800 credits/month', '10 sites', 'Unlimited fixes', '50 Full App Restorations', '25 Video Restorations'], recommended: true },
-  { id: 'video_99', packId: 'video_99', name: 'Business', price: 99, credits: 1200, features: ['1,200 credits/month', '25 sites', 'Priority healing queue', 'Unlimited Restorations', 'All video styles'] },
-  { id: 'enterprise_199', packId: 'enterprise_199', name: 'Enterprise', price: 199, credits: 5000, features: ['5,000 credits/month', 'Unlimited sites & fixes', 'Everything unlocked', 'Priority queue + API access', 'White-label reports'] },
+  { id: 'lite_9', packId: 'lite_9', name: 'Lite', price: 9, credits: 150, features: ['1 site', '5 fixes / month', 'Scan + report + full heal'] },
+  { id: 'video_19', packId: 'video_19', name: 'Starter', price: 19, credits: 400, features: ['3 sites', '15 fixes / month', '10 App Scans + Reports', '3 Video Restorations'] },
+  { id: 'video_49', packId: 'video_49', name: 'Pro', price: 49, credits: 800, features: ['10 sites', 'Unlimited fixes', '50 Full App Restorations', '25 Video Restorations'], recommended: true },
+  { id: 'video_99', packId: 'video_99', name: 'Business', price: 99, credits: 1200, features: ['25 sites', 'Priority healing queue', 'Unlimited Restorations', 'All video styles'] },
+  { id: 'enterprise_199', packId: 'enterprise_199', name: 'Enterprise', price: 199, credits: 5000, features: ['Unlimited sites & fixes', 'Everything unlocked', 'Priority queue + API access', 'White-label reports'] },
 ]
 
 export default function Billing() {
@@ -91,7 +91,7 @@ export default function Billing() {
         <p className="text-xs uppercase tracking-[.2em] text-[#D6FF00]">Billing</p>
         <h1 className="mt-2 text-3xl font-bold text-white">Manage your plan</h1>
         <p className="mt-2 text-sm text-white/50">
-          {credits} credits remaining on <span className="font-semibold text-white/70 capitalize">{currentPlan}</span> plan
+          You&apos;re on the <span className="font-semibold text-white/70 capitalize">{currentPlan}</span> plan
         </p>
       </header>
 
@@ -131,8 +131,6 @@ export default function Billing() {
                 <span className="text-3xl font-black text-white">${plan.price}</span>
                 <span className="text-sm text-white/30">/month</span>
               </div>
-
-              <p className="mb-4 text-xs text-white/40">{plan.credits.toLocaleString()} credits/month</p>
 
               <ul className="mb-6 flex-1 space-y-2">
                 {plan.features.map((feature, i) => (

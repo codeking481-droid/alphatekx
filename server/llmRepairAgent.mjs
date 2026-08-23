@@ -706,20 +706,23 @@ async function chatText(system, user, { maxTokens = 8000 } = {}) {
 }
 
 /**
- * chatText plus one patient retry: free-tier per-minute token budgets reset
+ * chatText plus patient retries: free-tier per-minute token budgets reset
  * quickly, so when EVERY key/model is rate-limited it pays to wait out the
- * window and make one final pass before giving up.
+ * window and try again — up to three waits (~90s worst case) before giving
+ * up. A transient 429 should never be the reason a restoration stays broken.
  */
 async function chatTextWithRetry(system, user, opts = {}) {
   let answer = await chatText(system, user, opts)
   if (answer) return answer
-  const fail = llmLastError()
-  if (/tokens per minute|rate limit/i.test(fail)) {
+  for (let patience = 0; patience < 3; patience++) {
+    const fail = llmLastError()
+    if (!/tokens per minute|rate limit|HTTP 429/i.test(fail)) break
     const waitMatch = /try again in ([\d.]+)s/i.exec(fail)
     const waitMs = Math.min(60_000, Math.max(15_000, Math.ceil(Number(waitMatch?.[1] || 20) * 1000)))
-    console.log(`⏳ [LLM] Rate-limited across all keys — waiting ${(waitMs / 1000).toFixed(0)}s for budget reset, then one more pass…`)
+    console.log(`⏳ [LLM] Rate-limited across all keys — waiting ${(waitMs / 1000).toFixed(0)}s for budget reset (patience ${patience + 1}/3), then trying again…`)
     await new Promise(r => setTimeout(r, waitMs))
-    return chatText(system, user, opts)
+    answer = await chatText(system, user, opts)
+    if (answer) return answer
   }
   return null
 }

@@ -45,7 +45,7 @@ export const PLANS = {
     maxActiveAutomations: 10,
     monthlyVideos: 10,
     videoMaxDurationSec: 5 * 60,
-    features: ['400 credits', '10 videos / month, max 5 mins', 'Up to 10 automations'],
+    features: ['3 sites, 15 fixes / month', 'App scans + reports', 'Videos up to 5 mins'],
   },
   video_49: {
     id: 'video_49',
@@ -57,7 +57,7 @@ export const PLANS = {
     monthlyVideos: 30,
     videoMaxDurationSec: 8 * 60,
     schedulerDays: 7,
-    features: ['800 credits', '30 videos / month, max 8 mins', '7-day scheduler', 'Up to 30 automations'],
+    features: ['10 sites, unlimited fixes', 'Videos up to 8 mins', '7-day scheduler'],
   },
   video_99: {
     id: 'video_99',
@@ -70,7 +70,7 @@ export const PLANS = {
     videoMaxDurationSec: 12 * 60,
     vault: true,
     priority: true,
-    features: ['1,200 credits', '25 sites, unlimited fixes', 'Priority healing queue', 'Vault saving', 'Unlimited automations'],
+    features: ['25 sites, unlimited fixes', 'Priority healing queue', 'Vault saving', 'Unlimited automations'],
   },
   lite_9: {
     id: 'lite_9',
@@ -81,7 +81,7 @@ export const PLANS = {
     maxActiveAutomations: 3,
     monthlyVideos: 5,
     videoMaxDurationSec: 5 * 60,
-    features: ['150 credits', '1 site, 5 fixes / month', 'Scan + report + full heal'],
+    features: ['1 site, 5 fixes / month', 'Scan + report + full heal'],
   },
   enterprise_199: {
     id: 'enterprise_199',
@@ -96,7 +96,7 @@ export const PLANS = {
     apiAccess: true,
     whiteLabel: true,
     priority: true,
-    features: ['5,000 credits', 'Unlimited sites and fixes', 'Everything unlocked', 'Priority healing queue', 'API access + white-label reports'],
+    features: ['Unlimited sites and fixes', 'Everything unlocked', 'Priority healing queue', 'API access + white-label reports'],
   },
 }
 

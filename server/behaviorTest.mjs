@@ -158,6 +158,7 @@ export async function runBehaviorTests(input = {}) {
     record('buttons_click_cleanly', buttonFailures === 0, buttonFailures ? `${buttonFailures} click(s) threw errors` : `${Math.min(buttons.length, 5)} clickable element(s) exercised`)
 
     out.js_errors = jsErrors.length
+    out.errors = jsErrors.slice(0, 6)
     if (out.js_errors > 0) out.notes.push(`${out.js_errors} JS error(s) observed during the session.`)
     await page.close().catch(() => {})
   } catch (err) {
