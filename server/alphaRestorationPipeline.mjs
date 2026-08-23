@@ -902,6 +902,36 @@ async function validateBehaviorLayer(candidateHtml) {
 }
 const countBehaviorFails = (v) => (Array.isArray(v?.fails) ? v.fails.length : v?.ok ? 0 : 1)
 
+// A behavior layer is only shippable if it introduces NO fatal regressions:
+// uncaught crashes or a still-stuck shell are worse than no layer at all.
+function layerAcceptable(verdict) {
+  if (!verdict) return false
+  if (verdict.ok) return true
+  const fails = Array.isArray(verdict?.fails) ? verdict.fails.map((f) => f?.name || f) : []
+  const fatal = ['boots_without_crashes', 'dynamic_content_loads', 'dom_renders']
+  const jsErrors = Number(verdict?.js_errors ?? 0)
+  return !fails.some((f) => fatal.includes(f)) && jsErrors === 0
+}
+
+// FINAL SYNTAX GATE — Alpha never ships JavaScript that cannot parse. Whatever
+// upstream stage produced it, an unparseable inline script is neutralized.
+function stripBrokenInlineScripts(html) {
+  let removed = 0
+  const out = String(html).replace(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi, (full, attrs, body) => {
+    if (!String(body).trim()) return full
+    if (/\bsrc\s*=/i.test(attrs || '')) return full
+    try {
+      // eslint-disable-next-line no-new-func
+      new Function(body)
+      return full
+    } catch {
+      removed += 1
+      return `<script${attrs}>/* Alpha safety gate: removed inline script with unrecoverable syntax error */</script>`
+    }
+  })
+  return { html: out, removed }
+}
+
 // ─── STEP 4: Repair execution ────────────────────────────────────────────────
 
 const PLACEHOLDER_SRC = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' width='400' height='300'><rect width='100%' height='100%' fill='#e8eaed'/><path d='M170 130a18 18 0 1 1 36 0 18 18 0 0 1-36 0zm-45 105l55-70 35 42 25-27 45 55H125z' fill='#aab2bd'/><text x='200' y='265' font-family='sans-serif' font-size='13' fill='#757d89' text-anchor='middle'>Image unavailable</text></svg>`)}`
@@ -1708,21 +1738,30 @@ export async function runRestorationPipeline({ targetUrl, mode, origin, cookieHe
       if (amp.trigger && multiCallEnabled() && isLlmRepairConfigured() && reconAttempts < 2) {
         await chain.step(`behavior-rebuild${suffix}`, `${prefix}Rebuilding the lost JavaScript behavior layer — multi-call reconstruction…`, 'brain', async () => {
           reconAttempts++
+          const htmlBeforeLayer = workingHtml
           let r = await runBehaviorReconstruction({ originalHtml, html: workingHtml, hostname, url: finalUrl })
           // VALIDATE in a real browser — a compiled script can still crash at boot.
           let verdict = r.adopted ? await validateBehaviorLayer(r.html) : { ok: true }
-          if (r.adopted && !verdict.ok) {
+          if (r.adopted && !layerAcceptable(verdict)) {
             console.log(`⚠️ [RECON] Candidate failed validation (${verdict.reason}) — healing round with the runtime errors…`)
             const healed = await runBehaviorReconstruction({ originalHtml, html: workingHtml, hostname, url: finalUrl, errors: verdict.errors || [], previousCode: r.code })
             if (healed.adopted) {
               const v2 = await validateBehaviorLayer(healed.html)
-              if (v2.ok || countBehaviorFails(v2) < countBehaviorFails(verdict)) {
+              if (layerAcceptable(v2) || countBehaviorFails(v2) < countBehaviorFails(verdict)) {
                 r = healed
-                verdict = v2.ok ? v2 : verdict
+                verdict = v2
               }
             }
           }
-          if (!r.adopted) return `Behavior reconstruction unavailable — ${clip(r.notes.join(' | ') || 'no usable output', 140)}`
+          // NEVER ship a layer that fails live validation — revert to the
+          // pre-layer page and report honestly instead.
+          if (!r.adopted || !layerAcceptable(verdict)) {
+            workingHtml = htmlBeforeLayer
+            if (r.adopted) {
+              return `Behavior layer candidate failed live validation (${clip(verdict.reason || 'behavior gaps', 90)}) — discarded rather than ship broken interactivity`
+            }
+            return `Behavior reconstruction unavailable — ${clip(r.notes.join(' | ') || 'no usable output', 140)}`
+          }
           workingHtml = r.html
           behaviorRebuilt = { functions: r.functions || [], validated: verdict.ok }
           snapshotMilestone(`cycle ${cycle}: behavior layer reconstructed (${(r.functions || []).length} functions)`)
@@ -1966,21 +2005,27 @@ export async function runRestorationPipeline({ targetUrl, mode, origin, cookieHe
     ) {
       await chain.step('behavior-rebuild-retry', 'Interactivity is still missing — waiting ~45s for a fresh AI budget window, then retrying the behavior rebuild…', 'brain', async () => {
         reconAttempts += 1
+        const htmlBeforeRetry = workingHtml
         await new Promise((resolve) => setTimeout(resolve, 45_000))
         let r2 = await runBehaviorReconstruction({ originalHtml, html: workingHtml, hostname, url: finalUrl })
         let verdict2 = r2.adopted ? await validateBehaviorLayer(r2.html) : { ok: true }
-        if (r2.adopted && !verdict2.ok) {
+        if (r2.adopted && !layerAcceptable(verdict2)) {
           console.log(`⚠️ [RECON-RETRY] Candidate failed validation (${verdict2.reason}) — healing round…`)
           const healed = await runBehaviorReconstruction({ originalHtml, html: workingHtml, hostname, url: finalUrl, errors: verdict2.errors || [], previousCode: r2.code })
           if (healed.adopted) {
             const v3 = await validateBehaviorLayer(healed.html)
-            if (v3.ok || countBehaviorFails(v3) < countBehaviorFails(verdict2)) {
+            if (layerAcceptable(v3) || countBehaviorFails(v3) < countBehaviorFails(verdict2)) {
               r2 = healed
-              verdict2 = v3.ok ? v3 : verdict2
+              verdict2 = v3
             }
           }
         }
-        if (!r2.adopted) return 'Retry could not rebuild the behavior layer — the report will say so honestly'
+        // Adopt ONLY a layer that passes live validation — otherwise leave the
+        // page exactly as it was and report the truth.
+        if (!r2.adopted || !layerAcceptable(verdict2)) {
+          if (r2.adopted) return `Retry candidate failed live validation (${clip(verdict2.reason || 'behavior gaps', 90)}) — discarded rather than ship broken interactivity`
+          return 'Retry could not rebuild the behavior layer — the report will say so honestly'
+        }
         workingHtml = r2.html
         fs.writeFileSync(path.join(artifactsDir, 'restored.html'), workingHtml, 'utf8')
         registryPut(restorationId, { id: restorationId, dir: artifactsDir, created, fixedHtml: workingHtml, originalHtml: sanitizeEncoding(originalHtml), finalUrl, hostname })
@@ -1999,6 +2044,21 @@ export async function runRestorationPipeline({ targetUrl, mode, origin, cookieHe
           },
         })
         return `Behavior layer rebuilt on the retry — ${behaviorResult.passed}/${behaviorResult.total} behavioral test(s), ${behaviorResult.js_errors} live error(s)`
+      })
+    }
+  }
+
+  // ════════ FINAL SYNTAX GATE — unparseable JS never reaches the user ════════
+  {
+    const gate = stripBrokenInlineScripts(workingHtml)
+    if (gate.removed > 0) {
+      workingHtml = gate.html
+      fs.writeFileSync(path.join(artifactsDir, 'restored.html'), workingHtml, 'utf8')
+      registryPut(restorationId, { id: restorationId, dir: artifactsDir, created, fixedHtml: workingHtml, originalHtml: sanitizeEncoding(originalHtml), finalUrl, hostname })
+      snapshotMilestone(`final syntax gate: ${gate.removed} unparseable script(s) neutralized`)
+      sendEvent({
+        type: 'thought_step',
+        step: { label: 'final-syntax-gate', summary: `${gate.removed} script(s) could not compile and were removed — Alpha never ships JS that cannot run` },
       })
     }
   }
