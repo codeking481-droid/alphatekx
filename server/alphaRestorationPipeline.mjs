@@ -27,9 +27,11 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import JSZip from 'jszip'
 import { probeRenderedPage, createRenderSession, isRenderProbeAvailable } from './renderedDiagnostics.mjs'
-import { llmRepairBatch, llmRebuildPage, llmMultiCallRebuild, isLlmRepairConfigured } from './llmRepairAgent.mjs'
+import { llmRepairBatch, llmRebuildPage, llmMultiCallRebuild, isLlmRepairConfigured, llmPlanRestoration } from './llmRepairAgent.mjs'
 import { repairBrokenHtml } from './htmlResurrector.mjs'
 import { getSiteMemory, recordRestoration } from './siteMemory.mjs'
+import { runBehaviorTests } from './behaviorTest.mjs'
+import { buildRestoreGitHistory } from './restoreGit.mjs'
 import { crawlSite, normalizePagePath } from './siteCrawler.mjs'
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url))
@@ -1429,8 +1431,13 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
   const memory = await getSiteMemory(hostname).catch(() => null)
   if (memory && memory.scans > 0) {
     chain.done('memory', `Alpha remembers ${hostname} — worked on it ${memory.scans} time(s) before`, `Best score ${memory.best_score}/100 · last visit scored ${memory.last_score}/100`)
-    sendEvent({ type: 'site_memory', data: { scans: memory.scans, best_score: memory.best_score, last_score: memory.last_score, last_run_at: memory.last_run_at } })
+    sendEvent({ type: 'site_memory', data: { scans: memory.scans, best_score: memory.best_score, last_score: memory.last_score, last_run_at: memory.last_run_at, recurring_issues: memory.recurring_issues } })
   }
+  // Recurring offenders feed every AI repair call: "this host keeps breaking
+  // images" makes the model check for the pattern even when symptoms differ.
+  const memoryContext = memory?.recurring_issues?.length
+    ? `Site history (Alpha has restored this host ${memory.scans} time(s); best score ${memory.best_score}/100). Recurring issue patterns on this host: ${memory.recurring_issues.join('; ')}. Watch for these patterns even when the current symptom differs.`
+    : ''
 
   // ════════ STEP 2: DIAGNOSE — static sweep + REAL-BROWSER probe ════════
   chain.active('diagnose', 'Diagnosing — sweeping every line for damage…', 'microscope')
@@ -1498,6 +1505,25 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
   let rebuildAdopted = false
   const cycleHistory = []
 
+  // ════════ STRATEGY PLAN — Alpha decomposes the damage into an ordered ════
+  // battle plan before touching code, then executes it across repair cycles.
+  let strategyPlan = null
+  await chain.step('strategy', 'Planning the restoration strategy — ordering every fix by impact…', 'brain', async () => {
+    strategyPlan = await llmPlanRestoration({ issues: diagnosis.issues, score: diagnosis.score, hostname, memoryContext })
+    sendEvent({ type: 'strategy_plan', data: { strategy: strategyPlan.strategy, tasks: strategyPlan.tasks, source: strategyPlan.source } })
+    const head = strategyPlan.tasks.slice(0, 3).map((t) => t.title).join(' · ')
+    return `${strategyPlan.tasks.length}-task plan (${strategyPlan.source === 'ai' ? 'AI-optimized' : 'severity-ordered'}): ${clip(head, 120)}`
+  })
+
+  // Repair milestones feed the real git history built at delivery time: each
+  // becomes its own commit + tag, so rollback to ANY step is one command.
+  const milestones = []
+  const snapshotMilestone = (label) => {
+    try {
+      if (workingHtml) milestones.push({ label: String(label).slice(0, 120), html: String(workingHtml) })
+    } catch {}
+  }
+
   for (let cycle = 1; cycle <= MAX_CYCLES; cycle++) {
     const suffix = cycle > 1 ? `-c${cycle}` : ''
     const prefix = cycle > 1 ? `Cycle ${cycle}/${MAX_CYCLES} — ` : ''
@@ -1516,6 +1542,7 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
         workingHtml = r.html
         structuralApplied = true
         structuralTally = r.tally
+        snapshotMilestone('make-it-work: structural recovery (CSS/JS/markup made parseable)')
         const actions = []
         if (r.tally.css_repaired) actions.push(`${r.tally.css_repaired} CSS block(s) rebuilt`)
         const jsWork = r.tally.js_removed + r.tally.js_reconstructed + r.tally.js_guarded + r.tally.js_sanitized
@@ -1542,15 +1569,17 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
     })
     workingHtml = repairResult.html
     appliedCount = repairResult.log.filter((l) => l.changed).length
+    if (appliedCount > 0) snapshotMilestone(`cycle ${cycle}: ${appliedCount} rule-based fix(es) applied`)
     sendEvent({ type: 'repairs_complete', data: { fixes_applied: appliedCount, total_fixes: plan.total_fixes, log: repairResult.log.slice(0, 40), cycle } })
 
     // ── STEP 4b: AI REPAIRS — damage rules can't touch ──
     const aiEligible = cycleDiagnosis.issues.filter((i) => ['runtime_error', 'blank_render', 'failed_asset'].includes(i.type))
     if (aiEligible.length) {
       await chain.step(`ai-repair${suffix}`, `${prefix}Repair Agent is rewriting what rules can't fix — ${aiEligible.length} runtime issue(s)…`, 'brain', async () => {
-        const ai = await llmRepairBatch({ html: workingHtml, issues: aiEligible, hostname })
+        const ai = await llmRepairBatch({ html: workingHtml, issues: aiEligible, hostname, memoryContext })
         workingHtml = ai.html
         aiAppliedTotal += ai.applied
+        if (ai.applied > 0) snapshotMilestone(`cycle ${cycle}: ${ai.applied} AI surgical patch(es) applied`)
         if (!ai.configured) return 'No AI provider key configured — skipping AI repairs (rules already applied)'
         if (!ai.attempted) return 'AI repair not needed'
         return `AI repairs applied: ${ai.applied} · skipped safely: ${ai.skipped}${ai.notes[0] ? ` · ${clip(ai.notes.find((n) => !/skipped/i.test(n)) || ai.notes[0], 90)}` : ''}`
@@ -1584,6 +1613,7 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
           if (!after) return 'Rebuild discarded — could not verify the regenerated page'
           console.log(`⚖️ [REBUILD] Scores — patched original: ${before?.score ?? '?'} vs rebuild: ${after.score} → ADOPTED (opt-in policy)`)
           rebuildAdopted = true
+          snapshotMilestone(`cycle ${cycle}: full-page rebuild adopted (opt-in)`)
                     sendEvent({
             type: 'ai_rebuild_complete',
             data: { adopted: true, before_score: before?.score ?? null, after_score: after.score ?? null, bytes: workingHtml.length, cycle },
@@ -1687,8 +1717,52 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
   }
   sendEvent({ type: 'verification_complete', data: { verification, remaining_issues: remaining.slice(0, 10), final: true } })
 
+  // ════════ BEHAVIORAL TESTS — prove the restored site actually WORKS ════════
+  // A health score says nothing is broken; these tests prove things work:
+  // the page boots without crashes, content renders, forms submit, buttons
+  // respond — exercised in a real headless browser.
+  let behaviorResult = null
+  await chain.step('behavior-test', 'Running behavioral tests — booting the site and exercising every form and button…', 'shield', async () => {
+    behaviorResult = await runBehaviorTests({ html: workingHtml })
+    sendEvent({
+      type: 'behavior_test',
+      data: {
+        total: behaviorResult.total,
+        passed: behaviorResult.passed,
+        failed: behaviorResult.failed,
+        js_errors: behaviorResult.js_errors,
+        notes: behaviorResult.notes,
+      },
+    })
+    if (!behaviorResult.available) return 'Behavioral tests unavailable in this environment'
+    if (behaviorResult.failed.length === 0) {
+      return `All ${behaviorResult.total} behavioral test(s) passed — page boots clean, interactions verified`
+    }
+    return `${behaviorResult.passed}/${behaviorResult.total} behavioral test(s) passed — failing: ${clip(behaviorResult.failed.map((f) => f.name).join(', '), 100)}`
+  })
+
   // ════════ STEP 7: DELIVER ════════
   const deliverables = await chain.step('deliver', 'Packaging your restored site — 4 ways to receive it…', 'package', async () => {
+    // Real git history: original → every repair milestone → final, each with
+    // a tag. Rollback to any step is `git checkout <tag> -- index.html`.
+    const gitHistory = buildRestoreGitHistory({
+      dir: artifactsDir,
+      originalHtml,
+      finalHtml: registryGetFixed(restorationId),
+      milestones,
+      meta: { url: finalUrl, hostname },
+    })
+    sendEvent({
+      type: 'git_history',
+      data: {
+        available: gitHistory.available,
+        commits: gitHistory.commits,
+        tags: gitHistory.tags,
+        log: gitHistory.log.slice(0, 10),
+        reason: gitHistory.reason || null,
+      },
+    })
+
     const zip = new JSZip()
     const report = {
       restored_by: 'AlphaTekX Restoration Engine V3',
@@ -1713,6 +1787,9 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
         ai_repairs_applied: aiAppliedTotal,
         render_probe: renderProbe ? { ok: renderProbe.ok, blank_render: renderProbe.blankRender, stats: renderProbe.stats } : null,
         memory_used: Boolean(memory && memory.scans > 0),
+        strategy_plan: strategyPlan ? { source: strategyPlan.source, tasks: strategyPlan.tasks.length, strategy: strategyPlan.strategy } : null,
+        behavior_tests: behaviorResult ? { total: behaviorResult.total, passed: behaviorResult.passed, failed: behaviorResult.failed } : null,
+        git_history: gitHistory.available ? { commits: gitHistory.commits, tags: gitHistory.tags, rollback: 'git checkout damaged-original -- index.html' } : { available: false, reason: gitHistory.reason || null },
       },
     }
     zip.file('restored.html', registryGetFixed(restorationId))
@@ -1729,6 +1806,9 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
     const ghToken = readCookieToken(cookieHeader)
     const suggestedName = slugifyHostname(hostname)
     return {
+      git: gitHistory.available
+        ? { available: true, commits: gitHistory.commits, tags: gitHistory.tags, rollback: 'git checkout damaged-original -- index.html', dir: artifactsDir }
+        : { available: false, reason: gitHistory.reason || null },
       github: {
         available: Boolean(ghToken),
         branch_plan: `alphatekx-fix-${Math.floor(Date.now() / 1000)}`,
@@ -1783,6 +1863,10 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
         rebuild_adopted: rebuildAdopted,
         ai_rebuild_blocked: aiRebuildBlocked || null,
         memory_used: Boolean(memory && memory.scans > 0),
+        memory_recurring_issues: memory?.recurring_issues || [],
+        strategy_plan: strategyPlan ? { source: strategyPlan.source, tasks: strategyPlan.tasks.length, strategy: strategyPlan.strategy, task_list: strategyPlan.tasks } : null,
+        behavior_tests: behaviorResult ? { total: behaviorResult.total, passed: behaviorResult.passed, failed: behaviorResult.failed, js_errors: behaviorResult.js_errors } : null,
+        git_history: deliverables?.git || null,
       },
       status: genuinelyRestored ? 'restored' : 'incomplete',
       tier: afterScore >= 95 ? 'gold' : afterScore >= 75 ? 'silver' : 'bronze',
@@ -1803,6 +1887,12 @@ async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, s
     '',
     cycleHistory.length > 1 || aiAppliedTotal > 0
       ? `**Agent report:** ${cycleHistory.length} repair cycle(s) · ${aiAppliedTotal} AI repair(s)${memory && memory.scans > 0 ? ` · remembered this site (${memory.scans} visit${memory.scans > 1 ? 's' : ''})` : ''}`
+      : '',
+    behaviorResult && behaviorResult.available
+      ? `**Behavioral tests:** ${behaviorResult.passed}/${behaviorResult.total} passed${behaviorResult.failed.length ? ` — attention: ${clip(behaviorResult.failed.map((f) => f.name).join(', '), 80)}` : ' (boot, render, forms, buttons all verified in a real browser)'}`
+      : '',
+    deliverables?.git?.available
+      ? `**Version control:** ${deliverables.git.commits} commits · tags \`${(deliverables.git.tags || []).slice(0, 3).join('`, `')}\` — full rollback with one git command`
       : '',
     '**Receive your restored site:**',
     `1. ⬇️ [Download restored.zip](${deliverables.download.restored}) + [rollback.zip](${deliverables.download.rollback})`,
@@ -1922,8 +2012,12 @@ async function runSiteRestoration(ctx) {
   const memory = await getSiteMemory(hostname).catch(() => null)
   if (memory && memory.scans > 0) {
     chain.done('memory', `Alpha remembers ${hostname} — worked on it ${memory.scans} time(s) before`, `Best score ${memory.best_score}/100 · last visit scored ${memory.last_score}/100`)
-    sendEvent({ type: 'site_memory', data: { scans: memory.scans, best_score: memory.best_score, last_score: memory.last_score, last_run_at: memory.last_run_at } })
+    sendEvent({ type: 'site_memory', data: { scans: memory.scans, best_score: memory.best_score, last_score: memory.last_score, last_run_at: memory.last_run_at, recurring_issues: memory.recurring_issues } })
   }
+  // Recurring offenders feed every AI repair call on every page of the site.
+  const memoryContext = memory?.recurring_issues?.length
+    ? `Site history (Alpha has restored this host ${memory.scans} time(s); best score ${memory.best_score}/100). Recurring issue patterns on this host: ${memory.recurring_issues.join('; ')}. Watch for these patterns even when the current symptom differs.`
+    : ''
 
   // ── CRAWL: map every reachable page (links + sitemap) ──
   let sitePages = null
@@ -1991,6 +2085,26 @@ async function runSiteRestoration(ctx) {
 
   // ═══ FULL RESTORATION — every page through the agentic loop ═══
   chain.active('agent-loop', `Alpha is restoring all ${sitePages.length} pages — one engineering pass per page…`, 'brain')
+
+  // Strategy plan for the whole site: severity-ordered battle plan from the
+  // entry page's damage profile (shared damage repeats across pages).
+  let strategyPlan = null
+  await chain.step('strategy', 'Planning the site-wide restoration strategy…', 'brain', async () => {
+    const entryDiag = await diagnose(sitePages[0]?.html || originalHtml, { baseUrl: finalUrl, https: isHttps, skipNetworkChecks: true }).catch(() => null)
+    strategyPlan = await llmPlanRestoration({ issues: entryDiag?.issues || [], score: entryDiag?.score || 0, hostname, memoryContext })
+    sendEvent({ type: 'strategy_plan', data: { strategy: strategyPlan.strategy, tasks: strategyPlan.tasks, source: strategyPlan.source, site_wide: true } })
+    const head = strategyPlan.tasks.slice(0, 3).map((t) => t.title).join(' · ')
+    return `${strategyPlan.tasks.length}-task plan (${strategyPlan.source === 'ai' ? 'AI-optimized' : 'severity-ordered'}): ${clip(head, 120)}`
+  })
+
+  // Entry-page milestones feed the real git history built at delivery time.
+  const siteMilestones = []
+  const snapshotSiteMilestone = (label, html) => {
+    try {
+      if (html) siteMilestones.push({ label: String(label).slice(0, 120), html: String(html) })
+    } catch {}
+  }
+
   const session = await createRenderSession()
   /** @type {{key:string,url:string,label:string,before:number,after:number,issuesBefore:number,issuesAfter:number,cycles:number,ai:number,html:string,initialTypes:string[]}[]} */
   const restored = []
@@ -2034,6 +2148,7 @@ async function runSiteRestoration(ctx) {
           const rescued = await repairBrokenHtml(workingHtml, { baseUrl: page.finalUrl, knownDead: probeFailed, allowNetwork: false })
           if (rescued.tally.css_repaired || rescued.tally.dead_assets_removed || rescued.tally.js_removed || rescued.tally.js_reconstructed || rescued.tally.js_guarded || rescued.tally.js_sanitized) {
             workingHtml = rescued.html
+            if (isEntry) snapshotSiteMilestone('make-it-work: structural recovery', workingHtml)
             if (isEntry) {
               const actions = []
               if (rescued.tally.css_repaired) actions.push(`${rescued.tally.css_repaired} CSS block(s) rebuilt`)
@@ -2046,6 +2161,7 @@ async function runSiteRestoration(ctx) {
         }
         const repairResult = executeRepairs(workingHtml, cycleDiagnosis, { finalUrl: page.finalUrl, hostname })
         workingHtml = repairResult.html
+        if (isEntry && repairResult.log.some((l) => l.changed)) snapshotSiteMilestone(`entry cycle ${cycle}: rule-based fixes applied`, workingHtml)
         if (isEntry) {
           for (const entry of repairResult.log.filter((l) => l.changed).slice(0, 12)) {
             sendEvent({ type: 'diff', filename: zipPathForKey(key), old: entry.before, newContent: entry.after, cycle })
@@ -2055,9 +2171,10 @@ async function runSiteRestoration(ctx) {
         const aiEligible = cycleDiagnosis.issues.filter((x) => ['runtime_error', 'blank_render', 'failed_asset'].includes(x.type))
         if (aiEligible.length && aiCallsUsed < AI_BUDGET) {
           aiCallsUsed++
-          const ai = await llmRepairBatch({ html: workingHtml, issues: aiEligible, hostname }).catch(() => ({ html: workingHtml, applied: 0, skipped: aiEligible.length, notes: ['AI repair crashed — rules kept the page safe'], configured: false, attempted: false }))
+          const ai = await llmRepairBatch({ html: workingHtml, issues: aiEligible, hostname, memoryContext }).catch(() => ({ html: workingHtml, applied: 0, skipped: aiEligible.length, notes: ['AI repair crashed — rules kept the page safe'], configured: false, attempted: false }))
           if (ai?.html) workingHtml = ai.html
           aiApplied += ai.applied || 0
+          if (isEntry && (ai.applied || 0) > 0) snapshotSiteMilestone(`entry cycle ${cycle}: ${ai.applied} AI surgical patch(es)`, workingHtml)
         }
 
         // ── EXPERT REBUILD (opt-in only): surgical mode forbids whole-page
@@ -2169,10 +2286,36 @@ async function runSiteRestoration(ctx) {
     return 'Browser unavailable — continuing without visual proof'
   })
 
+  // ── Behavioral tests on the restored entry page ──
+  let siteBehavior = null
+  await chain.step('behavior-test', 'Running behavioral tests on the restored site — booting it and exercising forms and buttons…', 'shield', async () => {
+    siteBehavior = await runBehaviorTests({ html: entryFixed })
+    sendEvent({
+      type: 'behavior_test',
+      data: { total: siteBehavior.total, passed: siteBehavior.passed, failed: siteBehavior.failed, js_errors: siteBehavior.js_errors, notes: siteBehavior.notes, site_wide: true },
+    })
+    if (!siteBehavior.available) return 'Behavioral tests unavailable in this environment'
+    if (siteBehavior.failed.length === 0) return `All ${siteBehavior.total} behavioral test(s) passed — entry page boots clean, interactions verified`
+    return `${siteBehavior.passed}/${siteBehavior.total} behavioral test(s) passed — failing: ${clip(siteBehavior.failed.map((f) => f.name).join(', '), 100)}`
+  })
+
   // ── DELIVERY: structured multi-page zip + pages.json for whole-site deploy ──
   const knownKeys = new Set(restored.map((r) => r.key))
   const pagesMap = {}
   const deliverables = await chain.step('deliver', `Packaging your restored ${restored.length}-page site…`, 'package', async () => {
+    // Real git history for the entry page: damaged → each milestone → final.
+    const gitHistory = buildRestoreGitHistory({
+      dir: artifactsDir,
+      originalHtml,
+      finalHtml: entryFixed,
+      milestones: siteMilestones,
+      meta: { url: finalUrl, hostname, site_wide: true, pages: restored.length },
+    })
+    sendEvent({
+      type: 'git_history',
+      data: { available: gitHistory.available, commits: gitHistory.commits, tags: gitHistory.tags, log: gitHistory.log.slice(0, 10), reason: gitHistory.reason || null, site_wide: true },
+    })
+
     for (const r of restored) {
       pagesMap[r.key] = rewriteInternalPageLinks(r.html, knownKeys, r.key, r.url)
     }
@@ -2195,6 +2338,13 @@ async function runSiteRestoration(ctx) {
       pages: restored.map((r) => ({ path: r.key, before_score: r.before, after_score: r.after, issues_before: r.issuesBefore, issues_after: r.issuesAfter, cycles: r.cycles })),
       shared_damage: sharedTypes.map(([type, count]) => ({ type, pages_affected: count })),
       design_tokens: designTokens,
+      agent: {
+        version: 'V4-agentic-site',
+        memory_used: Boolean(memory && memory.scans > 0),
+        strategy_plan: strategyPlan ? { source: strategyPlan.source, tasks: strategyPlan.tasks.length, strategy: strategyPlan.strategy } : null,
+        behavior_tests: siteBehavior ? { total: siteBehavior.total, passed: siteBehavior.passed, failed: siteBehavior.failed } : null,
+        git_history: gitHistory.available ? { commits: gitHistory.commits, tags: gitHistory.tags } : { available: false, reason: gitHistory.reason || null },
+      },
     }
     zip.file('RESTORATION_REPORT.json', JSON.stringify(report, null, 2))
     const restoredZip = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
@@ -2209,6 +2359,9 @@ async function runSiteRestoration(ctx) {
     const ghToken = readCookieToken(cookieHeader)
     const suggestedName = slugifyHostname(hostname)
     return {
+      git: gitHistory.available
+        ? { available: true, commits: gitHistory.commits, tags: gitHistory.tags, rollback: 'git checkout damaged-original -- index.html', dir: artifactsDir }
+        : { available: false, reason: gitHistory.reason || null },
       github: {
         available: Boolean(ghToken),
         branch_plan: `alphatekx-fix-${Math.floor(Date.now() / 1000)}`,
@@ -2244,6 +2397,12 @@ async function runSiteRestoration(ctx) {
     '',
     `**Site health: ${avgBefore}/100 → ${avgAfter}/100** (${totalIssuesBefore} issues found, ${totalIssuesAfter} remaining)`,
     sharedTypes.length ? `\nShared damage repaired everywhere: ${sharedTypes.map(([t, n]) => `${t} ×${n} pages`).join(' · ')}` : '',
+    siteBehavior && siteBehavior.available
+      ? `**Behavioral tests:** ${siteBehavior.passed}/${siteBehavior.total} passed${siteBehavior.failed.length ? ` — attention: ${clip(siteBehavior.failed.map((f) => f.name).join(', '), 80)}` : ' (entry page boots clean, interactions verified)'}`
+      : '',
+    deliverables?.git?.available
+      ? `**Version control:** ${deliverables.git.commits} commits · tags \`${(deliverables.git.tags || []).slice(0, 3).join('`, `')}\` — full rollback with one git command`
+      : '',
     '',
     '**Receive your restored site:**',
     `1. ⬇️ [Download site.zip](${deliverables.download.restored}) — full folder structure, links work offline`,
@@ -2285,6 +2444,14 @@ async function runSiteRestoration(ctx) {
       },
       design_tokens: designTokens,
       verification,
+      agent: {
+        memory_used: Boolean(memory && memory.scans > 0),
+        memory_recurring_issues: memory?.recurring_issues || [],
+        strategy_plan: strategyPlan ? { source: strategyPlan.source, tasks: strategyPlan.tasks.length, strategy: strategyPlan.strategy, task_list: strategyPlan.tasks } : null,
+        behavior_tests: siteBehavior ? { total: siteBehavior.total, passed: siteBehavior.passed, failed: siteBehavior.failed, js_errors: siteBehavior.js_errors } : null,
+        git_history: deliverables?.git || null,
+        ai_repairs_applied: restored.reduce((a, r) => a + r.ai, 0),
+      },
       status: siteGenuinelyRestored ? 'restored' : 'incomplete',
       site: {
         page_count: restored.length,

@@ -229,6 +229,79 @@ function parseJsonLoose(text) {
   return extractJsonObject(text)
 }
 
+// ─── Restoration strategist ──────────────────────────────────────────────────
+
+const PLANNER_SYSTEM_PROMPT = `You are Alpha's restoration strategist. You receive a diagnosed list of website issues with severity ratings.
+Produce an ordered execution plan that fixes the site with minimal, surgical changes.
+
+Return STRICT JSON only, shaped exactly:
+{"strategy":"one paragraph describing the overall approach","tasks":[{"id":"T1","title":"short imperative title","target_issue_types":["issue type from the input"],"approach":"how this gets fixed (rules vs AI surgical patch)","priority":1,"risk":"low|medium|high"}]}
+
+Rules:
+- Order tasks by impact: data loss, security and crash-level problems first, cosmetics last.
+- Group related issue types into one task when they share a root cause.
+- Prefer FEWER, well-scoped tasks over many tiny ones. Maximum 6 tasks.
+- Every task must be independently verifiable.
+- Output ONLY the JSON object.`
+
+/**
+ * Decompose a diagnosis into an ordered restoration plan. Falls back to a
+ * deterministic severity-ordered plan when no AI provider is available or the
+ * model returns junk — planning must NEVER be the reason a run fails.
+ */
+export async function llmPlanRestoration({ issues = [], score = 0, hostname = '', memoryContext = '' } = {}) {
+  const out = { configured: isLlmRepairConfigured(), planned: false, strategy: '', tasks: [], source: 'rules' }
+
+  // Deterministic baseline: unique issue types ordered by worst severity seen.
+  const SEV_RANK = { critical: 0, high: 1, medium: 2, low: 3, info: 4 }
+  const groups = new Map()
+  for (const i of issues) {
+    if (!i?.type) continue
+    const g = groups.get(i.type) || { type: i.type, count: 0, worst: 'info' }
+    g.count++
+    if (SEV_RANK[i.severity] < SEV_RANK[g.worst]) g.worst = i.severity
+    groups.set(i.type, g)
+  }
+  const baseTasks = [...groups.values()]
+    .sort((a, b) => SEV_RANK[a.worst] - SEV_RANK[b.worst])
+    .slice(0, 6)
+    .map((g, idx) => ({
+      id: `T${idx + 1}`,
+      title: `Fix ${g.type.replace(/_/g, ' ')} (${g.count} issue${g.count > 1 ? 's' : ''})`,
+      target_issue_types: [g.type],
+      approach: 'Rule-based repair first, AI surgical patch only where rules cannot reach',
+      priority: idx + 1,
+      risk: g.worst === 'critical' ? 'high' : g.worst === 'high' ? 'medium' : 'low',
+    }))
+  out.tasks = baseTasks
+  out.strategy = `Restore health from ${score}/100 by resolving ${baseTasks.length} issue group(s), most severe first.`
+
+  if (!out.configured) return out
+
+  try {
+    const list = issues.slice(0, 20).map((i) => `- [${i.id}] (${i.severity}) ${i.type}: ${String(i.description || '').slice(0, 140)}`).join('\n')
+    const user = `Site: ${hostname || '(unknown host)'}\nCurrent health score: ${score}/100\n\n${memoryContext ? `${memoryContext}\n\n` : ''}Diagnosed issues:\n${list}\n\nProduce the restoration plan now.`
+    const answer = await repairChat(PLANNER_SYSTEM_PROMPT, user, { maxTokens: 2000 })
+    if (!answer || !Array.isArray(answer.tasks) || !answer.tasks.length) return out
+    const tasks = answer.tasks.slice(0, 6).map((t, idx) => ({
+      id: String(t?.id || `T${idx + 1}`),
+      title: clipNote(t?.title || `Task ${idx + 1}`, 90),
+      target_issue_types: Array.isArray(t?.target_issue_types) ? t.target_issue_types.slice(0, 5).map(String) : [],
+      approach: clipNote(t?.approach || '', 160),
+      priority: Number(t?.priority) || idx + 1,
+      risk: ['low', 'medium', 'high'].includes(t?.risk) ? t.risk : 'low',
+    })).sort((a, b) => a.priority - b.priority)
+    if (!tasks.length) return out
+    out.planned = true
+    out.source = 'ai'
+    out.strategy = clipNote(answer.strategy || '', 300)
+    out.tasks = tasks
+    return out
+  } catch {
+    return out
+  }
+}
+
 // ─── Context extraction ──────────────────────────────────────────────────────
 
 /** Pull the <script>/<style> blocks most relevant to the reported damage. */
@@ -300,7 +373,7 @@ You are not here to make the site "look better" or recreate it. You are here to 
  * @returns {Promise<{configured:boolean, attempted:boolean, applied:number, skipped:number, notes:string[], html:string}>}
  */
 export async function llmRepairBatch(input) {
-  const { html, issues, hostname = '' } = input
+  const { html, issues, hostname = '', memoryContext = '' } = input
   const out = { configured: isLlmRepairConfigured(), attempted: false, applied: 0, skipped: 0, notes: [], html }
 
   if (!out.configured) {
@@ -323,7 +396,7 @@ export async function llmRepairBatch(input) {
   let docExcerpt = docExcerptParts.join('\n<!-- ---- -->\n')
   if (docExcerpt.length > 60_000) docExcerpt = docExcerpt.slice(0, 60_000)
 
-  const user = `Site: ${hostname || '(unknown host)'}\n\nDiagnosed issues:\n${evidence}\n\nDocument excerpt:\n\`\`\`\n${docExcerpt}\n\`\`\`\n\nReturn the JSON repairs now.`
+  const user = `Site: ${hostname || '(unknown host)'}\n\n${memoryContext ? `${memoryContext}\n\n` : ''}Diagnosed issues:\n${evidence}\n\nDocument excerpt:\n\`\`\`\n${docExcerpt}\n\`\`\`\n\nReturn the JSON repairs now.`
 
   out.attempted = true
   const answer = await repairChat(SYSTEM_PROMPT, user, { maxTokens: 6000 })
@@ -401,9 +474,9 @@ export async function llmRepairBatch(input) {
   return out
 }
 
-function clipNote(text) {
+function clipNote(text, cap = 140) {
   const s = String(text || '').trim()
-  return s.length > 140 ? s.slice(0, 140) + '…' : s
+  return s.length > cap ? s.slice(0, cap) + '…' : s
 }
 
 // ─── Full-page rebuild ───────────────────────────────────────────────────────
