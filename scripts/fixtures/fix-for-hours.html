@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>fix for hours</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- BROKEN: Missing Google Font link -->
+    <!-- BROKEN: Missing Bootstrap CDN -->
+    <!-- BROKEN: Missing Font Awesome -->
+
+    <style>
+        /* ===== BROKEN CSS: Incomplete reset ===== */
+        * {
+            margin: 0;
+        }
+
+        /* ===== BROKEN CSS: Missing box-sizing ===== */
+        /* ===== BROKEN CSS: Missing font-family fallback ===== */
+        /* ===== BROKEN CSS: Missing responsive rules ===== */
+
+        body {
+            background: #f4f4f4;
+        }
+
+        /* ===== BROKEN CSS: Missing hover states ===== */
+        /* ===== BROKEN CSS: Missing focus states ===== */
+        /* ===== BROKEN CSS: Missing transitions ===== */
+
+        header {
+            background: #1a1a2e;
+            color: white;
+            padding: 1rem;
+        }
+
+        /* ===== BROKEN CSS: Missing flexbox for nav ===== */
+        /* ===== BROKEN CSS: Hamburger not functional ===== */
+
+        .nav-links {
+            display: block; /* Should be flex */
+        }
+
+        .hamburger {
+            display: none; /* Should show on mobile */
+        }
+
+        /* ===== BROKEN CSS: Grid layout broken ===== */
+        .service-grid {
+            display: block; /* Should be grid */
+        }
+
+        /* ===== BROKEN CSS: Card styles missing ===== */
+        .service-card {
+            background: white;
+            padding: 1rem;
+            /* Missing border-radius, shadow */
+        }
+
+        /* ===== BROKEN CSS: Missing media queries ===== */
+        /* ===== BROKEN CSS: Missing dark mode ===== */
+        /* ===== BROKEN CSS: Missing print styles ===== */
+
+        /* ===== BROKEN CSS: Form styles incomplete ===== */
+        form {
+            max-width: 400px;
+            margin: auto;
+            /* Missing flexbox or grid for inputs */
+        }
+
+        /* ===== BROKEN CSS: Button styles missing ===== */
+        /* ===== BROKEN CSS: Status message styles missing ===== */
+
+        /* ===== BROKEN CSS: Footer styles missing ===== */
+        footer {
+            text-align: center;
+            background: #1a1a2e;
+            /* Missing color, padding */
+        }
+
+        /* ===== BROKEN CSS: 50+ other issues hidden ===== */
+    </style>
+</head>
+<body>
+
+    <!-- ===== HEADER ===== -->
+    <header>
+        <nav>
+            <div class="logo">AlphaSoft</div>
+            <!-- BROKEN: Missing hamburger button -->
+            <ul class="nav-links" id="navLinks">
+                <li><a href="#home">Home</a></li>
+                <li><a href="#services">Services</a></li>
+                <li><a href="#about">About</a></li>
+                <li><a href="#contact">Contact</a></li>
+                <li><a href="#blog">Blog</a></li>
+                <li><a href="#shop">Shop</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <!-- ===== HOME ===== -->
+    <section id="home">
+        <h1>Welcome to AlphaSoft</h1>
+        <p>Your partner in digital transformation</p>
+        <!-- BROKEN: Missing CTA button -->
+        <a href="#contact" class="btn">Get Started</a>
+    </section>
+
+    <!-- ===== SERVICES ===== -->
+    <section id="services">
+        <h2>What We Do</h2>
+        <div class="service-grid">
+            <div class="service-card">
+                <img src="images/icon-design.png" alt="">
+                <h3>UI/UX Design</h3>
+                <p>Beautiful interfaces</p>
+                <!-- BROKEN: Missing link -->
+            </div>
+            <div class="service-card">
+                <img src="images/icon-code.png" alt="">
+                <h3>Web Development</h3>
+                <p>Fast applications</p>
+            </div>
+            <div class="service-card">
+                <img src="images/icon-ai.png" alt="">
+                <h3>AI Solutions</h3>
+                <p>Intelligent automation</p>
+            </div>
+            <div class="service-card">
+                <img src="images/icon-cloud.png" alt="">
+                <h3>Cloud Services</h3>
+                <p>Scalable infrastructure</p>
+            </div>
+            <div class="service-card">
+                <img src="images/icon-security.png" alt="">
+                <h3>Security</h3>
+                <p>Enterprise-grade protection</p>
+            </div>
+            <div class="service-card">
+                <img src="images/icon-analytics.png" alt="">
+                <h3>Analytics</h3>
+                <p>Data-driven insights</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===== ABOUT ===== -->
+    <section id="about">
+        <h2>About Us</h2>
+        <p>We are a team of experts dedicated to helping businesses thrive in the digital age.</p>
+        <div class="team-grid">
+            <div class="team-member">
+                <img src="images/team-1.jpg" alt="">
+                <h4>John Doe</h4>
+                <p>CEO</p>
+            </div>
+            <div class="team-member">
+                <img src="images/team-2.jpg" alt="">
+                <h4>Jane Smith</h4>
+                <p>CTO</p>
+            </div>
+            <div class="team-member">
+                <img src="images/team-3.jpg" alt="">
+                <h4>Mike Johnson</h4>
+                <p>Lead Developer</p>
+            </div>
+            <div class="team-member">
+                <img src="images/team-4.jpg" alt="">
+                <h4>Sarah Williams</h4>
+                <p>Designer</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===== BLOG ===== -->
+    <section id="blog">
+        <h2>Latest Posts</h2>
+        <div class="blog-grid">
+            <article class="blog-post">
+                <img src="images/blog-1.jpg" alt="">
+                <h3>How to Scale Your Business</h3>
+                <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit.</p>
+                <a href="#">Read More</a>
+            </article>
+            <article class="blog-post">
+                <img src="images/blog-2.jpg" alt="">
+                <h3>AI Trends in 2026</h3>
+                <p>Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.</p>
+                <a href="#">Read More</a>
+            </article>
+            <article class="blog-post">
+                <img src="images/blog-3.jpg" alt="">
+                <h3>Security Best Practices</h3>
+                <p>Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.</p>
+                <a href="#">Read More</a>
+            </article>
+        </div>
+    </section>
+
+    <!-- ===== SHOP ===== -->
+    <section id="shop">
+        <h2>Our Products</h2>
+        <div class="product-grid">
+            <div class="product">
+                <img src="images/product-1.jpg" alt="">
+                <h3>Product 1</h3>
+                <p>$99.99</p>
+                <button>Add to Cart</button>
+            </div>
+            <div class="product">
+                <img src="images/product-2.jpg" alt="">
+                <h3>Product 2</h3>
+                <p>$149.99</p>
+                <button>Add to Cart</button>
+            </div>
+            <div class="product">
+                <img src="images/product-3.jpg" alt="">
+                <h3>Product 3</h3>
+                <p>$199.99</p>
+                <button>Add to Cart</button>
+            </div>
+            <div class="product">
+                <img src="images/product-4.jpg" alt="">
+                <h3>Product 4</h3>
+                <p>$249.99</p>
+                <button>Add to Cart</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===== CONTACT (3 FORMS) ===== -->
+    <section id="contact">
+        <h2>Contact Us</h2>
+
+        <!-- Form 1: Contact -->
+        <form id="contactForm">
+            <input type="text" id="name" placeholder="Name">
+            <input type="email" id="email" placeholder="Email">
+            <textarea id="message" placeholder="Message"></textarea>
+            <button type="submit">Send</button>
+        </form>
+
+        <!-- Form 2: Newsletter -->
+        <form id="newsletterForm">
+            <input type="email" id="newsletterEmail" placeholder="Email">
+            <button type="submit">Subscribe</button>
+        </form>
+
+        <!-- Form 3: Quote Request -->
+        <form id="quoteForm">
+            <input type="text" id="company" placeholder="Company">
+            <input type="text" id="project" placeholder="Project Type">
+            <textarea id="details" placeholder="Project Details"></textarea>
+            <button type="submit">Request Quote</button>
+        </form>
+
+        <div id="formStatus"></div>
+    </section>
+
+    <!-- ===== FOOTER ===== -->
+    <footer>
+        <p>&copy; 2026 AlphaSoft. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="#">Privacy</a>
+            <a href="#">Terms</a>
+            <a href="#">Contact</a>
+        </div>
+        <!-- BROKEN: Missing social media links -->
+    </footer>
+
+    <!-- ===== JAVASCRIPT: 5+ Broken Scripts ===== -->
+
+    <!-- Script 1: Broken hamburger -->
+    <script>
+        function toggleMenu() {
+            // BROKEN: Only sets display, doesn't toggle
+            const nav = document.getElementById('navLinks');
+            nav.style.display = 'block';
+        }
+    </script>
+
+    <!-- Script 2: Broken contact form -->
+    <script>
+        document.getElementById('contactForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            // BROKEN: No validation, fake API
+            const data = {
+                name: document.getElementById('name').value,
+                email: document.getElementById('email').value,
+                message: document.getElementById('message').value
+            };
+            // BROKEN: Fake API
+            fetch('https://api.alphatech.com/submit', {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
+            // BROKEN: No success/error message
+        });
+    </script>
+
+    <!-- Script 3: Broken newsletter -->
+    <script>
+        document.getElementById('newsletterForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            // BROKEN: No validation
+            const email = document.getElementById('newsletterEmail').value;
+            // BROKEN: Fake API
+            fetch('https://api.alphatech.com/newsletter', {
+                method: 'POST',
+                body: JSON.stringify({ email })
+            });
+        });
+    </script>
+
+    <!-- Script 4: Broken quote form -->
+    <script>
+        document.getElementById('quoteForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            // BROKEN: No validation, no success message
+            const data = {
+                company: document.getElementById('company').value,
+                project: document.getElementById('project').value,
+                details: document.getElementById('details').value
+            };
+            // BROKEN: Fake API
+            fetch('https://api.alphatech.com/quote', {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
+        });
+    </script>
+
+    <!-- Script 5: Broken analytics -->
+    <script>
+        // BROKEN: Missing GA/GTM code
+        console.log('Analytics not loaded');
+    </script>
+
+    <!-- Script 6: Broken lazy loading -->
+    <script>
+        // BROKEN: No lazy loading implementation
+        console.log('Lazy loading not implemented');
+    </script>
+
+    <!-- Script 7: Broken performance -->
+    <script>
+        // BROKEN: No performance optimizations
+        console.log('Performance not optimized');
+    </script>
+
+    <!-- Script 8: Broken accessibility -->
+    <script>
+        // BROKEN: No ARIA or accessibility features
+        console.log('Accessibility not implemented');
+    </script>
+
+    <!-- ===== 100+ OTHER BROKEN ISSUES HIDDEN IN COMMENTS ===== -->
+    <!--
+        - Missing Open Graph tags
+        - Missing Twitter Cards
+        - Missing canonical URL
+        - Missing robots meta
+        - Missing sitemap
+        - Missing structured data
+        - Missing alt text on 30+ images
+        - Missing ARIA labels
+        - Missing skip links
+        - Missing dark mode
+        - Missing print styles
+        - Missing PWA manifest
+        - Missing service worker
+        - Missing SSL redirect
+        - Missing .htaccess
+        - Missing 404 page
+        - Missing caching headers
+        - Missing compression
+        - Missing CDN
+        - Missing DNS prefetch
+        - Missing preconnect
+        - Missing preload
+        - Missing critical CSS
+        - Missing async/defer on scripts
+        - Missing loading="lazy" on images
+        - Missing width/height on images
+        - Missing font-display: swap
+        - Missing content security policy
+        - Missing HSTS
+        - Missing X-Content-Type-Options
+        - Missing X-Frame-Options
+        - Missing Referrer-Policy
+        - Missing Permissions-Policy
+        - Missing cookie consent
+        - Missing GDPR compliance
+        - Missing CORS headers
+        - Missing CSRF tokens
+        - Missing input sanitization
+        - Missing password hashing
+        - Missing rate limiting
+        - Missing session management
+        - Missing error handling
+        - Missing logging
+        - Missing monitoring
+        - Missing analytics
+        - Missing heatmaps
+        - Missing A/B testing
+        - Missing feature flags
+        - Missing internationalization
+        - Missing RTL support
+        - Missing high-DPI images
+        - Missing webp images
+        - Missing video fallbacks
+        - Missing audio fallbacks
+        - Missing iframe fallbacks
+        - Missing embed fallbacks
+        - Missing polyfills
+        - Missing shims
+        - Missing transpilation
+        - Missing bundle splitting
+        - Missing tree shaking
+        - Missing code splitting
+        - Missing pre-rendering
+        - Missing SSR
+        - Missing ISR
+        - Missing hydration
+        - Missing state management
+        - Missing routing
+        - Missing middleware
+        - Missing authentication
+        - Missing authorization
+        - Missing roles/permissions
+        - Missing user profiles
+        - Missing settings/preferences
+        - Missing notifications
+        - Missing real-time updates
+        - Missing WebSockets
+        - Missing push notifications
+        - Missing offline support
+        - Missing sync
+        - Missing conflict resolution
+        - Missing versioning
+        - Missing rollback
+        - Missing backups
+        - Missing disaster recovery
+        - Missing CI/CD
+        - Missing testing
+        - Missing debugging
+        - Missing profiling
+        - Missing optimization
+        - Missing refactoring
+        - Missing documentation
+        - Missing comments
+        - Missing types
+        - Missing linting
+        - Missing formatting
+        - Missing validation
+        - Missing sanitization
+        - Missing escaping
+        - Missing encoding
+        - Missing hashing
+        - Missing encryption
+        - Missing signing
+        - Missing verification
+        - Missing auditing
+        - Missing compliance
+    -->
+
+    <script>
+        console.log('💀 This site is completely broken — fix for hours! 💀');
+    </script>
+</body>
+</html>

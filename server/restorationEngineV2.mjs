@@ -204,7 +204,7 @@ function describeResourceFindings(counter, records) {
   return findings
 }
 
-async function findBrokenResources(html, baseUrl) {
+export async function findBrokenResources(html, baseUrl) {
   const groups = extractPageResources(html, baseUrl)
   const stats = {
     total_links: groups.links.length,

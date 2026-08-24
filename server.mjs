@@ -10,6 +10,7 @@ import { chromium } from 'playwright'
 import { handlePreviewRoute, handleRestoreStreamRoute, handleFixStreamRoute, handleDownloadRoute, handlePreviewFixedRoute, handleScreenshotRoute } from './server/websiteRestoreStream.mjs'
 import { createRestorationEngine } from './server/restorationEngine.mjs'
 import { createRestorationEngineV2 } from './server/restorationEngineV2.mjs'
+import { createRestorationEngineV3 } from './server/restorationEngineV3.mjs'
 import { createRestorationPipeline } from './server/restorationPipeline.mjs'
 import { FileHandler, sanitizeEncoding } from './server/scanEngine/fileUtils.js'
 import { handleGitHubAuth, handleGitHubCallback, handleGitHubStatus, handleGitHubRepos, handleGitHubApplyFix, handleGitHubCreatePR, handleGitHubRollback, handleGitHubPublishRestoration } from './server/githubDirectPush.mjs'
@@ -7760,6 +7761,10 @@ const restorationEngineRoute = createRestorationEngine({
   log: (message) => console.log(message),
 })
 
+const restorationEngineV3Route = createRestorationEngineV3({
+  log: (message) => console.log(message),
+})
+
 const restorationEngineV2Route = createRestorationEngineV2({
   requireUser: async (req) => {
     const config = supabaseConfig()
@@ -7804,6 +7809,10 @@ const server = http.createServer(async (req, res) => {
   try {
   if (isRateLimited(req)) return json(res, 429, { error: 'Too many requests. Please slow down.' })
   if (req.method === 'OPTIONS') return json(res, 204, {})
+  if (String(req.url || '').startsWith('/api/engine/v3/')) {
+    const handled = await restorationEngineV3Route(req, res)
+    if (handled) return
+  }
   if (String(req.url || '').startsWith('/api/engine/v2/')) {
     const handled = await restorationEngineV2Route(req, res)
     if (handled) return
