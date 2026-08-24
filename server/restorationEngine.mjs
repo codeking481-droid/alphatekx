@@ -20,6 +20,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
+import vm from 'node:vm'
 import { randomUUID } from 'node:crypto'
 import { FileHandler, sanitizeEncoding, validateHtml } from './scanEngine/fileUtils.js'
 import { createMinimalZip } from './websiteRestoreStream.mjs'
@@ -92,6 +93,14 @@ export function createRestorationEngine(deps = {}) {
     return json(res, status, { step: 'error', error, action_required: actionRequired, retry })
   }
 
+  function severitySummary(findings) {
+    const counts = { critical: 0, high: 0, medium: 0, low: 0 }
+    for (const finding of findings) {
+      if (counts[finding.severity] !== undefined) counts[finding.severity] += 1
+    }
+    return counts
+  }
+
   function buildSummary(session) {
     return {
       issues_found: session.findings.length,
@@ -99,6 +108,7 @@ export function createRestorationEngine(deps = {}) {
       files_modified: session.filesModified,
       before_score: session.beforeScore,
       after_score: session.afterScore,
+      severity: severitySummary(session.findings),
     }
   }
 
@@ -302,7 +312,78 @@ export function createRestorationEngine(deps = {}) {
       add('img_missing_alt', 'low', `${imgsWithoutAlt.length} <img> tag${imgsWithoutAlt.length > 1 ? 's' : ''} without alt attribute (accessibility).`, imgsWithoutAlt.length)
     }
 
+    if (!/<!doctype/i.test(html)) {
+      add('missing_doctype', 'medium', 'Missing <!DOCTYPE html> declaration; browsers fall back to quirks mode.')
+    }
+
+    const depTags = [...String(html).matchAll(/<(marquee|blink|font|center)\b/gi)]
+    if (depTags.length) {
+      const kinds = [...new Set(depTags.map((m) => m[1].toLowerCase()))]
+      add('deprecated_tag', 'low', `${depTags.length} deprecated tag${depTags.length > 1 ? 's' : ''} detected (${kinds.join(', ')}); modern browsers have removed or deprecated them.`, depTags.length, depTags[0][0])
+    }
+
+    const tagTokens = String(html).match(/<[a-zA-Z][^>]*>/g) || []
+    const depAttrTags = tagTokens.filter((t) => /\s(?:bgcolor|align|border)\s*=/i.test(t))
+    if (depAttrTags.length) {
+      add('deprecated_attr', 'low', `${depAttrTags.length} element${depAttrTags.length > 1 ? 's' : ''} carry obsolete presentation attributes (bgcolor/align/border).`, depAttrTags.length, depAttrTags[0].slice(0, 80))
+    }
+
+    for (const block of styleBlocksNeedingBraces(html)) {
+      add('css_unbalanced_braces', 'high', `<style> block has ${block.missing} unclosed brace${block.missing > 1 ? 's' : ''}; every rule after it is silently dropped by browsers.`, 1, block.full.slice(0, 120))
+    }
+
+    for (const script of brokenInlineScripts(html)) {
+      const at = Number.isFinite(script.line) ? ` near line ${script.line}` : ''
+      add('inline_js_syntax', 'critical', `Inline script contains a JavaScript syntax error (${script.reason})${at}; it will throw instead of running.`, 1, script.code.trim().slice(0, 120))
+    }
+
     return findings
+  }
+
+  // ─── Static analysis: CSS brace balance + inline JS syntax (V8 compile) ─────
+  function styleBlocksNeedingBraces(html) {
+    const blocks = []
+    for (const m of String(html).matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)) {
+      const stripped = String(m[1] || '')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, '')
+      const opens = (stripped.match(/\{/g) || []).length
+      const closes = (stripped.match(/\}/g) || []).length
+      if (opens > closes) blocks.push({ start: m.index, full: m[0], missing: opens - closes })
+    }
+    return blocks
+  }
+
+  function compileInlineJs(code) {
+    try {
+      new vm.Script(code, { filename: 'inline.js' })
+      return null
+    } catch (err) {
+      return err
+    }
+  }
+
+  function brokenInlineScripts(html) {
+    const broken = []
+    for (const m of String(html).matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
+      const attrs = m[1] || ''
+      const code = m[2] || ''
+      if (/\bsrc\s*=/i.test(attrs)) continue
+      const typeMatch = attrs.match(/\btype\s*=\s*["']([^"']+)["']/i)
+      if (typeMatch && !/javascript|module/i.test(typeMatch[1])) continue
+      let body = code.trim()
+      if (!body) continue
+      body = body.replace(/^\s*<!--/, '').replace(/-->\s*$/, '')
+      // Conservative gate: never flag ESM-style code we cannot fully parse.
+      if (/^\s*(import|export)\b/m.test(body)) continue
+      const plainFailure = compileInlineJs(body)
+      if (!plainFailure) continue
+      // Top-level await / module-only syntax is valid on modern pages; only
+      // report when even the async-module-shaped wrapper fails to compile.
+      if (!compileInlineJs(`(async () => {\n${body}\n})()`)) continue
+      broken.push({ index: m.index, full: m[0], attrs, code: body, reason: plainFailure.message, line: plainFailure.lineNumber })
+    }
+    return broken
   }
 
   function scoreFor(findings) {
@@ -344,6 +425,11 @@ export function createRestorationEngine(deps = {}) {
       case 'broken_image': return 'Remove images that no longer load.'
       case 'broken_script': return 'Remove scripts that fail to load (they can break the page).'
       case 'broken_style': return 'Remove stylesheets that fail to load.'
+      case 'missing_doctype': return 'Prepend <!DOCTYPE html> so browsers leave quirks mode.'
+      case 'deprecated_tag': return 'Unwrap deprecated <marquee>/<blink>/<font>/<center> tags while keeping their content.'
+      case 'deprecated_attr': return 'Strip obsolete presentation attributes (bgcolor/align/border); layout is untouched.'
+      case 'css_unbalanced_braces': return 'Close unbalanced braces at the end of the affected <style> block; existing rules are untouched.'
+      case 'inline_js_syntax': return 'Disable inline scripts that fail to compile (syntax errors); original code is preserved in the rollback backup.'
       default: return 'Apply deterministic repair.'
     }
   }
@@ -363,6 +449,11 @@ export function createRestorationEngine(deps = {}) {
       case 'broken_image': return '<!-- broken image removed -->'
       case 'broken_script': return '<!-- broken script removed -->'
       case 'broken_style': return '<!-- broken stylesheet removed -->'
+      case 'missing_doctype': return '<!DOCTYPE html>'
+      case 'deprecated_tag': return '(content kept, deprecated wrapper removed)'
+      case 'deprecated_attr': return '<element> (obsolete attribute removed)'
+      case 'css_unbalanced_braces': return '} ← missing brace(s) appended'
+      case 'inline_js_syntax': return '// [AlphaTekX Restore] disabled: script failed to compile (see backup)'
       default: return '(auto-repair)'
     }
   }
@@ -442,6 +533,36 @@ export function createRestorationEngine(deps = {}) {
       applied.push('missing_description')
     }
 
+    if (enabledTypes.has('deprecated_attr')) {
+      const stripped = out.replace(/<[a-zA-Z][^>]*>/g, (tag) => tag.replace(/\s(?:bgcolor|align|border)\s*=\s*("[^"]*"|'[^']*'|[^\s">]+)/gi, ''))
+      if (stripped !== out) applied.push('deprecated_attr')
+      out = stripped
+    }
+    if (enabledTypes.has('deprecated_tag')) {
+      const unwrapped = out.replace(/<(marquee|blink|font|center)\b[^>]*>([\s\S]*?)<\/\1>/gi, '$2')
+      if (unwrapped !== out) applied.push('deprecated_tag')
+      out = unwrapped
+    }
+    if (enabledTypes.has('css_unbalanced_braces')) {
+      for (const block of styleBlocksNeedingBraces(out).reverse()) {
+        const closeIdx = block.full.toLowerCase().lastIndexOf('</style>')
+        const patched = block.full.slice(0, closeIdx) + '}'.repeat(block.missing) + block.full.slice(closeIdx)
+        out = out.slice(0, block.start) + patched + out.slice(block.start + block.full.length)
+      }
+      applied.push('css_unbalanced_braces')
+    }
+    if (enabledTypes.has('inline_js_syntax')) {
+      for (const script of brokenInlineScripts(out).reverse()) {
+        const note = `\n// [AlphaTekX Restore] Disabled: inline script failed to compile (${String(script.reason).replace(/\*\//g, '*_/')}). Original preserved in rollback backup.\n`
+        out = out.slice(0, script.index) + `<script${script.attrs}>${note}</script>` + out.slice(script.index + script.full.length)
+      }
+      applied.push('inline_js_syntax')
+    }
+    if (enabledTypes.has('missing_doctype') && !/<!doctype/i.test(out)) {
+      out = `<!DOCTYPE html>\n${out}`
+      applied.push('missing_doctype')
+    }
+
     out = sanitizeEncoding(out)
     return { html: out, applied }
   }
@@ -460,6 +581,7 @@ export function createRestorationEngine(deps = {}) {
       generatedAt: new Date().toISOString(),
       beforeScore: session.beforeScore,
       afterScore: session.afterScore,
+      severitySummary: severitySummary(session.findings),
       findings: session.findings,
       appliedFixes: session.appliedFixList,
       ...reportExtra,

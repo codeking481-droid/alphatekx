@@ -63,16 +63,32 @@ const TINY_JPG = Buffer.from(
 )
 
 function batteredPage() {
-  const body = `<!doctype html>
-<html>
+  const body = `<html>
 <head>
+  <style>
+    .hero { margin: 0 auto; }
+    .badge { color: crimson;
+  </style>
   <link rel="stylesheet" href="${SITE_BASE}/theme-dead.css">
 </head>
-<body>
+<body bgcolor="#ffffff">
   <h1>Bakery Delights${NULL_BYTE}</h1>
   <p>Welcome to Bakery Delights — artisan bread since 1998.</p>
+  <p align="center">Visit our bakery.</p>
   <p>Order telemetry: ${CJK_MOJIBAKE}${NULL_BYTE}</p>
   <span>${REPLACEMENT_CHAR}Thanks for visiting.</span>
+  <marquee>Grand Opening Week!</marquee>
+  <center>Open Daily</center>
+  <font size="4">Family Recipes</font>
+  <table border="1"><tr><td>Mon–Sat 7am</td></tr></table>
+  <script>
+    function boom( {
+      console.log("boom");
+    }
+  </script>
+  <script>
+    console.log("alive-inline");
+  </script>
   <script src="${SITE_BASE}/assets/app-dead.js"></script>
   <script src="/assets/app-alive.js"></script>
   <script>window.CONFIG = { apiKey: "${FAKE_PASSWORD}", githubToken: "${FAKE_GITHUB}", awsKey: "${FAKE_AWS}", slackToken: "${FAKE_SLACK}", openaiKey: "${FAKE_OPENAI}" };</script>
@@ -195,7 +211,13 @@ const EXPECTED_TYPES = [
   'missing_charset', 'missing_viewport', 'missing_title', 'missing_lang', 'missing_description',
   'img_missing_alt',
   'broken_script', 'broken_style', 'broken_link', 'broken_image',
+  'missing_doctype',
+  'deprecated_tag',
+  'deprecated_attr',
+  'css_unbalanced_braces',
+  'inline_js_syntax',
 ].sort()
+const EXPECTED_SEVERITY = { critical: 8, high: 6, medium: 3, low: 5 }
 
 async function createSession() {
   const r = await api('POST', '/api/engine/session')
@@ -217,10 +239,12 @@ async function fullRestoreSuite() {
   if (scanRes.status !== 200) return
 
   const foundTypes = (scanRes.json.summary?.issues_found ?? 0)
-  check('all 17 planted issues detected', foundTypes === EXPECTED_TYPES.length, `found=${foundTypes} expected=${EXPECTED_TYPES.length}`)
+  check('all 22 planted issues detected', foundTypes === EXPECTED_TYPES.length, `found=${foundTypes} expected=${EXPECTED_TYPES.length}`)
   const stateAfterScan = await api('GET', `/api/engine/state?sessionId=${sessionId}`)
   const types = (stateAfterScan.json.findings || []).map((f) => f.type).sort()
   check('finding types match torture inventory exactly', JSON.stringify(types) === JSON.stringify(EXPECTED_TYPES), types.join(','))
+  const sev = scanRes.json.summary?.severity || {}
+  check('severity report matches diagnosis', JSON.stringify(sev) === JSON.stringify(EXPECTED_SEVERITY), `got=${JSON.stringify(sev)} want=${JSON.stringify(EXPECTED_SEVERITY)}`)
   const enc = (stateAfterScan.json.findings || []).find((f) => f.type === 'corrupted_encoding')
   // WHATWG fetch text() strips a leading BOM before the engine ever sees it,
   // so scan reports the three corruption causes that survive transport.
@@ -231,11 +255,11 @@ async function fullRestoreSuite() {
 
   const fixRes = await api('POST', '/api/engine/fix', { sessionId })
   check('fix generation 200', fixRes.status === 200, `status=${fixRes.status}`)
-  check('one fix per finding (17)', /17 fixes generated/.test(fixRes.json.message || ''), fixRes.json.message)
+  check('one fix per finding (22)', /22 fixes generated/.test(fixRes.json.message || ''), fixRes.json.message)
 
   const approveRes = await api('POST', '/api/engine/approve', { sessionId, approved: true })
   check('approve applies all fixes', approveRes.status === 200 && approveRes.json.state === 'RESTORATION_COMPLETE', `status=${approveRes.status} state=${approveRes.json.state}`)
-  check('summary counts 17 fixed / 1 file modified', approveRes.json.summary?.issues_fixed === 17 && approveRes.json.summary?.files_modified === 1, JSON.stringify(approveRes.json.summary))
+  check('summary counts 22 fixed / 1 file modified', approveRes.json.summary?.issues_fixed === 22 && approveRes.json.summary?.files_modified === 1, JSON.stringify(approveRes.json.summary))
 
   const code = await rawGet(`/api/engine/code?sessionId=${sessionId}`)
   check('fixed code served as UTF-8 text', code.status === 200 && /charset=utf-8/.test(code.contentType), code.contentType)
@@ -264,6 +288,31 @@ async function fullRestoreSuite() {
   check('dead link unwrapped, label kept', html.includes('Discontinued Line') && !/discontinued/.test(html))
   check('alive script untouched', html.includes('/assets/app-alive.js'))
   check('alive image untouched', html.includes('alt="Bakery logo"'))
+
+  check('doctype prepended', /^<!DOCTYPE html>/i.test(html.trim()))
+  for (const [label, marker] of [['marquee', '<marquee'], ['center', '<center'], ['font', '<font']]) {
+    check(`deprecated tag <${label}> unwrapped`, !html.toLowerCase().includes(marker))
+  }
+  check('deprecated content preserved (marquee)', html.includes('Grand Opening Week!'))
+  check('deprecated content preserved (center)', html.includes('Open Daily'))
+  check('deprecated content preserved (font)', html.includes('Family Recipes'))
+  const attrStripped = /<[a-zA-Z][^>]*>/g
+  let staleAttrs = 0
+  for (const tag of html.match(attrStripped) || []) {
+    if (/\s(?:bgcolor|align|border)\s*=/i.test(tag)) staleAttrs += 1
+  }
+  check('all obsolete attributes stripped', staleAttrs === 0, `${staleAttrs} remaining`)
+  check('table element itself kept', html.includes('<table>') || /<table\s[^>]*>/.test(html))
+
+  const styleBlock = (html.match(/<style\b[^>]*>([\s\S]*?)<\/style>/i) || [])[1] || ''
+  const styleOpens = (styleBlock.match(/\{/g) || []).length
+  const styleCloses = (styleBlock.match(/\}/g) || []).length
+  check('CSS braces balanced by surgery', styleOpens > 0 && styleOpens === styleCloses, `opens=${styleOpens} closes=${styleCloses}`)
+  check('existing CSS rules untouched (.hero)', /\.hero\s*\{\s*margin:\s*0 auto;\s*\}/.test(styleBlock))
+  check('wounded rule still present (.badge)', styleBlock.includes('.badge') && styleBlock.includes('crimson'))
+
+  check('broken inline script disabled', !html.includes('function boom(') && html.includes('[AlphaTekX Restore] Disabled: inline script failed to compile'))
+  check('healthy inline script byte-identical', html.includes('\n    console.log("alive-inline");\n  '))
 
   // Delivery A: download ZIP and verify its contents byte-for-byte.
   const delDownload = await api('POST', '/api/engine/delivery', { sessionId, option: 'download' })
@@ -306,7 +355,7 @@ async function partialApprovalSuite() {
   assert.ok(viewportFix, 'missing_viewport fix exists')
   const approveRes = await api('POST', '/api/engine/approve', { sessionId, approved: true, disabled: [viewportFix.findingId] })
   check('partial approve succeeds', approveRes.status === 200, `status=${approveRes.status}`)
-  check('summary counts 16 fixed', approveRes.json.summary?.issues_fixed === 16, String(approveRes.json.summary?.issues_fixed))
+  check('summary counts 21 fixed', approveRes.json.summary?.issues_fixed === 21, String(approveRes.json.summary?.issues_fixed))
 
   const code = await rawGet(`/api/engine/code?sessionId=${sessionId}`)
   check('disabled viewport still absent', !/<meta[^>]+name=["']viewport["']/i.test(code.text))
