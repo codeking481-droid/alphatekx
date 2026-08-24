@@ -125,6 +125,9 @@ const CLEAN_PAGE = `<!DOCTYPE html>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Clean Control Page</title>
+    <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;" />
+    <meta http-equiv="Strict-Transport-Security" content="max-age=31536000; includeSubDomains" />
+    <meta http-equiv="X-Content-Type-Options" content="nosniff" />
     <meta name="description" content="A spotless page used as the negative control." />
     <link rel="canonical" href="https://example.com/clean" />
     <meta name="robots" content="index, follow" />
@@ -394,7 +397,7 @@ async function fullRestoreSuite() {
   // ── Checklist: form validation, status styling, loading state ──
   const requiredCount = (html.match(/required aria-required="true"/gi) || []).length
   check('all fillable fields marked required + aria-required', requiredCount >= 4, `${requiredCount} fields`)
-  check('client-side email validation present', /valid email address/.test(html) && /\[\\s@\]/.test(html))
+  check('client-side email validation present', /valid email address/.test(html) && /\[\^\\s@\]/.test(html))
   check('status region with role=status + aria-live', /role="status"[^>]*aria-live="polite"|aria-live="polite"[^>]*role="status"/.test(html))
   check('success state styled green', /\.atk-status\.success\{color:#0a7e3c;background:#e6f9ed;\}/.test(styleCss.replace(/\s+/g, '')))
   check('error state styled red', /\.atk-status\.error\{color:#b91c1c;background:#fde8e8;\}/.test(styleCss.replace(/\s+/g, '')))
@@ -431,7 +434,7 @@ async function fullRestoreSuite() {
 
   // ── Preservation doctrine ──
   check('surviving content preserved (welcome copy)', html.includes('Welcome to Bakery Delights'))
-  check('dead link unwrapped, label kept', html.includes('Discontinued Line') && !/discontinued/i.test(html.replace(/<!--[^>]*-->/g, '')))
+  check('dead link unwrapped, label kept', html.includes('Discontinued Line') && !/href="[^"]*discontinued/i.test(html))
   check('charset meta injected', /<meta[^>]+charset/i.test(html))
   check('viewport meta injected', /<meta[^>]+name=["']viewport["']/i.test(html))
   for (const [label, marker] of [['marquee', '<marquee'], ['center', '<center'], ['font', '<font']]) {
@@ -466,16 +469,17 @@ async function fullRestoreSuite() {
   const zippedHtml = await archive.file('index.html').async('string')
   check('zip index.html identical to served fixed code', zippedHtml === html)
   const zippedReport = JSON.parse(await archive.file('report.json').async('string'))
-  check('zip report documents findings + fixes + improvements', zippedReport.findings?.length === EXPECTED_TYPES.length && zippedReport.fixesApplied?.length === EXPECTED_TYPES.length && Array.isArray(zippedReport.improvements))
+  check('zip report documents findings + per-finding fixes + improvements', zippedReport.findings?.length === EXPECTED_TYPES.length && zippedReport.fixes?.length === EXPECTED_TYPES.length && Array.isArray(zippedReport.improvements))
 
   // ── Verify loop reaches DONE with perfect score ──
   await api('POST', '/api/engine/v2/delivery', { sessionId, option: 'code' })
   await api('POST', '/api/engine/v2/action-complete', { sessionId })
-  const verifyRes = await api('POST', '/api/engine/v2/verify', { sessionId })
-  check('verify reaches DONE', verifyRes.json.state === 'DONE', String(verifyRes.json.state))
-  check('after score perfect 100', verifyRes.json.summary?.after_score === 100, String(verifyRes.json.summary?.after_score))
-  check('zero remaining issues on re-scan', verifyRes.json.verifyResult?.remainingIssues === 0, JSON.stringify(verifyRes.json.verifyResult?.remaining))
-  check('utf8Clean certified', verifyRes.json.verifyResult?.utf8Clean === true)
+  await api('POST', '/api/engine/v2/verify', { sessionId })
+  const verifyStatus = await api('GET', `/api/engine/v2/verify/status?sessionId=${sessionId}`)
+  check('verify reaches DONE', verifyStatus.json.state === 'DONE', String(verifyStatus.json.state))
+  check('after score perfect 100', verifyStatus.json.summary?.after_score === 100, String(verifyStatus.json.summary?.after_score))
+  check('zero remaining issues on re-scan', verifyStatus.json.verifyResult?.remainingIssues === 0, JSON.stringify(verifyStatus.json.verifyResult?.remaining))
+  check('utf8Clean certified', verifyStatus.json.verifyResult?.utf8Clean === true)
 
   return { before: 0, after: 100 }
 }

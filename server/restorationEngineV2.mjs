@@ -139,7 +139,14 @@ function extractPageResources(html, baseUrl) {
   for (const m of source.matchAll(/<a\b[^>]*?\bhref\s*=\s*["']([^"']+)["']/gi)) consider('link', 'links', m[1])
   for (const m of source.matchAll(/<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/gi)) consider('image', 'images', m[1])
   for (const m of source.matchAll(/<script\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/gi)) consider('script', 'scripts', m[1])
-  for (const m of source.matchAll(/<link\b[^>]*?\bhref\s*=\s*["']([^"']+)["']/gi)) consider('style', 'styles', m[1])
+  // Only rel*=stylesheet <link> tags are stylesheet candidates — canonical,
+  // icon, preload, and alternate links must never be probed as CSS or removed.
+  for (const m of source.matchAll(/<link\b[^>]*>/gi)) {
+    const tag = m[0]
+    if (!/\brel\s*=\s*["'][^"']*stylesheet[^"']*["']/i.test(tag)) continue
+    const href = getAttr(tag, 'href')
+    if (href) consider('style', 'styles', href)
+  }
   return out
 }
 
@@ -962,12 +969,12 @@ export function applyFixesToHtmlV2(html, enabledTypes, ctx = {}) {
   }
 
   if (polishPieces.length) {
-    const styleBlock = `\n<style>\n/* [AlphaTekX Restore v2.0] polish layer */\n${polishPieces.join('\n')}\n</style>`
+    const polishCss = `\n/* [AlphaTekX Restore v2.0] polish layer */\n${polishPieces.join('\n')}\n`
     if (/<\/style>/i.test(out)) {
       const firstClose = out.toLowerCase().indexOf('</style>')
-      out = out.slice(0, firstClose) + styleBlock + '\n' + out.slice(firstClose)
+      out = out.slice(0, firstClose) + polishCss + out.slice(firstClose)
     } else {
-      out = injectHeadSnippets(out, [styleBlock.trim()])
+      out = injectHeadSnippets(out, [`<style>${polishCss}</style>`])
     }
   }
 
@@ -1320,14 +1327,14 @@ export function createRestorationEngineV2(deps = {}) {
     try {
       await runScan(session, { url: body.url, html: body.html, baseUrl: body.baseUrl })
       const enabledTypes = new Set(session.findings.map((f) => f.type))
-      applyApprovedFixes(session, enabledTypes)
+      applyApprovedFixes(session, enabledTypes, session.findings.length)
       const report = {
         sessionId: session.id,
         url: session.url,
         before_score: session.beforeScore,
         after_score: session.afterScore,
         issues_found: session.findings.length,
-        issues_fixed: session.appliedFixList.length,
+        issues_fixed: session.appliedFixes,
         severity: severitySummary(session.findings),
         findings: session.findings.map((f) => ({ type: f.type, severity: f.severity, description: f.description })),
         fixes_applied: session.appliedFixList.map((t) => ({ type: t, description: FIX_DESCRIPTIONS[t] || 'Applied.' })),
@@ -1459,6 +1466,7 @@ export function createRestorationEngineV2(deps = {}) {
       beforeScore: session.beforeScore,
       afterScore: session.afterScore,
       findings: session.findings,
+      fixes: (session.fixes || []).filter((f) => (session.enabledFixes || []).includes(f.findingId)),
       fixesApplied: session.appliedFixList,
       improvements: session.improvements,
       unresolved: session.unresolved,
