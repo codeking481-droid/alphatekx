@@ -45,7 +45,8 @@
     "test:home-edition": "node scripts/home-edition-tests.mjs",
     "test:platform-recolour": "node scripts/platform-recolour-tests.mjs",
     "test:super-computer": "node scripts/super-computer-agent-tests.mjs",
-    "test:available-platforms": "node scripts/available-platform-agent-tests.mjs"
+    "test:available-platforms": "node scripts/available-platform-agent-tests.mjs",
+    "test:restore-torture": "node scripts/restore-engine-torture.mjs"
   },
   "engines": {
     "node": ">=22.0.0"

@@ -331,7 +331,7 @@ export function createRestorationEngine(deps = {}) {
 
   function fixDescriptionFor(finding) {
     switch (finding.type) {
-      case 'corrupted_encoding': return 'Strip BOM, null bytes, and replacement characters; enforce clean UTF-8.'
+      case 'corrupted_encoding': return 'Strip BOM, null bytes, replacement characters, and CJK mojibake; enforce clean UTF-8.'
       case 'leaked_secret': return 'Redact exposed secret values with REDACTED placeholders.'
       case 'mixed_content': return 'Upgrade insecure http:// resource URLs to https://.'
       case 'missing_charset': return 'Inject <meta charset="utf-8"> into <head>.'
@@ -389,12 +389,19 @@ export function createRestorationEngine(deps = {}) {
     if (enabledTypes.has('corrupted_encoding')) {
       out = sanitizeEncoding(out)
       out = out.replace(/^\uFEFF/, '').replace(/\u0000/g, '').replace(/\uFFFD/g, '')
+      // CJK ranges are treated as encoding corruption everywhere else in this
+      // engine (FileHandler.isEnglish), so repair must strip them too or the
+      // post-fix validation would reject our own output.
+      out = out.replace(/[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/g, '')
       applied.push('corrupted_encoding')
     }
     if (enabledTypes.has('leaked_secret')) {
       for (const pattern of SECRET_PATTERNS) {
+        // Only the generic pattern owns a capture group; without the typeof
+        // guard, replace() passes the match OFFSET as `captured`, making the
+        // redaction a silent no-op for token-style secrets.
         out = out.replace(pattern.regex, (match, captured) => {
-          if (captured) return match.replace(captured, 'REDACTED')
+          if (typeof captured === 'string') return match.replace(captured, 'REDACTED')
           return match.slice(0, 3) + 'REDACTED'
         })
       }
@@ -927,8 +934,8 @@ export function createRestorationEngine(deps = {}) {
       if (req.method === 'POST' && route === '/api/engine/delivery') { await handleDelivery(req, res, await readBody(req)); return true }
       if (req.method === 'POST' && route === '/api/engine/action-complete') { await handleActionComplete(req, res, await readBody(req)); return true }
       if (req.method === 'POST' && route === '/api/engine/github') { await handleGithub(req, res, await readBody(req)); return true }
-      if (req.method === 'GET' && route === '/api/engine/download') return handleDownload(req, res, urlObj)
-      if (req.method === 'GET' && route === '/api/engine/code') return handleCode(req, res, urlObj)
+      if (req.method === 'GET' && route === '/api/engine/download') { handleDownload(req, res, urlObj); return true }
+      if (req.method === 'GET' && route === '/api/engine/code') { handleCode(req, res, urlObj); return true }
       if (req.method === 'POST' && route === '/api/engine/deploy') { await handleDeploy(req, res, await readBody(req)); return true }
       if (req.method === 'POST' && route === '/api/engine/verify') { await handleVerify(req, res, await readBody(req)); return true }
       if (req.method === 'GET' && route === '/api/engine/verify/status') { await handleVerifyStatus(req, res, urlObj); return true }
