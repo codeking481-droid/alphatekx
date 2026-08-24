@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { ArrowLeft, Check, CreditCard, Crown, Zap, Loader2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
@@ -31,6 +31,7 @@ export default function Billing() {
     fixesLimit?: number | null
     sitesUsed?: number
     sitesLimit?: number | null
+    adminBypass?: boolean
   }
   type BillingTx = {
     id?: string
@@ -55,31 +56,43 @@ export default function Billing() {
   }
 
   // Real usage + billing history (same sources the server enforces against).
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      try {
-        const { data: { session } } = await supabase?.auth.getSession() ?? { data: { session: null } }
-        const headers = {
-          'Content-Type': 'application/json',
-          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+  // Refreshes on mount, after payment confirmation, on window focus, and
+  // every 30s so counters update live while the page stays open.
+  const loadUsage = useCallback(async () => {
+    try {
+      const { data: { session } } = await supabase?.auth.getSession() ?? { data: { session: null } }
+      let localUser: { id?: string; email?: string } | null = null
+      try { localUser = JSON.parse(localStorage.getItem('alphatekx:local-user') || 'null') } catch {}
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        ...(localUser?.id && localUser?.email ? { 'x-local-user-id': localUser.id, 'x-local-user-email': localUser.email } : {}),
+      }
+      const [quotaRes, billingRes] = await Promise.all([
+        fetch('/api/restore/quota', { headers }).catch(() => null),
+        fetch('/api/billing', { headers }).catch(() => null),
+      ])
+      if (quotaRes?.ok) setQuota(await quotaRes.json().catch(() => null))
+      if (billingRes?.ok) {
+        const data = await billingRes.json().catch(() => null)
+        if (Array.isArray(data?.transactions)) setBillingRows(data.transactions)
+        if (data && data.videosIncluded !== undefined) {
+          setVideos({ used: Number(data.videosUsed) || 0, included: data.videosIncluded === null ? null : Number(data.videosIncluded) || 0 })
         }
-        const [quotaRes, billingRes] = await Promise.all([
-          fetch('/api/restore/quota', { headers }).catch(() => null),
-          fetch('/api/billing', { headers }).catch(() => null),
-        ])
-        if (!cancelled && quotaRes?.ok) setQuota(await quotaRes.json().catch(() => null))
-        if (!cancelled && billingRes?.ok) {
-          const data = await billingRes.json().catch(() => null)
-          if (Array.isArray(data?.transactions)) setBillingRows(data.transactions)
-          if (data && data.videosIncluded !== undefined) {
-            setVideos({ used: Number(data.videosUsed) || 0, included: data.videosIncluded === null ? null : Number(data.videosIncluded) || 0 })
-          }
-        }
-      } catch {}
-    })()
-    return () => { cancelled = true }
+      }
+    } catch {}
   }, [paidConfirmation])
+
+  useEffect(() => {
+    void loadUsage()
+    const onFocus = () => { void loadUsage() }
+    window.addEventListener('focus', onFocus)
+    const timer = window.setInterval(() => { void loadUsage() }, 30000)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      window.clearInterval(timer)
+    }
+  }, [loadUsage])
 
   useEffect(() => {
     if (profile) {
@@ -318,6 +331,7 @@ export default function Billing() {
       <div className="mt-10 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6">
         <h3 className="mb-4 font-bold text-white">Usage This Month</h3>
         {quota ? (
+          <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {(([
               ['Scans', quota.scansUsed ?? 0, quota.scansLimit],
@@ -351,6 +365,12 @@ export default function Billing() {
               )
             })}
           </div>
+          {quota.adminBypass && (
+            <p className="mt-3 text-[11px] text-amber-300/80">
+              Admin bypass active — your usage is counted, but limits are never enforced for your account.
+            </p>
+          )}
+          </>
         ) : (
           <p className="text-sm text-white/40">Usage counters will appear here after your next scan.</p>
         )}

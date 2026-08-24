@@ -9559,25 +9559,27 @@ const server = http.createServer(async (req, res) => {
       }
 
       // PLAN QUOTA GATE — scans count against the monthly plan allowance
-      // (free plan = 1 scan/month). Admins bypass. Failed/unreachable scans
-      // are never consumed (quota is spent post-scan, like credits).
+      // (free plan = 1 scan/month). Admins are never BLOCKED, but their
+      // usage is still counted so the dashboard reflects reality.
+      // Failed/unreachable scans are never consumed (quota is spent
+      // post-scan, like credits).
       let scanQuotaPlanId = null
-      if (!isAdminEmailAddress(userEmail)) {
-        try {
-          const scanBillingUser = { id: user.id, email: user.email || userEmail }
-          const scanBilling = await billing.getUserBilling(scanBillingUser, supabaseConfig()).catch(() => null)
-          const scanPlanId = String(scanBilling?.plan || 'free')
-          if (scanPlanId !== 'admin') {
-            const scanVerdict = await checkQuota({ identity: userIdentity(user.id), planId: scanPlanId, kind: 'scan' })
-            if (!scanVerdict.ok) {
-              res.writeHead(402, { 'Content-Type': 'application/json' })
-              return res.end(JSON.stringify({ error: scanVerdict.reason, code: scanVerdict.code, quota: scanVerdict.status }))
-            }
-            scanQuotaPlanId = scanPlanId
+      try {
+        const scanBillingUser = { id: user.id, email: user.email || userEmail }
+        const scanBilling = await billing.getUserBilling(scanBillingUser, supabaseConfig()).catch(() => null)
+        const scanPlanId = String(scanBilling?.plan || 'free')
+        if (scanPlanId === 'admin') {
+          scanQuotaPlanId = 'admin'
+        } else {
+          const scanVerdict = await checkQuota({ identity: userIdentity(user.id), planId: scanPlanId, kind: 'scan' })
+          if (!scanVerdict.ok) {
+            res.writeHead(402, { 'Content-Type': 'application/json' })
+            return res.end(JSON.stringify({ error: scanVerdict.reason, code: scanVerdict.code, quota: scanVerdict.status }))
           }
-        } catch (scanGateError) {
-          console.error('[SCAN-QUOTA-GATE] non-fatal:', scanGateError instanceof Error ? scanGateError.message : scanGateError)
+          scanQuotaPlanId = scanPlanId
         }
+      } catch (scanGateError) {
+        console.error('[SCAN-QUOTA-GATE] non-fatal:', scanGateError instanceof Error ? scanGateError.message : scanGateError)
       }
 
       // Validate URL early before streaming
@@ -9936,9 +9938,10 @@ const server = http.createServer(async (req, res) => {
         const spent = await spendUserCredits(billingUser, action.cost, { reason: 'restore-fix', scanId })
         if (spent) newBalance = Math.max(0, await getUserCreditBalance(userEmail))
       }
-      if (executed.status === 'done' && !isAdmin) {
+      if (executed.status === 'done') {
+        // Admins are never blocked, but their fixes still count.
         try {
-          await consumeQuota({ identity: userIdentity(user.id), planId: plan.id, hostname: fixQuotaHostname, kind: 'fix' })
+          await consumeQuota({ identity: userIdentity(user.id), planId: isAdmin ? 'admin' : plan.id, hostname: fixQuotaHostname, kind: 'fix' })
         } catch (fixQuotaError) {
           console.error('[FIX-QUOTA] consume failed:', fixQuotaError instanceof Error ? fixQuotaError.message : fixQuotaError)
         }
@@ -10223,7 +10226,13 @@ const server = http.createServer(async (req, res) => {
         planId = String(b?.plan || 'free')
       }
       const identity = qUser?.id ? userIdentity(qUser.id) : ipIdentity(req)
-      return json(res, 200, { ...(await quotaStatus({ identity, planId })), ...limitsFor(planId) })
+      // Admins get real usage counters with their underlying plan's limits —
+      // enforcement bypass happens in the scan/fix gates, not by hiding limits.
+      const isAdminCaller = planId === 'admin'
+      const displayPlanId = isAdminCaller ? 'free' : planId
+      const quotaPayload = { ...(await quotaStatus({ identity, planId: displayPlanId })), ...limitsFor(displayPlanId) }
+      if (isAdminCaller) quotaPayload.adminBypass = true
+      return json(res, 200, quotaPayload)
     } catch (e) {
       return json(res, 200, { plan: 'Free Trial', planId: 'free', sitesLimit: 1, sitesUsed: 0, fixesLimit: 1, fixesUsed: 0 })
     }
