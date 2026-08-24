@@ -4518,6 +4518,17 @@ async function billingHandler(req, res) {
     const body = await readBody(req)
     const planId = String(body.planId || '')
     if (!billing.getPlan(planId).id) return json(res, 400, { error: 'Invalid plan' })
+    // SECURITY: paid tiers are granted ONLY through verified payment settlement
+    // (Paystack checkout -> webhook -> settle_paystack_purchase_v2 sets the
+    // plan itself). This endpoint previously let any authenticated user
+    // self-assign Enterprise with zero payment proof.
+    if ((billing.getPlan(planId).priceKobo ?? 0) > 0) {
+      return json(res, 402, {
+        error: 'Paid upgrades must be completed through checkout.',
+        code: 'CHECKOUT_REQUIRED',
+        checkoutUrl: '/billing',
+      })
+    }
     const result = await billing.setPlan(user, planId, config)
     return json(res, 200, result)
   }
@@ -9547,6 +9558,28 @@ const server = http.createServer(async (req, res) => {
         }))
       }
 
+      // PLAN QUOTA GATE — scans count against the monthly plan allowance
+      // (free plan = 1 scan/month). Admins bypass. Failed/unreachable scans
+      // are never consumed (quota is spent post-scan, like credits).
+      let scanQuotaPlanId = null
+      if (!isAdminEmailAddress(userEmail)) {
+        try {
+          const scanBillingUser = { id: user.id, email: user.email || userEmail }
+          const scanBilling = await billing.getUserBilling(scanBillingUser, supabaseConfig()).catch(() => null)
+          const scanPlanId = String(scanBilling?.plan || 'free')
+          if (scanPlanId !== 'admin') {
+            const scanVerdict = await checkQuota({ identity: userIdentity(user.id), planId: scanPlanId, kind: 'scan' })
+            if (!scanVerdict.ok) {
+              res.writeHead(402, { 'Content-Type': 'application/json' })
+              return res.end(JSON.stringify({ error: scanVerdict.reason, code: scanVerdict.code, quota: scanVerdict.status }))
+            }
+            scanQuotaPlanId = scanPlanId
+          }
+        } catch (scanGateError) {
+          console.error('[SCAN-QUOTA-GATE] non-fatal:', scanGateError instanceof Error ? scanGateError.message : scanGateError)
+        }
+      }
+
       // Validate URL early before streaming
       if (!targetUrl) {
         res.writeHead(400, { 'Content-Type': 'application/json' })
@@ -9594,6 +9627,15 @@ const server = http.createServer(async (req, res) => {
       // DEDUCT 1 CREDIT AFTER SUCCESSFUL SCAN - Using Supabase, not local
       const deducted = await deductCredit(userEmail)
       const remainingCredits = deducted ? (userCredits - 1) : userCredits
+
+      // Consume one scan from the monthly plan allowance (successful scans only).
+      if (scanQuotaPlanId) {
+        try {
+          await consumeQuota({ identity: userIdentity(user.id), planId: scanQuotaPlanId, kind: 'scan' })
+        } catch (scanQuotaError) {
+          console.error('[SCAN-QUOTA] consume failed:', scanQuotaError instanceof Error ? scanQuotaError.message : scanQuotaError)
+        }
+      }
 
       console.log(`[Scan] User ${userEmail}: ${userCredits} credits → ${remainingCredits} credits (deducted: ${deducted})`)
 
@@ -9865,6 +9907,18 @@ const server = http.createServer(async (req, res) => {
       const gitRepo = String(body.gitRepo || meta.repoName || '')
       const maskedSecretsLabel = String(body.maskedSecretsLabel || `${meta.counts?.liveSecrets || 0} live secrets`)
       const plan = await billing.restorePlanForUser(billingUser, config)
+
+      // PLAN QUOTA GATE — fixes and monthly site caps apply to every plan
+      // (free = 1 fix/month). Admins bypass. Only successful fixes consume.
+      let fixQuotaHostname = ''
+      try { fixQuotaHostname = new URL(String(meta.targetUrl || '')).hostname } catch {}
+      if (!isAdmin) {
+        const fixVerdict = await checkQuota({ identity: userIdentity(user.id), planId: plan.id, hostname: fixQuotaHostname })
+        if (!fixVerdict.ok) {
+          return json(res, 402, { error: fixVerdict.reason, code: fixVerdict.code, quota: fixVerdict.status })
+        }
+      }
+
       const creditsRemaining = await getUserCreditBalance(userEmail)
 
       const fixPlan = await makeFixPlan({
@@ -9881,6 +9935,13 @@ const server = http.createServer(async (req, res) => {
       if (executed.status === 'done' && !isAdmin && action.cost > 0) {
         const spent = await spendUserCredits(billingUser, action.cost, { reason: 'restore-fix', scanId })
         if (spent) newBalance = Math.max(0, await getUserCreditBalance(userEmail))
+      }
+      if (executed.status === 'done' && !isAdmin) {
+        try {
+          await consumeQuota({ identity: userIdentity(user.id), planId: plan.id, hostname: fixQuotaHostname, kind: 'fix' })
+        } catch (fixQuotaError) {
+          console.error('[FIX-QUOTA] consume failed:', fixQuotaError instanceof Error ? fixQuotaError.message : fixQuotaError)
+        }
       }
 
       return json(res, 200, { ok: executed.status === 'done', fix: executed, creditsRemaining: newBalance, cost: action.cost, engine: 'restore-engine-fix' })
@@ -10162,7 +10223,7 @@ const server = http.createServer(async (req, res) => {
         planId = String(b?.plan || 'free')
       }
       const identity = qUser?.id ? userIdentity(qUser.id) : ipIdentity(req)
-      return json(res, 200, { ...quotaStatus({ identity, planId }), ...limitsFor(planId) })
+      return json(res, 200, { ...(await quotaStatus({ identity, planId })), ...limitsFor(planId) })
     } catch (e) {
       return json(res, 200, { plan: 'Free Trial', planId: 'free', sitesLimit: 1, sitesUsed: 0, fixesLimit: 1, fixesUsed: 0 })
     }
@@ -10192,7 +10253,7 @@ const server = http.createServer(async (req, res) => {
         const rawTarget = parsedV3.searchParams.get('url') || ''
         let hostname = ''
         try { hostname = new URL(/^https?:\/\//i.test(rawTarget) ? rawTarget : 'https://' + rawTarget.replace(/^\/+/, '')).hostname } catch {}
-        const verdict = checkQuota({ identity, planId, hostname })
+        const verdict = await checkQuota({ identity, planId, hostname })
         if (!verdict.ok) {
           res.writeHead(402, { 'Content-Type': 'application/json' })
           return res.end(JSON.stringify({ error: verdict.reason, code: verdict.code, quota: verdict.status }))
@@ -10207,7 +10268,7 @@ const server = http.createServer(async (req, res) => {
           })
           reachable = probeRes.ok
         } catch {}
-        if (reachable) consumeQuota({ identity, planId, hostname })
+        if (reachable) await consumeQuota({ identity, planId, hostname })
       }
     } catch (gateErr) {
       console.error('[QUOTA-GATE] non-fatal:', gateErr instanceof Error ? gateErr.message : gateErr)

@@ -2,8 +2,8 @@ import { Crown } from 'lucide-react'
 
 export const PLAN_LABELS: Record<string, string> = {
   free: 'FREE',
-  lite_9: 'LITE',
-  video_19: 'STARTER',
+  lite_9: 'STARTER',
+  video_19: 'LITE',
   video_49: 'PRO',
   video_99: 'BUSINESS',
   enterprise_199: 'ENTERPRISE',

@@ -43,7 +43,7 @@ export default function CreditsExhaustedModal({ open, onClose }: Props) {
             className="w-full rounded-xl bg-slate-500/20 border border-slate-400/30 hover:border-slate-400/60 px-4 py-3 text-left transition-all"
           >
             <div className="flex items-center justify-between mb-1">
-              <span className="font-semibold text-white">Lite Plan</span>
+              <span className="font-semibold text-white">Starter Plan</span>
               <span className="text-lg font-bold text-[#FFD700]">$9</span>
             </div>
             <p className="text-xs text-white/60">1 site · 5 fixes/month</p>
@@ -54,10 +54,10 @@ export default function CreditsExhaustedModal({ open, onClose }: Props) {
             className="w-full rounded-xl bg-indigo-500/20 border border-indigo-400/30 hover:border-indigo-400/60 px-4 py-3 text-left transition-all"
           >
             <div className="flex items-center justify-between mb-1">
-              <span className="font-semibold text-white">Starter Plan</span>
+              <span className="font-semibold text-white">Lite Plan</span>
               <span className="text-lg font-bold text-[#FFD700]">$19</span>
             </div>
-            <p className="text-xs text-white/60">3 sites · 15 fixes/month + 10 videos (max 5 mins)</p>
+            <p className="text-xs text-white/60">3 sites · 15 fixes/month + 3 videos (max 5 mins)</p>
           </button>
 
           <button
@@ -71,7 +71,7 @@ export default function CreditsExhaustedModal({ open, onClose }: Props) {
               <span className="font-semibold text-white">Pro Plan</span>
               <span className="text-lg font-bold text-[#FFD700]">$49</span>
             </div>
-            <p className="text-xs text-white/60">10 sites · Unlimited fixes + 30 videos (max 8 mins)</p>
+            <p className="text-xs text-white/60">10 sites · Unlimited fixes + 25 videos (max 8 mins)</p>
           </button>
 
           <button

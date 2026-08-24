@@ -32,9 +32,9 @@ export const PLANS = {
     priceKobo: 0,
     monthlyCredits: 10,
     maxActiveAutomations: 1,
-    monthlyVideos: 1,
+    monthlyVideos: 0,
     videoMaxDurationSec: 2 * 60,
-    features: ['10 credits', '1 active automation', '1 video / month, max 2 mins'],
+    features: ['10 credits', '1 active automation', 'No video restoration'],
   },
   video_19: {
     id: 'video_19',
@@ -43,9 +43,9 @@ export const PLANS = {
     currency: 'USD',
     monthlyCredits: 400,
     maxActiveAutomations: 10,
-    monthlyVideos: 10,
+    monthlyVideos: 3,
     videoMaxDurationSec: 5 * 60,
-    features: ['3 sites, 15 fixes / month', 'App scans + reports', 'Videos up to 5 mins'],
+    features: ['3 sites, 15 fixes / month', 'App scans + reports', '3 video restorations, up to 5 mins'],
   },
   video_49: {
     id: 'video_49',
@@ -54,10 +54,10 @@ export const PLANS = {
     currency: 'USD',
     monthlyCredits: 800,
     maxActiveAutomations: 30,
-    monthlyVideos: 30,
+    monthlyVideos: 25,
     videoMaxDurationSec: 8 * 60,
     schedulerDays: 7,
-    features: ['10 sites, unlimited fixes', 'Videos up to 8 mins', '7-day scheduler'],
+    features: ['10 sites, unlimited fixes', '25 video restorations, up to 8 mins', '7-day scheduler'],
   },
   video_99: {
     id: 'video_99',
@@ -79,7 +79,7 @@ export const PLANS = {
     currency: 'USD',
     monthlyCredits: 150,
     maxActiveAutomations: 3,
-    monthlyVideos: 5,
+    monthlyVideos: 0,
     videoMaxDurationSec: 5 * 60,
     features: ['1 site, 5 fixes / month', 'Scan + report + full heal'],
   },
@@ -102,8 +102,8 @@ export const PLANS = {
 
 export const CREDIT_PACKS = [
   // Subscription plans (primary revenue)
-  { id: 'lite_9', credits: 150, amountKobo: 900, currency: 'USD', label: '$9 Healer Lite', description: '1 site, 5 fixes/month, scans + reports + full heals', type: 'subscription', planId: 'lite_9' },
-  { id: 'video_19', credits: 400, amountKobo: 1900, currency: 'USD', label: '$19 Healer Starter', description: '3 sites, 15 fixes/month, scans + reports + video restorations', type: 'subscription', planId: 'video_19' },
+  { id: 'lite_9', credits: 150, amountKobo: 900, currency: 'USD', label: '$9 Healer Starter', description: '1 site, 5 fixes/month, scans + reports + full heals', type: 'subscription', planId: 'lite_9' },
+  { id: 'video_19', credits: 400, amountKobo: 1900, currency: 'USD', label: '$19 Healer Lite', description: '3 sites, 15 fixes/month, scans + reports + video restorations', type: 'subscription', planId: 'video_19' },
   { id: 'video_49', credits: 800, amountKobo: 4900, currency: 'USD', label: '$49 Healer Pro', description: '10 sites, unlimited fixes, full restorations + all styles', type: 'subscription', planId: 'video_49' },
   { id: 'video_99', credits: 1200, amountKobo: 9900, currency: 'USD', label: '$99 Healer Business', description: '25 sites, priority healing queue, unlimited restorations', type: 'subscription', planId: 'video_99' },
   { id: 'enterprise_199', credits: 5000, amountKobo: 19900, currency: 'USD', label: '$199 Healer Enterprise', description: 'Unlimited sites and fixes, everything unlocked, priority queue', type: 'subscription', planId: 'enterprise_199' },
@@ -319,6 +319,8 @@ export async function getUserBilling(user, config) {
       usageThisMonth: 0,
       totalCreditsSpent: 0,
       maxActiveAutomations: 1000000,
+      videosIncluded: null,
+      videosUsed: 0,
       transactions: await getTransactions(user.id, 100),
     }
   }
@@ -338,6 +340,8 @@ export async function getUserBilling(user, config) {
     usageThisMonth: Number(profile?.monthly_credits_used) || 0,
     totalCreditsSpent: Number(profile?.total_credits_spent) || 0,
     maxActiveAutomations: plan.maxActiveAutomations,
+    videosIncluded: Number.isFinite(plan.monthlyVideos) ? Number(plan.monthlyVideos) || 0 : null,
+    videosUsed: Number(profile?.monthly_videos_used) || 0,
     transactions: await getTransactions(user.id, 100),
   }
 }

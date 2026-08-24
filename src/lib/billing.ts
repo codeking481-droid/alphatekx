@@ -48,28 +48,30 @@ export type BillingSummary = {
   usageThisMonth: number
   totalCreditsSpent: number
   maxActiveAutomations: number
+  videosIncluded?: number | null
+  videosUsed?: number
   transactions: Transaction[]
 }
 
 export const PLANS: Record<PlanId, Plan> = {
   free: {
     id: 'free', name: 'Free', priceKobo: 0, monthlyCredits: 10, maxActiveAutomations: 1,
-    monthlyVideos: 1,
+    monthlyVideos: 0,
     videoMaxDurationSec: 2 * 60,
-    features: ['10 credits', '1 active automation', '1 video / month, max 2 mins'],
+    features: ['10 credits', '1 active automation', 'No video restoration'],
   },
   video_19: {
     id: 'video_19', name: '$19', priceKobo: 1900, currency: 'USD', monthlyCredits: 400, maxActiveAutomations: 10,
-    monthlyVideos: 10,
+    monthlyVideos: 3,
     videoMaxDurationSec: 5 * 60,
-    features: ['400 credits', '10 videos / month, max 5 mins', 'Up to 10 automations'],
+    features: ['400 credits', '3 videos / month, max 5 mins', 'Up to 10 automations'],
   },
   video_49: {
     id: 'video_49', name: '$49', priceKobo: 4900, currency: 'USD', monthlyCredits: 800, maxActiveAutomations: 30,
-    monthlyVideos: 30,
+    monthlyVideos: 25,
     videoMaxDurationSec: 8 * 60,
     schedulerDays: 7,
-    features: ['800 credits', '30 videos / month, max 8 mins', '7-day scheduler', 'Up to 30 automations'],
+    features: ['800 credits', '25 videos / month, max 8 mins', '7-day scheduler', 'Up to 30 automations'],
   },
   video_99: {
     id: 'video_99', name: '$99', priceKobo: 9900, currency: 'USD', monthlyCredits: 1200, maxActiveAutomations: 1000000,
@@ -81,7 +83,7 @@ export const PLANS: Record<PlanId, Plan> = {
 }
 
 export const CREDIT_PACKS: CreditPack[] = [
-  { id: 'video_19', label: 'Healer Starter — $19', credits: 400, amountKobo: 1900, currency: 'USD', description: '10 scans, 3 video restorations, 400 credits/month' },
+  { id: 'video_19', label: 'Healer Lite — $19', credits: 400, amountKobo: 1900, currency: 'USD', description: '10 scans, 3 video restorations, 400 credits/month' },
   { id: 'video_49', label: 'Healer Pro — $49', credits: 800, amountKobo: 4900, currency: 'USD', description: '50 full restorations, 25 videos, 800 credits/month' },
   { id: 'video_99', label: 'Healer Empire — $99', credits: 1200, amountKobo: 9900, currency: 'USD', description: 'Unlimited restorations, all styles, 1,200 credits/month' },
   { id: 'test_100', label: 'Test purchase', credits: 100, amountKobo: 10000, currency: 'NGN', description: 'Test payment for ₦100' },

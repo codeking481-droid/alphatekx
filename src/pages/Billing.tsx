@@ -8,8 +8,8 @@ import PlanBadge, { PLAN_LABELS } from '../components/PlanBadge'
 type Plan = { id: string; packId: string; name: string; price: number; credits: number; features: string[]; recommended?: boolean }
 
 const PLANS: Plan[] = [
-  { id: 'lite_9', packId: 'lite_9', name: 'Lite', price: 9, credits: 150, features: ['1 site', '5 fixes / month', 'Scan + report + full heal'] },
-  { id: 'video_19', packId: 'video_19', name: 'Starter', price: 19, credits: 400, features: ['3 sites', '15 fixes / month', '10 App Scans + Reports', '3 Video Restorations'] },
+  { id: 'lite_9', packId: 'lite_9', name: 'Starter', price: 9, credits: 150, features: ['1 site', '5 fixes / month', 'Scan + report + full heal'] },
+  { id: 'video_19', packId: 'video_19', name: 'Lite', price: 19, credits: 400, features: ['3 sites', '15 fixes / month', '10 App Scans + Reports', '3 Video Restorations'] },
   { id: 'video_49', packId: 'video_49', name: 'Pro', price: 49, credits: 800, features: ['10 sites', 'Unlimited fixes', '50 Full App Restorations', '25 Video Restorations'], recommended: true },
   { id: 'video_99', packId: 'video_99', name: 'Business', price: 99, credits: 1200, features: ['25 sites', 'Priority healing queue', 'Unlimited Restorations', 'All video styles'] },
   { id: 'enterprise_199', packId: 'enterprise_199', name: 'Enterprise', price: 199, credits: 5000, features: ['Unlimited sites & fixes', 'Everything unlocked', 'Priority queue + API access', 'White-label reports'] },
@@ -22,6 +22,64 @@ export default function Billing() {
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null)
   const [paidConfirmation, setPaidConfirmation] = useState<{ plan: string; amountUsd: number; reference: string } | null>(null)
   const [confirmingPayment, setConfirmingPayment] = useState(false)
+
+  type QuotaInfo = {
+    plan?: string
+    scansUsed?: number
+    scansLimit?: number | null
+    fixesUsed?: number
+    fixesLimit?: number | null
+    sitesUsed?: number
+    sitesLimit?: number | null
+  }
+  type BillingTx = {
+    id?: string
+    type?: string
+    credits_added?: number
+    credits_removed?: number
+    balance_after?: number
+    reason?: string | null
+    reference?: string | null
+    created_at?: string
+  }
+  const [quota, setQuota] = useState<QuotaInfo | null>(null)
+  const [billingRows, setBillingRows] = useState<BillingTx[]>([])
+  const [videos, setVideos] = useState<{ used: number; included: number | null } | null>(null)
+  const [videoNoticeDismissed, setVideoNoticeDismissed] = useState(() => {
+    try { return localStorage.getItem('alphatekx:video-change-notice') === 'dismissed' } catch { return false }
+  })
+
+  const dismissVideoNotice = () => {
+    setVideoNoticeDismissed(true)
+    try { localStorage.setItem('alphatekx:video-change-notice', 'dismissed') } catch {}
+  }
+
+  // Real usage + billing history (same sources the server enforces against).
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { data: { session } } = await supabase?.auth.getSession() ?? { data: { session: null } }
+        const headers = {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        }
+        const [quotaRes, billingRes] = await Promise.all([
+          fetch('/api/restore/quota', { headers }).catch(() => null),
+          fetch('/api/billing', { headers }).catch(() => null),
+        ])
+        if (!cancelled && quotaRes?.ok) setQuota(await quotaRes.json().catch(() => null))
+        if (!cancelled && billingRes?.ok) {
+          const data = await billingRes.json().catch(() => null)
+          if (Array.isArray(data?.transactions)) setBillingRows(data.transactions)
+          if (data && data.videosIncluded !== undefined) {
+            setVideos({ used: Number(data.videosUsed) || 0, included: data.videosIncluded === null ? null : Number(data.videosIncluded) || 0 })
+          }
+        }
+      } catch {}
+    })()
+    return () => { cancelled = true }
+  }, [paidConfirmation])
 
   useEffect(() => {
     if (profile) {
@@ -168,6 +226,23 @@ export default function Billing() {
         </div>
       )}
 
+      {!videoNoticeDismissed && (currentPlan === 'video_19' || currentPlan === 'video_49') && (
+        <div className="mb-6 flex items-start justify-between gap-4 rounded-2xl border border-amber-400/30 bg-amber-400/[0.06] p-4 text-sm text-white/70">
+          <p>
+            <span className="font-semibold text-amber-200">Plan update:</span>{' '}
+            your monthly video restorations change from {currentPlan === 'video_19' ? '10' : '30'} to{' '}
+            {currentPlan === 'video_19' ? '3' : '25'} at your next renewal. Sites and fixes stay exactly the same.
+          </p>
+          <button
+            onClick={dismissVideoNotice}
+            className="shrink-0 rounded p-1 leading-none text-white/40 transition hover:text-white/80"
+            aria-label="Dismiss notice"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {PLANS.map((plan) => {
           const isActive = currentPlan === plan.id
@@ -241,8 +316,85 @@ export default function Billing() {
       </div>
 
       <div className="mt-10 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6">
-        <h3 className="mb-3 font-bold text-white">Usage History</h3>
-        <p className="text-sm text-white/40">Credit usage and billing history will appear here.</p>
+        <h3 className="mb-4 font-bold text-white">Usage This Month</h3>
+        {quota ? (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {(([
+              ['Scans', quota.scansUsed ?? 0, quota.scansLimit],
+              ['Fixes', quota.fixesUsed ?? 0, quota.fixesLimit],
+              ['Sites', quota.sitesUsed ?? 0, quota.sitesLimit],
+            ] as const).concat(
+              videos && videos.included !== 0
+                ? [['Videos', videos.used, videos.included] as const]
+                : []
+            )).map(([label, used, limit]) => {
+              const capped = typeof limit === 'number'
+              const pct = capped && limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0
+              const nearLimit = capped && pct >= 80
+              return (
+                <div key={label} className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-white/40">{label}</span>
+                    <span className={`text-sm font-bold ${nearLimit ? 'text-amber-300' : 'text-white/70'}`}>
+                      {used} / {capped ? limit : '∞'}
+                    </span>
+                  </div>
+                  {capped && (
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+                      <div
+                        className={`h-full rounded-full transition-all ${nearLimit ? 'bg-amber-400' : 'bg-[#D6FF00]'}`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <p className="text-sm text-white/40">Usage counters will appear here after your next scan.</p>
+        )}
+      </div>
+
+      <div className="mt-6 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6">
+        <h3 className="mb-4 font-bold text-white">Billing History</h3>
+        {billingRows.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[480px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-white/[0.06] text-[11px] uppercase tracking-wider text-white/30">
+                  <th className="pb-2 pr-4 font-semibold">Date</th>
+                  <th className="pb-2 pr-4 font-semibold">Activity</th>
+                  <th className="pb-2 pr-4 text-right font-semibold">Credits</th>
+                  <th className="pb-2 text-right font-semibold">Balance</th>
+                </tr>
+              </thead>
+              <tbody>
+                {billingRows.slice(0, 20).map((tx, i) => {
+                  const added = Number(tx.credits_added || 0)
+                  const removed = Number(tx.credits_removed || 0)
+                  const delta = added - removed
+                  return (
+                    <tr key={tx.id || i} className="border-b border-white/[0.04] last:border-0">
+                      <td className="py-2.5 pr-4 whitespace-nowrap text-white/40">
+                        {tx.created_at ? new Date(tx.created_at).toLocaleDateString() : '—'}
+                      </td>
+                      <td className="py-2.5 pr-4 capitalize text-white/60">
+                        {(tx.reason || tx.type || 'activity').replace(/_/g, ' ')}
+                      </td>
+                      <td className={`py-2.5 pr-4 text-right font-semibold ${delta >= 0 ? 'text-emerald-300' : 'text-white/60'}`}>
+                        {delta >= 0 ? `+${delta}` : delta}
+                      </td>
+                      <td className="py-2.5 text-right text-white/50">{tx.balance_after ?? '—'}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-sm text-white/40">No transactions yet — your purchases and usage will appear here.</p>
+        )}
       </div>
     </main>
   )
