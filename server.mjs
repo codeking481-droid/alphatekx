@@ -9745,6 +9745,27 @@ const server = http.createServer(async (req, res) => {
         })
       }
 
+      // PLAN QUOTA GATE — same policy as /api/scan: free = 1 scan/month.
+      // Admins are never blocked, but their scans still count. This endpoint
+      // previously bypassed plan quotas entirely, so scans made from the
+      // Restore page never counted toward (or against) the user's plan.
+      let restoreScanQuotaPlanId = null
+      try {
+        const rsScanBilling = await billing.getUserBilling(billingUser, config).catch(() => null)
+        const rsScanPlanId = String(rsScanBilling?.plan || 'free')
+        if (rsScanPlanId === 'admin') {
+          restoreScanQuotaPlanId = 'admin'
+        } else {
+          const rsScanVerdict = await checkQuota({ identity: userIdentity(user.id), planId: rsScanPlanId, kind: 'scan' })
+          if (!rsScanVerdict.ok) {
+            return json(res, 402, { error: rsScanVerdict.reason, code: rsScanVerdict.code, quota: rsScanVerdict.status })
+          }
+          restoreScanQuotaPlanId = rsScanPlanId
+        }
+      } catch (rsGateError) {
+        console.error('[RESTORE-SCAN-QUOTA-GATE] non-fatal:', rsGateError instanceof Error ? rsGateError.message : rsGateError)
+      }
+
       // 1) The real-browser scan (25 sensitive paths + bundles + screenshots).
       const restoreScanner = createRestoreScanner({ chromium })
       const scan = await restoreScanner(safeTarget, {
@@ -9824,6 +9845,15 @@ const server = http.createServer(async (req, res) => {
 
       const deducted = await deductCredit(userEmail)
       const creditsRemaining = deducted ? Math.max(0, credits - 1) : credits
+
+      // Consume one scan from the monthly plan allowance (successful scans only).
+      if (restoreScanQuotaPlanId) {
+        try {
+          await consumeQuota({ identity: userIdentity(user.id), planId: restoreScanQuotaPlanId, kind: 'scan' })
+        } catch (rsQuotaError) {
+          console.error('[RESTORE-SCAN-QUOTA] consume failed:', rsQuotaError instanceof Error ? rsQuotaError.message : rsQuotaError)
+        }
+      }
 
       const plan = await billing.restorePlanForUser(billingUser, config)
       const fixPlan = await makeFixPlan({
