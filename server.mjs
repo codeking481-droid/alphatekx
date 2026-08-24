@@ -9,11 +9,13 @@ import { chromium } from 'playwright'
 
 import { handlePreviewRoute, handleRestoreStreamRoute, handleFixStreamRoute, handleDownloadRoute, handlePreviewFixedRoute, handleScreenshotRoute } from './server/websiteRestoreStream.mjs'
 import { createRestorationEngine } from './server/restorationEngine.mjs'
+import { createRestorationEngineV2 } from './server/restorationEngineV2.mjs'
 import { createRestorationPipeline } from './server/restorationPipeline.mjs'
 import { FileHandler, sanitizeEncoding } from './server/scanEngine/fileUtils.js'
 import { handleGitHubAuth, handleGitHubCallback, handleGitHubStatus, handleGitHubRepos, handleGitHubApplyFix, handleGitHubCreatePR, handleGitHubRollback, handleGitHubPublishRestoration } from './server/githubDirectPush.mjs'
 import { handleWatchRoute } from './server/watchMode.mjs'
 import { handleMcpRoute } from './server/mcpServer.mjs'
+import { checkQuota, consumeQuota, quotaStatus, ipIdentity, userIdentity, limitsFor } from './server/restoreQuotas.mjs'
 import { handleDiagnoseRoute } from './server/diagnoseRoute.mjs'
 import { handleRestoreV2Route, handleRestorePushRoute } from './server/restorePipelineV2.mjs'
 import { handleRestoreV3Route, handleV3DownloadRoute, handleV3ArtifactRoute, handleV3ContentRoute, getRestorationPages } from './server/alphaRestorationPipeline.mjs'
@@ -7728,7 +7730,7 @@ async function buildMissionFiles(req, res) {
 const rateLimitMap = new Map()
 const RATE_LIMIT_WINDOW_MS = 60_000
 const RATE_LIMIT_MAX = 60
-const SENSITIVE_PATHS = ['/api/alpha', '/api/brain', '/api/credits', '/api/agents', '/api/alpha/mission', '/api/previews/', '/api/creations/publish', '/api/integrations/', '/api/verify-bonus']
+const SENSITIVE_PATHS = ['/api/alpha', '/api/brain', '/api/credits', '/api/agents', '/api/alpha/mission', '/api/previews/', '/api/creations/publish', '/api/integrations/', '/api/verify-bonus', '/api/restore/v3', '/mcp', '/api/watch/add']
 function isRateLimited(req) {
   const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown').split(',')[0].trim()
   const now = Date.now()
@@ -7740,6 +7742,25 @@ function isRateLimited(req) {
 }
 
 const restorationEngineRoute = createRestorationEngine({
+  requireUser: async (req) => {
+    const config = supabaseConfig()
+    return currentOrLocalUser(req, config.url, config.anon)
+  },
+  publishPasted: async ({ name, title, html, user }) => {
+    const config = supabaseConfig()
+    const baseUrl = String(process.env.PUBLIC_APP_URL || 'https://alphatekx.name.ng').replace(/\/$/, '')
+    const slug = slugifyName(name)
+    if (!validProjectName(slug)) return { status: 400, body: { error: 'Use 3-30 lowercase letters, numbers, or hyphens. Must start and end with a letter or number.' } }
+    const availability = await checkGlobalProjectAvailability(slug, config)
+    if (!availability.available && !(availability.exists && user && deploymentOwnedBy(availability.exists, user))) {
+      return { status: 409, body: { error: availability.reason, suggestions: availability.suggestions } }
+    }
+    return localPublishPasted({ title: title || slug, slug, html }, baseUrl, user)
+  },
+  log: (message) => console.log(message),
+})
+
+const restorationEngineV2Route = createRestorationEngineV2({
   requireUser: async (req) => {
     const config = supabaseConfig()
     return currentOrLocalUser(req, config.url, config.anon)
@@ -7783,6 +7804,10 @@ const server = http.createServer(async (req, res) => {
   try {
   if (isRateLimited(req)) return json(res, 429, { error: 'Too many requests. Please slow down.' })
   if (req.method === 'OPTIONS') return json(res, 204, {})
+  if (String(req.url || '').startsWith('/api/engine/v2/')) {
+    const handled = await restorationEngineV2Route(req, res)
+    if (handled) return
+  }
   if (String(req.url || '').startsWith('/api/engine/')) {
     const handled = await restorationEngineRoute(req, res)
     if (handled) return
@@ -10113,7 +10138,71 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && req.url?.startsWith('/api/restore/v3/content/')) {
     return handleV3ContentRoute(req, res)
   }
+  if (req.method === 'GET' && req.url?.startsWith('/api/restore/quota')) {
+    // Quota status for the signed-in (or anonymous) caller.
+    try {
+      const cfgQ = supabaseConfig()
+      let qUser = null
+      const parsedQ = new URL(req.url, 'http://localhost')
+      const quotaToken = parsedQ.searchParams.get('token') || ''
+      if (quotaToken) qUser = await userFromAccessToken(quotaToken, cfgQ.url, cfgQ.anon).catch(() => null)
+      if (!qUser) qUser = await currentOrLocalUser(req, cfgQ.url, cfgQ.anon).catch(() => null)
+      let planId = 'free'
+      if (qUser?.id) {
+        const b = await billing.getUserBilling(qUser, cfgQ).catch(() => null)
+        planId = String(b?.plan || 'free')
+      }
+      const identity = qUser?.id ? userIdentity(qUser.id) : ipIdentity(req)
+      return json(res, 200, { ...quotaStatus({ identity, planId }), ...limitsFor(planId) })
+    } catch (e) {
+      return json(res, 200, { plan: 'Free Trial', planId: 'free', sitesLimit: 1, sitesUsed: 0, fixesLimit: 1, fixesUsed: 0 })
+    }
+  }
+
   if (req.method === 'GET' && req.url?.startsWith('/api/restore/v3')) {
+    // QUOTA GATE — the advertised pricing, enforced for real. Full restorations
+    // consume a fix; scan-only is free. Unreachable sites are never charged.
+    try {
+      const parsedV3 = new URL(req.url, 'http://localhost')
+      const modeV3 = parsedV3.searchParams.get('mode') === 'scan-only' ? 'scan-only' : 'full'
+      const quotaToken = parsedV3.searchParams.get('token') || ''
+      const cfgQ = supabaseConfig()
+      let qUser = null
+      if (quotaToken) {
+        qUser = await userFromAccessToken(quotaToken, cfgQ.url, cfgQ.anon).catch(() => null)
+      }
+      if (!qUser) qUser = await currentOrLocalUser(req, cfgQ.url, cfgQ.anon).catch(() => null)
+      let planId = 'free'
+      if (qUser?.id) {
+        const b = await billing.getUserBilling(qUser, cfgQ).catch(() => null)
+        planId = String(b?.plan || 'free')
+      }
+      const identity = qUser?.id ? userIdentity(qUser.id) : ipIdentity(req)
+
+      if (modeV3 === 'full') {
+        const rawTarget = parsedV3.searchParams.get('url') || ''
+        let hostname = ''
+        try { hostname = new URL(/^https?:\/\//i.test(rawTarget) ? rawTarget : 'https://' + rawTarget.replace(/^\/+/, '')).hostname } catch {}
+        const verdict = checkQuota({ identity, planId, hostname })
+        if (!verdict.ok) {
+          res.writeHead(402, { 'Content-Type': 'application/json' })
+          return res.end(JSON.stringify({ error: verdict.reason, code: verdict.code, quota: verdict.status }))
+        }
+        // Reachability pre-check: a dead/unreachable site costs the user nothing.
+        let reachable = false
+        try {
+          const probeRes = await fetch(/^https?:\/\//i.test(rawTarget) ? rawTarget : 'https://' + rawTarget.replace(/^\/+/, ''), {
+            headers: { 'User-Agent': 'Mozilla/5.0 AlphaTekX-QuotaProbe' },
+            signal: AbortSignal.timeout(8000),
+            redirect: 'follow',
+          })
+          reachable = probeRes.ok
+        } catch {}
+        if (reachable) consumeQuota({ identity, planId, hostname })
+      }
+    } catch (gateErr) {
+      console.error('[QUOTA-GATE] non-fatal:', gateErr instanceof Error ? gateErr.message : gateErr)
+    }
     return handleRestoreV3Route(req, res)
   }
 
@@ -10815,3 +10904,11 @@ if (!process.env.VERCEL) {
   }
 }
 
+
+// --- UNCRASHABLE GUARDS � log and keep serving, never die -------------------
+process.on('uncaughtException', (err) => {
+  console.error('[GUARD] uncaughtException � server stays up:', err instanceof Error ? err.stack?.split('\n').slice(0, 3).join(' | ') : err)
+})
+process.on('unhandledRejection', (reason) => {
+  console.error('[GUARD] unhandledRejection � server stays up:', String(reason).slice(0, 300))
+})
