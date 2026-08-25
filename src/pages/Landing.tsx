@@ -474,21 +474,21 @@ function DownloadAppSection() {
   }
 
   return (
-    <section className="download-section border-y border-white/10 bg-[#050505] px-4 py-16 sm:px-6 sm:py-20 lg:py-28">
-      <div className="mx-auto max-w-5xl text-center">
+    <section className="download-section mx-auto my-8 max-w-[800px] rounded-[2rem] bg-gradient-to-br from-[#0B0215] to-[#1a0a2e] px-8 py-16 text-center sm:px-8 sm:py-16">
+      <div className="download-container">
         <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#FFD700]">Install once. Restore anywhere.</p>
         <h2 className="mt-3 text-[28px] font-black tracking-[-.04em] text-white text-balance sm:text-5xl">📱 Take Alpha with you</h2>
         <p className="mt-3 text-[15px] leading-6 text-white/50 sm:text-lg">Fix sites. Restore hope. Anywhere.</p>
-        <div className="download-buttons mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-          <button id="installPWA" onClick={installPWA} className="btn-primary inline-flex min-h-12 w-full items-center justify-center rounded-full bg-[#FFD700] px-7 text-[15px] font-black text-black shadow-[0_12px_32px_rgba(255,215,0,.18)] transition hover:brightness-110 sm:w-auto">
-            📲 Add to Home Screen
+        <div className="download-button-wrapper mt-8 flex flex-col items-center">
+          <button
+            id="installAppBtn"
+            onClick={installPWA}
+            className="btn-download-premium inline-flex min-h-[56px] items-center justify-center rounded-full bg-gradient-to-br from-[#FFD700] to-[#F59E0B] px-12 py-5 text-[1.5rem] font-bold uppercase tracking-[1px] text-[#0B0215] shadow-[0_8px_32px_rgba(255,215,0,0.3)] transition-all duration-300 hover:scale-[1.05] hover:shadow-[0_12px_48px_rgba(255,215,0,0.5)] active:scale-[0.95] max-sm:w-full max-sm:text-[1.15rem] max-sm:px-8"
+          >
+            📲 Download AlphaTekX App
           </button>
-          <a href="/app.apk" download className="btn-secondary inline-flex min-h-12 w-full items-center justify-center rounded-full border border-white/15 bg-white/5 px-7 text-[15px] font-bold text-white backdrop-blur transition hover:bg-white/10 sm:w-auto">
-            📥 Download APK
-          </a>
+          <p className="platform-note mt-4 text-[11px] font-semibold tracking-widest text-white/35 sm:text-xs">Works on Android · iOS · Web · No account needed to try.</p>
         </div>
-        <p className="platform-note mt-4 text-[11px] font-semibold tracking-widest text-white/35 sm:text-xs">Works on Android · iOS · Web · No account needed to try.</p>
-        <p className="mt-2 text-[11px] text-white/20">PWA · Offline-ready · <span className="text-white/30">0.8 MB</span></p>
       </div>
     </section>
   )
