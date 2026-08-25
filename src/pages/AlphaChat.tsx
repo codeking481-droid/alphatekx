@@ -200,6 +200,9 @@ function ChatContent() {
   const lastFixBaselineRef = useRef<{ url: string; scoreAfter: number | null; issuesRemaining: number | null } | null>(null)
   const [monthlyRevenue, setMonthlyRevenue] = useState<number | null>(null)
   const [revenueInput, setRevenueInput] = useState('')
+  const [showVerificationPopup, setShowVerificationPopup] = useState(false)
+  const [showVerifySection, setShowVerifySection] = useState(false)
+  const verificationPopupShownRef = useRef(false)
 
   useEffect(() => {
     void hydrateChatHistory()
@@ -214,6 +217,19 @@ function ChatContent() {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
   }, [messages])
+
+  // Verification popup — shows once after fix generated (deliverables ready) — ONE popup, ONE Verify scan
+  useEffect(() => {
+    const hasFix = messages.some(m => m.restoreCards?.v2?.deliverables || m.restoreCards?.v2?.restoreComplete)
+    const hasStreaming = messages.some(m => m.isStreaming)
+    if (hasFix && !hasStreaming && !showVerificationPopup && !showVerifySection && !verificationPopupShownRef.current) {
+      const t = setTimeout(() => {
+        setShowVerificationPopup(true)
+        verificationPopupShownRef.current = true
+      }, 600)
+      return () => clearTimeout(t)
+    }
+  }, [messages, showVerificationPopup, showVerifySection])
 
   const scrollToBottom = useCallback(() => {
     if (scrollRef.current) {
@@ -253,6 +269,12 @@ function ChatContent() {
       }))
       setIsGenerating(false)
       return
+    }
+    // Reset verification flow for new scan (not re-verify)
+    if (!reverifyActiveRef.current) {
+      verificationPopupShownRef.current = false
+      setShowVerificationPopup(false)
+      setShowVerifySection(false)
     }
     const effectiveRevenue = monthlyRevenueOverride !== undefined ? monthlyRevenueOverride : monthlyRevenue
     detectedUrlRef.current = url
@@ -1810,6 +1832,25 @@ function ChatContent() {
         )}
       </div>
 
+      {/* Verification — ONE SCAN, ONE RESULT (after popup → Verify) */}
+      {showVerifySection && !showVerificationPopup && (
+        <div className="verify-section mx-auto max-w-[680px] px-4 py-4 text-center">
+          <div className="rounded-2xl border border-[#FFD700]/30 bg-[#0B0215] p-6 shadow-[0_12px_32px_rgba(0,0,0,0.4)]">
+            <p className="text-[15px] font-bold text-white">✅ Fix generated. Apply it, then click below to verify.</p>
+            <p className="mt-1 text-xs text-white/50">We will rescan ONCE and confirm the fix.</p>
+            <button
+              onClick={() => {
+                setShowVerifySection(false)
+                void triggerReVerify()
+              }}
+              className="btn-verify mt-4 inline-flex items-center justify-center rounded-full bg-gradient-to-br from-[#FFD700] to-[#F59E0B] px-8 py-3 text-[15px] font-black text-[#0B0215] shadow-[0_8px_32px_rgba(255,215,0,0.3)] transition hover:scale-[1.02]"
+            >
+              ✅ Verify Fix
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Bottom Input (when messages exist) */}
       {!isEmpty && (
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-white/[0.04] bg-[#0A0A0A]/90 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-xl">
@@ -1867,6 +1908,49 @@ function ChatContent() {
                 className="mb-2 mr-2 grid size-8 shrink-0 place-items-center rounded-xl bg-[#D6FF00] text-black transition hover:bg-[#C2E600] disabled:opacity-20 disabled:cursor-not-allowed"
               >
                 {uploading ? <Loader2 size={13} className="animate-spin" /> : isGenerating ? <Square size={13} /> : <Send size={13} />}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Verification Popup — BIG, BOLD, CLEAR */}
+      {showVerificationPopup && (
+        <div className="verification-popup-overlay fixed inset-0 z-[10000] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+          <div className="verification-popup w-[90%] max-w-[600px] rounded-[24px] border-2 border-[#FFD700] bg-[#0B0215] p-8 shadow-[0_0_60px_rgba(255,215,0,0.2)]">
+            <div className="popup-header mb-4 flex items-center gap-3">
+              <span className="popup-icon text-[2rem]">⚠️</span>
+              <h2 className="text-[1.5rem] font-black text-[#FFD700]">IMPORTANT — Read This Before You Leave</h2>
+            </div>
+            <div className="popup-body">
+              <p className="mb-3 text-[15px] font-bold text-white">We have generated a fix for your site.</p>
+              <div className="fix-options">
+                <p className="text-sm font-black text-white">Choose how to apply it:</p>
+                <ul className="m-0 list-none p-0">
+                  <li className="border-b border-white/5 py-2 text-[15px] font-bold text-white">📥 Download ZIP</li>
+                  <li className="border-b border-white/5 py-2 text-[15px] font-bold text-white">📋 Copy Code</li>
+                  <li className="border-b border-white/5 py-2 text-[15px] font-bold text-white">🔗 GitHub PR</li>
+                </ul>
+              </div>
+              <div className="warning-box mt-4 rounded-lg border-l-4 border-[#FFD700] bg-[#FFD700]/10 p-4">
+                <p className="m-0 text-[15px] font-black text-[#FFD700]">⚠️ After you apply the fix, come back here and click "Verify" to confirm it worked.</p>
+              </div>
+            </div>
+            <div className="popup-footer mt-6 flex gap-3">
+              <button
+                onClick={() => {
+                  setShowVerificationPopup(false)
+                  setShowVerifySection(true)
+                }}
+                className="btn-continue flex-1 rounded-xl bg-gradient-to-br from-[#FFD700] to-[#F59E0B] px-6 py-3 text-[15px] font-black text-[#0B0215] transition hover:scale-[1.02]"
+              >
+                ✅ Continue — I'll verify later
+              </button>
+              <button
+                onClick={() => setShowVerificationPopup(false)}
+                className="btn-exit flex-1 rounded-xl border-2 border-white/15 bg-transparent px-6 py-3 text-[15px] font-bold text-white/60 transition hover:border-[#FFD700] hover:text-[#FFD700]"
+              >
+                ❌ Exit
               </button>
             </div>
           </div>
