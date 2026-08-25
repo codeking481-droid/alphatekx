@@ -446,30 +446,65 @@ function VideoSection() {
   )
 }
 
+// Global capture — before React mounts, so we never miss the prompt (fixes screenshot alert)
+let deferredPromptGlobal: any = null
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeinstallprompt', (e: any) => {
+    e.preventDefault()
+    deferredPromptGlobal = e
+    // dispatch for already-mounted component
+    window.dispatchEvent(new CustomEvent('pwa-prompt-ready'))
+  })
+}
+
 function DownloadAppSection() {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null)
-  const [canInstall, setCanInstall] = useState(false)
+  const [, setCanInstall] = useState(false)
 
   useEffect(() => {
+    // if event fired before mount, pick up global
+    if (deferredPromptGlobal) {
+      setDeferredPrompt(deferredPromptGlobal)
+      setCanInstall(true)
+    }
     const handler = (e: any) => {
       e.preventDefault()
+      deferredPromptGlobal = e
       setDeferredPrompt(e)
       setCanInstall(true)
     }
+    const globalReady = () => {
+      if (deferredPromptGlobal) {
+        setDeferredPrompt(deferredPromptGlobal)
+        setCanInstall(true)
+      }
+    }
     window.addEventListener('beforeinstallprompt', handler)
-    return () => window.removeEventListener('beforeinstallprompt', handler)
+    window.addEventListener('pwa-prompt-ready' as any, globalReady)
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handler)
+      window.removeEventListener('pwa-prompt-ready' as any, globalReady)
+    }
   }, [])
 
   const installPWA = async () => {
-    if (deferredPrompt) {
-      deferredPrompt.prompt()
-      const result = await deferredPrompt.userChoice
+    const promptToUse = deferredPrompt || deferredPromptGlobal
+    if (promptToUse) {
+      promptToUse.prompt()
+      const result = await promptToUse.userChoice
       if (result.outcome === 'accepted') console.log('✅ Alpha installed')
+      deferredPromptGlobal = null
       setDeferredPrompt(null)
       setCanInstall(false)
     } else {
-      // Fallback: instruct manual add
-      alert('To install: open browser menu → Add to Home Screen / Install App')
+      // Real fallback — not nonsense alert: if already installed or not promptable, guide without alert()
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone
+      if (isStandalone) {
+        // Already installed
+        return
+      }
+      // Try browser's native install via prompt not available — show inline, not alert
+      alert('Tap the share button and select "Add to Home Screen"')
     }
   }
 
