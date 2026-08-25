@@ -91,6 +91,11 @@ function Header() {
     }
   }
 
+  // Auto-redirect authenticated users — zero clicks
+  useEffect(() => {
+    if (user) navigate('/chat')
+  }, [user, navigate])
+
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b border-white/[0.08] bg-black/75 backdrop-blur-2xl supports-[backdrop-filter]:bg-black/60">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 pt-[env(safe-area-inset-top)]">
@@ -110,14 +115,7 @@ function Header() {
         </nav>
 
         <div className="hidden items-center gap-3 md:flex">
-          {user ? (
-            <Link
-              to="/dashboard"
-              className="inline-flex h-10 items-center rounded-full bg-[#FFD700] px-5 text-sm font-black text-black transition hover:brightness-110"
-            >
-              Open studio
-            </Link>
-          ) : (
+          {!user && (
             <>
               <button type="button" onClick={() => void handleAuth()} className="nav-login inline-flex h-10 items-center rounded-full border border-white/15 px-5 text-sm font-bold text-white transition hover:bg-white/10">
                 Login
@@ -155,11 +153,7 @@ function Header() {
               {label}
             </a>
           ))}
-          {user ? (
-            <Link to="/dashboard" onClick={() => setOpen(false)} className="mt-2 rounded-xl bg-[#FFD700] px-4 py-3 text-center font-black text-black">
-              Open studio
-            </Link>
-          ) : (
+          {!user && (
             <>
               <button type="button" onClick={() => { setOpen(false); void handleAuth() }} className="mt-2 w-full rounded-xl border border-white/15 px-4 py-3 text-center font-bold text-white">
                 Login
