@@ -15,8 +15,9 @@ const __dirname = path.dirname(__filename)
 // ============================================================
 
 const CONFIG = {
-  imageApi: process.env.IMAGE_API || 'z-image',
+  imageApi: process.env.IMAGE_API || 'wavespeed',
   zImageApiKey: process.env.Z_IMAGE_API_KEY || '',
+  wavespeedApiKey: process.env.WAVESPEED_API_KEY || process.env.WAVESPEED_API_KEY_2 || '',
   outputDir: path.join(process.cwd(), 'public', 'images', 'restored'),
   maxWidth: 1200,
   maxHeight: 800,
@@ -24,6 +25,51 @@ const CONFIG = {
 }
 
 try { fs.mkdirSync(CONFIG.outputDir, { recursive: true }) } catch {}
+
+// WaveSpeed helper — real-world best, REST + poll, $0.02/image
+async function generateWithWaveSpeed(prompt, referenceImage) {
+  const apiKey = CONFIG.wavespeedApiKey
+  if (!apiKey) return null
+  // Use text-to-image turbo — most reliable for broken-image replacement (prompt-only, no mask needed)
+  // If you need inpaint, switch endpoint to /z-image/turbo-inpaint with image+mask_image
+  const endpoint = 'https://api.wavespeed.ai/api/v3/wavespeed-ai/z-image/turbo'
+  const body = { prompt: prompt.slice(0, 800), width: 1024, height: 768 }
+  const submitRes = await fetch(endpoint, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  })
+  if (!submitRes.ok) {
+    const txt = await submitRes.text().then(t=>t.slice(0,400)).catch(()=> '')
+    throw new Error(`WaveSpeed submit ${submitRes.status} ${txt}`)
+  }
+  const submitData = await submitRes.json()
+  const task = submitData.data ?? submitData
+  const id = task.id || task.prediction_id || task.task_id
+  if (!id) throw new Error('No WaveSpeed prediction id')
+  const resultUrl = task.urls?.get || `https://api.wavespeed.ai/api/v3/predictions/${id}/result`
+  for (let i=0; i<30; i++) {
+    await new Promise(r=> setTimeout(r, 2000 + Math.min(i*300, 2000)))
+    const r = await fetch(resultUrl, { headers: { Authorization: `Bearer ${apiKey}` } })
+    if (!r.ok) continue
+    const j = await r.json()
+    const data = j.data ?? j
+    const status = data.status
+    if (status === 'completed') {
+      const outputs = data.outputs || data.output || []
+      const url = Array.isArray(outputs) ? outputs[0] : outputs
+      if (!url || typeof url !== 'string') throw new Error('WaveSpeed no output url')
+      const imgRes = await fetch(url)
+      if (!imgRes.ok) throw new Error(`Download ${imgRes.status}`)
+      const buf = Buffer.from(await imgRes.arrayBuffer())
+      return saveGeneratedImage(buf, prompt)
+    }
+    if (['failed','cancelled','timeout','error'].includes(status)) {
+      throw new Error(`WaveSpeed ${status}: ${JSON.stringify(data).slice(0,400)}`)
+    }
+  }
+  throw new Error('WaveSpeed poll timeout after 60s')
+}
 
 // ============================================================
 // DETECTION
@@ -153,7 +199,16 @@ function generatePrompt(context) {
 // ============================================================
 
 export async function generateImage(prompt, referenceImage) {
-  // Try Z-Image if key present
+  // 1. WaveSpeed — real-world best, $0.02/image, no cold starts (Render has WAVESPEED_API_KEY)
+  if (CONFIG.wavespeedApiKey) {
+    try {
+      const wsResult = await generateWithWaveSpeed(prompt, referenceImage)
+      if (wsResult) return wsResult
+    } catch (e) {
+      console.warn('[image] WaveSpeed error', e.message)
+    }
+  }
+  // 2. Z-Image direct (legacy)
   if (CONFIG.zImageApiKey) {
     try {
       const body = {
@@ -163,7 +218,6 @@ export async function generateImage(prompt, referenceImage) {
         height: 600,
         num_inference_steps: 30
       }
-      // If referenceImage is a real URL (not data:), pass it
       if (referenceImage && /^https?:\/\//i.test(referenceImage)) body.image_url = referenceImage
 
       const res = await fetch('https://api.z-image.com/v1/generate', {
