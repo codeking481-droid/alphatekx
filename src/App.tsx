@@ -55,9 +55,9 @@ export default function App() {
       <Route path="/" element={<LandingRoute />} />
       <Route path="/rescue" element={suspended(<Rescue />)} />
       <Route path="/about" element={<About />} />
-      <Route path="/auth" element={<Navigate to="/" replace />} />
-      <Route path="/login" element={<Navigate to="/" replace />} />
-      <Route path="/signup" element={<Navigate to="/" replace />} />
+      <Route path="/auth" element={suspended(<AuthRoute />)} />
+      <Route path="/login" element={suspended(<AuthRoute />)} />
+      <Route path="/signup" element={suspended(<AuthRoute />)} />
 
       {/* Core authenticated product */}
       <Route path="/chat" element={suspended(<AlphaChat />)} />

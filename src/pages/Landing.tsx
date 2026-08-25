@@ -99,12 +99,12 @@ function Header() {
             </Link>
           ) : (
             <>
-              <Link to="/auth" className="nav-login inline-flex h-10 items-center rounded-full border border-white/15 px-5 text-sm font-bold text-white transition hover:bg-white/10">
+              <button type="button" onClick={() => void instantGoogleSignup()} className="nav-login inline-flex h-10 items-center rounded-full border border-white/15 px-5 text-sm font-bold text-white transition hover:bg-white/10">
                 Login
-              </Link>
-              <Link to="/auth?signup=true" className="nav-signup inline-flex h-10 items-center rounded-full bg-[#FFD700] px-5 text-sm font-black text-black transition hover:brightness-110">
+              </button>
+              <button type="button" onClick={() => void instantGoogleSignup()} className="nav-signup inline-flex h-10 items-center rounded-full bg-[#FFD700] px-5 text-sm font-black text-black transition hover:brightness-110">
                 Sign Up
-              </Link>
+              </button>
             </>
           )}
         </div>
@@ -140,12 +140,12 @@ function Header() {
             </Link>
           ) : (
             <>
-              <Link to="/auth" onClick={() => setOpen(false)} className="mt-2 rounded-xl border border-white/15 px-4 py-3 text-center font-bold text-white">
+              <button type="button" onClick={() => { setOpen(false); void instantGoogleSignup() }} className="mt-2 w-full rounded-xl border border-white/15 px-4 py-3 text-center font-bold text-white">
                 Login
-              </Link>
-              <Link to="/auth?signup=true" onClick={() => setOpen(false)} className="mt-2 rounded-xl bg-[#FFD700] px-4 py-3 text-center font-black text-black">
+              </button>
+              <button type="button" onClick={() => { setOpen(false); void instantGoogleSignup() }} className="mt-2 w-full rounded-xl bg-[#FFD700] px-4 py-3 text-center font-black text-black">
                 Sign Up
-              </Link>
+              </button>
             </>
           )}
         </motion.nav>
@@ -342,13 +342,24 @@ function Hero() {
             className="mt-9 flex flex-col items-center gap-4 sm:flex-row lg:items-start"
           >
             <div className="hero-buttons flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
-              <Link
-                to={user ? '/dashboard' : '/auth?signup=true'}
-                className="btn-primary group inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-full bg-[#FFD700] px-7 font-black text-black shadow-[0_0_42px_rgba(107,33,168,.55)] transition hover:-translate-y-1 hover:shadow-[0_0_55px_rgba(255,215,0,.28)] sm:w-auto"
-              >
-                Get Started — Free
-                <ArrowRight className="transition group-hover:translate-x-1" size={19} />
-              </Link>
+              {user ? (
+                <Link
+                  to="/dashboard"
+                  className="btn-primary group inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-full bg-[#FFD700] px-7 font-black text-black shadow-[0_0_42px_rgba(107,33,168,.55)] transition hover:-translate-y-1 hover:shadow-[0_0_55px_rgba(255,215,0,.28)] sm:w-auto"
+                >
+                  Get Started — Free
+                  <ArrowRight className="transition group-hover:translate-x-1" size={19} />
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void instantGoogleSignup()}
+                  className="btn-primary group inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-full bg-[#FFD700] px-7 font-black text-black shadow-[0_0_42px_rgba(107,33,168,.55)] transition hover:-translate-y-1 hover:shadow-[0_0_55px_rgba(255,215,0,.28)] sm:w-auto"
+                >
+                  Get Started — Free
+                  <ArrowRight className="transition group-hover:translate-x-1" size={19} />
+                </button>
+              )}
               <a
                 href="#video"
                 className="btn-secondary inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-full border border-white/20 bg-white/5 px-7 font-bold text-white backdrop-blur transition hover:bg-white/10 sm:w-auto"
@@ -1256,9 +1267,15 @@ function FinalCTA() {
         </h2>
         <p className="mt-6 text-lg text-white/45">Your broken app or video deserves a second life.</p>
         <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
-          <Link to={user ? '/dashboard' : '/auth?signup=true'} className="inline-flex min-h-14 items-center justify-center gap-2 rounded-full bg-white px-8 font-black text-black shadow-[0_0_50px_rgba(107,33,168,.5)] transition hover:-translate-y-1" style={{ background: '#FFFFFF', color: '#000000', height: '48px', borderRadius: '12px', fontWeight: 600 }}>
-            Get Started — Free <ArrowRight size={19} />
-          </Link>
+          {user ? (
+            <Link to="/dashboard" className="inline-flex min-h-14 items-center justify-center gap-2 rounded-full bg-white px-8 font-black text-black shadow-[0_0_50px_rgba(107,33,168,.5)] transition hover:-translate-y-1" style={{ background: '#FFFFFF', color: '#000000', height: '48px', borderRadius: '12px', fontWeight: 600 }}>
+              Get Started — Free <ArrowRight size={19} />
+            </Link>
+          ) : (
+            <button type="button" onClick={() => void instantGoogleSignup()} className="inline-flex min-h-14 items-center justify-center gap-2 rounded-full bg-white px-8 font-black text-black shadow-[0_0_50px_rgba(107,33,168,.5)] transition hover:-translate-y-1" style={{ background: '#FFFFFF', color: '#000000', height: '48px', borderRadius: '12px', fontWeight: 600 }}>
+              Get Started — Free <ArrowRight size={19} />
+            </button>
+          )}
           <a href="#video" className="inline-flex min-h-14 items-center justify-center gap-2 rounded-full border border-white/20 bg-white/5 px-8 font-bold text-white backdrop-blur transition hover:bg-white/10">
             <Play size={18} /> Watch How It Works
           </a>
