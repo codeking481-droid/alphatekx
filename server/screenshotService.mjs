@@ -30,7 +30,7 @@ const SHOTS_ROOT = path.join(process.cwd(), 'data', 'screenshots')
  * @returns {Promise<{id, url, filePath, width, height, capturedAt}>}
  */
 export async function captureScreenshot(url, opts = {}) {
-  const { withContext } = await import('../scanner/browserPool.mjs')
+  const { withContext } = await import('./scanner/browserPool.mjs')
 
   const label = opts.label || 'capture'
   const scanId = opts.scanId || crypto.randomBytes(8).toString('hex')
