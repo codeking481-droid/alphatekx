@@ -1415,19 +1415,31 @@ function ChatContent() {
                                   const url = lastSiteUrlRef.current
                                   if (!url) return
                                   const email = getPaystackEmail()
-                                  // open real Paystack gateway — $49 video_49
-                                  fetch('/api/paystack/initialize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, amount: 4900, plan: 'video_49', callback_url: 'https://alphatekx.name.ng/chat', source: 'green-card' }) })
+                                  // Commandment 3: Fix Everything $49 → Paystack via /api/billing/checkout { plan: pro }
+                                  fetch('/api/billing/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan: 'pro', email, callback_url: 'https://alphatekx.name.ng/chat' }) })
                                     .then(r => r.text().then(t => ({ ok: r.ok, t })))
                                     .then(({ ok, t }) => {
                                       let d: any = {}
                                       try { d = t.trim() ? JSON.parse(t) : {} } catch {}
-                                      if (!ok) throw new Error(d.error || 'Payment init failed')
-                                      const authUrl = d.authorization_url || d.data?.authorization_url
-                                      if (!authUrl) throw new Error('No auth URL')
+                                      if (!ok) throw new Error(d.error || 'Checkout failed')
+                                      const checkoutUrl = d.checkoutUrl || d.authorization_url || d.data?.authorization_url
+                                      if (!checkoutUrl) throw new Error('No checkout URL')
                                       try { localStorage.setItem('pendingPayment', JSON.stringify({ plan: 'video_49', amountKobo: 4900, url })) } catch {}
-                                      window.open(String(authUrl), '_blank')
+                                      window.location.href = checkoutUrl
                                     })
-                                    .catch(e => console.error('Paystack $49', e))
+                                    .catch(() => {
+                                      // fallback to direct paystack init
+                                      fetch('/api/paystack/initialize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, amount: 4900, plan: 'video_49', callback_url: 'https://alphatekx.name.ng/chat', source: 'green-card' }) })
+                                        .then(r => r.text().then(t => ({ ok: r.ok, t })))
+                                        .then(({ ok, t }) => {
+                                          let d: any = {}
+                                          try { d = t.trim() ? JSON.parse(t) : {} } catch {}
+                                          if (!ok) throw new Error(d.error || 'Payment init failed')
+                                          const authUrl = d.authorization_url || d.data?.authorization_url
+                                          if (authUrl) window.open(String(authUrl), '_blank')
+                                        })
+                                        .catch(e => console.error('Paystack $49', e))
+                                    })
                                 }}
                                 className="flex-1 rounded-xl bg-emerald-500 px-4 py-3 text-center text-sm font-black text-black hover:bg-emerald-400"
                               >
@@ -1438,18 +1450,29 @@ function ChatContent() {
                                   const url = lastSiteUrlRef.current
                                   if (!url) return
                                   const email = getPaystackEmail()
-                                  fetch('/api/paystack/initialize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, amount: 1900, plan: 'video_19', callback_url: 'https://alphatekx.name.ng/chat', source: 'green-card' }) })
+                                  fetch('/api/billing/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan: 'lite', email, callback_url: 'https://alphatekx.name.ng/chat' }) })
                                     .then(r => r.text().then(t => ({ ok: r.ok, t })))
                                     .then(({ ok, t }) => {
                                       let d: any = {}
                                       try { d = t.trim() ? JSON.parse(t) : {} } catch {}
-                                      if (!ok) throw new Error(d.error || 'Payment init failed')
-                                      const authUrl = d.authorization_url || d.data?.authorization_url
-                                      if (!authUrl) throw new Error('No auth URL')
+                                      if (!ok) throw new Error(d.error || 'Checkout failed')
+                                      const checkoutUrl = d.checkoutUrl || d.authorization_url || d.data?.authorization_url
+                                      if (!checkoutUrl) throw new Error('No checkout URL')
                                       try { localStorage.setItem('pendingPayment', JSON.stringify({ plan: 'video_19', amountKobo: 1900, url })) } catch {}
-                                      window.open(String(authUrl), '_blank')
+                                      window.location.href = checkoutUrl
                                     })
-                                    .catch(e => console.error('Paystack $19', e))
+                                    .catch(() => {
+                                      fetch('/api/paystack/initialize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, amount: 1900, plan: 'video_19', callback_url: 'https://alphatekx.name.ng/chat', source: 'green-card' }) })
+                                        .then(r => r.text().then(t => ({ ok: r.ok, t })))
+                                        .then(({ ok, t }) => {
+                                          let d: any = {}
+                                          try { d = t.trim() ? JSON.parse(t) : {} } catch {}
+                                          if (!ok) throw new Error(d.error || 'Payment init failed')
+                                          const authUrl = d.authorization_url || d.data?.authorization_url
+                                          if (authUrl) window.open(String(authUrl), '_blank')
+                                        })
+                                        .catch(e => console.error('Paystack $19', e))
+                                    })
                                 }}
                                 className="rounded-xl border border-white/10 bg-white px-4 py-3 text-sm font-black text-black hover:bg-white/90"
                               >
@@ -1462,8 +1485,8 @@ function ChatContent() {
                             <Markdown>{msg.content}</Markdown>
                           </div>
                         )}
-                        {/* Honest Revenue Prompt — integrated into Green Card Cost column, nothing after the card */}
-                        {msg.content && msg.content.includes('Unknown — enter revenue') && (
+                        {/* Honest Revenue Prompt — NOT after Green Card (commandment 2: nothing after card). Cost shows Unknown — enter revenue in table; input only when not Green Card */}
+                        {msg.content && msg.content.includes('Unknown — enter revenue') && !msg.content.includes('ALPHA GREEN CARD') && (
                           <div className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/[0.06] p-3">
                             <p className="text-xs font-bold text-amber-300">📊 Want your exact loss?</p>
                             <p className="mt-1 text-xs text-white/60">Enter your monthly revenue to calculate real impact — no fake numbers.</p>
