@@ -89,7 +89,7 @@ function Header() {
           ))}
         </nav>
 
-        <div className="hidden md:block">
+        <div className="hidden items-center gap-3 md:flex">
           {user ? (
             <Link
               to="/dashboard"
@@ -98,13 +98,14 @@ function Header() {
               Open studio
             </Link>
           ) : (
-            <button
-              type="button"
-              onClick={() => void instantGoogleSignup()}
-              className="inline-flex h-10 items-center rounded-full bg-[#FFD700] px-5 text-sm font-black text-black transition hover:brightness-110"
-            >
-              Restore now
-            </button>
+            <>
+              <Link to="/auth" className="nav-login inline-flex h-10 items-center rounded-full border border-white/15 px-5 text-sm font-bold text-white transition hover:bg-white/10">
+                Login
+              </Link>
+              <Link to="/auth?signup=true" className="nav-signup inline-flex h-10 items-center rounded-full bg-[#FFD700] px-5 text-sm font-black text-black transition hover:brightness-110">
+                Sign Up
+              </Link>
+            </>
           )}
         </div>
 
@@ -134,20 +135,18 @@ function Header() {
             </a>
           ))}
           {user ? (
-            <Link
-              to="/dashboard"
-              className="mt-2 rounded-xl bg-[#FFD700] px-4 py-3 text-center font-black text-black"
-            >
-              Restore My Broken Thing
+            <Link to="/dashboard" onClick={() => setOpen(false)} className="mt-2 rounded-xl bg-[#FFD700] px-4 py-3 text-center font-black text-black">
+              Open studio
             </Link>
           ) : (
-            <button
-              type="button"
-              onClick={() => void instantGoogleSignup()}
-              className="mt-2 rounded-xl bg-[#FFD700] px-4 py-3 text-center font-black text-black"
-            >
-              Restore My Broken Thing
-            </button>
+            <>
+              <Link to="/auth" onClick={() => setOpen(false)} className="mt-2 rounded-xl border border-white/15 px-4 py-3 text-center font-bold text-white">
+                Login
+              </Link>
+              <Link to="/auth?signup=true" onClick={() => setOpen(false)} className="mt-2 rounded-xl bg-[#FFD700] px-4 py-3 text-center font-black text-black">
+                Sign Up
+              </Link>
+            </>
           )}
         </motion.nav>
       )}
@@ -342,28 +341,97 @@ function Hero() {
             transition={{ delay: 0.9 }}
             className="mt-9 flex flex-col items-center gap-4 sm:flex-row lg:items-start"
           >
-            {user ? (
+            <div className="hero-buttons flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
               <Link
-                to="/dashboard"
-                className="group inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-full bg-[#FFD700] px-7 font-black text-black shadow-[0_0_42px_rgba(107,33,168,.55)] transition hover:-translate-y-1 hover:shadow-[0_0_55px_rgba(255,215,0,.28)] sm:w-auto"
+                to={user ? '/dashboard' : '/auth?signup=true'}
+                className="btn-primary group inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-full bg-[#FFD700] px-7 font-black text-black shadow-[0_0_42px_rgba(107,33,168,.55)] transition hover:-translate-y-1 hover:shadow-[0_0_55px_rgba(255,215,0,.28)] sm:w-auto"
               >
-                Restore My Broken Thing Now
+                Get Started — Free
                 <ArrowRight className="transition group-hover:translate-x-1" size={19} />
               </Link>
-            ) : (
-              <button
-                type="button"
-                onClick={() => void instantGoogleSignup()}
-                className="group inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-full bg-[#FFD700] px-7 font-black text-black shadow-[0_0_42px_rgba(107,33,168,.55)] transition hover:-translate-y-1 hover:shadow-[0_0_55px_rgba(255,215,0,.28)] sm:w-auto"
+              <a
+                href="#video"
+                className="btn-secondary inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-full border border-white/20 bg-white/5 px-7 font-bold text-white backdrop-blur transition hover:bg-white/10 sm:w-auto"
               >
-                Restore My Broken Thing Now
-                <ArrowRight className="transition group-hover:translate-x-1" size={19} />
-              </button>
-            )}
+                <Play size={18} /> Watch How It Works
+              </a>
+            </div>
           </motion.div>
         </div>
 
         <DashboardMockup />
+      </div>
+    </section>
+  )
+}
+
+function VideoSection() {
+  return (
+    <section id="video" className="video-section border-y border-white/10 bg-black px-4 py-20 sm:px-6 lg:py-28">
+      <div className="mx-auto max-w-5xl text-center">
+        <h2 className="text-3xl font-black tracking-[-.04em] text-white sm:text-5xl">🎬 See Alpha in action</h2>
+        <p className="mx-auto mt-4 max-w-2xl text-lg leading-7 text-white/50">Watch how we fix a broken site in 60 seconds.</p>
+        <div className="video-container mx-auto mt-10 overflow-hidden rounded-[24px] border border-white/10 bg-[#09090C] shadow-[0_30px_90px_rgba(107,33,168,.25)]">
+          <div className="relative aspect-video w-full">
+            <iframe
+              width="560"
+              height="315"
+              src="https://www.youtube.com/embed/dQw4w9WgXcQ"
+              title="Alpha Restoration Demo"
+              frameBorder="0"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+              className="absolute inset-0 h-full w-full"
+            />
+          </div>
+        </div>
+        <p className="mt-6 text-sm italic text-white/40">&ldquo;Alpha fixed my site in seconds. I didn&apos;t touch a single line of code.&rdquo; — Daniel Thompson</p>
+      </div>
+    </section>
+  )
+}
+
+function DownloadAppSection() {
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null)
+  const [canInstall, setCanInstall] = useState(false)
+
+  useEffect(() => {
+    const handler = (e: any) => {
+      e.preventDefault()
+      setDeferredPrompt(e)
+      setCanInstall(true)
+    }
+    window.addEventListener('beforeinstallprompt', handler)
+    return () => window.removeEventListener('beforeinstallprompt', handler)
+  }, [])
+
+  const installPWA = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt()
+      const result = await deferredPrompt.userChoice
+      if (result.outcome === 'accepted') console.log('✅ Alpha installed')
+      setDeferredPrompt(null)
+      setCanInstall(false)
+    } else {
+      // Fallback: instruct manual add
+      alert('To install: open browser menu → Add to Home Screen / Install App')
+    }
+  }
+
+  return (
+    <section className="download-section border-y border-white/10 bg-[#050505] px-4 py-20 sm:px-6 lg:py-28">
+      <div className="mx-auto max-w-5xl text-center">
+        <h2 className="text-3xl font-black tracking-[-.04em] text-white sm:text-5xl">📱 Take Alpha with you</h2>
+        <p className="mt-4 text-lg text-white/50">Fix sites. Restore hope. Anywhere.</p>
+        <div className="download-buttons mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+          <button id="installPWA" onClick={installPWA} className="btn-primary inline-flex min-h-12 items-center justify-center rounded-full bg-[#FFD700] px-7 font-black text-black transition hover:brightness-110">
+            📲 {canInstall ? 'Add to Home Screen' : 'Add to Home Screen'}
+          </button>
+          <a href="/app.apk" download className="btn-secondary inline-flex min-h-12 items-center justify-center rounded-full border border-white/15 bg-white/5 px-7 font-bold text-white transition hover:bg-white/10">
+            📥 Download APK
+          </a>
+        </div>
+        <p className="platform-note mt-4 text-xs font-semibold tracking-widest text-white/40">Works on Android · iOS · Web · No account needed to try.</p>
       </div>
     </section>
   )
@@ -1188,15 +1256,14 @@ function FinalCTA() {
           </span>
         </h2>
         <p className="mt-6 text-lg text-white/45">Your broken app or video deserves a second life.</p>
-        <button
-          type="button"
-          onClick={() => void instantGoogleSignup()}
-          style={{ background: '#FFFFFF', color: '#000000', height: '48px', borderRadius: '12px', fontWeight: 600 }}
-          className="mt-9 inline-flex min-h-14 items-center justify-center gap-2 rounded-full bg-[#FFD700] px-8 font-black text-black shadow-[0_0_50px_rgba(107,33,168,.5)]"
-        >
-          Restore My Broken Thing Now
-          <ArrowRight size={19} />
-        </button>
+        <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
+          <Link to={user ? '/dashboard' : '/auth?signup=true'} className="inline-flex min-h-14 items-center justify-center gap-2 rounded-full bg-white px-8 font-black text-black shadow-[0_0_50px_rgba(107,33,168,.5)] transition hover:-translate-y-1" style={{ background: '#FFFFFF', color: '#000000', height: '48px', borderRadius: '12px', fontWeight: 600 }}>
+            Get Started — Free <ArrowRight size={19} />
+          </Link>
+          <a href="#video" className="inline-flex min-h-14 items-center justify-center gap-2 rounded-full border border-white/20 bg-white/5 px-8 font-bold text-white backdrop-blur transition hover:bg-white/10">
+            <Play size={18} /> Watch How It Works
+          </a>
+        </div>
       </div>
     </section>
   )
@@ -1204,15 +1271,23 @@ function FinalCTA() {
 
 function Footer() {
   return (
-    <footer className="border-t border-white/10 bg-black px-4 py-8 sm:px-6">
-      <div className="mx-auto flex max-w-7xl flex-col gap-4 text-sm text-white/35 sm:flex-row sm:items-center sm:justify-between">
-        <span className="font-black tracking-[.12em] text-white">ALPHATEKX</span>
-        <div className="flex gap-5">
-          <Link to="/privacy">Privacy</Link>
-          <Link to="/terms">Terms</Link>
+    <footer className="border-t border-white/10 bg-black px-4 py-10 sm:px-6">
+      <div className="mx-auto max-w-7xl">
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+          <span className="font-black tracking-[.12em] text-white">ALPHATEKX</span>
+          <nav className="flex flex-wrap gap-5 text-sm text-white/60">
+            <a href="#product" className="hover:text-white">Product</a>
+            <a href="#how-it-works" className="hover:text-white">How it works</a>
+            <a href="#use-cases" className="hover:text-white">Use cases</a>
+            <a href="/rescue" className="hover:text-white">Rescue</a>
+            <a href="#pricing" className="hover:text-white">Pricing</a>
+            <a href="#faq" className="hover:text-white">FAQ</a>
+            <Link to="/privacy" className="hover:text-white">Privacy</Link>
+            <Link to="/terms" className="hover:text-white">Terms</Link>
+          </nav>
         </div>
-        <div className="flex flex-col items-end gap-1 text-right">
-          <span>Annual billing saves 2 months.</span>
+        <div className="mt-6 flex flex-col gap-1 border-t border-white/10 pt-6 text-sm text-white/35 sm:flex-row sm:justify-between">
+          <span>© 2026 AlphaTekX. All rights reserved. Founded and owned by Daniel Thompson</span>
           <span>AlphaTekX - Where Broken Things Are Restored.</span>
         </div>
       </div>
@@ -1259,6 +1334,8 @@ export default function Landing() {
       <Header />
       <main className="overflow-x-clip overflow-y-visible">
         <Hero />
+        <VideoSection />
+        <DownloadAppSection />
         <InteractiveOutcomeDemo />
         <Problem />
         <RoiAngle />

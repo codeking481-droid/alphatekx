@@ -1,0 +1,40 @@
+{
+  "background_color": "#0b0215",
+  "description": "AI agentic automation platform — fix broken sites, restore hope, anywhere. Founded and owned by Daniel Thompson, Founder and CEO.",
+  "dir": "ltr",
+  "display": "standalone",
+  "name": "AlphaTekX",
+  "orientation": "any",
+  "scope": "/",
+  "short_name": "Alpha",
+  "start_url": "https://alphatekx.name.ng/",
+  "theme_color": "#0B0215",
+  "lang": "en",
+  "id": "alphatekx",
+  "categories": ["developer", "development", "social"],
+  "icons": [
+    {
+      "src": "https://alphatekx.name.ng/logo_clean_hd.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any"
+    },
+    {
+      "src": "https://alphatekx.name.ng/logo_clean_hd.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any"
+    },
+    {
+      "src": "https://alphatekx.name.ng/logo_clean_hd.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
+    },
+    {
+      "src": "https://alphatekx.name.ng/favicon.ico",
+      "type": "image/x-icon",
+      "sizes": "64x64"
+    }
+  ]
+}
