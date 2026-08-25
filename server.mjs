@@ -155,10 +155,15 @@ const applyCors = (req, res) => {
 }
 const securityHeaders = {
   'X-Content-Type-Options': 'nosniff',
-  'X-Frame-Options': 'DENY',
+  'X-Frame-Options': 'SAMEORIGIN',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'Strict-Transport-Security': 'max-age=31536000; includeSubDomains; preload',
   'X-XSS-Protection': '0',
+  'Content-Security-Policy': "default-src 'self' https: data: blob: 'unsafe-inline' 'unsafe-eval'; script-src 'self' 'unsafe-inline' https:; object-src 'none'; base-uri 'self'; frame-ancestors 'self'",
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Embedder-Policy': 'require-corp',
+  'Cross-Origin-Resource-Policy': 'same-origin',
 }
 function addSecurityHeaders(res) {
   for (const [k, v] of Object.entries(securityHeaders)) res.setHeader(k, v)
@@ -7634,7 +7639,7 @@ function serveStatic(req, res) {
     : { 'Cache-Control': 'public, max-age=31536000, immutable' }
   res.writeHead(200, {
     'Content-Type': types[ext] || 'text/html; charset=utf-8',
-    'X-Content-Type-Options': 'nosniff',
+    ...securityHeaders,
     ...cacheHeaders,
   })
   if (req.method === 'HEAD') return res.end()

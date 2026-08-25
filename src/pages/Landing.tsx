@@ -101,7 +101,7 @@ function Header() {
           <span className="font-black tracking-[.14em]">ALPHATEKX</span>
         </a>
 
-        <nav className="hidden items-center gap-8 md:flex">
+        <nav aria-label="Primary" className="hidden items-center gap-8 md:flex">
           {links.map(([label, href]) => (
             <a key={href} href={href} className="text-sm font-semibold text-white/60 transition hover:text-white">
               {label}
@@ -1407,10 +1407,11 @@ export default function Landing() {
 
   return (
     <div className="min-h-[100dvh] overflow-x-hidden bg-black pb-[max(100px,env(safe-area-inset-bottom))] font-['Inter',sans-serif] text-white antialiased [text-rendering:optimizeLegibility]">
+      <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[70] focus:rounded-full focus:bg-[#FFD700] focus:px-4 focus:py-2 focus:text-sm focus:font-black focus:text-black">Skip to content</a>
       <SEO title="AlphaTekX — We Don't Build Websites, We Restore" description="Paste your broken link or broken video. We heal it to world-class." />
       <motion.div style={{ scaleX }} className="fixed inset-x-0 top-0 z-[60] h-0.5 origin-left bg-gradient-to-r from-[#6B21A8] to-[#FFD700]" />
       <Header />
-      <main className="overflow-x-clip overflow-y-visible [contain:layout_style]">
+      <main id="main" role="main" className="overflow-x-clip overflow-y-visible [contain:layout_style]">
         <Hero />
         <TrustBar />
         <VideoSection />
