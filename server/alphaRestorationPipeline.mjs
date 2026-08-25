@@ -30,6 +30,7 @@ import { probeRenderedPage, createRenderSession, isRenderProbeAvailable } from '
 import { llmRepairBatch, llmRebuildPage, llmMultiCallRebuild, llmReconstructInteractivity, isLlmRepairConfigured, llmPlanRestoration } from './llmRepairAgent.mjs'
 import { repairBrokenHtml } from './htmlResurrector.mjs'
 import { getSiteMemory, recordRestoration } from './siteMemory.mjs'
+import { buildGreenCard } from './greenCard.mjs'
 import { runBehaviorTests } from './behaviorTest.mjs'
 import { buildRestoreGitHistory } from './restoreGit.mjs'
 import { crawlSite, normalizePagePath } from './siteCrawler.mjs'
@@ -1616,9 +1617,21 @@ export async function runRestorationPipeline({ targetUrl, mode, origin, cookieHe
     const runtimeNote = renderProbe && renderProbe.ok
       ? `\n\nI also opened the site in a real browser: ${renderProbe.pageErrors.length} crash(es), ${renderProbe.consoleErrors.length} console error(s), ${renderProbe.blankRender ? 'and the page renders **blank** — that is serious' : 'no blank-render problem'}.`
       : ''
+    // Green Card — plain English + $ loss + consequence (always, even when clean)
+    let greenCard = ''
+    try {
+      greenCard = buildGreenCard({
+        site: finalUrl,
+        pagesScanned: 1,
+        sitemapUsed: false,
+        findings: diagnosis.issues,
+        beforeScore: diagnosis.score,
+        afterScore: 100,
+      })
+    } catch {}
     const msg = diagnosis.issues.length === 0
-      ? `I scanned **${hostname}** deeply — zero issues found. Health score: **${diagnosis.score}/100**. This site is already clean. 🎉${designNote}${runtimeNote}`
-      : `I scanned **${hostname}** and found **${s.total} issues** (${s.critical} critical, ${s.high} high, ${s.medium} medium, ${s.low} low). Health score: **${diagnosis.score}/100**.${designNote}${runtimeNote}\n\nSay **"fix my site"** and I will run the full agentic restoration — up to three repair cycles with AI-powered fixes — and hand you the repaired code.`
+      ? `I scanned **${hostname}** deeply — zero issues found. Health score: **${diagnosis.score}/100**. This site is already clean. 🎉${designNote}${runtimeNote}\n\n${greenCard}`
+      : `I scanned **${hostname}** and found **${s.total} issues** (${s.critical} critical, ${s.high} high, ${s.medium} medium, ${s.low} low). Health score: **${diagnosis.score}/100**.${designNote}${runtimeNote}\n\n${greenCard}\n\nSay **"fix my site"** and I will run the full agentic restoration — up to three repair cycles with AI-powered fixes — and hand you the repaired code.`
     sendEvent({ type: 'v3_summary', message: msg })
     sendEvent({ type: 'pipeline_done', restorationId })
     return
