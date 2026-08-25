@@ -9111,16 +9111,16 @@ const server = http.createServer(async (req, res) => {
     try {
       const body = await readBody(req)
       const rawPlan = String(body.plan || '').trim().toLowerCase()
-      const planMap: Record<string, string> = { pro: 'video_49', lite: 'video_19', starter: 'lite_9', business: 'video_99', enterprise: 'enterprise_199', lite_9: 'lite_9', video_19: 'video_19', video_49: 'video_49', video_99: 'video_99' }
+      const planMap = { pro: 'video_49', lite: 'video_19', starter: 'lite_9', business: 'video_99', enterprise: 'enterprise_199', lite_9: 'lite_9', video_19: 'video_19', video_49: 'video_49', video_99: 'video_99' }
       const packId = planMap[rawPlan] || rawPlan || 'video_49'
       const cfg = supabaseConfig()
       const u = await currentOrLocalUser(req, cfg.url, cfg.anon)
-      const email = String(body.email || (u as any)?.email || 'guest@alphatekx.name.ng').trim()
+      const email = String(body.email || (u && u.email) || 'guest@alphatekx.name.ng').trim()
       const callbackUrl = String(body.callback_url || body.callbackUrl || 'https://alphatekx.name.ng/chat').trim()
-      const effectiveUser: any = u || { id: 'guest-' + Date.now(), email }
+      const effectiveUser = u || { id: 'guest-' + Date.now(), email }
       effectiveUser.email = email
-      const result: any = await billing.initializePayment('paystack', effectiveUser, { type: 'credits', packId, callbackUrl }, cfg)
-      const checkoutUrl = result.authorization_url || result.data?.authorization_url || result.authorizationUrl || result.url
+      const result = await billing.initializePayment('paystack', effectiveUser, { type: 'credits', packId, callbackUrl }, cfg)
+      const checkoutUrl = result.authorization_url || (result.data && result.data.authorization_url) || result.authorizationUrl || result.url
       if (!checkoutUrl) throw new Error('Paystack did not return checkout URL')
       return json(res, 200, { checkoutUrl })
     } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Checkout failed' }) }
