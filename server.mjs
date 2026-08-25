@@ -10326,6 +10326,42 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // ===== BIG SITE & WHOLE GITHUB: enterprise 100% scan + green card + patch =====
+  if (req.method === 'POST' && req.url?.startsWith('/api/scan/big-site')) {
+    try {
+      const body = await readBody(req)
+      const url = String(body.url || '').trim()
+      if (!url) { res.writeHead(400,{'Content-Type':'application/json'}); return res.end(JSON.stringify({error:'URL required'})) }
+      // Quota gate — 1 scan = 1 site (respect Free 1, Pro 10 etc)
+      try {
+        const cfgQ = supabaseConfig()
+        let qUser=null
+        const tkn=String(body.token||'')
+        if(tkn) qUser=await userFromAccessToken(tkn, cfgQ.url, cfgQ.anon).catch(()=>null)
+        if(!qUser) qUser=await currentOrLocalUser(req, cfgQ.url, cfgQ.anon).catch(()=>null)
+        let planId='free'
+        if(qUser?.id){ const b=await billing.getUserBilling(qUser,cfgQ).catch(()=>null); planId=String(b?.plan||'free') }
+        const identity=qUser?.id? userIdentity(qUser.id): ipIdentity(req)
+        const verdict=await checkQuota({ identity, planId, hostname: new URL(/^https?:\/\//i.test(url)?url:'https://'+url).hostname })
+        if(!verdict.ok){ res.writeHead(402,{'Content-Type':'application/json'}); return res.end(JSON.stringify({error:verdict.reason, code:verdict.code, quota:verdict.status})) }
+      } catch {}
+      const maxPages = Math.min(100, Math.max(5, Number(body.maxPages)|| 25))
+      const { scanBigSite } = await import('./server/bigSiteScanner.mjs')
+      const out = await scanBigSite(url, maxPages)
+      return json(res, 200, { ok:true, site:url, pagesScanned: out.urls.length, sitemapUsed: out.sitemapUsed, findings: out.findings.slice(0,300), greenCard: out.greenCard, beforeScore: out.beforeScore })
+    } catch(e){ return json(res, 500, {ok:false, error:e.message}) }
+  }
+  if (req.method === 'POST' && req.url?.startsWith('/api/scan/github')) {
+    try {
+      const body = await readBody(req)
+      const githubUrl = String(body.githubUrl || body.url || '').trim()
+      if(!githubUrl){ res.writeHead(400,{'Content-Type':'application/json'}); return res.end(JSON.stringify({error:'githubUrl required e.g. owner/repo'})) }
+      const { scanRepo } = await import('./server/repoScanner.mjs')
+      const out = await scanRepo({ githubUrl, branch: body.branch, token: body.token||process.env.GITHUB_TOKEN, maxFiles: Math.min(500, Number(body.maxFiles)||200) })
+      return json(res, 200, { ok:true, repo: githubUrl, filesScanned: out.filesScanned, findings: out.findings.slice(0,400), greenCard: out.greenCard })
+    } catch(e){ return json(res, 500, {ok:false, error:e.message}) }
+  }
+
   // ===== RESTORE PASTED HTML: Alpha fixes pasted code =====
   if (req.method === 'POST' && req.url === '/api/restore/paste-html') {
     try {

@@ -75,6 +75,35 @@ small{color:var(--muted)}
 <small id="imgMeta" style="display:block;margin-top:8px;color:#9ca3af"></small>
 </div>
 </div>
+
+<!-- ============================================================ -->
+<!-- BIG SITE — 100 pages via sitemap, green card plain English -->
+<!-- ============================================================ -->
+<div class="card" id="bigCard">
+<h3 style="margin:0">🏢 Big Site Scan — 100 Pages, Sitemap-First (2026)</h3>
+<p class="sub">For earning sites. Sitemap index → 50k limit, smart crawl budget, 100% coverage. One scan = one site (Free 1, Pro 10, Enterprise 100+).</p>
+<div class="row">
+<input id="bigUrl" placeholder="https://shop.example.com/" style="flex:2">
+<input id="bigPages" type="number" value="25" min="5" max="100" style="flex:0 0 100px">
+<button id="bigBtn" onclick="scanBig()">Scan Big Site (100 pages)</button>
+</div>
+<div id="bigLog" style="white-space:pre-wrap;background:#0f0f0f;border:1px solid #262626;border-radius:12px;padding:12px;max-height:200px;overflow:auto;margin-top:12px;font-size:13px;color:#d1d5db">No big scan yet. Paste an earning site URL.</div>
+<pre id="greenCard" style="display:none;white-space:pre-wrap;background:#0a2e1a;border:1px solid #10b981;border-radius:12px;padding:16px;margin-top:12px;font-size:13px;color:#d1fae5;overflow:auto;max-height:400px"></pre>
+</div>
+
+<!-- ============================================================ -->
+<!-- WHOLE GITHUB — like whole GitHub, for any error -->
+<!-- ============================================================ -->
+<div class="card" id="ghCard">
+<h3 style="margin:0">🐙 Whole GitHub — Any Error, Every File</h3>
+<p class="sub">Paste <code>owner/repo</code> or GitHub URL — Alpha clones shallow, scans every file (HTML/CSS/JS/TS), plain English green card, patch ZIP ready.</p>
+<div class="row">
+<input id="ghUrl" placeholder="vercel/next.js  or  https://github.com/owner/repo" style="flex:1">
+<button id="ghBtn" onclick="scanGithub()">Scan Whole GitHub</button>
+</div>
+<div id="ghLog" style="white-space:pre-wrap;background:#0f0f0f;border:1px solid #262626;border-radius:12px;padding:12px;max-height:200px;overflow:auto;margin-top:12px;font-size:13px;color:#d1d5db">No GitHub scan yet. Paste owner/repo.</div>
+<pre id="greenCard2" style="display:none;white-space:pre-wrap;background:#0a2e1a;border:1px solid #10b981;border-radius:12px;padding:16px;margin-top:12px;font-size:13px;color:#d1fae5;overflow:auto;max-height:400px"></pre>
+</div>
 </div>
 
 <script>
@@ -132,6 +161,37 @@ async function runBattle(){
 }
 function gradeFor(s){ return s>=95?'A': s>=85?'B': s>=70?'C':'D' }
 function copyPR(){ if(!window._prArtifact) return alert('Run a scan first'); navigator.clipboard.writeText(window._prArtifact).then(()=>alert('PR artifact copied')) }
+async function scanBig(){
+  const url=document.getElementById('bigUrl').value.trim()
+  if(!url) return alert('Enter site URL')
+  const btn=document.getElementById('bigBtn'); btn.disabled=true; btn.textContent='Scanning big site…'
+  const log=document.getElementById('bigLog'); log.textContent='▶ Discovering sitemap + crawling…'
+  try{
+    const res=await fetch('/api/scan/big-site',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({url, maxPages: Number(document.getElementById('bigPages').value||25)})})
+    const j=await res.json()
+    if(!res.ok) throw new Error(j.error||'Big scan failed')
+    log.textContent='✓ '+j.pagesScanned+' pages scanned'+(j.sitemapUsed?' via sitemap':' via crawl')+'\n'+j.greenCard.slice(0,2500)
+    document.getElementById('greenCard').textContent=j.greenCard
+    document.getElementById('greenCard').style.display='block'
+    log.textContent += '\n✓ Green card ready — plain English, file:line at end'
+  }catch(e){ log.textContent='✗ '+e.message }
+  finally{ btn.disabled=false; btn.textContent='Scan Big Site (100 pages)' }
+}
+async function scanGithub(){
+  const url=document.getElementById('ghUrl').value.trim()
+  if(!url) return alert('Enter owner/repo or GitHub URL')
+  const btn=document.getElementById('ghBtn'); btn.disabled=true; btn.textContent='Cloning…'
+  const log=document.getElementById('ghLog'); log.textContent='▶ Cloning whole repo…'
+  try{
+    const res=await fetch('/api/scan/github',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({githubUrl:url})})
+    const j=await res.json()
+    if(!res.ok) throw new Error(j.error||'GitHub scan failed')
+    log.textContent='✓ '+j.filesScanned+' files scanned\n'+j.greenCard.slice(0,2500)
+    document.getElementById('greenCard2').textContent=j.greenCard
+    document.getElementById('greenCard2').style.display='block'
+  }catch(e){ log.textContent='✗ '+e.message }
+  finally{ btn.disabled=false; btn.textContent='Scan Whole GitHub' }
+}
 async function restoreImage(){
   const file=document.getElementById('imageUpload').files[0]
   const url=document.getElementById('imageUrl').value.trim()
@@ -172,6 +232,8 @@ document.getElementById('imageUrl')?.addEventListener('change', (e)=>{
   const v=e.target.value.trim()
   if(v) document.getElementById('beforeBox').innerHTML='<small style="color:#6b7280">'+v.slice(0,80)+'</small><br><img src="'+v+'" style="max-width:100%;max-height:120px;margin-top:6px" onerror="this.style.display=\'none\'">'
 })
+// Auto-fill big site from main input
+document.getElementById('url')?.addEventListener('change', e=>{ const v=e.target.value.trim(); if(v.startsWith('http')) document.getElementById('bigUrl').value=v })
 </script>
 </body>
 </html>
