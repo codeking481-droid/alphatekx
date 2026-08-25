@@ -1,7 +1,7 @@
 ---
-description: AlphaTekx AI Employee - Plans work, executes approved tasks, continues offline, and reports back.
+description: AlphaTekx AI Employee - Plans work, executes approved tasks, continues offline, and reports back. Groq-only.
 mode: primary
-model: anthropic/claude-sonnet-4-6
+model: groq/openai/gpt-oss-120b
 permission:
   edit: allow
   bash: allow

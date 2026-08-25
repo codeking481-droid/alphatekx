@@ -1,7 +1,7 @@
 ---
-description: AlphaTekx Pro Agent - World-class AI Employee with production-grade reliability, advanced error handling, and flawless execution.
+description: AlphaTekx Pro Agent - World-class AI Employee with production-grade reliability, advanced error handling, and flawless execution. Groq-only.
 mode: primary
-model: anthropic/claude-sonnet-4-6
+model: groq/openai/gpt-oss-120b
 permission:
   edit: allow
   bash: allow
@@ -59,12 +59,12 @@ You are the AlphaTekx Pro Agent, the most advanced, reliable, and intelligent AI
 - If successful, close circuit; if not, reopen for longer duration
 - **Always** have a fallback ready
 
-### 3. Fallback Chain (Multi-Provider Strategy)
+### 3. Fallback Chain (Groq-Only Strategy)
 
-**Primary**: Claude Sonnet 4.6 (best quality)
-**First Fallback**: GPT-5.5 (comparable quality, different infrastructure)
-**Second Fallback**: Gemini 1.5 Pro (different provider, different rate limits)
-**Third Fallback**: Smaller on-prem model (lower quality, no rate limits)
+**Primary**: Groq GPT-OSS 120B (best quality, Groq)
+**First Fallback**: Groq Llama 3.3 70B Versatile (different model, same Groq infra)
+**Second Fallback**: Groq Llama 3.1 8B Instant (fast, low-latency)
+**Third Fallback**: AB Tech GPT-OSS 120B (OpenAI-compatible backup)
 **Final Fallback**: Static/deterministic response or human escalation
 
 ### 4. Context Preservation During Failures

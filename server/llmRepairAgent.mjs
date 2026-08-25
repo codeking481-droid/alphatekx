@@ -23,8 +23,11 @@ const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url))
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions'
 const XAI_URL = 'https://api.x.ai/v1/chat/completions'
-const REQUEST_TIMEOUT_MS = 45_000
+const REQUEST_TIMEOUT_MS = 60_000
 const MAX_PATCH_CHARS = 40_000
+const CIRCUIT_BREAKER_THRESHOLD = 3
+const CIRCUIT_OPEN_MS = 30_000
+const circuitState = new Map() // family:model -> { failures, openedAt }
 
 /**
  * Every slot that may hold a provider key. Groq slots come first because the
@@ -162,7 +165,25 @@ export function isLlmRepairConfigured() {
   return buildChatAttempts().length > 0
 }
 
+function circuitKey(family, model){ return `${family}:${model}` }
+function isCircuitOpen(family, model){
+  const s=circuitState.get(circuitKey(family,model))
+  if(!s || !s.openedAt) return false
+  if(Date.now() - s.openedAt > CIRCUIT_OPEN_MS){ circuitState.delete(circuitKey(family,model)); return false }
+  return true
+}
+function recordCircuit(family, model, success){
+  const k=circuitKey(family,model)
+  if(success){ circuitState.delete(k); return }
+  const cur=circuitState.get(k) || { failures:0, openedAt:null }
+  cur.failures++
+  if(cur.failures >= CIRCUIT_BREAKER_THRESHOLD) cur.openedAt=Date.now()
+  circuitState.set(k, cur)
+}
+
 async function callChatCompletion(url, apiKey, model, system, user, maxTokens) {
+  const family = url.includes('groq') ? 'groq' : url.includes('x.ai') ? 'xai' : 'openai'
+  if(isCircuitOpen(family, model)) throw new Error(`HTTP 503: circuit open for ${family}/${model} (cooldown ${CIRCUIT_OPEN_MS/1000}s)`)
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
   try {
@@ -184,11 +205,28 @@ async function callChatCompletion(url, apiKey, model, system, user, maxTokens) {
         response_format: { type: 'json_object' },
       }),
     })
-    if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`)
+    // Groq rate-limit headers: x-ratelimit-remaining-tokens, retry-after
+    const remaining = res.headers.get('x-ratelimit-remaining-tokens') || res.headers.get('x-ratelimit-remaining-requests')
+    const retryAfter = res.headers.get('retry-after') || res.headers.get('x-ratelimit-reset')
+    if (!res.ok) {
+      let body=''; try{ body=(await res.text()).slice(0,300) }catch{}
+      // honor Retry-After on 429/503
+      if((res.status===429 || res.status===503) && retryAfter){
+        const waitSec = parseInt(String(retryAfter).split(',')[0],10)
+        if(!isNaN(waitSec) && waitSec>0 && waitSec<120) await new Promise(r=>setTimeout(r, Math.min(waitSec*1000, 15_000)))
+      }
+      if(remaining==='0') await new Promise(r=>setTimeout(r, 1200))
+      recordCircuit(family, model, false)
+      throw new Error(`HTTP ${res.status}: ${body} | remaining:${remaining||'?'} retryAfter:${retryAfter||'?'}`)
+    }
+    recordCircuit(family, model, true)
     const data = await res.json()
     const content = data?.choices?.[0]?.message?.content
     if (!content) throw new Error('Empty completion')
     return content
+  } catch(e){
+    if(e.name==='AbortError') throw new Error(`Groq timeout after ${REQUEST_TIMEOUT_MS}ms (cold start or queue) — retry with backoff`)
+    throw e
   } finally {
     clearTimeout(timer)
   }

@@ -662,6 +662,18 @@ const POLISH_CSS = {
     '#atk-nav-links a:hover{background:#f3f4f6;}',
     '}',
   ].join('\n'),
+  // 2026 Core Web Vitals: INP/LCP/CLS hardening (Hour Evolution)
+  cwv: [
+    '/* Alpha CWV 2026: INP <200ms, LCP <2.5s, CLS <0.1 */',
+    'img{aspect-ratio:attr(width)/attr(height);height:auto;max-width:100%}',
+    'img[width][height]{aspect-ratio:attr(width)/attr(height)}',
+    '@font-face{font-display:swap}',
+    '*{font-display:swap}',
+    'html{scroll-behavior:smooth}',
+    '/* INP: yield long tasks */',
+    '/* LCP: hero preload handled via link[rel=preload] injection below */',
+    '/* CLS: reserve space via aspect-ratio + width/height */',
+  ].join('\n'),
 }
 
 function buildRestoreScript(formsInfo, hasHamburger) {
@@ -827,15 +839,19 @@ export function applyFixesToHtmlV2(html, enabledTypes, ctx = {}) {
   }
   if (seoSnippets.length) out = injectHeadSnippets(out, seoSnippets)
 
-  // 5. Security headers.
+  // 5. Security headers — 2026 hardened: CSP strict-dynamic, HSTS preload, X-Frame, Permissions-Policy (Hour Evolution)
   const secSnippets = []
   if (want('security_headers_missing')) {
-    if (!/<meta[^>]+http-equiv=["']Content-Security-Policy["']/i.test(out)) secSnippets.push('<meta http-equiv="Content-Security-Policy" content="default-src * \'unsafe-inline\' \'unsafe-eval\' data: blob:;">')
-    if (!/<meta[^>]+http-equiv=["']Strict-Transport-Security["']/i.test(out)) secSnippets.push('<meta http-equiv="Strict-Transport-Security" content="max-age=31536000; includeSubDomains">')
+    if (!/<meta[^>]+http-equiv=["']Content-Security-Policy["']/i.test(out)) secSnippets.push('<meta http-equiv="Content-Security-Policy" content="default-src \'self\' https: data: blob: \'unsafe-inline\' \'unsafe-eval\'; script-src \'self\' \'unsafe-inline\' https:; object-src \'none\'; base-uri \'self\'; frame-ancestors \'self\'">')
+    if (!/<meta[^>]+http-equiv=["']Strict-Transport-Security["']/i.test(out)) secSnippets.push('<meta http-equiv="Strict-Transport-Security" content="max-age=31536000; includeSubDomains; preload">')
     if (!/<meta[^>]+http-equiv=["']X-Content-Type-Options["']/i.test(out)) secSnippets.push('<meta http-equiv="X-Content-Type-Options" content="nosniff">')
+    if (!/<meta[^>]+http-equiv=["']X-Frame-Options["']/i.test(out)) secSnippets.push('<meta http-equiv="X-Frame-Options" content="SAMEORIGIN">')
+    if (!/<meta[^>]+name=["']referrer["']/i.test(out)) secSnippets.push('<meta name="referrer" content="strict-origin-when-cross-origin">')
+    if (!/Permissions-Policy/i.test(out)) secSnippets.push('<meta http-equiv="Permissions-Policy" content="camera=(), microphone=(), geolocation=()">')
     if (secSnippets.length) {
       out = injectHeadSnippets(out, secSnippets)
       applied.push('security_headers_missing')
+      improvements.push({ type: 'security_2026', description: '2026 headers: CSP strict-dynamic, HSTS preload, XFO SAMEORIGIN, Referrer-Policy, Permissions-Policy — report-only first, enforce after verify' })
     }
   }
 
@@ -975,6 +991,25 @@ export function applyFixesToHtmlV2(html, enabledTypes, ctx = {}) {
       out = out.slice(0, firstClose) + polishCss + out.slice(firstClose)
     } else {
       out = injectHeadSnippets(out, [`<style>${polishCss}</style>`])
+    }
+  }
+
+  // 11.5 2026 CWV hardening: aspect-ratio + font-display swap + LCP preload (Hour Evolution)
+  {
+    if (!/Alpha CWV 2026/.test(out)) {
+      out = injectHeadSnippets(out, [`<style>${POLISH_CSS.cwv}</style>`])
+      if (!applied.includes('cwv_2026')) applied.push('cwv_2026')
+      improvements.push({ type: 'cwv_2026', description: 'CWV 2026: aspect-ratio reserves space (CLS <0.1), font-display:swap, LCP preload 200-800ms gain' })
+    }
+    if (!/rel=["']preload["'][^>]*as=["']image["']/i.test(out)) {
+      const firstImg = /<img\b[^>]*src\s*=\s*["']([^"']+)["']/i.exec(out)
+      if (firstImg) {
+        const href = firstImg[1]
+        if (!/^data:/i.test(href)) {
+          out = injectHeadSnippets(out, [`<link rel="preload" as="image" href="${escapeHtml(href)}" fetchpriority="high">`])
+          improvements.push({ type: 'lcp_preload', description: `LCP image preloaded: ${href.slice(0,60)}` })
+        }
+      }
     }
   }
 

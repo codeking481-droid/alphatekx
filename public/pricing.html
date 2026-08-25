@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pricing — Alpha Restoration (real billing)</title>
+<style>
+*{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui,sans-serif;background:#0a0a0a;color:#e5e7eb}
+.wrap{max-width:1160px;margin:0 auto;padding:28px}
+h1{font-size:30px;margin:0} .sub{color:#9ca3af;margin:6px 0 0}
+.grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-top:22px}
+.card{background:#111;border:1px solid #262626;border-radius:16px;padding:18px;position:relative;display:flex;flex-direction:column}
+.card.popular{border-color:#d6ff00;transform:scale(1.02)}
+.badge{position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:#d6ff00;color:#000;font-size:10px;font-weight:800;padding:4px 10px;border-radius:999px;white-space:nowrap}
+.price{font-size:24px;font-weight:800;margin:8px 0} .per{font-size:13px;color:#9ca3af;font-weight:400}
+ul{padding-left:18px;color:#d1d5db;font-size:13px;line-height:1.7;margin:8px 0;flex:1}
+.btn{display:block;text-align:center;padding:10px;border-radius:10px;font-weight:800;text-decoration:none;margin-top:10px;font-size:13px}
+.btn-free{background:#1f2937;color:#fff;border:1px solid #374151}
+.btn-lite{background:#1f2937;color:#fff;border:1px solid #374151}
+.btn-pro{background:#d6ff00;color:#000}
+.btn-bus{background:#1f2937;color:#fff;border:1px solid #374151}
+.btn-ent{background:#fff;color:#000}
+.usage{margin-top:22px;background:#111;border:1px solid #262626;border-radius:16px;padding:18px}
+.bar{height:6px;background:#1f2937;border-radius:999px;overflow:hidden;margin-top:6px} .fill{height:100%;background:#d6ff00;width:0%}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px}
+.kpi{background:#0f0f0f;border:1px solid #262626;border-radius:12px;padding:12px;text-align:center}
+.kpi b{font-size:18px}
+.note{margin-top:14px;color:#9ca3af;font-size:12px;text-align:center}
+@media(max-width:1100px){ .grid{grid-template-columns:repeat(2,1fr)} } @media(max-width:640px){ .grid{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Manage your plan</h1>
+<p class="sub">You're viewing the real 5-tier billing. Free: 1 scan / 1 fix — then pay for outcomes, not seats.</p>
+
+<div class="grid">
+<div class="card">
+<h3>Starter</h3>
+<div class="price">$9 <span class="per">/month</span></div>
+<ul><li>1 site</li><li>5 fixes / month</li><li>Scan + report + full heal</li></ul>
+<a class="btn btn-free" href="/settings?tab=billing&plan=lite_9">Upgrade to Starter</a>
+</div>
+<div class="card">
+<h3>Lite</h3>
+<div class="price">$19 <span class="per">/month</span></div>
+<ul><li>3 sites</li><li>15 fixes / month</li><li>10 App Scans + Reports</li><li>3 Video Restorations</li></ul>
+<a class="btn btn-lite" href="/settings?tab=billing&plan=video_19">Upgrade to Lite</a>
+</div>
+<div class="card popular">
+<div class="badge">MOST POPULAR</div>
+<h3>Pro</h3>
+<div class="price">$49 <span class="per">/month</span></div>
+<ul><li>10 sites</li><li>Unlimited fixes</li><li>50 Full App Restorations</li><li>25 Video Restorations</li></ul>
+<a class="btn btn-pro" href="/settings?tab=billing&plan=video_49">Upgrade to Pro</a>
+</div>
+<div class="card">
+<h3>Business</h3>
+<div class="price">$99 <span class="per">/month</span></div>
+<ul><li>25 sites</li><li>Priority healing queue</li><li>Unlimited Restorations</li><li>All video styles</li></ul>
+<a class="btn btn-bus" href="/settings?tab=billing&plan=video_99">Upgrade to Business</a>
+</div>
+<div class="card">
+<h3>Enterprise</h3>
+<div class="price">$199 <span class="per">/month</span></div>
+<ul><li>Unlimited sites & fixes</li><li>Everything unlocked</li><li>Priority queue + API access</li><li>White-label reports</li></ul>
+<a class="btn btn-ent" href="/settings?tab=billing&plan=enterprise_199">Upgrade to Enterprise</a>
+</div>
+</div>
+
+<div class="usage">
+<b>Usage This Month</b>
+<div class="kpis">
+<div class="kpi"><div style="display:flex;justify-content:space-between;font-size:12px;color:#9ca3af"><span>SCANS</span><span id="scans">0 / 1</span></div><div class="bar"><div class="fill" id="fill-scans"></div></div></div>
+<div class="kpi"><div style="display:flex;justify-content:space-between;font-size:12px;color:#9ca3af"><span>FIXES</span><span id="fixes">0 / 1</span></div><div class="bar"><div class="fill" id="fill-fixes"></div></div></div>
+<div class="kpi"><div style="display:flex;justify-content:space-between;font-size:12px;color:#9ca3af"><span>SITES</span><span id="sites">0 / 1</span></div><div class="bar"><div class="fill" id="fill-sites"></div></div></div>
+</div>
+<small style="color:#6b7280">Free = 1 scan / 1 fix. Upgrade when exhausted — 402 → modal, no dark pattern. Meter: <code>data/restoration-scans.jsonl</code> + <code>billing.mjs:PLANS</code></small>
+</div>
+
+<p class="note">Hybrid subscription + usage. Good→Better 15% psych (Starter $9→Lite $19 +111% — we anchor with Free), Better→Best ~50% (Lite $19→Pro $49 +158% with Most Popular). Enterprise $199 anchor makes Pro feel cheap.</p>
+</div>
+<script>
+// Demo fill from billing API if available
+fetch('/api/billing/me').then(r=>r.json()).then(j=>{
+  if(!j || !j.plan) return
+  const map={ free:{scans:1,fixes:1,sites:1}, lite_9:{scans:1,fixes:5,sites:1}, video_19:{scans:10,fixes:15,sites:3}, video_49:{scans:50,fixes:999,sites:10}, video_99:{scans:999,fixes:999,sites:25}, enterprise_199:{scans:999,fixes:999,sites:999} }
+  const p=map[j.plan]||map.free
+  document.getElementById('scans').textContent=`${j.usageThisMonth||0} / ${p.scans}`
+  document.getElementById('fixes').textContent=`${j.videosUsed||0} / ${p.fixes===999?'∞':p.fixes}`
+  document.getElementById('sites').textContent=`0 / ${p.sites===999?'∞':p.sites}`
+}).catch(()=>{})
+</script>
+</body>
+</html>

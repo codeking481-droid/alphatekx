@@ -65,12 +65,12 @@ Add jitter: ±1 second random
 - Probe requests: 1-3 during half-open state
 - Recovery timeout: 30-60 seconds
 
-## Fallback Chain Strategy
+## Fallback Chain Strategy (Groq-Only)
 
-**Primary**: Claude Sonnet 4.6 (best quality, primary infrastructure)
-**First Fallback**: GPT-5.5 (comparable quality, different infrastructure)
-**Second Fallback**: Gemini 1.5 Pro (different provider, different rate limits)
-**Third Fallback**: Smaller on-prem model (lower quality, no rate limits)
+**Primary**: Groq GPT-OSS 120B (best quality, Groq)
+**First Fallback**: Groq Llama 3.3 70B Versatile (different model, same Groq infra)
+**Second Fallback**: Groq Llama 3.1 8B Instant (fast, low-latency)
+**Third Fallback**: AB Tech GPT-OSS 120B (OpenAI-compatible backup)
 **Final Fallback**: Static/deterministic response or human escalation
 
 **Key Principles**:

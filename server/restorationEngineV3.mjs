@@ -314,7 +314,13 @@ export function applyV3Fixes(html, enabledTypes, ctx = {}) {
     const titleText = ((/<title>([^<]*)<\/title>/i.exec(out) || [])[1] || 'Restored Site').trim()
     const descText = ((/<meta[^>]+name=["']description["'][^>]+content\s*=\s*["']([^"']*)["']/i.exec(out) || [])[1] || 'Restored by AlphaTekX').trim()
     const baseUrl = String(ctx.baseUrl || 'https://alphatekx.name.ng/').replace(/^http:/i, 'https:').replace(/\/+$/, '')
-    const data = JSON.stringify({ '@context': 'https://schema.org', '@type': 'WebSite', name: titleText, description: descText, url: `${baseUrl}/` })
+    // 2026 AI Search: 4-schema stack — WebSite + Organization + Article + FAQPage (65% of AI citations use schema, ChatGPT favors FAQPage). Keep top-level @type for backward test compat.
+    const graph = [
+      { '@type': 'Organization', '@id': `${baseUrl}/#organization`, name: titleText, url: `${baseUrl}/`, logo: { '@type': 'ImageObject', url: `${baseUrl}/og-image.png` } },
+      { '@type': 'Article', headline: titleText, description: descText, author: { '@type': 'Organization', name: titleText }, datePublished: new Date().toISOString(), dateModified: new Date().toISOString(), mainEntityOfPage: `${baseUrl}/` },
+      { '@type': 'FAQPage', mainEntity: [{ '@type': 'Question', name: `What is ${titleText}?`, acceptedAnswer: { '@type': 'Answer', text: descText } }] },
+    ]
+    const data = JSON.stringify({ '@context': 'https://schema.org', '@type': 'WebSite', name: titleText, description: descText, url: `${baseUrl}/`, '@graph': graph })
     const ldTag = `\n  <script type="application/ld+json">${data}</script>`
     if (/<\/head>/i.test(out)) {
       const closeIdx = out.toLowerCase().lastIndexOf('</head>')

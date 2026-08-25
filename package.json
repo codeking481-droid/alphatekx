@@ -48,7 +48,9 @@
     "test:available-platforms": "node scripts/available-platform-agent-tests.mjs",
     "test:restore-torture": "node scripts/restore-engine-torture.mjs",
     "test:restore-v2": "node scripts/restore-engine-v2-torture.mjs",
-    "test:restore-v3": "node scripts/restore-engine-v3-suite.mjs"
+    "test:restore-v3": "node scripts/restore-engine-v3-suite.mjs",
+    "battle": "node scripts/alpha-battle.mjs",
+    "battle:quick": "node scripts/alpha-battle.mjs --quick"
   },
   "engines": {
     "node": ">=22.0.0"
