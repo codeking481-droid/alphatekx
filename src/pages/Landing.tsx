@@ -372,17 +372,12 @@ function VideoSection() {
         <h2 className="text-3xl font-black tracking-[-.04em] text-white sm:text-5xl">🎬 See Alpha in action</h2>
         <p className="mx-auto mt-4 max-w-2xl text-lg leading-7 text-white/50">Watch how we fix a broken site in 60 seconds.</p>
         <div className="video-container mx-auto mt-10 overflow-hidden rounded-[24px] border border-white/10 bg-[#09090C] shadow-[0_30px_90px_rgba(107,33,168,.25)]">
-          <div className="relative aspect-video w-full">
-            <iframe
-              width="560"
-              height="315"
-              src="https://www.youtube.com/embed/dQw4w9WgXcQ"
-              title="Alpha Restoration Demo"
-              frameBorder="0"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-              className="absolute inset-0 h-full w-full"
-            />
+          <div className="relative grid aspect-video w-full place-items-center bg-gradient-to-br from-[#0B0215] via-[#1a0b2e] to-black p-8">
+            <div className="text-center">
+              <div className="mx-auto grid size-16 place-items-center rounded-2xl bg-white/5 text-[#FFD700] ring-1 ring-white/10">🎬</div>
+              <p className="mt-4 text-2xl font-black tracking-tight text-white">Coming Soon</p>
+              <p className="mt-2 text-sm text-white/40">Demo video is being prepared — check back shortly.</p>
+            </div>
           </div>
         </div>
         <p className="mt-6 text-sm italic text-white/40">&ldquo;Alpha fixed my site in seconds. I didn&apos;t touch a single line of code.&rdquo; — Daniel Thompson</p>
