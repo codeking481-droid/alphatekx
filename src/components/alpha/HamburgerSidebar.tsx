@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, MessageSquare, CreditCard, Trash2, Clock, Plus, Rocket, LogOut } from 'lucide-react'
+import { X, MessageSquare, CreditCard, Trash2, Clock, Plus, Rocket, LogOut, MessageCircle, HelpCircle } from 'lucide-react'
 import { useAuth } from '../../lib/auth'
 import { getChatThreads, deleteChatThread, subscribeChatHistory, type ChatThread } from '../../lib/chatHistoryStore'
 import PlanBadge, { PLAN_LABELS } from '../PlanBadge'
@@ -64,9 +64,9 @@ export default function HamburgerSidebar({
             animate={{ x: 0 }}
             exit={{ x: '-100%' }}
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            className="fixed inset-y-0 left-0 z-50 flex w-[300px] max-w-[85vw] flex-col border-r border-white/[0.06] bg-[#0D0D0D]"
+            className="fixed inset-y-0 left-0 z-50 flex h-[100dvh] max-h-[100dvh] w-[300px] max-w-[86vw] flex-col overflow-hidden border-r border-white/[0.06] bg-[#0D0D0D] supports-[height:100dvh]:h-[100dvh]"
           >
-            <div className="flex h-14 items-center justify-between border-b border-white/[0.06] px-4">
+            <div className="flex h-14 min-h-14 items-center justify-between border-b border-white/[0.06] px-4 pt-[env(safe-area-inset-top)]">
               <span className="flex items-center gap-2">
                 <span className="font-syne text-sm font-bold tracking-wide text-white">
                   ALPHATEKX
@@ -107,9 +107,33 @@ export default function HamburgerSidebar({
                   <span className="block text-[10px] text-white/30">{planLabel} plan · manage sites & fixes</span>
                 </span>
               </button>
+              <button
+                onClick={() => { onClose(); window.dispatchEvent(new CustomEvent('alphatekx:open-contact-us')) }}
+                className="flex w-full items-center gap-3 rounded-xl border border-[#FFD700]/20 bg-[#FFD700]/[0.06] px-3 py-2.5 text-left transition hover:bg-[#FFD700]/[0.12]"
+              >
+                <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-[#FFD700]/15">
+                  <MessageCircle size={14} className="text-[#D6FF00]" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[13px] font-bold text-white">Contact support</span>
+                  <span className="block text-[10px] text-white/40">We reply in 1 minute ⚡ — in sidebar</span>
+                </span>
+              </button>
+              <button
+                onClick={() => goTo('/help')}
+                className="flex w-full items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5 text-left transition hover:bg-white/[0.05]"
+              >
+                <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-white/[0.05]">
+                  <HelpCircle size={14} className="text-white/60" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[13px] font-bold text-white">Help & FAQ</span>
+                  <span className="block text-[10px] text-white/30">Guides, billing, video tips</span>
+                </span>
+              </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto alpha-chat-scroll">
+            <div className="flex-1 overflow-y-auto overscroll-contain alpha-chat-scroll touch-pan-y" style={{ WebkitOverflowScrolling: 'touch' } as any}>
               {/* ===== HISTORY ===== */}
               <div className="p-3">
                 <p className="mb-2 px-1 text-[10px] font-bold uppercase tracking-widest text-white/25">History</p>
@@ -173,7 +197,7 @@ export default function HamburgerSidebar({
             </div>
 
             {/* Profile footer — plan badge + sign out */}
-            <div className="border-t border-white/[0.06] p-3">
+            <div className="border-t border-white/[0.06] p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
               <div className="flex items-center gap-3 rounded-xl bg-white/[0.02] px-3 py-2.5">
                 <span className="grid size-9 shrink-0 place-items-center rounded-full bg-gradient-to-br from-[#FFD700] to-[#6B21A8] text-[12px] font-black text-black">
                   {(user?.email || 'A').slice(0, 1).toUpperCase()}

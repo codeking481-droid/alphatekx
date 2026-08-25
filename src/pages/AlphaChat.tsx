@@ -1642,7 +1642,7 @@ function ChatContent() {
 
       {/* Bottom Input (when messages exist) */}
       {!isEmpty && (
-        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-white/[0.04] bg-[#0A0A0A]/90 px-4 py-3 backdrop-blur-xl">
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-white/[0.04] bg-[#0A0A0A]/90 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-xl">
           <div className="mx-auto max-w-[680px]">
             {/* Attached file preview */}
             {attachedFiles.length > 0 && (

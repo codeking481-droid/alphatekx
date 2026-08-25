@@ -126,16 +126,8 @@ export default function ContactUs() {
   const [open, setOpen] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [position, setPosition] = useState({ x: 24, y: 24 })
-  const [buttonPosition, setButtonPosition] = useState(() => {
-    if (typeof window === 'undefined') return { x: 24, y: 24 }
-    const width = 152
-    const height = 52
-    return { x: Math.max(16, window.innerWidth - width - 16), y: Math.max(16, window.innerHeight - height - 16) }
-  })
   const [isMobile, setIsMobile] = useState(false)
   const dragStart = useRef<{ x: number; y: number } | null>(null)
-  const buttonDragStart = useRef<{ x: number; y: number; originX: number; originY: number } | null>(null)
-  const didDragButton = useRef(false)
   const panelRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -185,97 +177,18 @@ export default function ContactUs() {
     }
   }, [dragging, isMobile])
 
-  useEffect(() => {
-    const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
-    const updateButtonPosition = () => {
-      if (typeof window === 'undefined') return
-      const padding = 16
-      const width = 152
-      const height = 52
-      const maxX = Math.max(padding, window.innerWidth - width - padding)
-      const maxY = Math.max(padding, window.innerHeight - height - padding)
-      setButtonPosition((current) => ({ x: clamp(current.x, padding, maxX), y: clamp(current.y, padding, maxY) }))
-    }
 
-    updateButtonPosition()
-    window.addEventListener('resize', updateButtonPosition)
-    return () => window.removeEventListener('resize', updateButtonPosition)
-  }, [])
-
-  useEffect(() => {
-    if (!open) return
-    const handlePointerUp = () => {
-      didDragButton.current = false
-    }
-    window.addEventListener('pointerup', handlePointerUp)
-    return () => window.removeEventListener('pointerup', handlePointerUp)
-  }, [open])
 
   if (location.pathname.startsWith('/auth')) return null
 
   const panelClassName = isMobile
-    ? 'w-full max-w-none overflow-y-auto rounded-t-[24px] border-t border-[#24242A] bg-[#151519] p-5 shadow-[0_-12px_40px_rgba(0,0,0,0.35)]'
-    : 'fixed z-[10000] w-full max-w-[480px] rounded-[24px] border border-[#24242A] bg-[#151519] p-6 shadow-[0_18px_50px_rgba(0,0,0,0.35)]'
+    ? 'w-full max-w-none max-h-[92dvh] overflow-y-auto overscroll-contain rounded-t-[24px] border-t border-[#24242A] bg-[#151519] p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-[0_-12px_40px_rgba(0,0,0,0.35)]'
+    : 'fixed z-[10000] w-full max-w-[480px] max-h-[90dvh] overflow-y-auto overscroll-contain rounded-[24px] border border-[#24242A] bg-[#151519] p-6 shadow-[0_18px_50px_rgba(0,0,0,0.35)]'
 
-  const startButtonDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
-    event.preventDefault()
-    didDragButton.current = false
-    buttonDragStart.current = {
-      x: event.clientX,
-      y: event.clientY,
-      originX: buttonPosition.x,
-      originY: buttonPosition.y,
-    }
-  }
+  // Floating draggable button removed — now lives in sidebar for 100% mobile fit. Modal only.
 
-  const moveButton = (event: React.PointerEvent<HTMLButtonElement>) => {
-    if (!buttonDragStart.current) return
-    const deltaX = event.clientX - buttonDragStart.current.x
-    const deltaY = event.clientY - buttonDragStart.current.y
-    if (Math.abs(deltaX) > 2 || Math.abs(deltaY) > 2) didDragButton.current = true
-    const nextX = buttonDragStart.current.originX + deltaX
-    const nextY = buttonDragStart.current.originY + deltaY
-    if (typeof window === 'undefined') return
-    const padding = 16
-    const width = 152
-    const height = 52
-    const maxX = Math.max(padding, window.innerWidth - width - padding)
-    const maxY = Math.max(padding, window.innerHeight - height - padding)
-    setButtonPosition({ x: Math.min(maxX, Math.max(padding, nextX)), y: Math.min(maxY, Math.max(padding, nextY)) })
-  }
-
-  const endButtonDrag = () => {
-    buttonDragStart.current = null
-  }
-
-  const handleButtonClick = () => {
-    if (didDragButton.current) {
-      didDragButton.current = false
-      return
-    }
-    setOpen(true)
-  }
-
+  if (!open) return null
   return (
-    <>
-      {!open && (
-        <button
-          type="button"
-          onPointerDown={startButtonDrag}
-          onPointerMove={moveButton}
-          onPointerUp={endButtonDrag}
-          onPointerLeave={endButtonDrag}
-          onClick={handleButtonClick}
-          className="fixed z-[9998] inline-flex select-none items-center gap-2 rounded-full bg-[#FFD700] px-4 py-3 text-sm font-black text-black shadow-[0_14px_32px_rgba(0,0,0,0.25)] transition hover:scale-[1.02] active:scale-[0.98]"
-          aria-label="Contact support"
-          style={{ left: buttonPosition.x, top: buttonPosition.y, touchAction: 'none', cursor: 'grab' }}
-        >
-          <Move size={14} className="opacity-80" />
-          <MessageCircle size={16} /> Contact us
-        </button>
-      )}
-
-      {open && (
         <div className={`fixed inset-0 z-[9999] flex ${isMobile ? 'items-end' : 'items-center'} justify-center bg-black/70 p-0 sm:p-4`} onClick={() => setOpen(false)}>
           <div
             ref={panelRef}
@@ -299,7 +212,5 @@ export default function ContactUs() {
             <ContactForm compact onSuccess={() => setOpen(false)} />
           </div>
         </div>
-      )}
-    </>
   )
 }

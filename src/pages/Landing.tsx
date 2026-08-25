@@ -72,8 +72,8 @@ function Header() {
   ]
 
   return (
-    <header className="fixed inset-x-0 top-0 z-50 border-b border-white/10 bg-black/70 backdrop-blur-2xl">
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
+    <header className="fixed inset-x-0 top-0 z-50 border-b border-white/[0.08] bg-black/75 backdrop-blur-2xl supports-[backdrop-filter]:bg-black/60">
+      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 pt-[env(safe-area-inset-top)]">
         <a href="#top" className="flex items-center gap-2.5 text-white">
           <span className="grid size-9 place-items-center rounded-xl bg-gradient-to-br from-[#FFD700] to-[#6B21A8] text-black shadow-[0_0_28px_rgba(255,215,0,.22)]">
             <Sparkles size={18} />
@@ -112,9 +112,9 @@ function Header() {
         <button
           aria-label="Toggle navigation"
           onClick={() => setOpen((value) => !value)}
-          className="grid size-10 place-items-center rounded-xl border border-white/10 text-white md:hidden"
+          className="grid size-11 place-items-center rounded-xl border border-white/10 bg-white/[0.04] text-white md:hidden"
         >
-          {open ? <X /> : <Menu />}
+          {open ? <X size={18} /> : <Menu size={18} />}
         </button>
       </div>
 
@@ -122,14 +122,14 @@ function Header() {
         <motion.nav
           initial={{ opacity: 0, height: 0 }}
           animate={{ opacity: 1, height: 'auto' }}
-          className="grid gap-1 border-t border-white/10 bg-black px-4 py-4 md:hidden"
+          className="grid gap-1 border-t border-white/10 bg-black/95 px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-xl md:hidden"
         >
           {links.map(([label, href]) => (
             <a
               key={href}
               href={href}
               onClick={() => setOpen(false)}
-              className="rounded-xl px-4 py-3 font-bold text-white/70"
+              className="rounded-xl px-4 py-3.5 text-[15px] font-bold text-white/70 active:bg-white/5 active:text-white"
             >
               {label}
             </a>
@@ -293,12 +293,12 @@ function Hero() {
   const { user } = useAuth()
 
   return (
-    <section id="top" className="relative min-h-screen overflow-hidden bg-black px-4 pb-24 pt-28 sm:px-6 lg:flex lg:items-center lg:pt-20">
-      <div className="pointer-events-none absolute -left-48 top-12 size-[520px] rounded-full bg-[#6B21A8]/25 blur-[130px]" />
-      <div className="pointer-events-none absolute bottom-0 right-0 size-[420px] rounded-full bg-[#FFD700]/[.06] blur-[120px]" />
+    <section id="top" className="relative isolate min-h-[100dvh] overflow-x-clip overflow-y-visible bg-black px-4 pb-12 pt-24 sm:px-6 sm:pb-24 sm:pt-28 lg:flex lg:min-h-screen lg:items-center lg:pt-20">
+      <div className="pointer-events-none absolute -left-48 top-12 size-[520px] rounded-full bg-[#6B21A8]/25 blur-[130px] max-sm:left-1/2 max-sm:-translate-x-1/2 max-sm:top-0 max-sm:size-[380px]" />
+      <div className="pointer-events-none absolute bottom-0 right-0 size-[420px] rounded-full bg-[#FFD700]/[.06] blur-[120px] max-sm:hidden" />
 
-      <div className="relative mx-auto grid w-full max-w-7xl items-center gap-14 lg:grid-cols-[.92fr_1.08fr]">
-        <div className="text-center lg:text-left">
+      <div className="relative mx-auto grid w-full max-w-7xl items-center gap-10 sm:gap-14 lg:grid-cols-[.92fr_1.08fr]">
+        <div className="mx-auto w-full max-w-[560px] text-center lg:mx-0 lg:max-w-none lg:text-left">
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -309,7 +309,7 @@ function Hero() {
             RESTORATION ECONOMY
           </motion.div>
 
-          <h1 className="mt-7 font-['Space_Grotesk',Inter,sans-serif] text-[52px] font-black leading-[.94] tracking-[-.06em] text-white sm:text-7xl lg:text-[88px] xl:text-[96px]">
+          <h1 className="mt-7 font-['Space_Grotesk',Inter,sans-serif] text-[clamp(32px,9vw,52px)] font-black leading-[.94] tracking-[-.06em] text-white text-balance sm:text-6xl lg:text-[78px] xl:text-[88px]">
             <WordReveal text="WE DON'T BUILD WEBSITES, WE RESTORE." />
           </h1>
 
@@ -317,7 +317,7 @@ function Hero() {
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.75 }}
-            className="mx-auto mt-7 max-w-2xl text-lg font-medium leading-8 text-white/60 sm:text-xl lg:mx-0"
+            className="mx-auto mt-5 max-w-[32ch] text-[15px] font-medium leading-7 text-white/60 text-pretty sm:mt-7 sm:max-w-2xl sm:text-lg sm:leading-8 lg:mx-0 lg:text-xl"
           >
             Paste your broken link or broken video. We heal it to world-class. Builders create new. We restore hope.
           </motion.p>
@@ -326,12 +326,12 @@ function Hero() {
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 1.1 }}
-            className="mx-auto mt-6 max-w-lg lg:mx-0"
+            className="mx-auto mt-5 max-w-lg lg:mx-0"
           >
-            <div className="flex flex-wrap items-center justify-center gap-3 text-[10px] font-bold text-white/50 sm:justify-start lg:text-xs">
-              <span className="flex items-center gap-1.5"><Check size={12} className="text-emerald-400" /> Read-only scan</span>
-              <span className="flex items-center gap-1.5"><Check size={12} className="text-emerald-400" /> World-class healing</span>
-              <span className="flex items-center gap-1.5"><Check size={12} className="text-emerald-400" /> Market-ready restore</span>
+            <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 text-[11px] font-bold text-white/55 sm:justify-start lg:text-xs">
+              <span className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 sm:border-0 sm:bg-transparent sm:px-0 sm:py-0"><Check size={12} className="text-emerald-400" /> Read-only scan</span>
+              <span className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 sm:border-0 sm:bg-transparent sm:px-0 sm:py-0"><Check size={12} className="text-emerald-400" /> World-class healing</span>
+              <span className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 sm:border-0 sm:bg-transparent sm:px-0 sm:py-0"><Check size={12} className="text-emerald-400" /> Market-ready restore</span>
             </div>
           </motion.div>
 
@@ -367,20 +367,22 @@ function Hero() {
 
 function VideoSection() {
   return (
-    <section id="video" className="video-section border-y border-white/10 bg-black px-4 py-20 sm:px-6 lg:py-28">
+    <section id="video" className="video-section border-y border-white/10 bg-black px-4 py-16 sm:px-6 sm:py-20 lg:py-28">
       <div className="mx-auto max-w-5xl text-center">
-        <h2 className="text-3xl font-black tracking-[-.04em] text-white sm:text-5xl">🎬 See Alpha in action</h2>
-        <p className="mx-auto mt-4 max-w-2xl text-lg leading-7 text-white/50">Watch how we fix a broken site in 60 seconds.</p>
-        <div className="video-container mx-auto mt-10 overflow-hidden rounded-[24px] border border-white/10 bg-[#09090C] shadow-[0_30px_90px_rgba(107,33,168,.25)]">
-          <div className="relative grid aspect-video w-full place-items-center bg-gradient-to-br from-[#0B0215] via-[#1a0b2e] to-black p-8">
+        <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#FFD700]">Live restoration</p>
+        <h2 className="mt-3 text-[28px] font-black tracking-[-.04em] text-white text-balance sm:text-5xl">🎬 See Alpha in action</h2>
+        <p className="mx-auto mt-3 max-w-[32ch] text-[15px] leading-6 text-white/50 text-pretty sm:mt-4 sm:max-w-2xl sm:text-lg sm:leading-7">Watch how we fix a broken site in 60 seconds.</p>
+        <div className="video-container mx-auto mt-8 overflow-hidden rounded-[20px] border border-white/10 bg-[#09090C] shadow-[0_30px_90px_rgba(107,33,168,.25)] sm:mt-10 sm:rounded-[24px]">
+          <div className="relative grid aspect-video w-full place-items-center bg-gradient-to-br from-[#0B0215] via-[#1a0b2e] to-black p-6 sm:p-8">
             <div className="text-center">
-              <div className="mx-auto grid size-16 place-items-center rounded-2xl bg-white/5 text-[#FFD700] ring-1 ring-white/10">🎬</div>
-              <p className="mt-4 text-2xl font-black tracking-tight text-white">Coming Soon</p>
-              <p className="mt-2 text-sm text-white/40">Demo video is being prepared — check back shortly.</p>
+              <div className="mx-auto grid size-14 place-items-center rounded-2xl bg-white/[0.06] text-[#FFD700] ring-1 ring-white/10 sm:size-16">🎬</div>
+              <p className="mt-4 text-xl font-black tracking-tight text-white sm:text-2xl">Coming Soon</p>
+              <p className="mt-1.5 text-[13px] leading-5 text-white/40 sm:text-sm">Demo video is being prepared — check back shortly.</p>
+              <span className="mt-4 inline-flex rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[11px] font-bold tracking-widest text-white/30">PREMIERE SOON</span>
             </div>
           </div>
         </div>
-        <p className="mt-6 text-sm italic text-white/40">&ldquo;Alpha fixed my site in seconds. I didn&apos;t touch a single line of code.&rdquo; — Daniel Thompson</p>
+        <p className="mt-5 text-[13px] italic leading-5 text-white/30 sm:text-sm">&ldquo;Alpha fixed my site in seconds. I didn&apos;t touch a single line of code.&rdquo; — Daniel Thompson</p>
       </div>
     </section>
   )
@@ -414,19 +416,21 @@ function DownloadAppSection() {
   }
 
   return (
-    <section className="download-section border-y border-white/10 bg-[#050505] px-4 py-20 sm:px-6 lg:py-28">
+    <section className="download-section border-y border-white/10 bg-[#050505] px-4 py-16 sm:px-6 sm:py-20 lg:py-28">
       <div className="mx-auto max-w-5xl text-center">
-        <h2 className="text-3xl font-black tracking-[-.04em] text-white sm:text-5xl">📱 Take Alpha with you</h2>
-        <p className="mt-4 text-lg text-white/50">Fix sites. Restore hope. Anywhere.</p>
+        <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#FFD700]">Install once. Restore anywhere.</p>
+        <h2 className="mt-3 text-[28px] font-black tracking-[-.04em] text-white text-balance sm:text-5xl">📱 Take Alpha with you</h2>
+        <p className="mt-3 text-[15px] leading-6 text-white/50 sm:text-lg">Fix sites. Restore hope. Anywhere.</p>
         <div className="download-buttons mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-          <button id="installPWA" onClick={installPWA} className="btn-primary inline-flex min-h-12 items-center justify-center rounded-full bg-[#FFD700] px-7 font-black text-black transition hover:brightness-110">
-            📲 {canInstall ? 'Add to Home Screen' : 'Add to Home Screen'}
+          <button id="installPWA" onClick={installPWA} className="btn-primary inline-flex min-h-12 w-full items-center justify-center rounded-full bg-[#FFD700] px-7 text-[15px] font-black text-black shadow-[0_12px_32px_rgba(255,215,0,.18)] transition hover:brightness-110 sm:w-auto">
+            📲 Add to Home Screen
           </button>
-          <a href="/app.apk" download className="btn-secondary inline-flex min-h-12 items-center justify-center rounded-full border border-white/15 bg-white/5 px-7 font-bold text-white transition hover:bg-white/10">
+          <a href="/app.apk" download className="btn-secondary inline-flex min-h-12 w-full items-center justify-center rounded-full border border-white/15 bg-white/5 px-7 text-[15px] font-bold text-white backdrop-blur transition hover:bg-white/10 sm:w-auto">
             📥 Download APK
           </a>
         </div>
-        <p className="platform-note mt-4 text-xs font-semibold tracking-widest text-white/40">Works on Android · iOS · Web · No account needed to try.</p>
+        <p className="platform-note mt-4 text-[11px] font-semibold tracking-widest text-white/35 sm:text-xs">Works on Android · iOS · Web · No account needed to try.</p>
+        <p className="mt-2 text-[11px] text-white/20">PWA · Offline-ready · <span className="text-white/30">0.8 MB</span></p>
       </div>
     </section>
   )
@@ -1323,11 +1327,11 @@ export default function Landing() {
   const scaleX = useSpring(scrollYProgress, { stiffness: 130, damping: 28 })
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-black pb-[100px] font-['Inter',sans-serif] text-white">
+    <div className="min-h-[100dvh] overflow-x-hidden bg-black pb-[max(100px,env(safe-area-inset-bottom))] font-['Inter',sans-serif] text-white antialiased [text-rendering:optimizeLegibility]">
       <SEO title="AlphaTekX — We Don't Build Websites, We Restore" description="Paste your broken link or broken video. We heal it to world-class." />
       <motion.div style={{ scaleX }} className="fixed inset-x-0 top-0 z-[60] h-0.5 origin-left bg-gradient-to-r from-[#6B21A8] to-[#FFD700]" />
       <Header />
-      <main className="overflow-x-clip overflow-y-visible">
+      <main className="overflow-x-clip overflow-y-visible [contain:layout_style]">
         <Hero />
         <VideoSection />
         <DownloadAppSection />
