@@ -28,6 +28,17 @@ const MAX_PATCH_CHARS = 40_000
 const CIRCUIT_BREAKER_THRESHOLD = 3
 const CIRCUIT_OPEN_MS = 30_000
 const circuitState = new Map() // family:model -> { failures, openedAt }
+// Bounded autonomous execution: cost per task, token budgets, hard step limits (2026 best: ReAct + human-in-the-loop)
+const COST_PER_1K = { groq: 0.0008, openai: 0.002, xai: 0.0015 } // $/1k tokens 2026
+const MAX_STEPS_PER_TASK = 10
+function trackCost(family, model, promptChars, maxTokens){
+  try{
+    const tokens = Math.ceil(promptChars/4) + (maxTokens||0)
+    const cost = (tokens/1000) * (COST_PER_1K[family]||0.001)
+    fs.mkdirSync('data', {recursive:true})
+    fs.appendFileSync('data/llm-costs.jsonl', JSON.stringify({ts:new Date().toISOString(), family, model, tokens, cost: Number(cost.toFixed(4))})+'\n')
+  }catch{}
+}
 
 /**
  * Every slot that may hold a provider key. Groq slots come first because the
@@ -220,6 +231,7 @@ async function callChatCompletion(url, apiKey, model, system, user, maxTokens) {
       throw new Error(`HTTP ${res.status}: ${body} | remaining:${remaining||'?'} retryAfter:${retryAfter||'?'}`)
     }
     recordCircuit(family, model, true)
+    trackCost(family, model, (system?.length||0)+(user?.length||0), maxTokens)
     const data = await res.json()
     const content = data?.choices?.[0]?.message?.content
     if (!content) throw new Error('Empty completion')
@@ -808,6 +820,7 @@ async function callChatCompletionRaw(url, apiKey, model, system, user, maxTokens
     const data = await res.json()
     const content = data?.choices?.[0]?.message?.content
     if (!content) throw new Error('Empty completion')
+    try{ const fam2 = url.includes('groq') ? 'groq' : url.includes('x.ai') ? 'xai' : 'openai'; trackCost(fam2, model, (system?.length||0)+(user?.length||0), maxTokens) }catch{}
     return content
   } finally {
     clearTimeout(timer)

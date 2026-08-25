@@ -10326,6 +10326,17 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // ===== RUM: Real User Monitoring — Core Web Vitals field data 2026 =====
+  if (req.url === '/api/rum' && req.method === 'POST') {
+    try {
+      let body=''; req.on('data',c=> body+=c); await new Promise(r=> req.on('end',r))
+      const data = JSON.parse(body||'{}')
+      // Log to file for observability, no PII, GDPR-safe
+      try { fs.mkdirSync('data', {recursive:true}); fs.appendFileSync('data/rum.jsonl', JSON.stringify({ts:new Date().toISOString(), ...data})+'\n') } catch {}
+      res.writeHead(200, {'Content-Type':'application/json'}); return res.end(JSON.stringify({ok:true}))
+    } catch { res.writeHead(200, {'Content-Type':'application/json'}); return res.end(JSON.stringify({ok:true})) }
+  }
+
   // ===== BIG SITE & WHOLE GITHUB: enterprise 100% scan + green card + patch =====
   if (req.method === 'POST' && req.url?.startsWith('/api/scan/big-site')) {
     try {

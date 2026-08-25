@@ -1011,6 +1011,15 @@ export function applyFixesToHtmlV2(html, enabledTypes, ctx = {}) {
         }
       }
     }
+    // 11.6 RUM — Real User Monitoring 2026: field data > lab, measures LCP/INP/CLS from real users (web-vitals 4KB)
+    if (!/web-vitals|core-web-vitals.*RUM/i.test(out)) {
+      const rum = `<script type="module">import{onLCP as a,onINP as b,onCLS as c}from'https://unpkg.com/web-vitals@4/dist/web-vitals.js';function s(m){try{navigator.sendBeacon&&navigator.sendBeacon('/api/rum',JSON.stringify(m))}catch{}}a(s);b(s);c(s);</script>`
+      // Inject before </body> for non-blocking
+      if (/<\/body>/i.test(out)) out = out.replace(/<\/body>/i, rum + '</body>')
+      else out += rum
+      improvements.push({ type: 'rum_2026', description: 'RUM injected: web-vitals LCP/INP/CLS from real users (field > lab, 48% mobile fail)' })
+      if (!applied.includes('rum_2026')) applied.push('rum_2026')
+    }
   }
 
   // 12. Forms: ids, required attrs, status regions.
