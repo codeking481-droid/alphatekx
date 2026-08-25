@@ -77,3 +77,39 @@ async function cloudDelete(id: string) {
   const { data: auth } = await supabase.auth.getUser()
   if (auth.user) await supabase.from('general_chat_threads').delete().eq('id', id).eq('user_id', auth.user.id)
 }
+
+// Gap 3 Fix: sidebar history — persist all messages, survive refresh (prompt spec + thread fallback)
+export const chatHistoryStore = {
+  saveMessage: async (message: GeneralChatMessage) => {
+    // Keep thread storage (local + general_chat_threads) — then also persist to chat_history for compatibility
+    try {
+      const threads = read()
+      if (threads.length) {
+        const latest = threads[0]
+        const updated = { ...latest, messages: [...latest.messages, message], updatedAt: new Date().toISOString() }
+        write([updated, ...threads.slice(1)])
+        void cloudUpsert(updated)
+      }
+    } catch {}
+    if (!supabase) return
+    try {
+      const { data: auth } = await supabase.auth.getUser()
+      await supabase.from('chat_history').insert({
+        user_id: auth.user?.id ?? 'anon',
+        message,
+        created_at: new Date().toISOString(),
+      })
+    } catch {}
+  },
+  loadHistory: async (): Promise<GeneralChatMessage[]> => {
+    // Try chat_history table first (prompt spec), fallback to threads
+    if (supabase) {
+      try {
+        const { data } = await supabase.from('chat_history').select('*').order('created_at', { ascending: true })
+        if (data && data.length) return data.map((r: any) => r.message).filter(Boolean)
+      } catch {}
+    }
+    // Fallback: flatten all threads so sidebar never loses cards after refresh
+    return read().flatMap(t => t.messages)
+  },
+}

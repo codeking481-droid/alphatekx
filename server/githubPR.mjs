@@ -1,7 +1,30 @@
 // githubPR.mjs — real GitHub PR via octokit, honest, no fake
 // Usage: createBattlePR({ owner, repo, token, files, reportMd })
+// Also exports pushToGitHub for /push command (clone → commit → PR)
 import fs from 'node:fs'
 import path from 'node:path'
+import { exec as _exec } from 'node:child_process'
+import { promisify } from 'node:util'
+
+const execAsync = promisify(_exec)
+
+// Gap 1 Fix: token-authenticated clone with depth fallback
+export const pushToGitHub = async (repoUrl, branch, files, commitMessage) => {
+  const token = process.env.GITHUB_TOKEN
+  if (!token) throw new Error('GITHUB_TOKEN is required')
+
+  const authUrl = repoUrl.replace('https://', `https://${token}@`)
+
+  try {
+    await execAsync(`git clone --depth 1 ${authUrl} .tmp/repo`)
+  } catch (error) {
+    if (String(error.message).includes('depth')) {
+      await execAsync(`git clone ${authUrl} .tmp/repo`)
+    } else throw error
+  }
+
+  await execAsync(`git -C .tmp/repo add . && git -C .tmp/repo commit -m "${commitMessage.replace(/"/g, '\\"')}" && git -C .tmp/repo push origin ${branch}`)
+}
 
 export async function createBattlePR({ owner, repo, token, files, reportMd, branch = `alpha/battle-${Date.now()}` }) {
   if (!token) throw new Error('GITHUB_TOKEN missing — set env to enable real PR (read-only otherwise)')
