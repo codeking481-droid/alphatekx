@@ -231,10 +231,90 @@ export default function Chat() {
     setController(abortCtrl)
 
     const lower = text.toLowerCase()
-    const wantsClock = lower.includes('time') || lower.includes('clock') || lower.includes('what time')
+    // ——— Alpha Restoration intents: scan/fix this URL, GitHub, big site, pasted HTML ———
+    const urlMatch = text.match(/https?:\/\/[^\s]+/i)
+    const githubMatch = text.match(/github\.com\/[^\s]+/i) || text.match(/\b[\w-]+\/[\w.-]+\b/)
+    const isGithubIntent = /github|repo/i.test(lower) && githubMatch
+    const isBigSiteIntent = /big site|whole site|sitemap|100 pages|entire site/i.test(lower)
+    const isPasteHtml = /<html[\s>]/i.test(text) || /<!doctype/i.test(text)
+    const wantsRestore = /scan|fix|restore|repair|check|audit/i.test(lower) && (urlMatch || isGithubIntent || isPasteHtml || isBigSiteIntent)
+    if (wantsRestore) {
+      try {
+        let alphaContent = ''
+        let tool: GeneralChatMessage['tool'] = 'search'
+        let sources: GeneralChatMessage['sources'] = undefined
+
+        // Chain of thought visible steps
+        const steps = [
+          '🔍 Phase 1 — Scanning every file/page (10 areas, sitemap-first for big sites)...',
+          '🧠 Phase 2 — Analyzing with V2+V3 + Groq (12-phase, plain English green card)...',
+          '🛠️ Phase 3 — Surgical fix (minimal diff, no rewrite, WaveSpeed real images if needed)...',
+          '✅ Phase 4 — Verifying rescanClean + Core Web Vitals + security headers...'
+        ]
+        // Show steps incrementally
+        for (let s = 0; s < steps.length; s++) {
+          if (isAborted()) break
+          alphaContent += (alphaContent ? '\n\n' : '') + steps[s]
+          const interim: GeneralChatMessage = { id: uid(), role: 'assistant', content: alphaContent, createdAt: new Date().toISOString() }
+          setMessages([...nextMessages, interim])
+          // small delay to show chain of thought
+          // eslint-disable-next-line no-await-in-loop
+          await new Promise(r => setTimeout(r, 350))
+          if (s === 0) {
+            // Phase 1 — actually call the right engine
+            let scanRes: Response | null = null
+            let scanData: any = null
+            try {
+              if (isGithubIntent) {
+                const gh = githubMatch ? (githubMatch[0].startsWith('http') ? githubMatch[0] : `https://github.com/${githubMatch[0]}`) : urlMatch![0]
+                scanRes = await fetch('/api/scan/github', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ githubUrl: gh }), signal: abortCtrl.signal })
+              } else if (isBigSiteIntent && urlMatch) {
+                scanRes = await fetch('/api/scan/big-site', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: urlMatch[0], maxPages: 25 }), signal: abortCtrl.signal })
+              } else if (isPasteHtml) {
+                scanRes = await fetch('/api/engine/v3/restore', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ html: text }), signal: abortCtrl.signal })
+              } else if (urlMatch) {
+                // Try big-site first for earning sites (sitemap), fallback to single-page V3
+                scanRes = await fetch('/api/scan/big-site', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: urlMatch[0], maxPages: 10 }), signal: abortCtrl.signal })
+                if (!scanRes.ok) {
+                  scanRes = await fetch('/api/engine/v3/restore', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: urlMatch[0] }), signal: abortCtrl.signal })
+                }
+              }
+              if (scanRes) scanData = await scanRes.json().catch(() => ({}))
+            } catch {}
+            // Phase 2-4 — build final green card
+            if (scanData && (scanData.greenCard || scanData.ok)) {
+              alphaContent = scanData.greenCard || `**Scan complete:** ${scanData.pagesScanned || scanData.filesScanned || 1} scanned, ${scanData.findings?.length ?? scanData.issues_found ?? 0} issues found.\n\n` + (scanData.greenCard || '')
+              // Append verification + patch hint
+              alphaContent += `\n\n---\n**Verification:** ${scanData.beforeScore != null ? `before ${scanData.beforeScore} → after ${scanData.after_score ?? scanData.beforeScore} ` : ''}**Next:** Say **"fix this"** and I will patch surgically (minimal diff) and give you a PR/ZIP with \`originals/\` rollback.`
+              tool = 'search'
+              sources = (scanData.findings || []).slice(0, 5).map((f: any) => ({ title: `${f.type} — ${f.severity}`, url: f.file || f.page || urlMatch?.[0] || '', content: f.description || f.type }))
+            } else if (scanData && scanData.error) {
+              alphaContent += `\n\n⚠️ ${scanData.error} ${scanData.code === 402 ? '\n\nYour Free plan is 1 scan/1 fix — upgrade to Pro $49 (10 sites) to scan big sites.' : ''}`
+            } else {
+              alphaContent += '\n\n⚠️ Scan did not return a green card — trying single-page fallback...'
+              try {
+                const fallback = await fetch('/api/engine/v3/restore', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(urlMatch ? { url: urlMatch[0] } : { html: text }), signal: abortCtrl.signal })
+                const fj = await fallback.json().catch(() => ({}))
+                if (fj.ok || fj.greenCard) alphaContent = fj.greenCard || fj.html?.slice(0, 2000) || 'Fallback scan complete.'
+              } catch {}
+            }
+            // Replace interim with final
+            const finalMsg: GeneralChatMessage = { id: uid(), role: 'assistant', content: alphaContent, createdAt: new Date().toISOString(), tool, sources }
+            setMessages([...nextMessages, finalMsg])
+            persist([...nextMessages, finalMsg])
+            setLoading(false); setController(null); abortRef.current = null
+            if (voiceOn && alphaContent) speak(alphaContent.slice(0, 400))
+            return
+          }
+        }
+      } catch {}
+    }
+
+    const lower2 = text.toLowerCase()
+    const wantsClock = lower2.includes('time') || lower2.includes('clock') || lower2.includes('what time')
     const parsedCurrency = parseCurrency(text)
-    const wantsCurrency = lower.includes('currency') || lower.includes('rate') || lower.includes('convert') || lower.includes('naira') || lower.includes('usd') || lower.includes('ngn') || parsedCurrency !== null
-    const wantsSearch = lower.includes('search') || lower.includes('find') || lower.includes('latest') || lower.includes('news') || lower.startsWith('who is') || lower.startsWith('what is') || lower.startsWith('where is')
+    const wantsCurrency = lower2.includes('currency') || lower2.includes('rate') || lower2.includes('convert') || lower2.includes('naira') || lower2.includes('usd') || lower2.includes('ngn') || parsedCurrency !== null
+    const wantsSearch = lower2.includes('search') || lower2.includes('find') || lower2.includes('latest') || lower2.includes('news') || lower2.startsWith('who is') || lower2.startsWith('what is') || lower2.startsWith('where is')
 
     let alphaContent = ''
     let tool: GeneralChatMessage['tool'] = undefined
@@ -348,10 +428,10 @@ export default function Chat() {
               <div className="grid h-16 w-16 place-items-center rounded-3xl bg-gradient-to-br from-emerald-500 to-indigo-600 shadow-lg shadow-emerald-500/20">
                 <Sparkles size={32} className="text-white" />
               </div>
-              <h1 className="mt-6 text-2xl font-semibold text-white sm:text-3xl">Turn your ideas into reality</h1>
-              <p className="mt-2 max-w-md text-sm text-zinc-400">Ask Alpha anything. Search the live web, convert currency, get the time, and more.</p>
+              <h1 className="mt-6 text-2xl font-semibold text-white sm:text-3xl">What do you want to restore?</h1>
+              <p className="mt-2 max-w-md text-sm text-zinc-400">Paste a link, describe the problem, or upload code — Alpha scans 100%, fixes surgically, green card plain English.</p>
               <div className="mt-8 flex flex-wrap justify-center gap-2">
-                {['Convert 100 USD to EUR', 'Search the web for Apple news', 'What time is it?'].map(p => (
+                {['Scan this: https://example.com', 'Fix this GitHub: vercel/next.js', 'Restore pasted HTML: <html>…</html>'].map(p => (
                   <button key={p} onClick={() => void send(p, undefined, false)} className="rounded-full border border-violet-400/20 bg-violet-500/10 px-4 py-2 text-xs text-zinc-300 hover:bg-violet-500/10 hover:text-white">{p}</button>
                 ))}
               </div>
@@ -418,7 +498,7 @@ export default function Chat() {
               value={input}
               onChange={e => { setInput(e.target.value); if (!e.target.value.trim()) setVoiceOn(false) }}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }}
-              placeholder={voiceOn ? 'Tap the mic or type a message...' : 'Ask Alpha anything, search the web, or say show me currency...'}
+              placeholder={voiceOn ? 'Tap the mic or type a message...' : 'Paste a link, describe the problem, or say "Scan this: https://..."'}
               className="max-h-40 min-h-14 flex-1 resize-none bg-transparent px-3 py-3 text-sm text-zinc-100 placeholder:text-slate-400 outline-none"
               rows={1}
             />
@@ -437,9 +517,9 @@ export default function Chat() {
             )}
           </div>
           <div className="mt-2 flex flex-wrap gap-2 text-[10px] text-slate-400">
-            <button onClick={() => setInput('Convert 100 USD to EUR')} className="rounded-full border border-violet-400/20 bg-violet-500/10 px-2 py-1 hover:bg-violet-500/10">Try: Convert 100 USD to EUR</button>
-            <button onClick={() => setInput('Search the web for Apple news')} className="rounded-full border border-violet-400/20 bg-violet-500/10 px-2 py-1 hover:bg-violet-500/10">Try: search the web</button>
-            <button onClick={() => setInput('What time is it?')} className="rounded-full border border-violet-400/20 bg-violet-500/10 px-2 py-1 hover:bg-violet-500/10">Try: "What time is it?"</button>
+            <button onClick={() => setInput('Scan this: https://example.com')} className="rounded-full border border-violet-400/20 bg-violet-500/10 px-2 py-1 hover:bg-violet-500/10">Try: Scan this URL</button>
+            <button onClick={() => setInput('Fix this GitHub: vercel/next.js')} className="rounded-full border border-violet-400/20 bg-violet-500/10 px-2 py-1 hover:bg-violet-500/10">Try: Fix GitHub repo</button>
+            <button onClick={() => setInput('Convert 100 USD to EUR')} className="rounded-full border border-violet-400/20 bg-violet-500/10 px-2 py-1 hover:bg-violet-500/10">Try: Convert 100 USD</button>
           </div>
         </div>
       </footer>
