@@ -6,7 +6,7 @@ import { getDeviceFingerprint } from '../lib/fingerprint'
 import { startPayment } from '../lib/paystack'
 import { supabase } from '../lib/supabase'
 
-const SITE_URL_HELP = 'Auth is blocked by the Supabase Site URL setting. Set Supabase Site URL to https://alphatekx.name.ng and add https://alphatekx.name.ng/auth as an allowed redirect URL.'
+const SITE_URL_HELP = 'Auth is blocked by the Supabase Site URL setting. Set Supabase Site URL to https://alphatekx.name.ng and add https://alphatekx.name.ng/auth and https://alphatekx.name.ng/chat as allowed redirect URLs.'
 const OAUTH_STATE_HELP = 'That Google sign-in attempt expired. Continue with Google again to start a fresh secure sign-in.'
 
 type VerificationResult = {

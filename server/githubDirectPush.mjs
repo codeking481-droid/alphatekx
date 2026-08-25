@@ -160,11 +160,11 @@ export async function handleGitHubCallback(req, res) {
     // Verify token works
     const user = await githubApi('/user', accessToken)
 
-    // Set cookie and redirect to frontend
+    // Set cookie and redirect to frontend — to /chat per BOSS (not / or /studio)
     setCookie(res, 'gh_token', accessToken, 86400 * 30)
     setCookie(res, 'gh_user', user.login, 86400 * 30)
 
-    res.writeHead(302, { Location: '/?github=connected' })
+    res.writeHead(302, { Location: '/chat?github=connected' })
     res.end()
   } catch (err) {
     console.error('[GITHUB-OAUTH] Callback error:', err.message)
