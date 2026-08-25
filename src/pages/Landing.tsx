@@ -62,7 +62,7 @@ function AnimatedCounter({ value, suffix = '' }: { value: number; suffix?: strin
 }
 
 function Header() {
-  const { user } = useAuth()
+  const { user, loading } = useAuth()
   const [open, setOpen] = useState(false)
   const [authError, setAuthError] = useState('')
   const navigate = useNavigate()
@@ -91,10 +91,10 @@ function Header() {
     }
   }
 
-  // Auto-redirect authenticated users — zero clicks
+  // Auto-redirect authenticated users — zero clicks (waits for loading)
   useEffect(() => {
-    if (user) navigate('/chat')
-  }, [user, navigate])
+    if (!loading && user) navigate('/chat', { replace: true })
+  }, [user, loading, navigate])
 
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b border-white/[0.08] bg-black/75 backdrop-blur-2xl supports-[backdrop-filter]:bg-black/60">
@@ -1424,6 +1424,12 @@ function MobileCTA() {
 }
 
 export default function Landing() {
+  const { user, loading } = useAuth()
+  const navigate = useNavigate()
+  // Backup auto-redirect at page level — ensures it works even if Header not mounted
+  useEffect(() => {
+    if (!loading && user) navigate('/chat', { replace: true })
+  }, [user, loading, navigate])
   const { scrollYProgress } = useScroll()
   const scaleX = useSpring(scrollYProgress, { stiffness: 130, damping: 28 })
 
