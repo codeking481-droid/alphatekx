@@ -568,25 +568,29 @@ function StackCard({ card, index, progress }: { card: (typeof stackCards)[number
   const scale = useTransform(progress, [start, Math.min(start + 0.35, 1)], [0.95, 1 - index * 0.015])
   const opacity = useTransform(progress, [start, Math.min(start + 0.16, 1)], [index ? 0.15 : 1, 1])
   const Icon = card.icon
+  const bullets = index === 0 ? ['App link or video', 'Style ref optional', 'Zero setup'] : index === 1 ? ['27+ checks', 'Secrets redacted', 'No breakage'] : ['Health 0→96', 'PR or ZIP', 'Sell (10% fee)']
 
   return (
     <motion.article
       style={{ y, scale, opacity, zIndex: index + 1 }}
-      className={`absolute inset-x-0 top-0 min-h-[390px] overflow-hidden rounded-[32px] border bg-[#0A0A0D] p-7 sm:p-10 ${card.border} ${card.glow}`}
+      className={`absolute inset-x-0 top-0 min-h-[390px] overflow-hidden rounded-[28px] border bg-[#0A0A0D] p-7 shadow-[0_24px_64px_rgba(0,0,0,.4)] sm:p-8 ${card.border} ${card.glow}`}
     >
-      <div className="absolute -right-24 -top-24 size-72 rounded-full bg-[#6B21A8]/20 blur-[90px]" />
+      <div className="absolute -right-24 -top-24 size-72 rounded-full bg-[#6B21A8]/15 blur-[80px]" />
+      <div className="absolute inset-0 bg-gradient-to-br from-white/[0.03] via-transparent to-transparent" />
       <div className="relative flex h-full min-h-[320px] flex-col justify-between">
-        <div className="flex items-start justify-between">
-          <span className="text-xs font-black tracking-[.2em] text-[#FFD700]">0{index + 1}</span>
-          <span className="grid size-14 place-items-center rounded-2xl border border-white/10 bg-white/[.04] text-[#FFD700]">
-            <Icon size={25} />
+        <div className="flex items-start justify-between gap-4">
+          <span className="rounded-full border border-[#FFD700]/20 bg-[#FFD700]/10 px-2.5 py-1 text-[11px] font-black tracking-[.14em] text-[#FFD700]">0{index + 1} • {card.label}</span>
+          <span className="grid size-11 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[0.04] text-[#FFD700] shadow-inner">
+            <Icon size={20} />
           </span>
         </div>
         <div>
-          <h3 className="font-['Space_Grotesk',Inter,sans-serif] text-4xl font-black tracking-[-.04em] text-white sm:text-6xl">
-            {card.label}
-          </h3>
-          <p className="mt-5 max-w-xl text-base leading-7 text-white/45 sm:text-lg">{card.copy}</p>
+          <p className="mt-6 max-w-xl text-[15px] leading-6 text-white/55 sm:text-[16px]">{card.copy}</p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {bullets.map((b) => (
+              <span key={b} className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.06] bg-white/[0.02] px-2.5 py-1 text-[11px] font-bold text-white/50"><Check size={12} className="text-emerald-400" />{b}</span>
+            ))}
+          </div>
         </div>
       </div>
     </motion.article>
@@ -598,18 +602,23 @@ function HowItWorks() {
   const { scrollYProgress } = useScroll({ target: ref, offset: ['start start', 'end end'] })
 
   return (
-    <section id="how-it-works" ref={ref} className="relative h-[260vh] bg-black px-4 sm:px-6 max-md:h-auto max-md:py-24">
+    <section id="how-it-works" ref={ref} className="relative h-[260vh] overflow-hidden bg-black px-4 sm:px-6 max-md:h-auto max-md:py-16 sm:max-md:py-24">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(55%_45%_at_50%_0%,rgba(107,33,168,.13),transparent_60%)]" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
       <div className="sticky top-0 mx-auto flex h-screen max-w-7xl items-center gap-12 max-md:static max-md:block max-md:h-auto">
         <div className="w-[36%] max-md:w-full">
-          <p className="text-xs font-black uppercase tracking-[.2em] text-[#FFD700]">How it works</p>
-          <h2 className="mt-5 text-4xl font-black tracking-[-.045em] text-white sm:text-5xl">
-            How Alpha Restores
-            <br />
-            Broken Things
+          <p className="text-[11px] font-black uppercase tracking-[0.2em] text-[#FFD700]">How it works</p>
+          <h2 className="mt-3 font-['Space_Grotesk',Inter,sans-serif] text-[28px] font-black tracking-[-.04em] text-white text-balance sm:mt-5 sm:text-4xl lg:text-5xl">
+            How Alpha restores <span className="bg-gradient-to-r from-[#FFD700] to-[#8B3FC7] bg-clip-text text-transparent">broken things</span>
           </h2>
-          <p className="mt-5 max-w-sm leading-7 text-white/40">
-            Broken links and rough footage are healed into world-class assets, then monetized.
+          <p className="mt-4 max-w-sm text-[14px] leading-6 text-white/45 sm:text-[15px] sm:leading-7">
+            Three steps. No rebuild. Your link and footage become world-class — verified in a live browser, with full rollback.
           </p>
+          <div className="mt-6 hidden items-center gap-2 text-xs font-bold text-white/30 lg:flex">
+            <span className="flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-emerald-400" /> Read-only</span>
+            <span className="text-white/10">•</span>
+            <span>Scroll to see shift</span>
+          </div>
         </div>
 
         <div className="relative h-[430px] flex-1 max-md:mt-12 max-md:grid max-md:h-auto max-md:gap-5">
