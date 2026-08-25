@@ -11,6 +11,7 @@ import { withContext } from './scanner/browserPool.mjs'
 import { alphaChat, alphaText } from '../alpha-core/index.ts'
 import { runFullRestorationScan } from './scanEngine/restorationScanner.mjs'
 import { sanitizeEncoding, validateHtml, FileHandler } from './scanEngine/fileUtils.js'
+import { buildGreenCard } from './greenCard.mjs'
 import {
   emitRestorationStarted,
   emitRepositoryScanned,
@@ -725,6 +726,30 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
       brokenImages: scanData.brokenImages || 0,
       patterns: detectedPatterns.map(d => d.name),
     }
+    // Generate Green Card — plain English + $ loss + consequence (always, even if healthy)
+    let greenCard = ''
+    try {
+      const findingsForCard = errorsFound.map(e => ({
+        type: String(e.name || e.id || 'unknown').toLowerCase().replace(/[^a-z0-9_]/g,'_'),
+        severity: e.severity || 'medium',
+        file: e.file || 'page',
+        line: 1,
+        page: targetUrl,
+      }))
+      const beforeScore = Math.max(10, 100 - findingsForCard.length * 7)
+      greenCard = buildGreenCard({
+        site: targetUrl,
+        pagesScanned: 1,
+        sitemapUsed: false,
+        findings: findingsForCard,
+        beforeScore,
+        afterScore: 100,
+      })
+      sendCard({ type: 'v3_summary', message: greenCard })
+    } catch (e) {
+      console.error('[RESSTREAM] greenCard build failed:', e.message)
+    }
+
     // Save scan state so /api/restore/fix can resume
     const scanStatePath = path.resolve(workDir, 'scan-state.json')
     try {
@@ -736,9 +761,10 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
         rollbackDir,
         errorsFound,
         scanData,
+        greenCard,
       }), 'utf8')
     } catch {}
-    sendCard({ type: 'fixprompt', scanId, scanSummary })
+    sendCard({ type: 'fixprompt', scanId, scanSummary, greenCard })
     stopHeartbeat()
     if (!res.writableEnded) res.end()
     return

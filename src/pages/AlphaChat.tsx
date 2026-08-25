@@ -785,7 +785,11 @@ function ChatContent() {
             severity: summary.severity || 'unknown',
             summary: summary.summary || '',
           }
-          // Show a proper conversation message after scan
+          // Green Card — plain English + $ loss + consequence (always, even if healthy)
+          if (event.greenCard) {
+            return { ...prev, restoreCards: cards, content: event.greenCard }
+          }
+          // Fallback: Show a proper conversation message after scan
           const errCount = summary.errorsFound || 0
           const tech = summary.tech || 'unknown'
           const sev = summary.severity || 'low'
