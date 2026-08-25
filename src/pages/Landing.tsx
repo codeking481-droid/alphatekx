@@ -8,7 +8,7 @@ import {
   useTransform,
   type MotionValue,
 } from 'framer-motion'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   ArrowRight,
   BarChart3,
