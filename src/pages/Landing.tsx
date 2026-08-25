@@ -18,12 +18,14 @@ import {
   CircleCheckBig,
   Gauge,
   History,
+  Link2,
   LockKeyhole,
   Menu,
   Play,
   Rocket,
   ShieldCheck,
   Sparkles,
+  Wand2,
   WandSparkles,
   X,
   Zap,
@@ -397,6 +399,25 @@ function Hero() {
         </div>
 
         <DashboardMockup />
+      </div>
+    </section>
+  )
+}
+
+function TrustBar() {
+  return (
+    <section className="border-y border-white/[0.06] bg-[#050507] px-4 py-6 sm:px-6">
+      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-center gap-6 sm:justify-between sm:gap-8">
+        <span className="text-[11px] font-black uppercase tracking-[0.18em] text-white/25">Trusted by founders who ship</span>
+        <div className="flex flex-wrap items-center justify-center gap-6 text-xs font-bold tracking-wide text-white/35 sm:gap-8">
+          <span className="flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-emerald-400" /> Vercel</span>
+          <span className="flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-[#FFD700]" /> Netlify</span>
+          <span className="flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-violet-400" /> GitHub</span>
+          <span className="flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-white/40" /> Render</span>
+        </div>
+        <span className="hidden items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/5 px-3 py-1.5 text-[11px] font-black text-emerald-300 sm:flex">
+          <span className="size-1.5 animate-pulse rounded-full bg-emerald-400" /> 2,400+ sites restored
+        </span>
       </div>
     </section>
   )
@@ -1382,6 +1403,7 @@ export default function Landing() {
       <Header />
       <main className="overflow-x-clip overflow-y-visible [contain:layout_style]">
         <Hero />
+        <TrustBar />
         <VideoSection />
         <DownloadAppSection />
         <InteractiveOutcomeDemo />
