@@ -51,6 +51,30 @@ small{color:var(--muted)}
 <table id="breakdown" style="margin-top:16px"><tr><th>Category</th><th>Found</th><th>Fixed</th><th>Rate</th></tr></table>
 <small>Artifacts: <code>.alphatekx/battle/scorecard.json</code> + <code>report.json</code> — verifiable, no fake metrics.</small>
 </div>
+
+<!-- ============================================================ -->
+<!-- IMAGE RESTORATION — Production-ready (Z-Image / Canvas fallback) -->
+<!-- ============================================================ -->
+<div class="card" id="imageCard">
+<h3 style="margin:0">🖼️ Image Restoration — Real Production Images</h3>
+<p class="sub">Fix broken 404s, placeholders, corrupt images with context-aware AI generation. No placeholders. No errors.</p>
+<div class="row" style="flex-wrap:wrap">
+<input type="file" id="imageUpload" accept="image/*" style="flex:1;min-width:200px">
+<input type="text" id="imageUrl" placeholder="Paste broken image src or describe what it should show..." style="flex:2;min-width:260px">
+</div>
+<div class="row">
+<input type="text" id="imagePrompt" placeholder="Prompt (leave empty to auto-generate from alt + surrounding text)" style="flex:1">
+<button onclick="restoreImage()" id="imgBtn">Restore Image</button>
+</div>
+<div id="imageLog" style="white-space:pre-wrap;background:#0f0f0f;border:1px solid #262626;border-radius:12px;padding:12px;max-height:200px;overflow:auto;margin-top:12px;font-size:13px;color:#d1d5db">No image restoration yet. Upload or paste a URL + prompt.</div>
+<div id="imageResult" style="display:none;margin-top:16px">
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+<div><small>Before (broken)</small><div id="beforeBox" style="background:#0f0f0f;border:1px solid #262626;border-radius:8px;padding:8px;min-height:120px;display:flex;align-items:center;justify-content:center;color:#6b7280">—</div></div>
+<div><small>After (production-ready)</small><div id="afterBox" style="background:#0f0f0f;border:1px solid #262626;border-radius:8px;padding:8px;min-height:120px;display:flex;align-items:center;justify-content:center"></div></div>
+</div>
+<small id="imgMeta" style="display:block;margin-top:8px;color:#9ca3af"></small>
+</div>
+</div>
 </div>
 
 <script>
@@ -108,6 +132,46 @@ async function runBattle(){
 }
 function gradeFor(s){ return s>=95?'A': s>=85?'B': s>=70?'C':'D' }
 function copyPR(){ if(!window._prArtifact) return alert('Run a scan first'); navigator.clipboard.writeText(window._prArtifact).then(()=>alert('PR artifact copied')) }
+async function restoreImage(){
+  const file=document.getElementById('imageUpload').files[0]
+  const url=document.getElementById('imageUrl').value.trim()
+  const prompt=document.getElementById('imagePrompt').value.trim()
+  const logEl=document.getElementById('imageLog')
+  const btn=document.getElementById('imgBtn')
+  function ilog(s){ logEl.textContent += "\n"+s; logEl.scrollTop=logEl.scrollHeight }
+  if(!file && !url && !prompt){ alert('Upload a file, paste URL, or write prompt'); return }
+  btn.disabled=true; btn.textContent='Restoring…'
+  logEl.textContent='▶ Detecting context…'
+  try{
+    let body={}
+    if(prompt) body.prompt=prompt
+    else if(url) body.prompt='Image for '+url
+    else body.prompt='Professional, clean, modern image, high quality'
+    if(url) body.image_url=url
+    if(file){
+      const reader=new FileReader()
+      const b64=await new Promise(r=>{ reader.onload=()=>r(reader.result); reader.readAsDataURL(file) })
+      body.image_url=b64
+      document.getElementById('beforeBox').innerHTML='<img src="'+b64+'" style="max-width:100%;max-height:180px;border-radius:6px">'
+    } else if(url){
+      document.getElementById('beforeBox').innerHTML='<small style="color:#9ca3af">'+url.slice(0,80)+'</small>'
+    }
+    ilog('POST /api/restore/image — prompt: '+(body.prompt.slice(0,60)))
+    const res=await fetch('/api/restore/image',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)})
+    const j=await res.json()
+    if(!res.ok) throw new Error(j.error||'Image restore failed')
+    ilog('✓ Generated: '+j.image.url+' ('+j.image.size+' bytes, '+j.image.width+'x'+j.image.height+' '+j.image.format+')')
+    ilog('Verify: '+(j.verify?.success?'✅ '+j.verify.message : '⚠️ '+j.verify?.error))
+    document.getElementById('imageResult').style.display='block'
+    document.getElementById('afterBox').innerHTML='<img src="'+j.image.url+'" style="max-width:100%;max-height:240px;border-radius:6px" loading="lazy">'
+    document.getElementById('imgMeta').textContent=j.image.prompt ? 'Prompt: '+j.image.prompt : 'Auto prompt from context'
+  }catch(e){ ilog('✗ '+e.message); alert(e.message) }
+  finally{ btn.disabled=false; btn.textContent='Restore Image' }
+}
+document.getElementById('imageUrl')?.addEventListener('change', (e)=>{
+  const v=e.target.value.trim()
+  if(v) document.getElementById('beforeBox').innerHTML='<small style="color:#6b7280">'+v.slice(0,80)+'</small><br><img src="'+v+'" style="max-width:100%;max-height:120px;margin-top:6px" onerror="this.style.display=\'none\'">'
+})
 </script>
 </body>
 </html>

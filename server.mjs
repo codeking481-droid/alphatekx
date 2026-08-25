@@ -11,6 +11,7 @@ import { handlePreviewRoute, handleRestoreStreamRoute, handleFixStreamRoute, han
 import { createRestorationEngine } from './server/restorationEngine.mjs'
 import { createRestorationEngineV2 } from './server/restorationEngineV2.mjs'
 import { createRestorationEngineV3 } from './server/restorationEngineV3.mjs'
+import { handleImageRoutes } from './server/imageRestorationEngine.mjs'
 import { createRestorationPipeline } from './server/restorationPipeline.mjs'
 import { FileHandler, sanitizeEncoding } from './server/scanEngine/fileUtils.js'
 import { handleGitHubAuth, handleGitHubCallback, handleGitHubStatus, handleGitHubRepos, handleGitHubApplyFix, handleGitHubCreatePR, handleGitHubRollback, handleGitHubPublishRestoration } from './server/githubDirectPush.mjs'
@@ -10313,6 +10314,16 @@ const server = http.createServer(async (req, res) => {
       console.error('[QUOTA-GATE] non-fatal:', gateErr instanceof Error ? gateErr.message : gateErr)
     }
     return handleRestoreV3Route(req, res)
+  }
+
+  // ===== IMAGE RESTORATION: production-ready replacement (Z-Image / Canvas fallback) =====
+  if (req.url?.startsWith('/api/restore/image')) {
+    try {
+      const handled = await handleImageRoutes(req, res)
+      if (handled) return
+    } catch (e) {
+      console.error('[image] route error', e.message)
+    }
   }
 
   // ===== RESTORE PASTED HTML: Alpha fixes pasted code =====
