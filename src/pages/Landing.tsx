@@ -62,6 +62,8 @@ function AnimatedCounter({ value, suffix = '' }: { value: number; suffix?: strin
 function Header() {
   const { user } = useAuth()
   const [open, setOpen] = useState(false)
+  const [authError, setAuthError] = useState('')
+  const navigate = useNavigate()
   const links = [
     ['Product', '#product'],
     ['How it works', '#how-it-works'],
@@ -70,6 +72,22 @@ function Header() {
     ['Pricing', '#pricing'],
     ['FAQ', '#faq'],
   ]
+  const handleAuth = async () => {
+    setAuthError('')
+    try {
+      await instantGoogleSignup()
+    } catch (e: any) {
+      const msg = String(e?.message || e)
+      // If Supabase not configured or OAuth fails, fallback to /auth page for email + manual flow
+      if (/not available|not configured|supabase/i.test(msg)) {
+        navigate('/auth')
+        setAuthError('Opening sign-in page…')
+      } else {
+        setAuthError(msg.slice(0, 180))
+        setTimeout(() => setAuthError(''), 4000)
+      }
+    }
+  }
 
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b border-white/[0.08] bg-black/75 backdrop-blur-2xl supports-[backdrop-filter]:bg-black/60">
@@ -99,15 +117,16 @@ function Header() {
             </Link>
           ) : (
             <>
-              <button type="button" onClick={() => void instantGoogleSignup()} className="nav-login inline-flex h-10 items-center rounded-full border border-white/15 px-5 text-sm font-bold text-white transition hover:bg-white/10">
+              <button type="button" onClick={() => void handleAuth()} className="nav-login inline-flex h-10 items-center rounded-full border border-white/15 px-5 text-sm font-bold text-white transition hover:bg-white/10">
                 Login
               </button>
-              <button type="button" onClick={() => void instantGoogleSignup()} className="nav-signup inline-flex h-10 items-center rounded-full bg-[#FFD700] px-5 text-sm font-black text-black transition hover:brightness-110">
+              <button type="button" onClick={() => void handleAuth()} className="nav-signup inline-flex h-10 items-center rounded-full bg-[#FFD700] px-5 text-sm font-black text-black transition hover:brightness-110">
                 Sign Up
               </button>
             </>
           )}
         </div>
+        {authError && <div className="hidden md:block text-xs text-amber-300">{authError}</div>}
 
         <button
           aria-label="Toggle navigation"
@@ -140,14 +159,15 @@ function Header() {
             </Link>
           ) : (
             <>
-              <button type="button" onClick={() => { setOpen(false); void instantGoogleSignup() }} className="mt-2 w-full rounded-xl border border-white/15 px-4 py-3 text-center font-bold text-white">
+              <button type="button" onClick={() => { setOpen(false); void handleAuth() }} className="mt-2 w-full rounded-xl border border-white/15 px-4 py-3 text-center font-bold text-white">
                 Login
               </button>
-              <button type="button" onClick={() => { setOpen(false); void instantGoogleSignup() }} className="mt-2 w-full rounded-xl bg-[#FFD700] px-4 py-3 text-center font-black text-black">
+              <button type="button" onClick={() => { setOpen(false); void handleAuth() }} className="mt-2 w-full rounded-xl bg-[#FFD700] px-4 py-3 text-center font-black text-black">
                 Sign Up
               </button>
             </>
           )}
+          {authError && <p className="mt-2 text-center text-xs text-amber-300">{authError}</p>}
         </motion.nav>
       )}
     </header>
@@ -291,6 +311,12 @@ function DashboardMockup() {
 
 function Hero() {
   const { user } = useAuth()
+  const navigate = useNavigate()
+  const handleHeroAuth = async () => {
+    try { await instantGoogleSignup() } catch (e: any) {
+      if (/not available|not configured|supabase/i.test(String(e?.message))) navigate('/auth')
+    }
+  }
 
   return (
     <section id="top" className="relative isolate min-h-[100dvh] overflow-x-clip overflow-y-visible bg-black px-4 pb-12 pt-24 sm:px-6 sm:pb-24 sm:pt-28 lg:flex lg:min-h-screen lg:items-center lg:pt-20">
@@ -353,7 +379,7 @@ function Hero() {
               ) : (
                 <button
                   type="button"
-                  onClick={() => void instantGoogleSignup()}
+                  onClick={() => void handleHeroAuth()}
                   className="btn-primary group inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-full bg-[#FFD700] px-7 font-black text-black shadow-[0_0_42px_rgba(107,33,168,.55)] transition hover:-translate-y-1 hover:shadow-[0_0_55px_rgba(255,215,0,.28)] sm:w-auto"
                 >
                   Get Started — Free
@@ -1248,6 +1274,12 @@ function Pricing() {
 
 function FinalCTA() {
   const { user } = useAuth()
+  const navigate = useNavigate()
+  const handleFinalAuth = async () => {
+    try { await instantGoogleSignup() } catch (e: any) {
+      if (/not available|not configured|supabase/i.test(String(e?.message))) navigate('/auth')
+    }
+  }
 
   const handleEarlyFounderDeal = () => {
     void instantGoogleSignup('early_founder_19')
@@ -1272,7 +1304,7 @@ function FinalCTA() {
               Get Started — Free <ArrowRight size={19} />
             </Link>
           ) : (
-            <button type="button" onClick={() => void instantGoogleSignup()} className="inline-flex min-h-14 items-center justify-center gap-2 rounded-full bg-white px-8 font-black text-black shadow-[0_0_50px_rgba(107,33,168,.5)] transition hover:-translate-y-1" style={{ background: '#FFFFFF', color: '#000000', height: '48px', borderRadius: '12px', fontWeight: 600 }}>
+            <button type="button" onClick={() => void handleFinalAuth()} className="inline-flex min-h-14 items-center justify-center gap-2 rounded-full bg-white px-8 font-black text-black shadow-[0_0_50px_rgba(107,33,168,.5)] transition hover:-translate-y-1" style={{ background: '#FFFFFF', color: '#000000', height: '48px', borderRadius: '12px', fontWeight: 600 }}>
               Get Started — Free <ArrowRight size={19} />
             </button>
           )}
