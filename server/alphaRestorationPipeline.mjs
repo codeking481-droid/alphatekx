@@ -1419,6 +1419,7 @@ export function handleRestoreV3Route(req, res) {
   const origin = `${proto}://${host}`
   const cookieHeader = req.headers.cookie || ''
   const githubRepo = (parsed.searchParams.get('githubRepo') || '').trim()
+  const monthlyRevenue = parsed.searchParams.get('monthlyRevenue') ? Number(parsed.searchParams.get('monthlyRevenue')) : null
 
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
@@ -1436,7 +1437,7 @@ export function handleRestoreV3Route(req, res) {
     if (!res.writableEnded) res.write(': ping\n\n')
   }, 15000)
 
-  runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, sendEvent, sendStep, maxPages, githubRepo })
+  runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, sendEvent, sendStep, maxPages, githubRepo, monthlyRevenue })
     .catch((err) => {
       console.error('[ALPHA-V3] Pipeline crashed:', err)
       sendEvent({ type: 'error', message: err instanceof Error ? err.message : 'Pipeline failed' })
@@ -1457,7 +1458,7 @@ async function wpNoteFor(diagnosis) {
   }
 }
 
-export async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, sendEvent, sendStep, maxPages = 1, githubRepo = '' }) {
+export async function runRestorationPipeline({ targetUrl, mode, origin, cookieHeader, sendEvent, sendStep, maxPages = 1, githubRepo = '', monthlyRevenue = null }) {
   const chain = createChain(sendStep)
   const restorationId = `atk_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
   const artifactsDir = path.join(ARTIFACTS_ROOT, restorationId)
@@ -1617,7 +1618,7 @@ export async function runRestorationPipeline({ targetUrl, mode, origin, cookieHe
     const runtimeNote = renderProbe && renderProbe.ok
       ? `\n\nI also opened the site in a real browser: ${renderProbe.pageErrors.length} crash(es), ${renderProbe.consoleErrors.length} console error(s), ${renderProbe.blankRender ? 'and the page renders **blank** — that is serious' : 'no blank-render problem'}.`
       : ''
-    // Green Card — plain English + $ loss + consequence (always, even when clean)
+    // Green Card — HONEST: only real revenue, no fake defaults
     let greenCard = ''
     try {
       greenCard = buildGreenCard({
@@ -1627,6 +1628,7 @@ export async function runRestorationPipeline({ targetUrl, mode, origin, cookieHe
         findings: diagnosis.issues,
         beforeScore: diagnosis.score,
         afterScore: 100,
+        monthlyRevenue,
       })
     } catch {}
     const msg = diagnosis.issues.length === 0

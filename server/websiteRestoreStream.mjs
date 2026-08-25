@@ -170,6 +170,7 @@ export function handleRestoreStreamRoute(req, res) {
   const targetUrl = rawUrl && !/^https?:\/\//i.test(rawUrl) ? 'https://' + rawUrl.replace(/^\/+/, '') : rawUrl
   const intent = parsed.searchParams.get('intent') || 'auto' // 'scan' | 'fix' | 'auto'
   const userMessage = parsed.searchParams.get('message') || ''
+  const monthlyRevenue = parsed.searchParams.get('monthlyRevenue') ? Number(parsed.searchParams.get('monthlyRevenue')) : null
   if (!targetUrl) {
     res.writeHead(400, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' })
     res.write(`data: ${JSON.stringify({ type: 'error', message: 'Missing url parameter' })}\n\n`)
@@ -192,7 +193,7 @@ export function handleRestoreStreamRoute(req, res) {
     if (!res.writableEnded) res.write(`data: ${JSON.stringify(card)}\n\n`)
   }
 
-  runPipeline(targetUrl, sendCard, res, intent, userMessage).catch(err => {
+  runPipeline(targetUrl, sendCard, res, intent, userMessage, monthlyRevenue).catch(err => {
     console.error('[RESSTREAM] Pipeline crashed:', err.message)
     sendCard({ type: 'error', message: err.message || 'Pipeline failed' })
     if (!res.writableEnded) res.end()
@@ -226,7 +227,7 @@ export function handleFixStreamRoute(req, res) {
   })
 }
 
-async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessage = '') {
+async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessage = '', monthlyRevenue = null) {
   const scanId = `wr_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
   const workDir = path.resolve(tmpdir(), `restore-${scanId}`)
   const restoredDir = path.resolve(workDir, 'restored')
@@ -744,6 +745,7 @@ async function runPipeline(targetUrl, sendCard, res, intent = 'auto', userMessag
         findings: findingsForCard,
         beforeScore,
         afterScore: 100,
+        monthlyRevenue,
       })
       sendCard({ type: 'v3_summary', message: greenCard })
     } catch (e) {

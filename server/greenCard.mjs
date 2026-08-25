@@ -28,9 +28,10 @@ function costOf(type, severity){
   if(type.includes('title')||type.includes('og')||type.includes('canonical')||type.includes('sitemap')) return 'Slower Google indexing, less traffic'
   return 'Hurts trust + speed'
 }
-export function buildGreenCard({ site, pagesScanned, sitemapUsed, findings, beforeScore, afterScore, monthlyRevenue=10000 }){
+export function buildGreenCard({ site, pagesScanned, sitemapUsed, findings, beforeScore, afterScore, monthlyRevenue=null }){
   const total = findings.length
   const rev = revenueEstimator(findings, monthlyRevenue)
+  const isHonest = rev.isHonest !== false
   const byType = {}
   for(const f of findings) byType[f.type]=(byType[f.type]||0)+1
   const top = Object.entries(byType).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([t,c])=> `${c}× ${humanize(t).split(' —')[0]}`).join(', ')
@@ -45,10 +46,12 @@ export function buildGreenCard({ site, pagesScanned, sitemapUsed, findings, befo
     const file = f.file ? `${f.file}:${f.line||''}` : (f.page||'')
     return `- ${humanize(f.type).split(' —')[0]} — **${f.lossFormatted}** — file: ${file}`
   }).join('\n')
+  const revenuePrompt = !isHonest ? `\n> 📊 **Want your exact loss?** Enter your monthly revenue in chat (e.g., "my revenue is $10000") and I'll recalculate instantly — no fake numbers.\n` : ''
   return `# 🟩 ALPHA GREEN CARD — ${site}
 **${pagesScanned} pages scanned ${sitemapUsed ? 'via sitemap — 2026 best' : 'via crawl'} — 12-phase ${afterScore??beforeScore}/100 — ${total} issues found**
 
 **Estimated monthly revenue loss: ${rev.totalLossFormatted} — Fix cost: $49/mo — ROI: ${rev.roiAll}x — recover ${rev.totalLossFormatted} for $49**
+${revenuePrompt}
 
 **Top 3 by $ loss:**
 ${rev.sorted.slice(0,3).map((f,i)=> `${i+1}. **${humanize(f.type).split(' —')[0]}** — ${f.lossFormatted} — ${f.file||f.page||''}`).join('\n') || '- None'}

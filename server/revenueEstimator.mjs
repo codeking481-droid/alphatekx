@@ -1,5 +1,31 @@
-// revenueEstimator.mjs — Green Card $ loss per issue, ROI, 3 actions — business conversion engine
-export const revenueEstimator = (findings, monthlyRevenue = 10000) => {
+// revenueEstimator.mjs — HONEST Green Card $ loss — only real revenue, no fake defaults
+export const revenueEstimator = (findings, monthlyRevenue = null) => {
+  const isHonest = monthlyRevenue !== null && monthlyRevenue !== undefined && Number(monthlyRevenue) > 0
+  const honestRevenue = isHonest ? Number(monthlyRevenue) : null
+  if (!isHonest) {
+    const unknownIssues = findings.map(issue => ({
+      ...issue,
+      impact: 5,
+      loss: 0,
+      lossFormatted: 'Unknown — enter revenue to calculate',
+    }))
+    const sorted = [...unknownIssues].sort((a,b)=> 0)
+    return {
+      issues: unknownIssues,
+      sorted,
+      totalLoss: 0,
+      totalLossFormatted: 'Unknown — enter revenue to calculate',
+      top3Loss: 'Unknown — enter revenue to calculate',
+      roiAll: 'Unknown',
+      roiCritical: 'Unknown',
+      actions: {
+        fix_all: { price: 49, label: 'Fix All — $49/mo', desc: `Fix all ${findings.length} issues`, recover: 'Unknown — enter revenue to calculate' },
+        fix_critical: { price: 19, label: 'Fix Critical — $19/mo', desc: 'Fix top 3 issues', recover: 'Unknown — enter revenue to calculate' },
+        fix_none: { price: 0, label: 'Fix Nothing — $0', desc: 'Continue losing Unknown' },
+      },
+      isHonest: false,
+    }
+  }
   const impactMap = {
     broken_image: 0.10,
     broken_checkout: 0.50,
@@ -39,7 +65,7 @@ export const revenueEstimator = (findings, monthlyRevenue = 10000) => {
   }
   const issuesWithLoss = findings.map(issue => {
     const impact = impactMap[issue.type] ?? 0.05
-    const loss = monthlyRevenue * impact
+    const loss = honestRevenue * impact
     return {
       ...issue,
       impact: Math.round(impact * 100),
@@ -62,6 +88,7 @@ export const revenueEstimator = (findings, monthlyRevenue = 10000) => {
       fix_all: { price: 49, label: 'Fix All — $49/mo', desc: `Fix all ${findings.length} issues`, recover: `$${Math.round(totalLoss).toLocaleString()}/month` },
       fix_critical: { price: 19, label: 'Fix Critical — $19/mo', desc: 'Fix top 3 issues', recover: `$${Math.round(top3Loss).toLocaleString()}/month` },
       fix_none: { price: 0, label: 'Fix Nothing — $0', desc: `Continue losing ${`$${Math.round(totalLoss).toLocaleString()}/month`}` },
-    }
+    },
+    isHonest: true,
   }
 }

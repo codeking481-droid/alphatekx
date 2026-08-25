@@ -189,6 +189,8 @@ function ChatContent() {
   const autoFixTriggeredRef = useRef(false)
   const reverifyActiveRef = useRef(false)
   const lastFixBaselineRef = useRef<{ url: string; scoreAfter: number | null; issuesRemaining: number | null } | null>(null)
+  const [monthlyRevenue, setMonthlyRevenue] = useState<number | null>(null)
+  const [revenueInput, setRevenueInput] = useState('')
 
   useEffect(() => {
     void hydrateChatHistory()
@@ -226,8 +228,10 @@ function ChatContent() {
     wholeSite?: boolean
     thread: ChatThread | null
     userMsg: AlphaMessage
+    monthlyRevenueOverride?: number | null
   }) => {
-    const { sendText, url, mode, wholeSite = false, thread, userMsg } = opts
+    const { sendText, url, mode, wholeSite = false, thread, userMsg, monthlyRevenueOverride } = opts
+    const effectiveRevenue = monthlyRevenueOverride !== undefined ? monthlyRevenueOverride : monthlyRevenue
     detectedUrlRef.current = url
     lastSiteUrlRef.current = url
     setIsGenerating(true)
@@ -237,9 +241,10 @@ function ChatContent() {
       autoFixTriggeredRef.current = false
 
       const authSuffix = session?.access_token ? `&token=${encodeURIComponent(session.access_token)}` : ''
+      const revenueSuffix = effectiveRevenue ? `&monthlyRevenue=${effectiveRevenue}` : ''
       const streamUrl = isGitHubRepoUrl(url)
-        ? `/api/restore/v2?url=${encodeURIComponent(url)}&mode=${mode}&message=${encodeURIComponent(sendText)}${authSuffix}`
-        : `/api/restore/v3?url=${encodeURIComponent(url)}&mode=${mode}${wholeSite ? '&pages=15' : ''}&message=${encodeURIComponent(sendText)}${authSuffix}`
+        ? `/api/restore/v2?url=${encodeURIComponent(url)}&mode=${mode}&message=${encodeURIComponent(sendText)}${authSuffix}${revenueSuffix}`
+        : `/api/restore/v3?url=${encodeURIComponent(url)}&mode=${mode}${wholeSite ? '&pages=15' : ''}&message=${encodeURIComponent(sendText)}${authSuffix}${revenueSuffix}`
 
       const res = await fetch(streamUrl, { signal: abortRef.current.signal })
       if (!res.ok) {
@@ -304,13 +309,47 @@ function ChatContent() {
       setIsGenerating(false)
       abortRef.current = null
     }
-  }, [scrollToBottom, updateLastMessage])
+  }, [scrollToBottom, updateLastMessage, monthlyRevenue, session?.access_token])
+
+  const handleRevenueSubmit = useCallback(async () => {
+    const val = Number(revenueInput.replace(/[^0-9.]/g, ''))
+    if (!val || val <= 0) return
+    setMonthlyRevenue(val)
+    setRevenueInput('')
+    if (!lastSiteUrlRef.current) return
+    const text = `Recalculate with revenue $${val}`
+    const thread = activeThread || createChatThread(text)
+    if (!activeThread) setActiveThread(thread)
+    const userMsg: AlphaMessage = { id: uid(), role: 'user', content: text, createdAt: new Date().toISOString() }
+    const aiMsg: AlphaMessage = { id: uid(), role: 'assistant', content: '', createdAt: new Date().toISOString(), thoughtSteps: [], alphaEvents: [], restoreCards: undefined, isStreaming: true }
+    setMessages(prev => [...prev, userMsg, aiMsg])
+    void runRestoreStream({ sendText: text, url: lastSiteUrlRef.current!, mode: 'scan-only', thread, userMsg, monthlyRevenueOverride: val })
+  }, [revenueInput, activeThread, runRestoreStream])
 
   const handleSend = useCallback(async () => {
     const text = input.trim()
     if ((!text && attachedFiles.length === 0) || isGenerating) return
 
     const sendText = text || (attachedFiles.length > 0 ? 'Edit this video to look professional' : '')
+    // Honest revenue: detect "revenue is $5000" etc — set and rescan last site
+    const revenueMatch = sendText.match(/revenue[^0-9]*\$?\s*([0-9,]+)/i) || sendText.match(/\$?\s*([0-9,]+)\s*revenue/i)
+    if (revenueMatch) {
+      const val = Number(revenueMatch[1].replace(/,/g, ''))
+      if (val > 0 && val < 1000000000) {
+        setMonthlyRevenue(val)
+        setInput('')
+        setIsGenerating(false)
+        if (lastSiteUrlRef.current) {
+          const thread = activeThread || createChatThread(sendText)
+          if (!activeThread) setActiveThread(thread)
+          const userMsg: AlphaMessage = { id: uid(), role: 'user', content: sendText, createdAt: new Date().toISOString() }
+          const aiMsg: AlphaMessage = { id: uid(), role: 'assistant', content: '', createdAt: new Date().toISOString(), thoughtSteps: [], alphaEvents: [], restoreCards: undefined, isStreaming: true }
+          setMessages(prev => [...prev, userMsg, aiMsg])
+          void runRestoreStream({ sendText, url: lastSiteUrlRef.current, mode: 'scan-only', thread, userMsg, monthlyRevenueOverride: val })
+          return
+        }
+      }
+    }
     setInput('')
     setIsGenerating(true)
 
@@ -1337,6 +1376,26 @@ function ChatContent() {
                         {msg.content && (
                           <div className="text-[14px] leading-relaxed">
                             <Markdown>{msg.content}</Markdown>
+                          </div>
+                        )}
+                        {/* Honest Revenue Prompt — when Green Card shows Unknown */}
+                        {msg.content && msg.content.includes('Unknown — enter revenue') && (
+                          <div className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/[0.06] p-3">
+                            <p className="text-xs font-bold text-amber-300">📊 Want your exact loss?</p>
+                            <p className="mt-1 text-xs text-white/60">Enter your monthly revenue to calculate real impact — no fake numbers.</p>
+                            <div className="mt-2 flex gap-2">
+                              <input
+                                value={revenueInput}
+                                onChange={(e) => setRevenueInput(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter') void handleRevenueSubmit() }}
+                                placeholder="e.g., 10000"
+                                type="number"
+                                className="h-9 flex-1 rounded-lg border border-white/10 bg-black px-3 text-sm text-white placeholder:text-white/30 outline-none focus:border-amber-400/40"
+                              />
+                              <button onClick={() => void handleRevenueSubmit()} disabled={!revenueInput || isGenerating} className="h-9 shrink-0 rounded-lg bg-[#D6FF00] px-4 text-sm font-black text-black hover:bg-[#C2E600] disabled:opacity-40">
+                                Calculate
+                              </button>
+                            </div>
                           </div>
                         )}
 
