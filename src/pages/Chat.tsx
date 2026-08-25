@@ -47,6 +47,9 @@ function parseCurrency(text: string) {
   const match = text.match(/([\d.,]+)\s*([A-Za-z]{3})\s+(?:to|in)\s+([A-Za-z]{3})/i)
   return match ? { amount: Number(match[1].replace(/,/g, '')), from: match[2].toUpperCase(), to: match[3].toUpperCase() } : null
 }
+function isUnreachableError(msg: string) {
+  return /404|502|503|504|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|ECONNRESET|getaddrinfo|Host not found|Bad Gateway|Service Unavailable|unreachable|failed to fetch|ENOTFOUND/i.test(String(msg))
+}
 
 function LiveClock() {
   const [time, setTime] = useState(formatTime())
@@ -159,6 +162,7 @@ export default function Chat() {
   const [editText, setEditText] = useState('')
   const [controller, setController] = useState<AbortController | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const [rebuild, setRebuild] = useState<{ url: string, answers: Record<string,string>, phase: string } | null>(null)
   const bottom = useRef<HTMLDivElement>(null)
 
   const speak = (text: string) => {
@@ -250,6 +254,48 @@ export default function Chat() {
     setController(abortCtrl)
 
     const lower = text.toLowerCase()
+    // ——— Rebuild conversation: if we asked a question, this input is the answer ———
+    if (rebuild) {
+      const nextAnswers: Record<string,string> = { ...rebuild.answers }
+      if (rebuild.phase === 'purpose') nextAnswers.purpose = text
+      else if (rebuild.phase === 'features') nextAnswers.features = text
+      else if (rebuild.phase === 'style') nextAnswers.style = text
+      else if (rebuild.phase === 'pages') nextAnswers.pages = text
+      const qs = [
+        { id:'purpose', q:'What was the main purpose of the site?', ex:'e-commerce, blog, portfolio, business, agency, tailor, restaurant' },
+        { id:'features', q:'Did it have any special features?', ex:'bookings, payments, product gallery, contact form, user login, cart, checkout' },
+        { id:'style', q:'What was the design style?', ex:'modern, minimalist, luxury, colorful, dark, light, corporate' },
+        { id:'pages', q:'What pages did it have?', ex:'Home, About, Services, Products, Contact, Blog, Pricing' },
+      ]
+      let nextPhase: string | null = null
+      if (!nextAnswers.purpose) nextPhase = 'purpose'
+      else if (!nextAnswers.features) nextPhase = 'features'
+      else if (!nextAnswers.style) nextPhase = 'style'
+      else if (!nextAnswers.pages) nextPhase = 'pages'
+      if (nextPhase) {
+        const q = qs.find(x=>x.id===nextPhase)!
+        setRebuild({ url: rebuild.url, answers: nextAnswers, phase: nextPhase })
+        const ask: GeneralChatMessage = { id: uid(), role:'assistant', content:`**${q.q}**\n\nExamples: ${q.ex}\n\n*Just answer in one line — I will rebuild it.*`, createdAt: new Date().toISOString() }
+        setMessages([...nextMessages, ask]); persist([...nextMessages, ask]); setLoading(false); setController(null); abortRef.current=null; return
+      } else {
+        // All answers collected → rebuild
+        setRebuild(null)
+        const interim: GeneralChatMessage = { id: uid(), role:'assistant', content:`🛠️ **Rebuilding your site** — purpose: ${nextAnswers.purpose}, features: ${nextAnswers.features||'none'}, style: ${nextAnswers.style}, pages: ${nextAnswers.pages}\n\n⏳ Generating full HTML/CSS/JS + SEO + security + WaveSpeed images — <60s...`, createdAt: new Date().toISOString() }
+        setMessages([...nextMessages, interim])
+        try{
+          const res = await fetch('/api/rebuild', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ answers: nextAnswers }), signal: abortCtrl.signal })
+          const j = await res.json().catch(()=> ({}))
+          if(!res.ok) throw new Error(j.error||'Rebuild failed')
+          const done: GeneralChatMessage = { id: uid(), role:'assistant', content: j.greenCard || `✅ **Rebuilt!** ${j.stats.totalPages} pages, ${(j.html.match(/<img\b/gi)||[]).length} images.\n\n**Preview:** ${j.previewUrl||'#preview'}\n\nSay **"deploy"** and I will push it live.`, createdAt: new Date().toISOString(), tool:'restoration', sources: [{title:'Rebuild', url: j.previewUrl||'', content: `Purpose: ${nextAnswers.purpose}`}] }
+          setMessages([...nextMessages, done]); persist([...nextMessages, done])
+        }catch(e:any){
+          const err: GeneralChatMessage = { id: uid(), role:'assistant', content: `⚠️ Rebuild failed: ${String(e.message||e).slice(0,300)}\n\nTell me again what the site was about?`, createdAt: new Date().toISOString() }
+          setMessages([...nextMessages, err]); persist([...nextMessages, err])
+        }
+        setLoading(false); setController(null); abortRef.current=null; return
+      }
+    }
+
     // ——— Alpha Restoration intents: scan/fix this URL, GitHub, big site, pasted HTML ———
     const urlMatch = text.match(/https?:\/\/[^\s]+/i)
     const githubMatch = text.match(/github\.com\/[^\s]+/i) || text.match(/\b[\w-]+\/[\w.-]+\b/)
@@ -310,7 +356,12 @@ export default function Chat() {
               revenue = scanData.revenue
               sources = (scanData.findings || []).slice(0, 5).map((f: any) => ({ title: `${f.type} — ${f.severity}`, url: f.file || f.page || urlMatch?.[0] || '', content: f.description || f.type }))
             } else if (scanData && scanData.error) {
-              alphaContent += `\n\n⚠️ ${scanData.error} ${scanData.code === 402 ? '\n\nYour Free plan is 1 scan/1 fix — upgrade to Pro $49 (10 sites) to scan big sites.' : ''}`
+              if (isUnreachableError(String(scanData.error)) && urlMatch) {
+                setRebuild({ url: urlMatch[0], answers: {}, phase: 'purpose' })
+                alphaContent += `\n\n🔴 **I can't reach that site.** It looks like it's down or unreachable.\n\n**What happened:** ${String(scanData.error).slice(0,200)}\n\nInstead of giving up, I can **rebuild it for you**.\n\n**What was the main purpose of the site?** (e.g., e-commerce, blog, portfolio, business, agency, tailor, restaurant)\n\n*Just answer in one line — I'll ask 3 more, then rebuild in <60s.*`
+              } else {
+                alphaContent += `\n\n⚠️ ${scanData.error} ${scanData.code === 402 ? '\n\nYour Free plan is 1 scan/1 fix — upgrade to Pro $49 (10 sites) to scan big sites.' : ''}`
+              }
             } else {
               alphaContent += '\n\n⚠️ Scan did not return a green card — trying single-page fallback...'
               try {
