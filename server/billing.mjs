@@ -28,13 +28,13 @@ export const PLANS = {
   // Simplified unified plans with video guardrails
   free: {
     id: 'free',
-    name: 'Free',
+    name: 'Free Trial — 1 scan only',
     priceKobo: 0,
-    monthlyCredits: 10,
+    monthlyCredits: 1,
     maxActiveAutomations: 1,
     monthlyVideos: 0,
-    videoMaxDurationSec: 2 * 60,
-    features: ['10 credits', '1 active automation', 'No video restoration'],
+    videoMaxDurationSec: 0,
+    features: ['1 scan OR 1 fix — then upgrade', 'Green Card preview', 'Pay to unlock healing'],
   },
   video_19: {
     id: 'video_19',

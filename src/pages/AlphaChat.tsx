@@ -240,6 +240,20 @@ function ChatContent() {
     monthlyRevenueOverride?: number | null
   }) => {
     const { sendText, url, mode, wholeSite = false, thread, userMsg, monthlyRevenueOverride } = opts
+    // FREE TRIAL: 1 scan OR 1 fix max — real limit, not joke
+    const planNow = typeof window !== 'undefined' ? (localStorage.getItem('alphatekx_plan') || 'free') : 'free'
+    const freeCountNow = Number(typeof window !== 'undefined' ? localStorage.getItem('alphatekx_freeCount') || '0' : '0')
+    const isPaidNow = planNow !== 'free' && planNow !== 'video_free' && planNow !== ''
+    if (!isPaidNow && freeCountNow >= 1) {
+      updateLastMessage((prev) => ({
+        ...prev,
+        content: `🔒 **Free trial used (1/1).** You scanned once. Upgrade to heal your site.\n\n**What you saw:** Green Card preview ordered and bold — your real issues and $ loss.\n\n**Next:** Pick a plan → Paystack opens (real gateway) → credits unlock → Alpha fixes in <16s + GitHub PR.\n\n| Plan | Price | Scans | Fixes |\n|------|-------|-------|-------|\n| **Lite $9** | $9/mo | 5 | 5 |\n| **Pro $49** | $49/mo | 50 | 20 |\n| **Guardian $99** | $99/mo | ∞ | ∞ |\n\nClick **Fix Everything — $49** on your Green Card to pay.`,
+        isStreaming: false,
+        restoreCards: { ...prev.restoreCards, isRunning: false },
+      }))
+      setIsGenerating(false)
+      return
+    }
     const effectiveRevenue = monthlyRevenueOverride !== undefined ? monthlyRevenueOverride : monthlyRevenue
     detectedUrlRef.current = url
     lastSiteUrlRef.current = url
@@ -286,6 +300,10 @@ function ChatContent() {
         }
       }
 
+      // mark free trial consumed (1 max) — real gating
+      if (!isPaidNow) {
+        try { localStorage.setItem('alphatekx_freeCount', String(freeCountNow + 1)) } catch {}
+      }
       updateLastMessage((prev) => ({
         ...prev,
         isStreaming: false,

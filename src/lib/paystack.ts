@@ -192,9 +192,10 @@ export function getCurrentPlan(): PlanValue {
 
 export function canUseFreeFeature(): boolean {
   const plan = getCurrentPlan()
-  if (plan === 'starter' || plan === 'pro') return true
+  // Any paid plan unlocks — covers video_19 / video_49 / video_99 / lite_9 etc
+  if (plan !== 'free' && plan !== 'video_free') return true
   const count = Number(localStorage.getItem('alphatekx_freeCount') || '0')
-  return count < 3
+  return count < 1
 }
 
 export function incrementFreeUsage() {
