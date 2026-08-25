@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process'
 import { detectIssuesV2 } from './restorationEngineV2.mjs'
 import { detectIssuesV3 } from './restorationEngineV3.mjs'
 import { buildGreenCard } from './greenCard.mjs'
+import { revenueEstimator } from './revenueEstimator.mjs'
 
 const TMP_ROOT = path.join(process.cwd(), '.tmp', 'repos')
 const SKIP_DIRS = new Set(['node_modules','.git','dist','build','.next','vendor','.tmp'])
@@ -59,6 +60,7 @@ export async function scanRepo({ githubUrl, branch, token, maxFiles=500 }){
       }
     }catch{}
   }
+  const revenue = revenueEstimator(findings, 10000)
   const greenCard = buildGreenCard({ site: githubUrl, pagesScanned: files.length, sitemapUsed:false, findings, beforeScore: Math.max(0,100-findings.length*2), afterScore: Math.max(0,100-findings.length) })
-  return { tmpDir, filesScanned: files.length, findings, greenCard }
+  return { tmpDir, filesScanned: files.length, findings, greenCard, revenue }
 }

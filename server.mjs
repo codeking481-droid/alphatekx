@@ -10348,7 +10348,7 @@ const server = http.createServer(async (req, res) => {
       const maxPages = Math.min(100, Math.max(5, Number(body.maxPages)|| 25))
       const { scanBigSite } = await import('./server/bigSiteScanner.mjs')
       const out = await scanBigSite(url, maxPages)
-      return json(res, 200, { ok:true, site:url, pagesScanned: out.urls.length, sitemapUsed: out.sitemapUsed, findings: out.findings.slice(0,300), greenCard: out.greenCard, beforeScore: out.beforeScore })
+      return json(res, 200, { ok:true, site:url, pagesScanned: out.urls.length, sitemapUsed: out.sitemapUsed, findings: out.findings.slice(0,300), greenCard: out.greenCard, beforeScore: out.beforeScore, revenue: out.revenue })
     } catch(e){ return json(res, 500, {ok:false, error:e.message}) }
   }
   if (req.method === 'POST' && req.url?.startsWith('/api/scan/github')) {
@@ -10358,7 +10358,7 @@ const server = http.createServer(async (req, res) => {
       if(!githubUrl){ res.writeHead(400,{'Content-Type':'application/json'}); return res.end(JSON.stringify({error:'githubUrl required e.g. owner/repo'})) }
       const { scanRepo } = await import('./server/repoScanner.mjs')
       const out = await scanRepo({ githubUrl, branch: body.branch, token: body.token||process.env.GITHUB_TOKEN, maxFiles: Math.min(500, Number(body.maxFiles)||200) })
-      return json(res, 200, { ok:true, repo: githubUrl, filesScanned: out.filesScanned, findings: out.findings.slice(0,400), greenCard: out.greenCard })
+      return json(res, 200, { ok:true, repo: githubUrl, filesScanned: out.filesScanned, findings: out.findings.slice(0,400), greenCard: out.greenCard, revenue: out.revenue })
     } catch(e){ return json(res, 500, {ok:false, error:e.message}) }
   }
 

@@ -4,6 +4,7 @@ import path from 'node:path'
 import { detectIssuesV2, applyFixesToHtmlV2, findBrokenResources } from './restorationEngineV2.mjs'
 import { detectIssuesV3, applyV3Fixes } from './restorationEngineV3.mjs'
 import { buildGreenCard } from './greenCard.mjs'
+import { revenueEstimator } from './revenueEstimator.mjs'
 
 const FETCH_TIMEOUT = 8000
 const MAX_PAGES_DEFAULT = 100
@@ -121,6 +122,7 @@ export async function scanBigSite(startUrl, maxPages=MAX_PAGES_DEFAULT){
     }
   }
   const beforeScore = Math.max(0, 100 - findings.length*2)
+  const revenue = revenueEstimator(findings, 10000)
   const greenCard = buildGreenCard({ site: startUrl, pagesScanned: urls.length, sitemapUsed, findings, beforeScore, afterScore: beforeScore })
-  return { urls, sitemapUsed, pages, findings, greenCard, beforeScore }
+  return { urls, sitemapUsed, pages, findings, greenCard, beforeScore, revenue }
 }

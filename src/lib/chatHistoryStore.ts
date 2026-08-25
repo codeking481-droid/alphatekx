@@ -5,9 +5,10 @@ export type GeneralChatMessage = {
   role: 'user' | 'assistant'
   content: string
   createdAt: string
-  tool?: 'clock' | 'currency' | 'search'
+  tool?: 'clock' | 'currency' | 'search' | 'restoration'
   sources?: Array<{ title: string; url: string; content?: string }>
   currency?: { from: string; to: string; amount: number; rate: number; result: number; updatedAt?: string }
+  revenue?: { totalLoss: string; roiAll: number; top3Loss: string; actions: { fix_all: { price: number; label: string; recover: string }; fix_critical: { price: number; label: string; recover: string }; fix_none: { price: number; label: string } } }
 }
 
 export type ChatThread = { id: string; title: string; messages: GeneralChatMessage[]; createdAt: string; updatedAt: string }

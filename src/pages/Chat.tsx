@@ -121,6 +121,25 @@ function ChatWidget({ message }: { message: GeneralChatMessage }) {
       </div>
     )
   }
+  if (message.tool === 'restoration' && message.revenue) {
+    const r = message.revenue
+    return (
+      <div className="mt-3 w-full max-w-4xl rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 backdrop-blur-xl">
+        <div className="flex items-center gap-2 text-xs font-bold text-emerald-300">💰 Revenue at risk — Fix recovers money</div>
+        <div className="mt-2 grid grid-cols-3 gap-2 text-center">
+          <div className="rounded-xl bg-black/30 p-3"><div className="text-xs text-white/60">Total loss</div><div className="text-lg font-bold text-red-400">{r.totalLoss}</div></div>
+          <div className="rounded-xl bg-black/30 p-3"><div className="text-xs text-white/60">ROI Fix All</div><div className="text-lg font-bold text-emerald-300">{r.roiAll}x</div></div>
+          <div className="rounded-xl bg-black/30 p-3"><div className="text-xs text-white/60">Top 3 loss</div><div className="text-sm font-bold text-amber-300">{r.top3Loss}</div></div>
+        </div>
+        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <a href="/billing" className="rounded-xl bg-emerald-500 px-4 py-3 text-center text-sm font-bold text-black hover:bg-emerald-400">Fix All — $49/mo<div className="text-xs font-normal">Recover {r.actions.fix_all.recover}</div></a>
+          <a href="/billing" className="rounded-xl bg-zinc-800 px-4 py-3 text-center text-sm font-bold text-white hover:bg-zinc-700">Fix Critical — $19<div className="text-xs font-normal">Recover {r.actions.fix_critical.recover}</div></a>
+          <div className="rounded-xl border border-white/10 px-4 py-3 text-center text-sm text-white/60">Fix Nothing — $0<div className="text-xs">Continue losing {r.totalLoss}</div></div>
+        </div>
+        <div className="mt-2 text-center text-[10px] text-white/40">Green Card shows $ loss per issue — plain English, file:line at end for engineers</div>
+      </div>
+    )
+  }
   return null
 }
 
@@ -241,8 +260,9 @@ export default function Chat() {
     if (wantsRestore) {
       try {
         let alphaContent = ''
-        let tool: GeneralChatMessage['tool'] = 'search'
+        let tool: GeneralChatMessage['tool'] = 'restoration'
         let sources: GeneralChatMessage['sources'] = undefined
+        let revenue: GeneralChatMessage['revenue'] = undefined
 
         // Chain of thought visible steps
         const steps = [
@@ -281,12 +301,13 @@ export default function Chat() {
               }
               if (scanRes) scanData = await scanRes.json().catch(() => ({}))
             } catch {}
-            // Phase 2-4 — build final green card
+            // Phase 2-4 — build final green card + revenue
             if (scanData && (scanData.greenCard || scanData.ok)) {
               alphaContent = scanData.greenCard || `**Scan complete:** ${scanData.pagesScanned || scanData.filesScanned || 1} scanned, ${scanData.findings?.length ?? scanData.issues_found ?? 0} issues found.\n\n` + (scanData.greenCard || '')
-              // Append verification + patch hint
+              // Append verification + patch hint (plain English)
               alphaContent += `\n\n---\n**Verification:** ${scanData.beforeScore != null ? `before ${scanData.beforeScore} → after ${scanData.after_score ?? scanData.beforeScore} ` : ''}**Next:** Say **"fix this"** and I will patch surgically (minimal diff) and give you a PR/ZIP with \`originals/\` rollback.`
-              tool = 'search'
+              tool = 'restoration'
+              revenue = scanData.revenue
               sources = (scanData.findings || []).slice(0, 5).map((f: any) => ({ title: `${f.type} — ${f.severity}`, url: f.file || f.page || urlMatch?.[0] || '', content: f.description || f.type }))
             } else if (scanData && scanData.error) {
               alphaContent += `\n\n⚠️ ${scanData.error} ${scanData.code === 402 ? '\n\nYour Free plan is 1 scan/1 fix — upgrade to Pro $49 (10 sites) to scan big sites.' : ''}`
@@ -298,8 +319,8 @@ export default function Chat() {
                 if (fj.ok || fj.greenCard) alphaContent = fj.greenCard || fj.html?.slice(0, 2000) || 'Fallback scan complete.'
               } catch {}
             }
-            // Replace interim with final
-            const finalMsg: GeneralChatMessage = { id: uid(), role: 'assistant', content: alphaContent, createdAt: new Date().toISOString(), tool, sources }
+            // Replace interim with final — revenue drives the Fix buttons
+            const finalMsg: GeneralChatMessage = { id: uid(), role: 'assistant', content: alphaContent, createdAt: new Date().toISOString(), tool, sources, revenue }
             setMessages([...nextMessages, finalMsg])
             persist([...nextMessages, finalMsg])
             setLoading(false); setController(null); abortRef.current = null
