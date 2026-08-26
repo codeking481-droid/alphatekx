@@ -206,6 +206,7 @@ function ChatContent() {
   const [showVerifySection, setShowVerifySection] = useState(false)
   const verificationPopupShownRef = useRef(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
+  const suppressAutoRestoreRef = useRef(false)
 
   useEffect(() => {
     void hydrateChatHistory()
@@ -301,6 +302,10 @@ function ChatContent() {
 
   // History 100% — auto-restore last thread after refresh so Green Card and buttons survive reload without clicking
   useEffect(() => {
+    if (suppressAutoRestoreRef.current) {
+      suppressAutoRestoreRef.current = false
+      return
+    }
     if (messages.length > 0 || activeThread) return
     if (threads.length === 0) return
     const recent = threads.find(t => t.messages.length > 0)
@@ -1427,6 +1432,10 @@ function ChatContent() {
       abortRef.current.abort()
       abortRef.current = null
     }
+    suppressAutoRestoreRef.current = true
+    verificationPopupShownRef.current = false
+    setShowVerificationPopup(false)
+    setShowVerifySection(false)
     setIsGenerating(false)
     setActiveThread(null)
     setMessages([])
@@ -1639,8 +1648,8 @@ function ChatContent() {
                             return (
                               <div className="green-card mt-3 overflow-hidden rounded-2xl border border-emerald-500/40 bg-[#0B1A13] shadow-[0_16px_48px_rgba(16,185,129,.18)]">
                                 <div className="bg-emerald-500 px-4 py-3">
-                                  <div className="text-[11px] font-black tracking-[0.18em] text-black">🟩 ALPHA GREEN CARD — BOLD</div>
-                                  <div className="mt-0.5 text-[11px] font-bold text-black/70">Last thing you see — nothing after this. 3 columns, 1 row.</div>
+                                  <div className="text-[11px] font-black tracking-[0.18em] text-black">🟩 ALPHA GREEN CARD</div>
+                                  <div className="mt-0.5 text-[11px] font-bold text-black/70">Plain English — what we found, why it matters, and what Alpha will patch.</div>
                                 </div>
                                 <div className="p-4 font-bold leading-relaxed text-white [&_h1]:text-[15px] [&_h1]:font-black [&_h1]:text-emerald-300 [&_h2]:font-black [&_h3]:font-black [&_strong]:font-black [&_strong]:text-white [&_table]:mt-3 [&_table]:w-full [&_table]:border-collapse [&_th]:bg-white/[0.06] [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:text-[11px] [&_th]:font-black [&_th]:uppercase [&_th]:tracking-widest [&_th]:text-emerald-300 [&_td]:border-t [&_td]:border-white/10 [&_td]:px-3 [&_td]:py-2 [&_td]:text-[13px] [&_td]:font-bold [&_hr]:my-3 [&_hr]:border-white/10">
                                   <Markdown>{msg.content}</Markdown>

@@ -1678,7 +1678,7 @@ export async function runRestorationPipeline({ targetUrl, mode, origin, cookieHe
     const runtimeNote = renderProbe && renderProbe.ok
       ? `\n\nI also opened the site in a real browser: ${renderProbe.pageErrors.length} crash(es), ${renderProbe.consoleErrors.length} console error(s), ${renderProbe.blankRender ? 'and the page renders **blank** — that is serious' : 'no blank-render problem'}.`
       : ''
-    // Green Card — clean errors + consequences
+    // Green Card — true score, no fake 100 (scan-only)
     let greenCard = ''
     try {
       greenCard = buildGreenCard({
@@ -1687,7 +1687,7 @@ export async function runRestorationPipeline({ targetUrl, mode, origin, cookieHe
         sitemapUsed: false,
         findings: diagnosis.issues,
         beforeScore: diagnosis.score,
-        afterScore: 100,
+        afterScore: diagnosis.score,
       })
     } catch {}
     const msg = diagnosis.issues.length === 0
