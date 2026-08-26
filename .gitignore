@@ -37,3 +37,7 @@ build-workspaces/
 
 # AlphaTekX scan evidence (local artifacts)
 .tmp/
+
+.alphatekx/
+ALPHA_BATTLE_REPORT.md
+
