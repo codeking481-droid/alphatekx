@@ -9179,6 +9179,39 @@ const server = http.createServer(async (req, res) => {
   }
   const paymentVerifyPath = new URL(req.url || '/', 'http://localhost').pathname
   if (['GET', 'POST'].includes(req.method || '') && (paymentVerifyPath === '/api/paystack/verify' || paymentVerifyPath === '/api/verify-paystack')) return verifyPaystack(req, res)
+  if (req.method === 'GET' && (req.url === '/api/usage/status' || req.url?.startsWith('/api/usage/status?'))) {
+    try {
+      const cfg = supabaseConfig()
+      const u = await currentOrLocalUser(req, cfg.url, cfg.anon)
+      const billingUser = u ? { id: u.id, email: u.email } : null
+      let planId = 'free'
+      if (billingUser) {
+        try {
+          const billing = await import('./server/billing.mjs')
+          const summary = await billing.getUserBilling(billingUser, cfg).catch(() => null)
+          if (summary?.plan) planId = String(summary.plan)
+          if (planId === 'admin') planId = 'admin'
+        } catch {}
+      }
+      const identity = billingUser ? userIdentity(billingUser.id) : ipIdentity(req)
+      const status = await quotaStatus({ identity, planId })
+      return json(res, 200, {
+        ok: true,
+        identity,
+        plan: planId,
+        planId,
+        scans_used: status.scansUsed || 0,
+        scans_limit: status.scansLimit,
+        scansLimit: status.scansLimit,
+        fixes_used: status.fixesUsed || 0,
+        fixes_limit: status.fixesLimit,
+        sites_used: status.sitesUsed || 0,
+        sites_limit: status.sitesLimit,
+        period: status.period,
+        isAdmin: planId === 'admin',
+      })
+    } catch (error) { return json(res, 500, { error: error instanceof Error ? error.message : 'Usage status failed' }) }
+  }
   if (req.method === 'POST' && req.url === '/api/check-credits') {
     try {
       const body = await readBody(req)

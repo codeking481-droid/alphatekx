@@ -213,6 +213,44 @@ function ChatContent() {
     } catch {}
   }, [])
 
+  // SERVER IS SOURCE OF TRUTH — fetch scans_used per account (tied to user, not browser)
+  const [serverScansUsed, setServerScansUsed] = useState<number>(0)
+  const [serverScansLimit, setServerScansLimit] = useState<number>(1)
+  const [serverPlan, setServerPlan] = useState<string>('free')
+
+  const fetchServerUsage = useCallback(async () => {
+    try {
+      const token = (session as any)?.access_token || ''
+      const headers: Record<string, string> = {}
+      if (token) headers.Authorization = `Bearer ${token}`
+      // also send local-user headers for local-auth fallback
+      try {
+        const raw = localStorage.getItem('alphatekx:local-user')
+        if (raw) {
+          const u = JSON.parse(raw)
+          if (u?.id) headers['x-local-user-id'] = String(u.id)
+          if (u?.email) headers['x-local-user-email'] = String(u.email)
+        }
+      } catch {}
+      const res = await fetch('/api/usage/status', { headers })
+      if (!res.ok) return
+      const data = await res.json()
+      const used = Number(data.scans_used ?? data.scansUsed ?? 0)
+      const limit = data.scans_limit ?? data.scansLimit
+      const limitNum = limit == null ? Infinity : Number(limit)
+      setServerScansUsed(Number.isFinite(used) ? used : 0)
+      setServerScansLimit(Number.isFinite(limitNum) ? limitNum : 1)
+      setServerPlan(String(data.plan || data.planId || 'free'))
+      // cache for speed (never trusted over server)
+      try { localStorage.setItem('alphatekx:scans_used', String(used)) } catch {}
+      try { if (data.plan) localStorage.setItem('alphatekx_plan', String(data.plan)) } catch {}
+    } catch {}
+  }, [session])
+
+  useEffect(() => {
+    void fetchServerUsage()
+  }, [fetchServerUsage, user])
+
   // Admin bypass — clear stuck free trial cache so testing is frictionless
   useEffect(() => {
     if (!user) return
@@ -319,12 +357,15 @@ function ChatContent() {
     userMsg: AlphaMessage
   }) => {
     const { sendText, url, mode, wholeSite = false, thread, userMsg } = opts
-    // FREE TRIAL: 1 scan OR 1 fix max — real limit, not joke (admins bypass completely)
+    // FREE TRIAL — SERVER IS SOURCE OF TRUTH (per-account, not browser)
+    // Fetch fresh usage so gate never trusts stale LocalStorage alone
+    try { await fetchServerUsage() } catch {}
     const isAdminBypass = isAdminUser(user as any)
-    const planNow = typeof window !== 'undefined' ? (localStorage.getItem('alphatekx_plan') || 'free') : 'free'
-    const freeCountNow = Number(typeof window !== 'undefined' ? localStorage.getItem('alphatekx_freeCount') || '0' : '0')
-    const isPaidNow = isAdminBypass || (planNow !== 'free' && planNow !== 'video_free' && planNow !== '')
-    if (!isPaidNow && freeCountNow >= 1) {
+    // Server says how many scans this *account* has used this month
+    const effectiveUsed = isAdminBypass ? 0 : serverScansUsed
+    const effectiveLimit = isAdminBypass ? Infinity : serverScansLimit
+    const serverExhausted = Number.isFinite(effectiveLimit) && effectiveUsed >= effectiveLimit
+    if (serverExhausted) {
       updateLastMessage((prev) => ({
         ...prev,
         content: `🔒 **Free trial used (1/1).** You scanned once. Upgrade to heal your site.\n\n**What you saw:** Green Card preview ordered and bold — your real issues in pure bold text.\n\n**Next:** Pick a plan — Paystack opens — credits unlock — Alpha fixes in 16s plus GitHub PR.\n\n**Lite $9** — $9 per month — 5 scans — 5 fixes\n**Pro $49** — $49 per month — 50 scans — 20 fixes\n**Guardian $99** — $99 per month — Unlimited scans — Unlimited fixes\n\nClick **Fix Everything — $49** on your Green Card to pay.`,
@@ -385,9 +426,19 @@ function ChatContent() {
         }
       }
 
-      // mark free trial consumed (1 max) — real gating
-      if (!isPaidNow) {
-        try { localStorage.setItem('alphatekx_freeCount', String(freeCountNow + 1)) } catch {}
+      // After successful scan, sync server truth — server already did consumeQuota (durable plan_usage)
+      // Optimistically bump local state so next gate sees it, then refetch server for canon value
+      if (!isAdminBypass) {
+        const nextUsed = serverScansUsed + 1
+        setServerScansUsed(nextUsed)
+        try { localStorage.setItem('alphatekx:scans_used', String(nextUsed)) } catch {}
+        try { localStorage.setItem('alphatekx_freeCount', String(nextUsed)) } catch {}
+        // Reconcile with durable DB (covers race + fallback store)
+        setTimeout(() => { void fetchServerUsage() }, 900)
+      } else {
+        // Admin: keep cache clear
+        try { localStorage.removeItem('alphatekx:scans_used') } catch {}
+        void fetchServerUsage()
       }
       updateLastMessage((prev) => ({
         ...prev,
@@ -423,7 +474,7 @@ function ChatContent() {
       setIsGenerating(false)
       abortRef.current = null
     }
-  }, [scrollToBottom, updateLastMessage, session?.access_token, user])
+  }, [scrollToBottom, updateLastMessage, session?.access_token, user, serverScansUsed, serverScansLimit, fetchServerUsage])
 
   const handleSend = useCallback(async () => {
     const text = input.trim()
