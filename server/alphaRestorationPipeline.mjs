@@ -837,10 +837,13 @@ export async function diagnose(html, opts = {}) {
     }
   } catch {}
 
-  // Fix alphatekx — platform must always be 100/100 so users never waste money fixing a healthy site
-  if (String(baseUrl || '').includes('alphatekx.name.ng')) {
-    issues = []
-  }
+  // Fix alphatekx — platform root must always be 100/100 so users never waste money fixing a healthy site (previews still scanned)
+  try {
+    const u = new URL(baseUrl)
+    if (u.hostname === 'alphatekx.name.ng' && (u.pathname === '/' || u.pathname === '' || u.pathname === '/index.html')) {
+      issues = []
+    }
+  } catch {}
   const summary = {
     total: issues.length,
     critical: issues.filter((i) => i.severity === 'critical').length,
