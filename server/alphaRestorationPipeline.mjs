@@ -44,6 +44,31 @@ const SEVERITY_WEIGHT = { critical: 25, high: 10, medium: 4, low: 1 }
 
 const SITE_NOT_LOADING = 'The site is not loading. Please check your hosting provider or domain DNS settings. Once your site is live, send me the URL and I will restore it.'
 
+function suggestTypoFix(hostname) {
+  const target = 'alphatekx.name.ng'
+  const h = String(hostname || '').toLowerCase().replace(/^www\./, '')
+  if (!h) return null
+  // Common typo: missing h -> alpatekx
+  if (h === 'alpatekx.name.ng' || h === 'alpatekx.name.ng'.replace('h','')) return target
+  if (h.includes('alpatekx')) return target
+  // Levenshtein 1-2 distance to alphatekx
+  const a = h.split('.')[0] || h
+  const b = 'alphatekx'
+  if (Math.abs(a.length - b.length) <= 2) {
+    let diffs = 0
+    const len = Math.max(a.length, b.length)
+    for (let i = 0; i < len; i++) if ((a[i] || '') !== (b[i] || '')) diffs++
+    if (diffs <= 2) return target
+  }
+  return null
+}
+
+function notLoadingMessage(hostname) {
+  const suggestion = suggestTypoFix(hostname)
+  if (suggestion) return `⚠️ Typo? You typed **${hostname}** — did you mean **${suggestion}**?\n\nThe site is not loading (DNS failed). Check the URL and try again with https://${suggestion}`
+  return SITE_NOT_LOADING
+}
+
 // In-memory registry so delivery routes can reach pipeline results.
 const registry = new Map()
 
@@ -1504,9 +1529,20 @@ export async function runRestorationPipeline({ targetUrl, mode, origin, cookieHe
     doc = await fetchDoc(targetUrl)
     if (!doc.ok && !doc.body) throw new Error(`Site responded ${doc.status}`)
     const looksHtml = /<[\s\S]*?>/.test(doc.body.slice(0, 4000))
-    if (!looksHtml) throw new Error(SITE_NOT_LOADING)
+    if (!looksHtml) {
+      let host = ''
+      try { host = new URL(targetUrl).hostname } catch {}
+      throw new Error(notLoadingMessage(host))
+    }
     return `Loaded ${clip(doc.finalUrl, 60)} · ${(doc.body.length / 1024).toFixed(1)} KB`
-  }).catch(() => { throw new Error(SITE_NOT_LOADING) })
+  }).catch((e) => {
+    let host = ''
+    try { host = new URL(targetUrl).hostname } catch {}
+    const msg = String(e?.message || '')
+    if (msg.includes('Site responded')) throw e
+    if (msg.includes('Typo?') || msg.includes('not loading')) throw e
+    throw new Error(notLoadingMessage(host))
+  })
 
   const finalUrl = doc.finalUrl
   const baseUrlObj = new URL(finalUrl)
