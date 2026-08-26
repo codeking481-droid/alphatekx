@@ -7,10 +7,12 @@ export default function RestoreDeliveryCard({
   restorationId,
   downloadRestored,
   onVerify,
+  onDeliverAction,
 }: {
   restorationId: string
   downloadRestored?: string
   onVerify?: () => void
+  onDeliverAction?: () => void
 }) {
   const [copied, setCopied] = useState<null | 'ok' | 'err'>(null)
   const [copying, setCopying] = useState(false)
@@ -38,9 +40,11 @@ export default function RestoreDeliveryCard({
         document.body.removeChild(ta)
       }
       setCopied('ok')
+      onDeliverAction?.()
     } catch {
       window.open(contentUrl, '_blank')
       setCopied('err')
+      onDeliverAction?.()
     } finally {
       setCopying(false)
       setTimeout(() => setCopied(null), 2500)
@@ -75,6 +79,7 @@ export default function RestoreDeliveryCard({
           <a
             href={downloadUrl}
             download
+            onClick={() => onDeliverAction?.()}
             className={`${btnClass} bg-[#D6FF00] text-black hover:bg-[#C2E600]`}
           >
             <Download size={15} />
@@ -107,7 +112,11 @@ export default function RestoreDeliveryCard({
 
           {/* Button 3 — Connect GitHub */}
           <button
-            onClick={() => setShowGit((v) => !v)}
+            onClick={() => {
+              const next = !showGit
+              setShowGit(next)
+              if (next) onDeliverAction?.()
+            }}
             className={`${btnClass} border border-white/[0.08] bg-white/[0.03] text-white/80 hover:border-white/[0.18] hover:text-white`}
           >
             <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor">

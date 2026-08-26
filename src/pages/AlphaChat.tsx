@@ -344,18 +344,13 @@ function ChatContent() {
     }
   }, [messages])
 
-  // Verification popup — shows once after fix generated (deliverables ready) — ONE popup, ONE Verify scan
-  useEffect(() => {
-    const hasFix = messages.some(m => m.restoreCards?.v2?.deliverables || m.restoreCards?.v2?.restoreComplete)
-    const hasStreaming = messages.some(m => m.isStreaming)
-    if (hasFix && !hasStreaming && !showVerificationPopup && !showVerifySection && !verificationPopupShownRef.current) {
-      const t = setTimeout(() => {
-        setShowVerificationPopup(true)
-        verificationPopupShownRef.current = true
-      }, 600)
-      return () => clearTimeout(t)
-    }
-  }, [messages, showVerificationPopup, showVerifySection])
+  // Verification popup — ONLY after user acts: Download ZIP / Copy Code / Connect to Git
+  // No auto-popup on fix ready; user must click a delivery action first (fix #verify-trigger)
+  const triggerVerifyPopup = useCallback(() => {
+    if (verificationPopupShownRef.current || showVerificationPopup || showVerifySection) return
+    setShowVerificationPopup(true)
+    verificationPopupShownRef.current = true
+  }, [showVerificationPopup, showVerifySection])
 
   const scrollToBottom = useCallback(() => {
     if (scrollRef.current) {
@@ -1865,12 +1860,13 @@ function ChatContent() {
                               />
                             )}
 
-                            {/* Delivery: Download ZIP / Copy Code / Connect to Git */}
+                            {/* Delivery: Download ZIP / Copy Code / Connect to Git — popup only after these clicked */}
                             {msg.restoreCards.v2?.restoreComplete && msg.restoreCards.v2.restorationId && (
                               <RestoreDeliveryCard
                                 restorationId={msg.restoreCards.v2.restorationId}
                                 downloadRestored={msg.restoreCards.v2.deliverables?.download?.restored || undefined}
                                 onVerify={triggerReVerify}
+                                onDeliverAction={triggerVerifyPopup}
                               />
                             )}
 
