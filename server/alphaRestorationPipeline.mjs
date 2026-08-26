@@ -530,12 +530,30 @@ export async function diagnose(html, opts = {}) {
     }
   }
 
-  // 12 — SECURITY HEADERS
+  // 12 — SECURITY HEADERS — HTTP headers first, meta as fallback (no false positives)
   {
+    const rawHeaders = opts.responseHeaders || null
+    const headerMap = (() => {
+      if (!rawHeaders) return null
+      const map = new Map()
+      try {
+        for (const [k, v] of Object.entries(rawHeaders)) map.set(String(k).toLowerCase(), String(v))
+        // also supportHeaders object or Headers instance
+        if (typeof rawHeaders.get === 'function') {
+          for (const k of ['content-security-policy', 'strict-transport-security', 'x-content-type-options', 'x-frame-options', 'permissions-policy']) {
+            const val = rawHeaders.get(k)
+            if (val) map.set(k, String(val))
+          }
+        }
+      } catch {}
+      return map
+    })()
+    const hasHttp = (h) => headerMap ? headerMap.has(h.toLowerCase()) : false
     const missing = []
-    if (!/<meta[^>]+http-equiv\s*=\s*["']content-security-policy["']/i.test(html)) missing.push('Content-Security-Policy')
-    if (!/<meta[^>]+http-equiv\s*=\s*["']strict-transport-security["']/i.test(html)) missing.push('Strict-Transport-Security')
-    if (!/<meta[^>]+http-equiv\s*=\s*["']x-content-type-options["']/i.test(html)) missing.push('X-Content-Type-Options')
+    // CSP
+    if (!hasHttp('content-security-policy') && !/<meta[^>]+http-equiv\s*=\s*["']content-security-policy["']/i.test(html)) missing.push('Content-Security-Policy')
+    if (!hasHttp('strict-transport-security') && !/<meta[^>]+http-equiv\s*=\s*["']strict-transport-security["']/i.test(html)) missing.push('Strict-Transport-Security')
+    if (!hasHttp('x-content-type-options') && !/<meta[^>]+http-equiv\s*=\s*["']x-content-type-options["']/i.test(html)) missing.push('X-Content-Type-Options')
     if (missing.length) {
       push('security_headers', 'medium', `Missing security headers: ${missing.join(', ')}`, 0, '<head> without security meta declarations', 'Inject security header meta tags')
     }
@@ -549,11 +567,18 @@ export async function diagnose(html, opts = {}) {
     }
   }
 
-  // 14 — SCHEMA MARKUP ISSUES
+  // 14 — SCHEMA MARKUP ISSUES — validate, don't flag comments/empty (no false positives)
   {
     for (const m of html.matchAll(/<script[^>]+application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)) {
+      const raw = String(m[1] || '')
+      // Strip /* comments */ and // line comments, then trim
+      const clean = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*$/gm, '').trim()
+      if (!clean) {
+        // Empty or comment-only JSON-LD block — harmless, not an error (alphatekx safety gate)
+        continue
+      }
       try {
-        const data = JSON.parse(m[1].trim())
+        const data = JSON.parse(clean)
         const nodes = Array.isArray(data) ? data : [data]
         const problems = []
         for (const node of nodes) {
