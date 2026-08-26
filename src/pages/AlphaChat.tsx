@@ -40,6 +40,7 @@ import {
 } from '../lib/chatHistoryStore'
 import { useAuth } from '../lib/auth'
 import { supabase } from '../lib/supabase'
+import { isAdminUser } from '../lib/adminAccess'
 
 type RestoreCardState = {
   scanning?: { logs: ScanLog[]; status: 'start' | 'done' | 'error' }
@@ -212,6 +213,17 @@ function ChatContent() {
     } catch {}
   }, [])
 
+  // Admin bypass — clear stuck free trial cache so testing is frictionless
+  useEffect(() => {
+    if (!user) return
+    if (isAdminUser(user as any)) {
+      try {
+        localStorage.removeItem('alphatekx_freeCount')
+        localStorage.setItem('alphatekx_plan', 'admin')
+      } catch {}
+    }
+  }, [user])
+
   // Luxury onboarding — once, immediately after signup, premium, never again
   useEffect(() => {
     if (!user) return
@@ -307,10 +319,11 @@ function ChatContent() {
     userMsg: AlphaMessage
   }) => {
     const { sendText, url, mode, wholeSite = false, thread, userMsg } = opts
-    // FREE TRIAL: 1 scan OR 1 fix max — real limit, not joke
+    // FREE TRIAL: 1 scan OR 1 fix max — real limit, not joke (admins bypass completely)
+    const isAdminBypass = isAdminUser(user as any)
     const planNow = typeof window !== 'undefined' ? (localStorage.getItem('alphatekx_plan') || 'free') : 'free'
     const freeCountNow = Number(typeof window !== 'undefined' ? localStorage.getItem('alphatekx_freeCount') || '0' : '0')
-    const isPaidNow = planNow !== 'free' && planNow !== 'video_free' && planNow !== ''
+    const isPaidNow = isAdminBypass || (planNow !== 'free' && planNow !== 'video_free' && planNow !== '')
     if (!isPaidNow && freeCountNow >= 1) {
       updateLastMessage((prev) => ({
         ...prev,
@@ -410,7 +423,7 @@ function ChatContent() {
       setIsGenerating(false)
       abortRef.current = null
     }
-  }, [scrollToBottom, updateLastMessage, session?.access_token])
+  }, [scrollToBottom, updateLastMessage, session?.access_token, user])
 
   const handleSend = useCallback(async () => {
     const text = input.trim()
