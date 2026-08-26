@@ -138,18 +138,7 @@ export default function HamburgerSidebar({
                   <span className="block text-[10px] text-white/30">Guides, billing, video tips</span>
                 </span>
               </button>
-              <button
-                onClick={() => { onClose(); window.dispatchEvent(new CustomEvent('alphatekx:show-onboarding')) }}
-                className="flex w-full items-center gap-3 rounded-xl border border-[#FFD700]/15 bg-[#FFD700]/[0.05] px-3 py-2.5 text-left transition hover:bg-[#FFD700]/[0.10]"
-              >
-                <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-[#FFD700]/10">
-                  <HelpCircle size={14} className="text-[#FFD700]" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[13px] font-bold text-white">Onboarding</span>
-                  <span className="block text-[10px] text-white/30">Fix your first site in 3 steps</span>
-                </span>
-              </button>
+
             </div>
 
             <div className="flex-1 overflow-y-auto overscroll-contain alpha-chat-scroll touch-pan-y" style={{ WebkitOverflowScrolling: 'touch' } as any}>

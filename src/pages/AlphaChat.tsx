@@ -1360,7 +1360,7 @@ function ChatContent() {
             </div>
 
             {/* Centered Input — large, premium, generous padding */}
-            <div className="w-full max-w-[640px]">
+            <div className="w-full max-w-[640px] lg:max-w-[720px]">
               {/* Attached file previews */}
               {attachedFiles.length > 0 && (
                 <div className="mb-2 space-y-1">
@@ -1420,7 +1420,7 @@ function ChatContent() {
           </div>
         ) : (
           /* Messages */
-          <div className="mx-auto max-w-[680px] px-4 py-6 pb-32">
+          <div className="mx-auto max-w-[680px] lg:max-w-[760px] px-4 py-6 pb-32">
             <AnimatePresence initial={false}>
               {messages.map((msg) => (
                 <motion.div
@@ -1846,7 +1846,7 @@ function ChatContent() {
 
       {/* Verification — ONE SCAN, ONE RESULT (after popup → Verify) */}
       {showVerifySection && !showVerificationPopup && (
-        <div className="verify-section mx-auto max-w-[680px] px-4 py-4 text-center">
+        <div className="verify-section mx-auto max-w-[680px] lg:max-w-[760px] px-4 py-4 text-center">
           <div className="rounded-2xl border border-[#FFD700]/30 bg-[#0B0215] p-6 shadow-[0_12px_32px_rgba(0,0,0,0.4)]">
             <p className="text-[15px] font-bold text-white">✅ Fix generated. Apply it, then click below to verify.</p>
             <p className="mt-1 text-xs text-white/50">We will rescan ONCE and confirm the fix.</p>
@@ -1866,7 +1866,7 @@ function ChatContent() {
       {/* Bottom Input (when messages exist) */}
       {!isEmpty && (
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-white/[0.04] bg-[#0A0A0A]/90 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-xl">
-          <div className="mx-auto max-w-[680px]">
+          <div className="mx-auto max-w-[680px] lg:max-w-[760px]">
             {/* Attached file preview */}
             {attachedFiles.length > 0 && (
                 <div className="mb-2 space-y-1">
@@ -1938,43 +1938,45 @@ function ChatContent() {
         />
       )}
 
-      {/* Verification Popup — BIG, BOLD, CLEAR */}
+      {/* Verification Popup — Classic, trustworthy, ChatGPT-style */}
       {showVerificationPopup && (
-        <div className="verification-popup-overlay fixed inset-0 z-[10000] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
-          <div className="verification-popup w-[90%] max-w-[600px] rounded-[24px] border-2 border-[#FFD700] bg-[#0B0215] p-8 shadow-[0_0_60px_rgba(255,215,0,0.2)]">
-            <div className="popup-header mb-4 flex items-center gap-3">
-              <span className="popup-icon text-[2rem]">⚠️</span>
-              <h2 className="text-[1.5rem] font-black text-[#FFD700]">IMPORTANT — Read This Before You Leave</h2>
-            </div>
-            <div className="popup-body">
-              <p className="mb-3 text-[15px] font-bold text-white">We have generated a fix for your site.</p>
-              <div className="fix-options">
-                <p className="text-sm font-black text-white">Choose how to apply it:</p>
-                <ul className="m-0 list-none p-0">
-                  <li className="border-b border-white/5 py-2 text-[15px] font-bold text-white">📥 Download ZIP</li>
-                  <li className="border-b border-white/5 py-2 text-[15px] font-bold text-white">📋 Copy Code</li>
-                  <li className="border-b border-white/5 py-2 text-[15px] font-bold text-white">🔗 GitHub PR</li>
-                </ul>
-              </div>
-              <div className="warning-box mt-4 rounded-lg border-l-4 border-[#FFD700] bg-[#FFD700]/10 p-4">
-                <p className="m-0 text-[15px] font-black text-[#FFD700]">⚠️ After you apply the fix, come back here and click "Verify" to confirm it worked.</p>
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-[520px] rounded-[16px] border border-white/[0.06] bg-[#0B0215] p-6 shadow-[0_8px_32px_rgba(0,0,0,0.12)] lg:p-7">
+            <div className="mb-4 flex items-start gap-3">
+              <span className="grid size-8 shrink-0 place-items-center rounded-full bg-white/10 text-white">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16h.01"/></svg>
+              </span>
+              <div>
+                <h2 className="text-[18px] font-semibold leading-tight text-white">Fix generated — apply and verify</h2>
+                <p className="mt-1 text-[14px] leading-5 text-white/60">We have generated a fix for your site. Choose how to apply it, then verify it is live.</p>
               </div>
             </div>
-            <div className="popup-footer mt-6 flex gap-3">
+            <div className="space-y-2 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
+              <p className="text-[13px] font-semibold text-white/80">Choose how to apply it</p>
+              <div className="space-y-1 text-[13px] text-white/60">
+                <div className="flex items-center gap-2"><span className="size-1.5 rounded-full bg-white/20"/> Download ZIP</div>
+                <div className="flex items-center gap-2"><span className="size-1.5 rounded-full bg-white/20"/> Copy Code</div>
+                <div className="flex items-center gap-2"><span className="size-1.5 rounded-full bg-white/20"/> GitHub PR</div>
+              </div>
+            </div>
+            <div className="mt-4 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2.5">
+              <p className="text-[13px] font-medium leading-5 text-white/70">After you apply the fix, come back here and click Verify to confirm it worked.</p>
+            </div>
+            <div className="mt-6 flex gap-3">
               <button
                 onClick={() => {
                   setShowVerificationPopup(false)
                   setShowVerifySection(true)
                 }}
-                className="btn-continue flex-1 rounded-xl bg-gradient-to-br from-[#FFD700] to-[#F59E0B] px-6 py-3 text-[15px] font-black text-[#0B0215] transition hover:scale-[1.02]"
+                className="flex h-10 flex-1 items-center justify-center rounded-xl bg-white px-5 text-[14px] font-semibold text-black shadow-[0_4px_16px_rgba(0,0,0,0.12)] transition hover:bg-white/90"
               >
-                ✅ Continue — I'll verify later
+                Continue
               </button>
               <button
                 onClick={() => setShowVerificationPopup(false)}
-                className="btn-exit flex-1 rounded-xl border-2 border-white/15 bg-transparent px-6 py-3 text-[15px] font-bold text-white/60 transition hover:border-[#FFD700] hover:text-[#FFD700]"
+                className="flex h-10 flex-1 items-center justify-center rounded-xl border border-white/10 bg-transparent px-5 text-[14px] font-semibold text-white/70 transition hover:border-white/20 hover:text-white"
               >
-                ❌ Exit
+                Close
               </button>
             </div>
           </div>
@@ -2046,7 +2048,7 @@ function HintBar() {
   })
   if (!show) return null
   return (
-    <div className="mx-auto mb-2 flex max-w-[680px] items-center gap-2 rounded-xl border border-[#D6FF00]/20 bg-[#D6FF00]/[0.05] px-3 py-2 text-[12px] leading-5 text-white/70">
+    <div className="mx-auto mb-2 flex max-w-[680px] lg:max-w-[760px] items-center gap-2 rounded-xl border border-[#D6FF00]/20 bg-[#D6FF00]/[0.05] px-3 py-2 text-[12px] leading-5 text-white/70">
       <Sparkles size={13} className="shrink-0 text-[#D6FF00]" />
       <span className="flex-1">
         <b className="text-white">Tip:</b> paste your broken site link and say <i>“fix my site”</i> — Alpha scans, repairs and verifies it live. Or tap the mic and just ask.
