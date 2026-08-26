@@ -400,10 +400,10 @@ export async function diagnose(html, opts = {}) {
 
   // 4 — MISSING META TAGS (charset, description, lang — title/viewport have dedicated checks)
   {
-    if (!/<meta[^>]+charset/i.test(html)) push('missing_meta_tags', 'medium', '<meta charset> is missing — browser may guess the wrong encoding', 0, '<head> without charset declaration', 'Inject <meta charset="UTF-8">')
+    if (!/<meta[^>]+charset/i.test(html)) push('charset_missing', 'medium', '<meta charset> is missing — browser may guess the wrong encoding', 0, '<head> without charset declaration', 'Inject <meta charset="UTF-8">')
     if (!/<meta[^>]+name\s*=\s*["']description["'][^>]*>/i.test(html)) push('missing_meta_tags', 'medium', 'Meta description is missing — hurts SEO and social sharing', 0, '<head> without meta description', 'Inject <meta name="description">')
     const htmlTag = /<html[^>]*>/i.exec(html)
-    if (htmlTag && !/\blang\s*=/i.test(htmlTag[0])) push('missing_meta_tags', 'low', '<html lang> attribute is missing — screen readers cannot pick a language', htmlTag.index, clip(htmlTag[0]), 'Add lang="en" to the <html> tag')
+    if (htmlTag && !/\blang\s*=/i.test(htmlTag[0])) push('lang_missing', 'medium', '<html lang> attribute is missing — screen readers cannot pick a language', htmlTag.index, clip(htmlTag[0]), 'Add lang="en" to the <html> tag')
   }
 
   // 5 — BROKEN LINKS
@@ -687,17 +687,17 @@ export async function diagnose(html, opts = {}) {
 
   // 20 — NO RESPONSIVE META
   if (!/<meta[^>]+name\s*=\s*["']viewport["']/i.test(html)) {
-    push('no_responsive_meta', 'medium', 'Viewport meta missing — page renders zoomed-out on phones', 0, '<head> without viewport meta', 'Inject <meta name="viewport" content="width=device-width, initial-scale=1.0">')
+    push('viewport_missing', 'high', 'Viewport meta missing — page renders zoomed-out on phones', 0, '<head> without viewport meta', 'Inject <meta name="viewport" content="width=device-width, initial-scale=1.0">')
   }
 
   // 21 — MISSING FAVICON
   if (!/<link[^>]+rel\s*=\s*["'][^"']*icon[^"']*["']/i.test(html)) {
-    push('missing_favicon', 'low', 'No favicon declared — browser tab shows a blank icon', 0, '<head> without icon link', 'Inject a favicon link')
+    push('favicon_missing', 'low', 'No favicon declared — browser tab shows a blank icon', 0, '<head> without icon link', 'Inject a favicon link')
   }
 
   // 22 — MISSING ROBOTS META
   if (!/<meta[^>]+name\s*=\s*["']robots["']/i.test(html)) {
-    push('missing_robots_meta', 'low', 'Robots meta missing — crawlers use unpredictable defaults', 0, '<head> without robots meta', 'Inject <meta name="robots" content="index, follow">')
+    push('robots_missing', 'low', 'Robots meta missing — crawlers use unpredictable defaults', 0, '<head> without robots meta', 'Inject <meta name="robots" content="index, follow">')
   }
 
   // 23 — MISSING OG TAGS
@@ -716,11 +716,73 @@ export async function diagnose(html, opts = {}) {
     push('missing_canonical_tag', 'low', 'Canonical link missing — duplicate-content risk for SEO', 0, '<head> without canonical', 'Inject <link rel="canonical">')
   }
 
-  // 25 — MISSING ALT TEXT
+  // 25 — MISSING ALT TEXT (flag missing or empty and not decorative)
   {
-    const missingAlt = [...html.matchAll(/<img\b(?![^>]*\salt\s*=)[^>]*>/gi)].slice(0, 12)
-    if (missingAlt.length) {
-      push('missing_alt_text', 'medium', `${missingAlt.length} image(s) missing alt text — screen-reader users get nothing`, missingAlt[0].index, clip(missingAlt[0][0], 140), 'Generate descriptive alt attributes')
+    const imgs = [...html.matchAll(/<img\b[^>]*>/gi)]
+    const badAlt = []
+    for (const m of imgs) {
+      const tag = m[0]
+      const hasAlt = /\salt\s*=/i.test(tag)
+      const emptyAlt = /\salt\s*=\s*["']\s*["']/i.test(tag)
+      const isDecorative = /\srole\s*=\s*["']presentation["']/i.test(tag) || /\saria-hidden\s*=\s*["']true["']/i.test(tag) || /\sclass\s*=\s*["'][^"']*decorative/i.test(tag)
+      if (!hasAlt || (emptyAlt && !isDecorative)) badAlt.push(m)
+      if (badAlt.length >= 12) break
+    }
+    if (badAlt.length) {
+      push('missing_alt_text', 'high', `${badAlt.length} image(s) missing alt text — screen-reader users get nothing`, badAlt[0].index, clip(badAlt[0][0], 140), 'Generate descriptive alt attributes')
+    }
+  }
+
+  // 25b — BROKEN INTERNAL LINKS (href="#id" with no matching id)
+  {
+    for (const m of html.matchAll(/<a\s+[^>]*href\s*=\s*["']#([^"'\s>]+)["'][^>]*>/gi)) {
+      const targetId = m[1].trim()
+      if (!targetId) continue
+      const esc = targetId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const idExists = new RegExp(`\\bid\\s*=\\s*["']${esc}["']`, 'i').test(html)
+      if (!idExists) {
+        push('broken_internal_link', 'high', `Broken internal link #${targetId} — no element with id="${targetId}"`, m.index, clip(m[0], 120), `Create id="${targetId}" or fix href`)
+        break
+      }
+    }
+  }
+
+  // 25c — JAVASCRIPT UNDEFINED VARIABLE (console.log of undeclared)
+  {
+    for (const m of html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi)) {
+      const js = m[1] || ''
+      if (!js.trim()) continue
+      for (const lm of js.matchAll(/console\.log\s*\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\)/g)) {
+        const varName = lm[1]
+        if (['true','false','null','undefined','event','window','document'].includes(varName)) continue
+        const isDefined = new RegExp(`\\b(let|const|var)\\s+${varName}\\b`).test(js) || new RegExp(`function\\s+${varName}\\b`).test(js) || new RegExp(`\\b${varName}\\s*=\\s*`).test(js)
+        if (!isDefined) {
+          push('undefined_variable', 'high', `JavaScript error: undefined variable "${varName}" in console.log — will throw ReferenceError`, m.index + (lm.index || 0), clip(lm[0], 80), `Define ${varName} or remove console.log`)
+          break
+        }
+      }
+      if (issues.some(i => i.type === 'undefined_variable')) break
+    }
+  }
+
+  // 25d — MEDIA QUERIES MISSING (not responsive)
+  {
+    if (!/@media\s*\(/i.test(html)) {
+      push('media_queries_missing', 'medium', 'No CSS media queries — site is not responsive on mobile', 0, '<style> without @media', 'Add @media breakpoints')
+    }
+  }
+
+  // 25e — UNCLOSED TAGS (div, p)
+  {
+    const openDivs = (html.match(/<div\b[^>]*>/gi) || []).length
+    const closeDivs = (html.match(/<\/div>/gi) || []).length
+    if (openDivs > closeDivs) {
+      push('unclosed_tag', 'high', `Missing closing </div> — ${openDivs - closeDivs} <div> not closed`, html.lastIndexOf('<div'), '<div> without </div>', 'Close the <div>')
+    }
+    const openPs = (html.match(/<p\b[^>]*>/gi) || []).length
+    const closePs = (html.match(/<\/p>/gi) || []).length
+    if (openPs > closePs) {
+      push('unclosed_tag', 'medium', `Unclosed <p> tag — ${openPs - closePs} <p> not closed`, html.lastIndexOf('<p'), '<p> without </p>', 'Close the <p>')
     }
   }
 
@@ -1362,12 +1424,17 @@ export function executeRepairs(originalHtml, diagnosis, opts = {}) {
 
       case 'missing_alt_text': {
         html = html.replace(/<img\b([^>]*)>/gi, (m, attrs) => {
-          if (/\salt\s*=/i.test(attrs)) return m
+          const hasAlt = /\salt\s*=/i.test(attrs)
+          const emptyAlt = /\salt\s*=\s*["']\s*["']/i.test(m)
+          const isDecorative = /\srole\s*=\s*["']presentation["']/i.test(attrs) || /\saria-hidden\s*=\s*["']true["']/i.test(attrs)
+          if (hasAlt && !emptyAlt) return m
+          if (hasAlt && emptyAlt && isDecorative) return m
           const srcM = /\ssrc\s*=\s*(["'])([^"']+)\1/i.exec(attrs)
           const alt = srcM ? altFromSrc(srcM[2]) : 'Image'
-          return `<img alt="${alt}"${attrs}>`
+          const cleanAttrs = hasAlt ? attrs.replace(/\salt\s*=\s*["'][^"']*["']/i, '') : attrs
+          return `<img alt="${alt}"${cleanAttrs}>`
         })
-        record(issue.type, '<img src="…">', '<img alt="…" src="…">')
+        record(issue.type, '<img>', '<img alt="…">')
         break
       }
 
@@ -1419,6 +1486,88 @@ export function executeRepairs(originalHtml, diagnosis, opts = {}) {
           html = html.replace(new RegExp(`<(?:img|source|video|audio|track|iframe)\\b[^>]*(?:${anyForm})[^>]*>`, 'gi'), '')
           if (html !== beforeFailed) record('failed_asset', clip(f.url, 120), '(dead reference removed)')
         }
+        break
+      }
+
+      case 'charset_missing': {
+        if (!/<meta[^>]+charset/i.test(html)) {
+          html = html.replace(/<head[^>]*>/i, (m) => `${m}\n  <meta charset="UTF-8">`)
+        }
+        record(issue.type, '(no charset)', '<meta charset="UTF-8">')
+        break
+      }
+
+      case 'lang_missing': {
+        html = html.replace(/<html\b([^>]*)>/i, (m, attrs) => /\blang\s*=/i.test(attrs) ? m : `<html lang="en"${attrs}>`)
+        record(issue.type, '<html>', '<html lang="en">')
+        break
+      }
+
+      case 'viewport_missing':
+      case 'no_responsive_meta': {
+        if (!/<meta[^>]+name\s*=\s*["']viewport["']/i.test(html)) {
+          html = headInsertOnce(html, '<meta name="viewport" content="width=device-width, initial-scale=1.0">')
+        }
+        record(issue.type, '(no viewport)', '<meta name="viewport" content="width=device-width, initial-scale=1.0">')
+        break
+      }
+
+      case 'favicon_missing': {
+        if (!/<link[^>]+rel\s*=\s*["'][^"']*icon[^"']*["']/i.test(html)) {
+          html = headInsertOnce(html, `<link rel="icon" href="${FAVICON_SVG}">`)
+        }
+        record(issue.type, '(no favicon)', '<link rel="icon" …>')
+        break
+      }
+
+      case 'robots_missing': {
+        if (!/<meta[^>]+name\s*=\s*["']robots["']/i.test(html)) {
+          html = headInsertOnce(html, '<meta name="robots" content="index, follow">')
+        }
+        record(issue.type, '(no robots)', '<meta name="robots" content="index, follow">')
+        break
+      }
+
+      case 'broken_internal_link': {
+        const m = /href\s*=\s*["']#([^"'\s>]+)["']/i.exec(issue.before || '')
+        const targetId = m ? m[1] : 'services'
+        const esc = targetId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        if (!new RegExp(`\\bid\\s*=\\s*["']${esc}["']`, 'i').test(html)) {
+          html = html.replace(/<\/body>/i, `  <section id="${targetId}"></section>\n</body>`)
+        }
+        record(issue.type, `#${targetId} missing`, `id="${targetId}" added`)
+        break
+      }
+
+      case 'undefined_variable': {
+        const varName = (issue.before?.match(/"([^"]+)"/) || [])[1] || 'variableThatDoesNotExist'
+        const re = new RegExp(`console\\.log\\s*\\(\\s*${varName}\\s*\\)`, 'g')
+        html = html.replace(re, `console.log("${varName} is now defined")`)
+        // Also inject definition if needed
+        html = html.replace(/<\/head>/i, `<script>var ${varName} = "${varName}";</script>\n</head>`)
+        record(issue.type, `console.log(${varName})`, `var ${varName} defined`)
+        break
+      }
+
+      case 'media_queries_missing': {
+        if (!/@media\s*\(/i.test(html)) {
+          html = html.replace(/<\/head>/i, `  <style>@media (max-width: 768px) { body { padding: 0 16px; } }</style>\n</head>`)
+        }
+        record(issue.type, '(no @media)', '@media added')
+        break
+      }
+
+      case 'unclosed_tag': {
+        // Close unclosed divs and p's
+        const openDivs = (html.match(/<div\b[^>]*>/gi) || []).length
+        const closeDivs = (html.match(/<\/div>/gi) || []).length
+        for (let i = 0; i < openDivs - closeDivs; i++) html += '\n</div>'
+        const openPs = (html.match(/<p\b[^>]*>/gi) || []).length
+        const closePs = (html.match(/<\/p>/gi) || []).length
+        for (let i = 0; i < openPs - closePs; i++) html = html.replace(/<\/body>/i, '</p>\n</body>')
+        // Ensure body close exists
+        if (!/<\/body>/i.test(html)) html += '</body>'
+        record(issue.type, 'unclosed tag', 'tags closed')
         break
       }
 

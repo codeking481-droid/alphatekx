@@ -41,18 +41,28 @@ const TYPE_TO_PLAIN = {
   blank_render: 'Page renders blank — visitors see empty screen',
   bad_code_pattern: 'Risky code pattern — eval or innerHTML needs safer use',
   missing_meta_tags: 'SEO meta missing — description or charset absent',
+  viewport_missing: 'Phone layout broken — missing viewport',
+  lang_missing: 'Language not declared — screen readers guess',
+  charset_missing: 'Charset missing — letters may garble',
+  favicon_missing: 'Favicon missing — tab shows blank icon',
+  robots_missing: 'Robots meta missing — crawlers guess',
+  broken_internal_link: 'Internal link broken — target id missing',
+  undefined_variable: 'JavaScript uses undefined variable — will crash',
+  media_queries_missing: 'No responsive breakpoints — mobile broken',
+  unclosed_tag: 'HTML tag not closed — layout breaks',
+  no_responsive_meta: 'Phone layout broken — missing viewport',
 }
 function humanize(type){
   return TYPE_TO_PLAIN[type] || type.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()) + ' — needs attention'
 }
 function consequenceOf(type, severity){
   if(['insecure_form_action','security_headers_missing','security_headers','noopener_missing'].includes(type)) return 'Attackers can steal data, browsers flag as not secure'
-  if(['missing_viewport','no_media_queries','no_responsive_meta'].includes(type)) return '50 percent of visitors on phones cannot navigate'
-  if(['broken_image','broken_link','broken_script','inline_handler_syntax','inline_js_syntax','css_unbalanced_braces','fetch_failed','broken_internal_anchor','empty_href','failed_asset','blank_render'].includes(type)) return severity==='critical' ? 'Visitors leave, sale lost' : 'Slower sales, trust drops'
-  if(['missing_title','og_tags_missing','missing_og_tags','canonical_missing','missing_canonical_tag','robots_missing','missing_robots_meta','jsonld_missing','schema_markup_issue','missing_alt_text','missing_meta_tags'].includes(type)) return 'Google ranks you lower, less traffic'
-  if(['duplicate_ids','missing_charset','missing_focus_states','no_hover_states','favicon_missing','missing_favicon','mixed_content'].includes(type)) return 'Looks broken, hurts trust'
+  if(['missing_viewport','viewport_missing','no_media_queries','media_queries_missing','no_responsive_meta'].includes(type)) return '50 percent of visitors on phones cannot navigate'
+  if(['broken_image','broken_link','broken_script','inline_handler_syntax','inline_js_syntax','css_unbalanced_braces','fetch_failed','broken_internal_anchor','broken_internal_link','empty_href','failed_asset','blank_render','unclosed_tag'].includes(type)) return severity==='critical' ? 'Visitors leave, sale lost' : 'Slower sales, trust drops'
+  if(['missing_title','og_tags_missing','missing_og_tags','canonical_missing','missing_canonical_tag','robots_missing','robots_missing','jsonld_missing','schema_markup_issue','missing_alt_text','missing_meta_tags','charset_missing','lang_missing'].includes(type)) return 'Google ranks you lower, less traffic'
+  if(['duplicate_ids','missing_charset','charset_missing','missing_focus_states','no_hover_states','favicon_missing','missing_favicon','mixed_content','lang_missing'].includes(type)) return 'Looks broken, hurts trust'
   if(['performance_issue'].includes(type)) return 'Slow load — visitors bounce before it paints'
-  if(['runtime_error','bad_code_pattern'].includes(type)) return 'Script crashes — buttons and features stop working'
+  if(['runtime_error','bad_code_pattern','undefined_variable'].includes(type)) return 'Script crashes — buttons and features stop working'
   if(type.includes('security')||type.includes('oopener')) return 'Trust risk, Google downgrade'
   if(type.includes('viewport')||type.includes('media')) return 'Mobile customers bounce'
   return 'Hurts trust and speed'
@@ -65,12 +75,14 @@ function patchAction(type){
     failed_asset: 'Broken asset replaced with fallback',
     broken_script: 'Broken script repaired',
     missing_viewport: 'Mobile layout fixed',
+    viewport_missing: 'Viewport meta added',
     no_responsive_meta: 'Viewport meta added',
     security_headers_missing: 'Security headers added',
     security_headers: 'Security headers added',
     insecure_form_action: 'Checkout moved to server side',
     noopener_missing: 'External links secured',
     no_media_queries: 'Mobile breakpoints added',
+    media_queries_missing: 'Responsive breakpoints added',
     og_tags_missing: 'Share previews added',
     missing_og_tags: 'Open Graph tags added',
     images_missing_lazy: 'Lazy loading added',
@@ -78,10 +90,18 @@ function patchAction(type){
     fetch_failed: 'Failed page load fixed',
     runtime_error: 'JavaScript crash fixed',
     bad_code_pattern: 'Unsafe code rewritten safely',
+    undefined_variable: 'Undefined variable defined',
     schema_markup_issue: 'Structured data repaired',
     missing_favicon: 'Favicon added',
+    favicon_missing: 'Favicon added',
     missing_canonical_tag: 'Canonical tag added',
     missing_robots_meta: 'Robots meta added',
+    robots_missing: 'Robots meta added',
+    charset_missing: 'Charset meta added',
+    lang_missing: 'Language attribute added',
+    missing_meta_tags: 'Meta tags added',
+    broken_internal_link: 'Broken anchor fixed',
+    unclosed_tag: 'Unclosed tag closed',
     blank_render: 'Blank render fixed — page now paints',
   }
   return map[type] || `${base} — fixed`
