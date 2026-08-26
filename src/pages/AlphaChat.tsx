@@ -247,6 +247,23 @@ function ChatContent() {
     setThreads(getChatThreads())
   }, [activeThread])
 
+  // History 100% — auto-restore last thread after refresh so Green Card and buttons survive reload without clicking
+  useEffect(() => {
+    if (messages.length > 0 || activeThread) return
+    if (threads.length === 0) return
+    const recent = threads.find(t => t.messages.length > 0)
+    if (!recent) return
+    setActiveThread(recent)
+    setMessages(recent.messages as AlphaMessage[])
+    try {
+      const anyUrl = extractUrl(recent.messages.slice().reverse().find(m => extractUrl(m.content))?.content || '') || extractUrl(recent.messages.map(m => m.content).join(' ')) || localStorage.getItem('alphatekx:lastSiteUrl')
+      if (anyUrl) {
+        lastSiteUrlRef.current = anyUrl
+        try { localStorage.setItem('alphatekx:lastSiteUrl', anyUrl) } catch {}
+      }
+    } catch {}
+  }, [threads, messages.length, activeThread])
+
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
