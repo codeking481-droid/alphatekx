@@ -1662,6 +1662,20 @@ export async function runRestorationPipeline({ targetUrl, mode, origin, cookieHe
     return
   }
 
+  // CELEBRATE CLEAN — never generate fake code (prompt: Celebrate Clean, Don't Fake Fixes)
+  if (s.total === 0) {
+    let cleanGreenCard = ''
+    try {
+      cleanGreenCard = buildGreenCard({ site: finalUrl, pagesScanned: 1, sitemapUsed: false, findings: [], beforeScore: diagnosis.score, afterScore: 100 })
+    } catch {}
+    const cleanMsg = `🎉 **Your site is clean! 0 issues found. 100/100.**\n\n${cleanGreenCard}\n\n**Nothing to fix. You're good to go.**`
+    sendEvent({ type: 'v3_summary', message: cleanMsg })
+    // No deliverables, no Download/Copy/PR — clean sites get Close + optional report
+    sendEvent({ type: 'restore_complete', restorationId, data: { verification: { before: { score: diagnosis.score, issues: 0 }, after: { score: 100, issues: 0 } }, deliverables: null, screenshots: null, tier: 'gold', plainEnglish: null } })
+    sendEvent({ type: 'pipeline_done', restorationId })
+    return
+  }
+
   // ════════ AGENT LOOP: PLAN → REPAIR (rules + AI) → RECONSTRUCT → VERIFY ════════
   // Up to 3 cycles. Alpha keeps iterating until the health score reaches the
   // target or stops improving — exactly how a human engineer works.

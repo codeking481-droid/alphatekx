@@ -1592,92 +1592,139 @@ function ChatContent() {
 
                         {/* Message Content — Green Card : BOLD premium, 3 cols, at bottom, only output */}
                         {msg.content && msg.content.includes('ALPHA GREEN CARD') ? (
-                          <div className="green-card mt-3 overflow-hidden rounded-2xl border border-emerald-500/40 bg-[#0B1A13] shadow-[0_16px_48px_rgba(16,185,129,.18)]">
-                            <div className="bg-emerald-500 px-4 py-3">
-                              <div className="text-[11px] font-black tracking-[0.18em] text-black">🟩 ALPHA GREEN CARD — BOLD</div>
-                              <div className="mt-0.5 text-[11px] font-bold text-black/70">Last thing you see — nothing after this. 3 columns, 1 row.</div>
-                            </div>
-                            <div className="p-4 font-bold leading-relaxed text-white [&_h1]:text-[15px] [&_h1]:font-black [&_h1]:text-emerald-300 [&_h2]:font-black [&_h3]:font-black [&_strong]:font-black [&_strong]:text-white [&_table]:mt-3 [&_table]:w-full [&_table]:border-collapse [&_th]:bg-white/[0.06] [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:text-[11px] [&_th]:font-black [&_th]:uppercase [&_th]:tracking-widest [&_th]:text-emerald-300 [&_td]:border-t [&_td]:border-white/10 [&_td]:px-3 [&_td]:py-2 [&_td]:text-[13px] [&_td]:font-bold [&_hr]:my-3 [&_hr]:border-white/10">
-                              <Markdown>{msg.content}</Markdown>
-                            </div>
-                            <div className="flex flex-wrap gap-2 border-t border-emerald-500/20 bg-black/30 p-3">
-                              <button
-                                onClick={() => {
-                                  // BUTTON FIX: re-attach handlers — derive url from ref, storage, or message
-                                  let url = lastSiteUrlRef.current
-                                  if (!url) try { url = localStorage.getItem('alphatekx:lastSiteUrl') } catch {}
-                                  if (!url) url = extractUrl(msg.content) || ''
-                                  if (!url) return
-                                  lastSiteUrlRef.current = url
-                                  const email = getPaystackEmail()
-                                  // Fix Everything $49 → Paystack via /api/billing/checkout { plan: pro }
-                                  fetch('/api/billing/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan: 'pro', email, callback_url: 'https://alphatekx.name.ng/chat' }) })
-                                    .then(r => r.text().then(t => ({ ok: r.ok, t })))
-                                    .then(({ ok, t }) => {
-                                      let d: any = {}
-                                      try { d = t.trim() ? JSON.parse(t) : {} } catch {}
-                                      if (!ok) throw new Error(d.error || 'Checkout failed')
-                                      const checkoutUrl = d.checkoutUrl || d.authorization_url || d.data?.authorization_url
-                                      if (!checkoutUrl) throw new Error('No checkout URL')
-                                      try { localStorage.setItem('pendingPayment', JSON.stringify({ plan: 'video_49', amountKobo: 4900, url })) } catch {}
-                                      window.location.href = checkoutUrl
-                                    })
-                                    .catch(() => {
-                                      // fallback to direct paystack init
-                                      fetch('/api/paystack/initialize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, amount: 4900, plan: 'video_49', callback_url: 'https://alphatekx.name.ng/chat', source: 'green-card' }) })
+                          (() => {
+                            const isClean = msg.content.includes('Your site is clean') || msg.content.includes('Nothing to fix')
+                            if (isClean) {
+                              return (
+                                <div className="green-card mt-3 overflow-hidden rounded-2xl border border-emerald-500/40 bg-[#0B1A13] shadow-[0_16px_48px_rgba(16,185,129,.18)]">
+                                  <div className="bg-emerald-500 px-4 py-3">
+                                    <div className="text-[11px] font-black tracking-[0.18em] text-black">🎉 CLEAN — 100/100</div>
+                                    <div className="mt-0.5 text-[11px] font-bold text-black/70">Your site is clean — no fixes needed.</div>
+                                  </div>
+                                  <div className="p-4 font-bold leading-relaxed text-white [&_h1]:text-[15px] [&_h1]:font-black [&_h1]:text-emerald-300 [&_h2]:font-black [&_h3]:font-black [&_strong]:font-black [&_strong]:text-white [&_table]:mt-3 [&_table]:w-full [&_table]:border-collapse [&_th]:bg-white/[0.06] [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:text-[11px] [&_th]:font-black [&_th]:uppercase [&_th]:tracking-widest [&_th]:text-emerald-300 [&_td]:border-t [&_td]:border-white/10 [&_td]:px-3 [&_td]:py-2 [&_td]:text-[13px] [&_td]:font-bold [&_hr]:my-3 [&_hr]:border-white/10">
+                                    <Markdown>{msg.content}</Markdown>
+                                  </div>
+                                  <div className="flex flex-wrap gap-2 border-t border-emerald-500/20 bg-black/30 p-3">
+                                    <button
+                                      onClick={() => {
+                                        const site = extractUrl(msg.content) || lastSiteUrlRef.current || 'site'
+                                        const report = `# Alpha Clean Report\n\nSite: ${site}\nScore: 100/100\nStatus: Clean — 0 issues\n\nAll checks: Security ✅, JSON-LD ✅, Alt ✅, Lazy ✅, Viewport ✅, Favicon ✅, Robots ✅\n\nGenerated ${new Date().toISOString()} by AlphaTekX`
+                                        const blob = new Blob([report], { type: 'text/markdown' })
+                                        const url = URL.createObjectURL(blob)
+                                        const a = document.createElement('a')
+                                        a.href = url
+                                        a.download = `alpha-clean-report-${Date.now()}.md`
+                                        document.body.appendChild(a)
+                                        a.click()
+                                        a.remove()
+                                        URL.revokeObjectURL(url)
+                                      }}
+                                      className="flex-1 rounded-xl bg-emerald-500 px-4 py-3 text-center text-sm font-black text-black hover:bg-emerald-400"
+                                    >
+                                      📥 Download Clean Report
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        try { inputRef.current?.focus() } catch {}
+                                        scrollToBottom()
+                                      }}
+                                      className="rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm font-black text-white hover:bg-white/10"
+                                    >
+                                      ❌ Close
+                                    </button>
+                                  </div>
+                                </div>
+                              )
+                            }
+                            return (
+                              <div className="green-card mt-3 overflow-hidden rounded-2xl border border-emerald-500/40 bg-[#0B1A13] shadow-[0_16px_48px_rgba(16,185,129,.18)]">
+                                <div className="bg-emerald-500 px-4 py-3">
+                                  <div className="text-[11px] font-black tracking-[0.18em] text-black">🟩 ALPHA GREEN CARD — BOLD</div>
+                                  <div className="mt-0.5 text-[11px] font-bold text-black/70">Last thing you see — nothing after this. 3 columns, 1 row.</div>
+                                </div>
+                                <div className="p-4 font-bold leading-relaxed text-white [&_h1]:text-[15px] [&_h1]:font-black [&_h1]:text-emerald-300 [&_h2]:font-black [&_h3]:font-black [&_strong]:font-black [&_strong]:text-white [&_table]:mt-3 [&_table]:w-full [&_table]:border-collapse [&_th]:bg-white/[0.06] [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:text-[11px] [&_th]:font-black [&_th]:uppercase [&_th]:tracking-widest [&_th]:text-emerald-300 [&_td]:border-t [&_td]:border-white/10 [&_td]:px-3 [&_td]:py-2 [&_td]:text-[13px] [&_td]:font-bold [&_hr]:my-3 [&_hr]:border-white/10">
+                                  <Markdown>{msg.content}</Markdown>
+                                </div>
+                                <div className="flex flex-wrap gap-2 border-t border-emerald-500/20 bg-black/30 p-3">
+                                  <button
+                                    onClick={() => {
+                                      // BUTTON FIX: re-attach handlers — derive url from ref, storage, or message
+                                      let url = lastSiteUrlRef.current
+                                      if (!url) try { url = localStorage.getItem('alphatekx:lastSiteUrl') } catch {}
+                                      if (!url) url = extractUrl(msg.content) || ''
+                                      if (!url) return
+                                      lastSiteUrlRef.current = url
+                                      const email = getPaystackEmail()
+                                      // Fix Everything $49 → Paystack via /api/billing/checkout { plan: pro }
+                                      fetch('/api/billing/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan: 'pro', email, callback_url: 'https://alphatekx.name.ng/chat' }) })
                                         .then(r => r.text().then(t => ({ ok: r.ok, t })))
                                         .then(({ ok, t }) => {
                                           let d: any = {}
                                           try { d = t.trim() ? JSON.parse(t) : {} } catch {}
-                                          if (!ok) throw new Error(d.error || 'Payment init failed')
-                                          const authUrl = d.authorization_url || d.data?.authorization_url
-                                          if (authUrl) window.open(String(authUrl), '_blank')
+                                          if (!ok) throw new Error(d.error || 'Checkout failed')
+                                          const checkoutUrl = d.checkoutUrl || d.authorization_url || d.data?.authorization_url
+                                          if (!checkoutUrl) throw new Error('No checkout URL')
+                                          try { localStorage.setItem('pendingPayment', JSON.stringify({ plan: 'video_49', amountKobo: 4900, url })) } catch {}
+                                          window.location.href = checkoutUrl
                                         })
-                                        .catch(e => console.error('Paystack $49', e))
-                                    })
-                                }}
-                                className="flex-1 rounded-xl bg-emerald-500 px-4 py-3 text-center text-sm font-black text-black hover:bg-emerald-400"
-                              >
-                                🔧 Fix Everything — $49/mo
-                              </button>
-                              <button
-                                onClick={() => {
-                                  let url = lastSiteUrlRef.current
-                                  if (!url) try { url = localStorage.getItem('alphatekx:lastSiteUrl') } catch {}
-                                  if (!url) url = extractUrl(msg.content) || ''
-                                  if (!url) return
-                                  lastSiteUrlRef.current = url
-                                  const email = getPaystackEmail()
-                                  fetch('/api/billing/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan: 'lite', email, callback_url: 'https://alphatekx.name.ng/chat' }) })
-                                    .then(r => r.text().then(t => ({ ok: r.ok, t })))
-                                    .then(({ ok, t }) => {
-                                      let d: any = {}
-                                      try { d = t.trim() ? JSON.parse(t) : {} } catch {}
-                                      if (!ok) throw new Error(d.error || 'Checkout failed')
-                                      const checkoutUrl = d.checkoutUrl || d.authorization_url || d.data?.authorization_url
-                                      if (!checkoutUrl) throw new Error('No checkout URL')
-                                      try { localStorage.setItem('pendingPayment', JSON.stringify({ plan: 'video_19', amountKobo: 1900, url })) } catch {}
-                                      window.location.href = checkoutUrl
-                                    })
-                                    .catch(() => {
-                                      fetch('/api/paystack/initialize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, amount: 1900, plan: 'video_19', callback_url: 'https://alphatekx.name.ng/chat', source: 'green-card' }) })
+                                        .catch(() => {
+                                          // fallback to direct paystack init
+                                          fetch('/api/paystack/initialize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, amount: 4900, plan: 'video_49', callback_url: 'https://alphatekx.name.ng/chat', source: 'green-card' }) })
+                                            .then(r => r.text().then(t => ({ ok: r.ok, t })))
+                                            .then(({ ok, t }) => {
+                                              let d: any = {}
+                                              try { d = t.trim() ? JSON.parse(t) : {} } catch {}
+                                              if (!ok) throw new Error(d.error || 'Payment init failed')
+                                              const authUrl = d.authorization_url || d.data?.authorization_url
+                                              if (authUrl) window.open(String(authUrl), '_blank')
+                                            })
+                                            .catch(e => console.error('Paystack $49', e))
+                                        })
+                                    }}
+                                    className="flex-1 rounded-xl bg-emerald-500 px-4 py-3 text-center text-sm font-black text-black hover:bg-emerald-400"
+                                  >
+                                    🔧 Fix Everything — $49/mo
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      let url = lastSiteUrlRef.current
+                                      if (!url) try { url = localStorage.getItem('alphatekx:lastSiteUrl') } catch {}
+                                      if (!url) url = extractUrl(msg.content) || ''
+                                      if (!url) return
+                                      lastSiteUrlRef.current = url
+                                      const email = getPaystackEmail()
+                                      fetch('/api/billing/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan: 'lite', email, callback_url: 'https://alphatekx.name.ng/chat' }) })
                                         .then(r => r.text().then(t => ({ ok: r.ok, t })))
                                         .then(({ ok, t }) => {
                                           let d: any = {}
                                           try { d = t.trim() ? JSON.parse(t) : {} } catch {}
-                                          if (!ok) throw new Error(d.error || 'Payment init failed')
-                                          const authUrl = d.authorization_url || d.data?.authorization_url
-                                          if (authUrl) window.open(String(authUrl), '_blank')
+                                          if (!ok) throw new Error(d.error || 'Checkout failed')
+                                          const checkoutUrl = d.checkoutUrl || d.authorization_url || d.data?.authorization_url
+                                          if (!checkoutUrl) throw new Error('No checkout URL')
+                                          try { localStorage.setItem('pendingPayment', JSON.stringify({ plan: 'video_19', amountKobo: 1900, url })) } catch {}
+                                          window.location.href = checkoutUrl
                                         })
-                                        .catch(e => console.error('Paystack $19', e))
-                                    })
-                                }}
-                                className="rounded-xl border border-white/10 bg-white px-4 py-3 text-sm font-black text-black hover:bg-white/90"
-                              >
-                                🔧 Fix Critical — $19/mo
-                              </button>
-                            </div>
-                          </div>
+                                        .catch(() => {
+                                          fetch('/api/paystack/initialize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, amount: 1900, plan: 'video_19', callback_url: 'https://alphatekx.name.ng/chat', source: 'green-card' }) })
+                                            .then(r => r.text().then(t => ({ ok: r.ok, t })))
+                                            .then(({ ok, t }) => {
+                                              let d: any = {}
+                                              try { d = t.trim() ? JSON.parse(t) : {} } catch {}
+                                              if (!ok) throw new Error(d.error || 'Payment init failed')
+                                              const authUrl = d.authorization_url || d.data?.authorization_url
+                                              if (authUrl) window.open(String(authUrl), '_blank')
+                                            })
+                                            .catch(e => console.error('Paystack $19', e))
+                                        })
+                                    }}
+                                    className="rounded-xl border border-white/10 bg-white px-4 py-3 text-sm font-black text-black hover:bg-white/90"
+                                  >
+                                    🔧 Fix Critical — $19/mo
+                                  </button>
+                                </div>
+                              </div>
+                            )
+                          })()
                         ) : (
                           <div className="text-[14px] leading-relaxed">
                             <Markdown>{msg.content}</Markdown>
@@ -1860,8 +1907,8 @@ function ChatContent() {
                               />
                             )}
 
-                            {/* Delivery: Download ZIP / Copy Code / Connect to Git — popup only after these clicked */}
-                            {msg.restoreCards.v2?.restoreComplete && msg.restoreCards.v2.restorationId && (
+                            {/* Delivery: Download ZIP / Copy Code / Connect to Git — never for clean sites (no fake code) */}
+                            {msg.restoreCards.v2?.restoreComplete && msg.restoreCards.v2.restorationId && msg.restoreCards.v2.deliverables && (
                               <RestoreDeliveryCard
                                 restorationId={msg.restoreCards.v2.restorationId}
                                 downloadRestored={msg.restoreCards.v2.deliverables?.download?.restored || undefined}

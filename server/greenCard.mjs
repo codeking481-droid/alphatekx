@@ -76,6 +76,26 @@ export function buildGreenCard({ site, pagesScanned, sitemapUsed, findings, befo
     return `**• ${patchAction(f.type)}**`
   }).join('\n')
 
+  // CLEAN SITE — celebrate, don't fake fix (prompt: Celebrate Clean, Don't Fake Fixes)
+  if (total === 0) {
+    return `# 🎉 ALPHA GREEN CARD — 100/100
+
+**Your site is clean! No issues found.**
+
+**All checks passed**
+
+**• Security Headers — ✅ PASS**
+**• JSON-LD — ✅ PASS**
+**• Alt Text — ✅ PASS**
+**• Lazy Loading — ✅ PASS**
+**• Viewport — ✅ PASS**
+**• Favicon — ✅ PASS**
+**• Robots — ✅ PASS**
+
+**Nothing to fix. You're good to go.**
+`
+  }
+
   return `# 🟩 ALPHA GREEN CARD — ${site}
 **${pagesScanned} pages scanned ${sitemapUsed ? 'via sitemap — 2026 best' : 'via crawl'} — 12-phase ${afterScore??beforeScore} out of 100 — ${total} issues found**
 
