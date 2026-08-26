@@ -1,3 +1,1 @@
-export default {
-  middleware: false,
-};
+export default {};
