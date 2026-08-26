@@ -216,9 +216,11 @@ function ChatContent() {
     } catch {}
   }, [])
 
-  // SERVER IS SOURCE OF TRUTH — fetch scans_used per account (tied to user, not browser)
+  // SERVER IS SOURCE OF TRUTH — fetch scans_used + fixes_used per account (tied to user, not browser)
   const [serverScansUsed, setServerScansUsed] = useState<number>(0)
   const [serverScansLimit, setServerScansLimit] = useState<number>(1)
+  const [serverFixesUsed, setServerFixesUsed] = useState<number>(0)
+  const [serverFixesLimit, setServerFixesLimit] = useState<number>(1)
   const [serverPlan, setServerPlan] = useState<string>('free')
 
   const fetchServerUsage = useCallback(async () => {
@@ -241,11 +243,17 @@ function ChatContent() {
       const used = Number(data.scans_used ?? data.scansUsed ?? 0)
       const limit = data.scans_limit ?? data.scansLimit
       const limitNum = limit == null ? Infinity : Number(limit)
+      const fixesUsed = Number(data.fixes_used ?? data.fixesUsed ?? 0)
+      const fixesLimit = data.fixes_limit ?? data.fixesLimit
+      const fixesLimitNum = fixesLimit == null ? Infinity : Number(fixesLimit)
       setServerScansUsed(Number.isFinite(used) ? used : 0)
       setServerScansLimit(Number.isFinite(limitNum) ? limitNum : 1)
+      setServerFixesUsed(Number.isFinite(fixesUsed) ? fixesUsed : 0)
+      setServerFixesLimit(Number.isFinite(fixesLimitNum) ? fixesLimitNum : 1)
       setServerPlan(String(data.plan || data.planId || 'free'))
       // cache for speed (never trusted over server)
       try { localStorage.setItem('alphatekx:scans_used', String(used)) } catch {}
+      try { localStorage.setItem('alphatekx:fixes_used', String(fixesUsed)) } catch {}
       try { if (data.plan) localStorage.setItem('alphatekx_plan', String(data.plan)) } catch {}
     } catch {}
   }, [session])
@@ -381,18 +389,22 @@ function ChatContent() {
     userMsg: AlphaMessage
   }) => {
     const { sendText, url, mode, wholeSite = false, thread, userMsg } = opts
-    // FREE TRIAL — SERVER IS SOURCE OF TRUTH (per-account, not browser)
+    // FREE TRIAL — SERVER IS SOURCE OF TRUTH (per-account, not browser) — no bypass
     // Fetch fresh usage so gate never trusts stale LocalStorage alone
     try { await fetchServerUsage() } catch {}
     const isAdminBypass = isAdminUser(user as any)
-    // Server says how many scans this *account* has used this month
-    const effectiveUsed = isAdminBypass ? 0 : serverScansUsed
-    const effectiveLimit = isAdminBypass ? Infinity : serverScansLimit
+    const isFix = mode === 'full'
+    // Server says how many scans/fixes this *account* has used this month
+    const effectiveUsed = isAdminBypass ? 0 : (isFix ? serverFixesUsed : serverScansUsed)
+    const effectiveLimit = isAdminBypass ? Infinity : (isFix ? serverFixesLimit : serverScansLimit)
     const serverExhausted = Number.isFinite(effectiveLimit) && effectiveUsed >= effectiveLimit
     if (serverExhausted) {
+      const exhaustedMsg = isFix
+        ? `🔒 **You have used up your credit.** You used your ${effectiveLimit} fix${effectiveLimit===1?'':'es'} for this month.\n\n**Upgrade to continue fixing:**\n\n**Lite $9** — $9 per month — 5 scans — 5 fixes\n**Pro $49** — $49 per month — 50 scans — unlimited fixes\n**Guardian $99** — $99 per month — Unlimited scans — Unlimited fixes\n\nClick **Fix Everything — $49** on your Green Card to pay and unlock fixes immediately.`
+        : `🔒 **Free trial used (1/1).** You scanned once. Upgrade to heal your site.\n\n**What you saw:** Green Card preview ordered and bold — your real issues in pure bold text.\n\n**Next:** Pick a plan — Paystack opens — credits unlock — Alpha fixes in 16s plus GitHub PR.\n\n**Lite $9** — $9 per month — 5 scans — 5 fixes\n**Pro $49** — $49 per month — 50 scans — 20 fixes\n**Guardian $99** — $99 per month — Unlimited scans — Unlimited fixes\n\nClick **Fix Everything — $49** on your Green Card to pay.`
       updateLastMessage((prev) => ({
         ...prev,
-        content: `🔒 **Free trial used (1/1).** You scanned once. Upgrade to heal your site.\n\n**What you saw:** Green Card preview ordered and bold — your real issues in pure bold text.\n\n**Next:** Pick a plan — Paystack opens — credits unlock — Alpha fixes in 16s plus GitHub PR.\n\n**Lite $9** — $9 per month — 5 scans — 5 fixes\n**Pro $49** — $49 per month — 50 scans — 20 fixes\n**Guardian $99** — $99 per month — Unlimited scans — Unlimited fixes\n\nClick **Fix Everything — $49** on your Green Card to pay.`,
+        content: exhaustedMsg,
         isStreaming: false,
         restoreCards: { ...prev.restoreCards, isRunning: false },
       }))
@@ -450,18 +462,26 @@ function ChatContent() {
         }
       }
 
-      // After successful scan, sync server truth — server already did consumeQuota (durable plan_usage)
+      // After successful scan/fix, sync server truth — server already did consumeQuota (durable plan_usage)
       // Optimistically bump local state so next gate sees it, then refetch server for canon value
+      const isFixDone = mode === 'full'
       if (!isAdminBypass) {
-        const nextUsed = serverScansUsed + 1
-        setServerScansUsed(nextUsed)
-        try { localStorage.setItem('alphatekx:scans_used', String(nextUsed)) } catch {}
-        try { localStorage.setItem('alphatekx_freeCount', String(nextUsed)) } catch {}
+        if (isFixDone) {
+          const nextUsed = serverFixesUsed + 1
+          setServerFixesUsed(nextUsed)
+          try { localStorage.setItem('alphatekx:fixes_used', String(nextUsed)) } catch {}
+        } else {
+          const nextUsed = serverScansUsed + 1
+          setServerScansUsed(nextUsed)
+          try { localStorage.setItem('alphatekx:scans_used', String(nextUsed)) } catch {}
+          try { localStorage.setItem('alphatekx_freeCount', String(nextUsed)) } catch {}
+        }
         // Reconcile with durable DB (covers race + fallback store)
         setTimeout(() => { void fetchServerUsage() }, 900)
       } else {
         // Admin: keep cache clear
         try { localStorage.removeItem('alphatekx:scans_used') } catch {}
+        try { localStorage.removeItem('alphatekx:fixes_used') } catch {}
         void fetchServerUsage()
       }
       updateLastMessage((prev) => ({
@@ -487,18 +507,26 @@ function ChatContent() {
       })
     } catch (err: any) {
       if (err.name !== 'AbortError') {
+        const msg = String(err?.message || '')
+        const isQuota = /QUOTA_|quota|used up|exhausted|402/i.test(msg)
         updateLastMessage((prev) => ({
           ...prev,
-          content: prev.content || `Error: ${err.message}`,
+          content: isQuota
+            ? (mode === 'full'
+                ? `🔒 **You have used up your credit.**\n\nYou have no fixes left this month. Upgrade to continue.\n\n**Pro $49** — 50 scans — unlimited fixes • **Lite $9** — 5 fixes`
+                : `🔒 **Free trial used (1/1).**\n\nUpgrade to continue scanning.`)
+            : (prev.content || `Error: ${msg}`),
           isStreaming: false,
           restoreCards: { ...prev.restoreCards, isRunning: false },
         }))
+        // refresh server usage so UI shows correct limits after 402
+        try { void fetchServerUsage() } catch {}
       }
     } finally {
       setIsGenerating(false)
       abortRef.current = null
     }
-  }, [scrollToBottom, updateLastMessage, session?.access_token, user, serverScansUsed, serverScansLimit, fetchServerUsage])
+  }, [scrollToBottom, updateLastMessage, session?.access_token, user, serverScansUsed, serverScansLimit, serverFixesUsed, serverFixesLimit, fetchServerUsage])
 
   const handleSend = useCallback(async () => {
     const text = input.trim()

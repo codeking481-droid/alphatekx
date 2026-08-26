@@ -1702,7 +1702,7 @@ export async function runRestorationPipeline({ targetUrl, mode, origin, cookieHe
     } catch {}
     const msg = diagnosis.issues.length === 0
       ? `I scanned **${hostname}** deeply — zero issues found. Health score: **${diagnosis.score}/100**. This site is already clean. 🎉${designNote}${runtimeNote}\n\n${greenCard}`
-      : `I scanned **${hostname}** and found **${s.total} issues** (${s.critical} critical, ${s.high} high, ${s.medium} medium, ${s.low} low). Health score: **${diagnosis.score}/100**.${designNote}${runtimeNote}\n\n${greenCard}\n\nSay **"fix my site"** and I will run the full agentic restoration — up to three repair cycles with AI-powered fixes — and hand you the repaired code.`
+      : `I scanned **${hostname}** and found **${s.total} issues** (${s.critical} critical, ${s.high} high, ${s.medium} medium, ${s.low} low). Health score: **${diagnosis.score}/100**.${designNote}${runtimeNote}\n\n${greenCard}`
     sendEvent({ type: 'v3_summary', message: msg })
     sendEvent({ type: 'pipeline_done', restorationId })
     return
