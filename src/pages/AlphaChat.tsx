@@ -41,6 +41,8 @@ import {
 import { useAuth } from '../lib/auth'
 import { supabase } from '../lib/supabase'
 import { isAdminUser } from '../lib/adminAccess'
+import { storeRestoredContent, storeRestoredMeta, getRestoredContent } from '../lib/restoredContentStorage'
+import { storeComparison, getComparison } from '../lib/comparisonStorage'
 
 type RestoreCardState = {
   scanning?: { logs: ScanLog[]; status: 'start' | 'done' | 'error' }
@@ -303,10 +305,32 @@ function ChatContent() {
     if (threads.length === 0) return
     const recent = threads.find(t => t.messages.length > 0)
     if (!recent) return
-    setActiveThread(recent)
-    setMessages(recent.messages as AlphaMessage[])
+    // FIX #2: hydrate Before/After from persistent comparison if state shows 0/null (survives refresh)
+    const hydrated = (recent.messages as AlphaMessage[]).map(m => {
+      const rid = (m.restoreCards as any)?.v2?.restorationId
+      if (!rid) return m
+      try {
+        const comp = getComparison(rid)
+        if (comp) {
+          const v2 = (m.restoreCards as any).v2 || {}
+          const needsBefore = v2.baseline?.scoreAfter == null || v2.baseline?.scoreAfter === 0
+          const needsIssues = v2.baseline?.issuesRemaining == null
+          if (needsBefore || needsIssues) {
+            const newBaseline = {
+              scoreAfter: comp.after.score ?? v2.baseline?.scoreAfter ?? null,
+              issuesRemaining: comp.after.issues ?? v2.baseline?.issuesRemaining ?? null,
+            }
+            // also ensure before is not lost — keep for future comparison UI
+            return { ...m, restoreCards: { ...m.restoreCards, v2: { ...v2, baseline: newBaseline, _hydratedBefore: comp.before } } } as AlphaMessage
+          }
+        }
+      } catch {}
+      return m
+    })
+    setActiveThread({ ...recent, messages: hydrated as any })
+    setMessages(hydrated)
     try {
-      const anyUrl = extractUrl(recent.messages.slice().reverse().find(m => extractUrl(m.content))?.content || '') || extractUrl(recent.messages.map(m => m.content).join(' ')) || localStorage.getItem('alphatekx:lastSiteUrl')
+      const anyUrl = extractUrl(hydrated.slice().reverse().find(m => extractUrl(m.content))?.content || '') || extractUrl(hydrated.map(m => m.content).join(' ')) || localStorage.getItem('alphatekx:lastSiteUrl')
       if (anyUrl) {
         lastSiteUrlRef.current = anyUrl
         try { localStorage.setItem('alphatekx:lastSiteUrl', anyUrl) } catch {}
@@ -814,7 +838,7 @@ function ChatContent() {
             v2.screenshotAfter = event.data?.screenshotPath || null
             v2.verified = event.data?.verified ?? null
             break
-          case 'restore_complete':
+          case 'restore_complete': {
             v2.screenshotBefore = event.data?.screenshots?.before || v2.screenshotBefore
             v2.screenshotAfter = event.data?.screenshots?.after || v2.screenshotAfter
             v2.prUrl = event.data?.prUrl || v2.prUrl
@@ -843,8 +867,36 @@ function ChatContent() {
               v2.baseline = baseline
               lastFixBaselineRef.current = { url: lastSiteUrlRef.current || url, ...baseline }
             }
+            // PERSIST — survive refresh (fix #1 + #2): store deliverables + before/after
+            try {
+              const rid = v2.restorationId || event.restorationId || ''
+              if (rid) {
+                storeRestoredMeta(rid, { deliverables: v2.deliverables, screenshots: { before: v2.screenshotBefore, after: v2.screenshotAfter }, site: lastSiteUrlRef.current || url, updatedAt: new Date().toISOString() })
+                // Before score from verification.before or from earlier baseline; fallback to 67 if missing
+                const ver = event.data?.verification || {}
+                const beforeScore = typeof ver.before?.score === 'number' ? ver.before.score : (typeof event.data?.beforeScore === 'number' ? event.data.beforeScore : null)
+                const afterScore = v2.baseline?.scoreAfter ?? (typeof ver.after?.score === 'number' ? ver.after.score : null)
+                const beforeIssues = typeof ver.before?.issues === 'number' ? ver.before.issues : (typeof event.data?.issuesFound === 'number' ? event.data.issuesFound : null)
+                const afterIssues = v2.baseline?.issuesRemaining
+                storeComparison(rid, {
+                  scanId: rid,
+                  site: lastSiteUrlRef.current || url,
+                  before: { score: beforeScore, issues: beforeIssues, details: Array.isArray(event.data?.remaining_issues) ? event.data.remaining_issues.map((x:any)=>String(x)) : [] },
+                  after: { score: afterScore, issues: afterIssues, details: [] },
+                  updatedAt: new Date().toISOString(),
+                })
+                // Also fetch fixed.html once and cache locally for instant refresh (fix #1)
+                if (v2.deliverables) {
+                  const fixedUrl = `/api/restore/v3/content/${encodeURIComponent(rid)}/fixed.html?base=0`
+                  fetch(fixedUrl).then(r=>r.ok?r.text():null).then(html=>{
+                    if (html && html.length > 100) storeRestoredContent(rid, html)
+                  }).catch(()=>{})
+                }
+              }
+            } catch {}
             cards.isRunning = false
             break
+          }
           case 'pipeline_done':
             v2.pipelineDone = true
             cards.isRunning = false
@@ -1335,9 +1387,24 @@ function ChatContent() {
   }
 
   const handleThreadSelect = (thread: ChatThread) => {
-    setActiveThread(thread)
+    // FIX #1 + #2: hydrate restored content & comparison from persistent storage so refresh/thread switch never loses data
+    const hydrated = (thread.messages as AlphaMessage[]).map(m => {
+      const rid = (m.restoreCards as any)?.v2?.restorationId
+      if (!rid) return m
+      try {
+        const comp = getComparison(rid)
+        if (comp) {
+          const v2 = (m.restoreCards as any).v2 || {}
+          if (v2.baseline?.scoreAfter == null || v2.baseline?.scoreAfter === 0) {
+            return { ...m, restoreCards: { ...m.restoreCards, v2: { ...v2, baseline: { scoreAfter: comp.after.score ?? v2.baseline?.scoreAfter, issuesRemaining: comp.after.issues ?? v2.baseline?.issuesRemaining } } } } as AlphaMessage
+          }
+        }
+      } catch {}
+      return m
+    })
+    setActiveThread({ ...thread, messages: hydrated as any })
     // HISTORY FIX: restore FULL content including Green Card + buttons
-    const restored = thread.messages as AlphaMessage[]
+    const restored = hydrated
     setMessages(restored)
     // BUTTON FIX: re-attach lastSiteUrl so Fix buttons work after refresh
     const lastUrl = restored.slice().reverse().find(m => extractUrl(m.content))?.content ? extractUrl(restored.slice().reverse().find(m => extractUrl(m.content))!.content) : null
