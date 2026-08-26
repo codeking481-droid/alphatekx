@@ -124,42 +124,27 @@ function ChatWidget({ message }: { message: GeneralChatMessage }) {
       </div>
     )
   }
-  // Gap 2 Fix: always render Green Card after scan — plain English + $ loss + ROI + Fix buttons
+  // Clean Green Card — errors + consequences only, no revenue
   if (message.tool === 'restoration') {
-    const r = message.revenue as any
-    // Normalize both shapes: current (totalLoss/roiAll) and prompt (totalLossFormatted/roi)
-    const totalLoss = r?.totalLoss || r?.totalLossFormatted || '$0'
-    const roi = r?.roiAll ?? r?.roi ?? '—'
-    const top3Loss = r?.top3Loss || r?.topLossFormatted || totalLoss
-    const fixAllRecover = r?.actions?.fix_all?.recover || totalLoss
-    const fixCriticalRecover = r?.actions?.fix_critical?.recover || top3Loss
     return (
       <div className="green-card mt-3 w-full max-w-4xl rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 backdrop-blur-xl">
         <h2 className="flex items-center gap-2 text-sm font-bold text-emerald-300">🟢 Alpha Green Card</h2>
-        <p className="mt-1 text-xs text-zinc-400"><strong>Revenue loss:</strong> {totalLoss} &nbsp;|&nbsp; <strong>Fix cost:</strong> $49/month &nbsp;|&nbsp; <strong>ROI:</strong> {roi}x</p>
-        <div className="mt-2 grid grid-cols-3 gap-2 text-center">
-          <div className="rounded-xl bg-black/30 p-3"><div className="text-xs text-white/60">Total loss</div><div className="text-lg font-bold text-red-400">{totalLoss}</div></div>
-          <div className="rounded-xl bg-black/30 p-3"><div className="text-xs text-white/60">ROI Fix All</div><div className="text-lg font-bold text-emerald-300">{roi}x</div></div>
-          <div className="rounded-xl bg-black/30 p-3"><div className="text-xs text-white/60">Top 3 loss</div><div className="text-sm font-bold text-amber-300">{top3Loss}</div></div>
-        </div>
+        <p className="mt-1 text-xs text-zinc-400">What we found + what happens if you ignore it — pure plain English</p>
         <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
-          <a href="/billing" className="rounded-xl bg-emerald-500 px-4 py-3 text-center text-sm font-bold text-black hover:bg-emerald-400">Fix All — $49/mo<div className="text-xs font-normal">Recover {fixAllRecover}</div></a>
-          <a href="/billing" className="rounded-xl bg-zinc-800 px-4 py-3 text-center text-sm font-bold text-white hover:bg-zinc-700">Fix Critical — $19<div className="text-xs font-normal">Recover {fixCriticalRecover}</div></a>
-          <div className="rounded-xl border border-white/10 px-4 py-3 text-center text-sm text-white/60">Fix Nothing — $0<div className="text-xs">Continue losing {totalLoss}</div></div>
+          <a href="/billing" className="rounded-xl bg-emerald-500 px-4 py-3 text-center text-sm font-bold text-black hover:bg-emerald-400">Fix Everything — $49/mo</a>
+          <a href="/billing" className="rounded-xl bg-zinc-800 px-4 py-3 text-center text-sm font-bold text-white hover:bg-zinc-700">Fix Critical — $19/mo</a>
+          <div className="rounded-xl border border-white/10 px-4 py-3 text-center text-sm text-white/60">Fix Nothing — $0</div>
         </div>
-        <div className="mt-2 text-center text-[10px] text-white/40">Green Card shows $ loss per issue — plain English, file:line at end for engineers</div>
+        <div className="mt-2 text-center text-[10px] text-white/40">Alpha Green Card — plain English, consequences at end for decision makers</div>
       </div>
     )
   }
   return null
 }
 
-// Prompt-spec helper: renderGreenCard(scanResult) → Green Card with ROI + Fix buttons
+// Helper: renderGreenCard — returns clean Green Card without revenue
 export const renderGreenCard = (scanResult: any) => {
-  const revenue = scanResult?.revenue || scanResult
-  const totalLoss = revenue?.totalLossFormatted || revenue?.totalLoss || '$0'
-  const roi = revenue?.roi ?? revenue?.roiAll ?? '—'
-  return { totalLoss, roi, greenCard: scanResult?.greenCard }
+  return { greenCard: scanResult?.greenCard }
 }
 
 export default function Chat() {

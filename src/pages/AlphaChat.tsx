@@ -27,6 +27,7 @@ import CodeDiffCard from '../components/alpha/restore/cards/CodeDiffCard'
 import TerminalCard from '../components/alpha/restore/cards/TerminalCard'
 import SystemGraphAliveCard from '../components/alpha/restore/cards/SystemGraphAliveCard'
 import ReasoningTrace from '../components/alpha/restore/ReasoningTrace'
+import OnboardingPopup, { hasSeenOnboardingLocal } from '../components/OnboardingPopup'
 import RestorationComplete from '../components/alpha/restore/RestorationComplete'
 import {
   createChatThread,
@@ -198,14 +199,48 @@ function ChatContent() {
   const autoFixTriggeredRef = useRef(false)
   const reverifyActiveRef = useRef(false)
   const lastFixBaselineRef = useRef<{ url: string; scoreAfter: number | null; issuesRemaining: number | null } | null>(null)
-  const [monthlyRevenue, setMonthlyRevenue] = useState<number | null>(null)
-  const [revenueInput, setRevenueInput] = useState('')
   const [showVerificationPopup, setShowVerificationPopup] = useState(false)
   const [showVerifySection, setShowVerifySection] = useState(false)
   const verificationPopupShownRef = useRef(false)
+  const [showOnboarding, setShowOnboarding] = useState(false)
 
   useEffect(() => {
     void hydrateChatHistory()
+    try {
+      const saved = localStorage.getItem('alphatekx:lastSiteUrl')
+      if (saved) lastSiteUrlRef.current = saved
+    } catch {}
+  }, [])
+
+  // Luxury onboarding — once, immediately after signup, premium, never again
+  useEffect(() => {
+    if (!user) return
+    const uid = (user as any)?.id as string | undefined
+    // If profile says seen, respect it. If local says seen, respect it. Otherwise show once.
+    const profileSeen = (profile as any)?.has_seen_onboarding === true
+    const localSeen = hasSeenOnboardingLocal(uid)
+    if (profileSeen || localSeen) return
+    // Do not show if user already has chat history (returning user)
+    try {
+      const threads = getChatThreads()
+      if (threads.length > 0 && threads.some(t => t.messages.length > 0)) {
+        // Still show for brand new signup with 0 messages — but if they have history, they are not new
+        // We check created_at within 10 minutes to distinguish new signup vs old returning
+        const createdAt = profile ? (profile as any).created_at : null
+        const isNew = !createdAt || (Date.now() - new Date(createdAt).getTime() < 10 * 60 * 1000)
+        if (!isNew) return
+      }
+    } catch {}
+    // Small delay for polish
+    const t = setTimeout(() => setShowOnboarding(true), 600)
+    return () => clearTimeout(t)
+  }, [user, profile])
+
+  // Allow Help / Settings to reopen onboarding via event
+  useEffect(() => {
+    const handler = () => setShowOnboarding(true)
+    window.addEventListener('alphatekx:show-onboarding' as any, handler)
+    return () => window.removeEventListener('alphatekx:show-onboarding' as any, handler)
   }, [])
 
   useEffect(() => {
@@ -253,9 +288,8 @@ function ChatContent() {
     wholeSite?: boolean
     thread: ChatThread | null
     userMsg: AlphaMessage
-    monthlyRevenueOverride?: number | null
   }) => {
-    const { sendText, url, mode, wholeSite = false, thread, userMsg, monthlyRevenueOverride } = opts
+    const { sendText, url, mode, wholeSite = false, thread, userMsg } = opts
     // FREE TRIAL: 1 scan OR 1 fix max — real limit, not joke
     const planNow = typeof window !== 'undefined' ? (localStorage.getItem('alphatekx_plan') || 'free') : 'free'
     const freeCountNow = Number(typeof window !== 'undefined' ? localStorage.getItem('alphatekx_freeCount') || '0' : '0')
@@ -263,7 +297,7 @@ function ChatContent() {
     if (!isPaidNow && freeCountNow >= 1) {
       updateLastMessage((prev) => ({
         ...prev,
-        content: `🔒 **Free trial used (1/1).** You scanned once. Upgrade to heal your site.\n\n**What you saw:** Green Card preview ordered and bold — your real issues and $ loss.\n\n**Next:** Pick a plan → Paystack opens (real gateway) → credits unlock → Alpha fixes in <16s + GitHub PR.\n\n| Plan | Price | Scans | Fixes |\n|------|-------|-------|-------|\n| **Lite $9** | $9/mo | 5 | 5 |\n| **Pro $49** | $49/mo | 50 | 20 |\n| **Guardian $99** | $99/mo | ∞ | ∞ |\n\nClick **Fix Everything — $49** on your Green Card to pay.`,
+        content: `🔒 **Free trial used (1/1).** You scanned once. Upgrade to heal your site.\n\n**What you saw:** Green Card preview ordered and bold — your real issues in pure bold text.\n\n**Next:** Pick a plan — Paystack opens — credits unlock — Alpha fixes in 16s plus GitHub PR.\n\n**Lite $9** — $9 per month — 5 scans — 5 fixes\n**Pro $49** — $49 per month — 50 scans — 20 fixes\n**Guardian $99** — $99 per month — Unlimited scans — Unlimited fixes\n\nClick **Fix Everything — $49** on your Green Card to pay.`,
         isStreaming: false,
         restoreCards: { ...prev.restoreCards, isRunning: false },
       }))
@@ -276,9 +310,9 @@ function ChatContent() {
       setShowVerificationPopup(false)
       setShowVerifySection(false)
     }
-    const effectiveRevenue = monthlyRevenueOverride !== undefined ? monthlyRevenueOverride : monthlyRevenue
     detectedUrlRef.current = url
     lastSiteUrlRef.current = url
+    try { localStorage.setItem('alphatekx:lastSiteUrl', url) } catch {}
     setIsGenerating(true)
     try {
       abortRef.current = new AbortController()
@@ -286,10 +320,9 @@ function ChatContent() {
       autoFixTriggeredRef.current = false
 
       const authSuffix = session?.access_token ? `&token=${encodeURIComponent(session.access_token)}` : ''
-      const revenueSuffix = effectiveRevenue ? `&monthlyRevenue=${effectiveRevenue}` : ''
       const streamUrl = isGitHubRepoUrl(url)
-        ? `/api/restore/v2?url=${encodeURIComponent(url)}&mode=${mode}&message=${encodeURIComponent(sendText)}${authSuffix}${revenueSuffix}`
-        : `/api/restore/v3?url=${encodeURIComponent(url)}&mode=${mode}${wholeSite ? '&pages=15' : ''}&message=${encodeURIComponent(sendText)}${authSuffix}${revenueSuffix}`
+        ? `/api/restore/v2?url=${encodeURIComponent(url)}&mode=${mode}&message=${encodeURIComponent(sendText)}${authSuffix}`
+        : `/api/restore/v3?url=${encodeURIComponent(url)}&mode=${mode}${wholeSite ? '&pages=15' : ''}&message=${encodeURIComponent(sendText)}${authSuffix}`
 
       const res = await fetch(streamUrl, { signal: abortRef.current.signal })
       if (!res.ok) {
@@ -335,9 +368,11 @@ function ChatContent() {
       setMessages((prev) => {
         const last = prev[prev.length - 1]
         if (last && thread) {
+          // HISTORY FIX: store FULL content including Green Card + restoreCards + thoughtSteps
+          const fullLast: AlphaMessage = { ...last, isStreaming: undefined }
           const updatedThread: ChatThread = {
             ...thread,
-            messages: [...thread.messages, userMsg, { ...last, isStreaming: undefined, restoreCards: undefined }],
+            messages: [...thread.messages, userMsg, fullLast as GeneralChatMessage],
             updatedAt: new Date().toISOString(),
           }
           saveChatThread(updatedThread)
@@ -358,47 +393,13 @@ function ChatContent() {
       setIsGenerating(false)
       abortRef.current = null
     }
-  }, [scrollToBottom, updateLastMessage, monthlyRevenue, session?.access_token])
-
-  const handleRevenueSubmit = useCallback(async () => {
-    const val = Number(revenueInput.replace(/[^0-9.]/g, ''))
-    if (!val || val <= 0) return
-    setMonthlyRevenue(val)
-    setRevenueInput('')
-    if (!lastSiteUrlRef.current) return
-    const text = `Recalculate with revenue $${val}`
-    const thread = activeThread || createChatThread(text)
-    if (!activeThread) setActiveThread(thread)
-    const userMsg: AlphaMessage = { id: uid(), role: 'user', content: text, createdAt: new Date().toISOString() }
-    const aiMsg: AlphaMessage = { id: uid(), role: 'assistant', content: '', createdAt: new Date().toISOString(), thoughtSteps: [], alphaEvents: [], restoreCards: undefined, isStreaming: true }
-    setMessages(prev => [...prev, userMsg, aiMsg])
-    void runRestoreStream({ sendText: text, url: lastSiteUrlRef.current!, mode: 'scan-only', thread, userMsg, monthlyRevenueOverride: val })
-  }, [revenueInput, activeThread, runRestoreStream])
+  }, [scrollToBottom, updateLastMessage, session?.access_token])
 
   const handleSend = useCallback(async () => {
     const text = input.trim()
     if ((!text && attachedFiles.length === 0) || isGenerating) return
 
     const sendText = text || (attachedFiles.length > 0 ? 'Edit this video to look professional' : '')
-    // Honest revenue: detect "revenue is $5000" etc — set and rescan last site
-    const revenueMatch = sendText.match(/revenue[^0-9]*\$?\s*([0-9,]+)/i) || sendText.match(/\$?\s*([0-9,]+)\s*revenue/i)
-    if (revenueMatch) {
-      const val = Number(revenueMatch[1].replace(/,/g, ''))
-      if (val > 0 && val < 1000000000) {
-        setMonthlyRevenue(val)
-        setInput('')
-        setIsGenerating(false)
-        if (lastSiteUrlRef.current) {
-          const thread = activeThread || createChatThread(sendText)
-          if (!activeThread) setActiveThread(thread)
-          const userMsg: AlphaMessage = { id: uid(), role: 'user', content: sendText, createdAt: new Date().toISOString() }
-          const aiMsg: AlphaMessage = { id: uid(), role: 'assistant', content: '', createdAt: new Date().toISOString(), thoughtSteps: [], alphaEvents: [], restoreCards: undefined, isStreaming: true }
-          setMessages(prev => [...prev, userMsg, aiMsg])
-          void runRestoreStream({ sendText, url: lastSiteUrlRef.current, mode: 'scan-only', thread, userMsg, monthlyRevenueOverride: val })
-          return
-        }
-      }
-    }
     setInput('')
     setIsGenerating(true)
 
@@ -412,7 +413,10 @@ function ChatContent() {
     if (!detectedUrl && isFollowupRestore(sendText) && lastSiteUrlRef.current) {
       detectedUrl = lastSiteUrlRef.current
     }
-    if (detectedUrl) lastSiteUrlRef.current = detectedUrl
+    if (detectedUrl) {
+      lastSiteUrlRef.current = detectedUrl
+      try { localStorage.setItem('alphatekx:lastSiteUrl', detectedUrl) } catch {}
+    }
     detectedUrlRef.current = detectedUrl
     const isWebsiteRestore = Boolean(detectedUrl)
     const wholeSite = detectWholeSite(sendText)
@@ -1251,7 +1255,27 @@ function ChatContent() {
 
   const handleThreadSelect = (thread: ChatThread) => {
     setActiveThread(thread)
-    setMessages(thread.messages as AlphaMessage[])
+    // HISTORY FIX: restore FULL content including Green Card + buttons
+    const restored = thread.messages as AlphaMessage[]
+    setMessages(restored)
+    // BUTTON FIX: re-attach lastSiteUrl so Fix buttons work after refresh
+    const lastUrl = restored.slice().reverse().find(m => extractUrl(m.content))?.content ? extractUrl(restored.slice().reverse().find(m => extractUrl(m.content))!.content) : null
+    if (lastUrl) {
+      lastSiteUrlRef.current = lastUrl
+      try { localStorage.setItem('alphatekx:lastSiteUrl', lastUrl) } catch {}
+    } else {
+      // fallback: try to derive from any message containing https
+      const anyUrl = restored.map(m=>extractUrl(m.content)).find(Boolean)
+      if (anyUrl) {
+        lastSiteUrlRef.current = anyUrl
+        try { localStorage.setItem('alphatekx:lastSiteUrl', anyUrl) } catch {}
+      } else {
+        try {
+          const saved = localStorage.getItem('alphatekx:lastSiteUrl')
+          if (saved) lastSiteUrlRef.current = saved
+        } catch {}
+      }
+    }
     setSidebarOpen(false)
   }
 
@@ -1322,19 +1346,21 @@ function ChatContent() {
         style={{ scrollBehavior: 'smooth' }}
       >
         {isEmpty ? (
-          /* Empty State — Centered Input */
-          <div className="flex h-full flex-col items-center justify-center px-4 pb-24">
+          /* Empty State — Bold, spacious, premium like ChatGPT and Gemini */
+          <div className="flex h-full flex-col items-center justify-center px-6 pb-28">
             {/* Logo mark */}
-            <div className="mb-8 flex flex-col items-center">
-              <div className="mb-4 grid size-14 place-items-center rounded-2xl border border-[#D6FF00]/20 bg-[#D6FF00]/[0.04]">
-                <Sparkles size={24} className="text-[#D6FF00]" />
+            <div className="mb-10 flex flex-col items-center text-center">
+              <div className="mb-6 grid size-16 place-items-center rounded-2xl border border-[#D6FF00]/20 bg-[#D6FF00]/[0.06] shadow-[0_8px_32px_rgba(214,255,0,0.08)]">
+                <Sparkles size={28} className="text-[#D6FF00]" />
               </div>
-              <h1 className="font-syne text-xl font-extrabold text-white">What do you want to restore?</h1>
-              <p className="mt-2 text-[13px] text-white/25">Paste a link, describe the problem, or upload code</p>
+              <h1 className="font-syne text-[28px] font-black tracking-[-0.02em] text-white sm:text-[34px]">
+                What do you want to restore{profile?.display_name || (user as any)?.email?.split('@')[0] ? `, ${profile?.display_name || (user as any)?.email?.split('@')[0]}` : ''}?
+              </h1>
+              <p className="mt-3 max-w-[480px] text-[15px] font-medium leading-6 text-white/40">Paste a link, describe the problem, or upload code — Alpha scans bold and fixes clean</p>
             </div>
 
-            {/* Centered Input */}
-            <div className="w-full max-w-[560px]">
+            {/* Centered Input — large, premium, generous padding */}
+            <div className="w-full max-w-[640px]">
               {/* Attached file previews */}
               {attachedFiles.length > 0 && (
                 <div className="mb-2 space-y-1">
@@ -1434,10 +1460,14 @@ function ChatContent() {
                             <div className="flex flex-wrap gap-2 border-t border-emerald-500/20 bg-black/30 p-3">
                               <button
                                 onClick={() => {
-                                  const url = lastSiteUrlRef.current
+                                  // BUTTON FIX: re-attach handlers — derive url from ref, storage, or message
+                                  let url = lastSiteUrlRef.current
+                                  if (!url) try { url = localStorage.getItem('alphatekx:lastSiteUrl') } catch {}
+                                  if (!url) url = extractUrl(msg.content) || ''
                                   if (!url) return
+                                  lastSiteUrlRef.current = url
                                   const email = getPaystackEmail()
-                                  // Commandment 3: Fix Everything $49 → Paystack via /api/billing/checkout { plan: pro }
+                                  // Fix Everything $49 → Paystack via /api/billing/checkout { plan: pro }
                                   fetch('/api/billing/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan: 'pro', email, callback_url: 'https://alphatekx.name.ng/chat' }) })
                                     .then(r => r.text().then(t => ({ ok: r.ok, t })))
                                     .then(({ ok, t }) => {
@@ -1469,8 +1499,11 @@ function ChatContent() {
                               </button>
                               <button
                                 onClick={() => {
-                                  const url = lastSiteUrlRef.current
+                                  let url = lastSiteUrlRef.current
+                                  if (!url) try { url = localStorage.getItem('alphatekx:lastSiteUrl') } catch {}
+                                  if (!url) url = extractUrl(msg.content) || ''
                                   if (!url) return
+                                  lastSiteUrlRef.current = url
                                   const email = getPaystackEmail()
                                   fetch('/api/billing/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan: 'lite', email, callback_url: 'https://alphatekx.name.ng/chat' }) })
                                     .then(r => r.text().then(t => ({ ok: r.ok, t })))
@@ -1507,27 +1540,6 @@ function ChatContent() {
                             <Markdown>{msg.content}</Markdown>
                           </div>
                         )}
-                        {/* Honest Revenue Prompt — NOT after Green Card (commandment 2: nothing after card). Cost shows Unknown — enter revenue in table; input only when not Green Card */}
-                        {msg.content && msg.content.includes('Unknown — enter revenue') && !msg.content.includes('ALPHA GREEN CARD') && (
-                          <div className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/[0.06] p-3">
-                            <p className="text-xs font-bold text-amber-300">📊 Want your exact loss?</p>
-                            <p className="mt-1 text-xs text-white/60">Enter your monthly revenue to calculate real impact — no fake numbers.</p>
-                            <div className="mt-2 flex gap-2">
-                              <input
-                                value={revenueInput}
-                                onChange={(e) => setRevenueInput(e.target.value)}
-                                onKeyDown={(e) => { if (e.key === 'Enter') void handleRevenueSubmit() }}
-                                placeholder="e.g., 10000"
-                                type="number"
-                                className="h-9 flex-1 rounded-lg border border-white/10 bg-black px-3 text-sm text-white placeholder:text-white/30 outline-none focus:border-amber-400/40"
-                              />
-                              <button onClick={() => void handleRevenueSubmit()} disabled={!revenueInput || isGenerating} className="h-9 shrink-0 rounded-lg bg-[#D6FF00] px-4 text-sm font-black text-black hover:bg-[#C2E600] disabled:opacity-40">
-                                Calculate
-                              </button>
-                            </div>
-                          </div>
-                        )}
-
                         {/* Restore Result (legacy) */}
                         {msg.restoreResult && (
                           <GoldCard
@@ -1912,6 +1924,18 @@ function ChatContent() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Luxury Onboarding Popup — once, premium, never again */}
+      {showOnboarding && (
+        <OnboardingPopup
+          userId={(user as any)?.id}
+          onComplete={() => setShowOnboarding(false)}
+          onGetStarted={() => {
+            setShowOnboarding(false)
+            setTimeout(() => inputRef.current?.focus(), 300)
+          }}
+        />
       )}
 
       {/* Verification Popup — BIG, BOLD, CLEAR */}

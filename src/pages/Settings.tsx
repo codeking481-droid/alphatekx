@@ -294,6 +294,14 @@ export default function Settings() {
         </section>
 
         <section className="luxury-card p-5 sm:p-6">
+          <div className="flex items-center gap-2 text-lg font-semibold"><Sparkles size={18} className="text-[#FFD700]"/> Onboarding</div>
+          <p className="mt-2 text-sm font-medium text-slate-300">Relive the 3-step first-site guide. Premium, once, always available here.</p>
+          <button onClick={() => window.dispatchEvent(new CustomEvent('alphatekx:show-onboarding'))} className="mt-4 inline-flex items-center gap-2 rounded-xl border border-[#FFD700]/20 bg-[#FFD700]/10 px-4 py-2.5 text-sm font-black text-[#FFD700] transition hover:bg-[#FFD700]/15">
+            <Sparkles size={14}/> Show onboarding again
+          </button>
+        </section>
+
+        <section className="luxury-card p-5 sm:p-6">
           <div className="flex items-center gap-2 text-lg font-semibold"><Shield size={20} className="text-violet-400"/> Security</div>
           <div className="mt-4 space-y-3">
             <div className="flex items-center justify-between rounded-xl border border-violet-400/20 bg-blue-500/10 px-4 py-3">

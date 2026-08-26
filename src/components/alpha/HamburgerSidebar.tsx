@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, MessageSquare, CreditCard, Trash2, Clock, Plus, Rocket, LogOut, MessageCircle, HelpCircle } from 'lucide-react'
+import { X, MessageSquare, CreditCard, Trash2, Clock, Plus, Rocket, LogOut, MessageCircle, HelpCircle, Search } from 'lucide-react'
 import { useAuth } from '../../lib/auth'
 import { getChatThreads, deleteChatThread, subscribeChatHistory, type ChatThread } from '../../lib/chatHistoryStore'
 import PlanBadge, { PLAN_LABELS } from '../PlanBadge'
@@ -20,6 +20,7 @@ export default function HamburgerSidebar({
   activeThreadId?: string
 }) {
   const [threads, setThreads] = useState<ChatThread[]>([])
+  const [searchQuery, setSearchQuery] = useState('')
   const { profile, user, signOut } = useAuth()
   const currentPlan = profile?.plan || 'free'
   const planLabel = PLAN_LABELS[String(currentPlan).toLowerCase()] || 'FREE'
@@ -45,6 +46,12 @@ export default function HamburgerSidebar({
     onClose()
     navigate(path)
   }
+
+  const filteredThreads = threads.filter(t => {
+    if (!searchQuery.trim()) return true
+    const q = searchQuery.toLowerCase()
+    return t.title.toLowerCase().includes(q) || t.messages.some(m => m.content.toLowerCase().includes(q))
+  })
 
   return (
     <AnimatePresence>
@@ -131,28 +138,54 @@ export default function HamburgerSidebar({
                   <span className="block text-[10px] text-white/30">Guides, billing, video tips</span>
                 </span>
               </button>
+              <button
+                onClick={() => { onClose(); window.dispatchEvent(new CustomEvent('alphatekx:show-onboarding')) }}
+                className="flex w-full items-center gap-3 rounded-xl border border-[#FFD700]/15 bg-[#FFD700]/[0.05] px-3 py-2.5 text-left transition hover:bg-[#FFD700]/[0.10]"
+              >
+                <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-[#FFD700]/10">
+                  <HelpCircle size={14} className="text-[#FFD700]" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[13px] font-bold text-white">Onboarding</span>
+                  <span className="block text-[10px] text-white/30">Fix your first site in 3 steps</span>
+                </span>
+              </button>
             </div>
 
             <div className="flex-1 overflow-y-auto overscroll-contain alpha-chat-scroll touch-pan-y" style={{ WebkitOverflowScrolling: 'touch' } as any}>
               {/* ===== HISTORY ===== */}
               <div className="p-3">
-                <p className="mb-2 px-1 text-[10px] font-bold uppercase tracking-widest text-white/25">History</p>
+                <div className="mb-3 flex items-center justify-between">
+                  <p className="px-1 text-[10px] font-bold uppercase tracking-widest text-white/25">History</p>
+                  <span className="rounded-full bg-white/[0.04] px-2 py-0.5 text-[10px] font-bold text-white/30">{threads.length}</span>
+                </div>
                 <button
                   onClick={() => { onNewChat?.(); onClose() }}
-                  className="mb-2 flex w-full items-center justify-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-[12px] font-bold text-white/70 transition hover:bg-white/[0.06] hover:text-white"
+                  className="mb-3 flex w-full items-center justify-center gap-2 rounded-xl border border-[#D6FF00]/15 bg-[#D6FF00]/[0.06] px-3 py-2.5 text-[13px] font-black text-white transition hover:bg-[#D6FF00]/10"
                 >
                   <Plus size={14} />
                   New Chat
                 </button>
+                <div className="relative mb-3">
+                  <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/25" />
+                  <input
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search chats"
+                    className="h-9 w-full rounded-xl border border-white/[0.06] bg-white/[0.03] py-2 pl-9 pr-3 text-[13px] font-medium text-white placeholder:text-white/25 outline-none focus:border-white/12 focus:bg-white/[0.05]"
+                  />
+                </div>
                 {threads.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-16 text-center">
                     <MessageSquare size={28} className="mb-3 text-white/10" />
                     <p className="text-[13px] font-semibold text-white/20">No conversations yet</p>
                     <p className="mt-1 text-[11px] text-white/10">Start chatting to build history</p>
                   </div>
+                ) : filteredThreads.length === 0 ? (
+                  <p className="py-8 text-center text-[12px] font-medium text-white/30">No chats match {searchQuery}</p>
                 ) : (
                   <div className="space-y-1">
-                    {threads.map((thread) => (
+                    {filteredThreads.map((thread) => (
                       <button
                         key={thread.id}
                         onClick={() => {

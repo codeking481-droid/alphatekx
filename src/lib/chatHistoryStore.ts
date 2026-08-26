@@ -9,6 +9,14 @@ export type GeneralChatMessage = {
   sources?: Array<{ title: string; url: string; content?: string }>
   currency?: { from: string; to: string; amount: number; rate: number; result: number; updatedAt?: string }
   revenue?: { totalLoss: string; roiAll: number; top3Loss: string; actions: { fix_all: { price: number; label: string; recover: string }; fix_critical: { price: number; label: string; recover: string }; fix_none: { price: number; label: string } } }
+  // HISTORY FIX: allow full Alpha message fields — stored verbatim, restored on refresh
+  thoughtSteps?: any[]
+  restoreCards?: any
+  alphaEvents?: any[]
+  alphaReasoning?: any
+  isStreaming?: boolean
+  restoreResult?: any
+  videoResult?: any
 }
 
 export type ChatThread = { id: string; title: string; messages: GeneralChatMessage[]; createdAt: string; updatedAt: string }

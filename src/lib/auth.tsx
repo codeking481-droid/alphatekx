@@ -9,7 +9,7 @@ import { startPayment } from './paystack'
 type LocalUser = { id: string; email: string; name?: string }
 type AuthUser = User | LocalUser
 
-type Profile = { id: string; email: string; credits: number; plan: string; revenue: number; display_name?: string }
+type Profile = { id: string; email: string; credits: number; plan: string; revenue: number; display_name?: string; has_seen_onboarding?: boolean }
 type ProfileRow = {
   id: string
   email: string
@@ -17,6 +17,7 @@ type ProfileRow = {
   plan: string
   revenue: number
   display_name?: string | null
+  has_seen_onboarding?: boolean | null
 }
 type AuthValue = {
   session: Session | null
@@ -238,13 +239,13 @@ export function AuthProvider({ children }: PropsWithChildren) {
         display_name: String(auth.user.user_metadata?.name || auth.user.user_metadata?.full_name || email.split('@')[0] || 'AlphaTekx user'),
       }
       let profileRow: ProfileRow | null = null
-      const profileQuery = supabase.from('profiles').select('id,email,credits,plan,revenue,display_name').eq('id', auth.user.id).maybeSingle<ProfileRow>()
+      const profileQuery = supabase.from('profiles').select('id,email,credits,plan,revenue,display_name,has_seen_onboarding').eq('id', auth.user.id).maybeSingle<ProfileRow>()
       const profileResponse = await withTimeout(profileQuery, 'Profile load')
       profileRow = profileResponse.data
       if (!profileRow) {
         await withTimeout(supabase.rpc('ensure_user_profile'), 'Profile setup')
         const reloadResponse = await withTimeout(
-          supabase.from('profiles').select('id,email,credits,plan,revenue,display_name').eq('id', auth.user.id).maybeSingle<ProfileRow>(),
+          supabase.from('profiles').select('id,email,credits,plan,revenue,display_name,has_seen_onboarding').eq('id', auth.user.id).maybeSingle<ProfileRow>(),
           'Profile reload'
         )
         profileRow = reloadResponse.data
