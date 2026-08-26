@@ -207,6 +207,7 @@ function ChatContent() {
   const verificationPopupShownRef = useRef(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const suppressAutoRestoreRef = useRef(false)
+  const didAutoRestoreRef = useRef(false)
 
   useEffect(() => {
     void hydrateChatHistory()
@@ -309,15 +310,21 @@ function ChatContent() {
   }, [activeThread])
 
   // History 100% — auto-restore last thread after refresh so Green Card and buttons survive reload without clicking
+  // BUT never after explicit New Chat — didAutoRestore ensures it only runs once per mount
   useEffect(() => {
+    if (didAutoRestoreRef.current) return
     if (suppressAutoRestoreRef.current) {
       suppressAutoRestoreRef.current = false
+      didAutoRestoreRef.current = true
       return
     }
     if (messages.length > 0 || activeThread) return
     if (threads.length === 0) return
     const recent = threads.find(t => t.messages.length > 0)
-    if (!recent) return
+    if (!recent) {
+      didAutoRestoreRef.current = true
+      return
+    }
     // FIX #2: hydrate Before/After from persistent comparison if state shows 0/null (survives refresh)
     const hydrated = (recent.messages as AlphaMessage[]).map(m => {
       const rid = (m.restoreCards as any)?.v2?.restorationId
@@ -342,6 +349,7 @@ function ChatContent() {
     })
     setActiveThread({ ...recent, messages: hydrated as any })
     setMessages(hydrated)
+    didAutoRestoreRef.current = true
     try {
       const anyUrl = extractUrl(hydrated.slice().reverse().find(m => extractUrl(m.content))?.content || '') || extractUrl(hydrated.map(m => m.content).join(' ')) || localStorage.getItem('alphatekx:lastSiteUrl')
       if (anyUrl) {
@@ -1461,6 +1469,7 @@ function ChatContent() {
       abortRef.current = null
     }
     suppressAutoRestoreRef.current = true
+    didAutoRestoreRef.current = true
     verificationPopupShownRef.current = false
     setShowVerificationPopup(false)
     setShowVerifySection(false)
@@ -1468,6 +1477,7 @@ function ChatContent() {
     setActiveThread(null)
     setMessages([])
     setInput('')
+    try { inputRef.current?.focus() } catch {}
   }
 
   const isEmpty = messages.length === 0
