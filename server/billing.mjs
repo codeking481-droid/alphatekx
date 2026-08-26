@@ -4,6 +4,12 @@ import { createHmac, randomUUID } from 'node:crypto'
 import { supabaseServiceHeaders } from './supabaseHeaders.mjs'
 
 const adminEmail = 'iamdan4live@gmail.com'
+const adminEmails = new Set([
+  adminEmail,
+  'coderking555@gmail.com',
+  'codeking481@gmail.com',
+  'alphatekxcompany@gmail.com',
+])
 const DEFAULT_CREDITS = 1
 const dataDir = path.resolve('data')
 const billingDir = path.resolve(dataDir, 'billing')
@@ -142,7 +148,7 @@ function userEmail(user) {
 }
 function configuredAdminEmails() {
   return new Set([
-    adminEmail,
+    ...adminEmails,
     ...String(process.env.SUPER_ADMIN_EMAILS || '').split(',').map(normalizedEmail).filter(Boolean),
   ])
 }
