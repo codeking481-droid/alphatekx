@@ -5,6 +5,7 @@ import { hydrateCredits } from './creditStore'
 import { userEmail } from './adminAccess'
 import { clearAgentCache } from './agents/agentStore'
 import { startPayment } from './paystack'
+import { clearAlphaTekxCache } from './storageKeys'
 
 type LocalUser = { id: string; email: string; name?: string }
 type AuthUser = User | LocalUser
@@ -46,6 +47,17 @@ function clearUserArtifacts() {
     }
   } catch {}
   clearAgentCache()
+}
+
+function clearAllAlphaCacheOnLogout() {
+  try { clearAlphaTekxCache() } catch {}
+  // Extra safety: ensure Supabase sb- tokens are gone even if storageKeys missed them
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i -= 1) {
+      const k = localStorage.key(i)
+      if (k && k.startsWith('sb-')) localStorage.removeItem(k)
+    }
+  } catch {}
 }
 
 const DEVICE_ID_KEY = 'deviceId'
@@ -429,6 +441,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, [session, localUser])
 
   const localSignIn = async (name: string, email: string) => {
+    // Scorched-earth: wipe stale alphatekx cache so new login never inherits old user's chat/siteUrl
+    try { clearAllAlphaCacheOnLogout() } catch {}
     const normalizedEmail = email.trim().toLowerCase()
     const existing = readLocalUser()
     const value: LocalUser = { id: (existing?.email === normalizedEmail ? existing.id : crypto.randomUUID()), email: normalizedEmail, name: name.trim() }
@@ -438,15 +452,19 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }
 
   const signOut = async () => {
+    // Notify backend (best-effort) then scorched-earth local wipe
     try { await supabase?.auth.signOut({ scope: 'local' }) } catch {}
+    try { await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {}) } catch {}
+    // 1. Clear ALL alphatekx keys — leave other apps untouched
+    clearAllAlphaCacheOnLogout()
     clearUserArtifacts()
-    localStorage.removeItem(LOCAL_USER_KEY)
-    localStorage.removeItem(CURRENT_USER_KEY)
+    // 2. Clear in-memory state
     setSession(null)
     setLocalUser(null)
     setProfile(null)
+    // 3. Force full reload to reset every Context/hook — new Gmail = fresh user
     if (typeof window !== 'undefined') {
-      window.location.replace('/')
+      window.location.href = '/'
     }
   }
 

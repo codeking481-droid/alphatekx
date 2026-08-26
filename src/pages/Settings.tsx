@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { isAdminUser } from '../lib/adminAccess'
+import { clearAlphaTekxCache } from '../lib/storageKeys'
 import { Check, CreditCard, Globe, LoaderCircle, LogOut, Moon, Palette, Receipt, Shield, Sparkles, Trash2, User, Wallet, WalletCards, Zap } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
@@ -158,6 +159,13 @@ export default function Settings() {
 
   const selectPlan = (planId: PlanId) => { setSelectedPlan(planId) }
 
+  const handleClearCache = () => {
+    if (window.confirm('Clear all AlphaTekx local data? This removes chat history, last site, and trial cache — but leaves other apps untouched.')) {
+      clearAlphaTekxCache()
+      window.location.reload()
+    }
+  }
+
   const deleteAccount = () => {
     const first = window.confirm('You sure? All Media Library and History will be deleted permanently.')
     if (!first) return
@@ -165,7 +173,7 @@ export default function Settings() {
     const second = window.confirm('Confirm: delete your Alpha account and all saved media, history, and settings permanently.')
     if (!second) return
 
-    localStorage.clear()
+    clearAlphaTekxCache()
     void signOut()
     navigate('/')
   }
@@ -309,6 +317,9 @@ export default function Settings() {
               <span className="text-sm font-black text-white">Google</span>
             </div>
             <button onClick={() => void signOut()} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-violet-400/20 bg-violet-500/10 px-4 text-sm font-bold text-white transition-all hover:border-violet-500 hover:bg-violet-500/10"><LogOut size={16}/>Sign out</button>
+          </div>
+          <div className="mt-4 flex gap-2">
+            <button onClick={handleClearCache} className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-amber-400/20 bg-amber-500/10 px-4 text-sm font-bold text-amber-200 transition hover:bg-amber-500/15">Clear AlphaTekx Cache</button>
           </div>
           <div className="mt-6 border-t border-violet-400/20 pt-6">
             <h3 className="font-semibold text-rose-300">Danger zone</h3>
